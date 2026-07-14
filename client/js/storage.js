@@ -409,6 +409,7 @@ export async function getOrEstablishReceiverSession(fromUserId, fromDeviceId, se
   currentRootKey = step2.newRootKey;
   const sendChainKey = step2.chainKey;
 
+  let keyChanged = false;
   const anyExisting = await getAnySession(fromUserId);
   if (anyExisting && anyExisting.their_ik_pub) {
     let isSame = true;
@@ -419,6 +420,7 @@ export async function getOrEstablishReceiverSession(fromUserId, fromDeviceId, se
       }
     }
     if (!isSame) {
+      keyChanged = true;
       const systemMsg = {
         msg_id: crypto.randomUUID(),
         chat_id: String(fromUserId),
@@ -447,6 +449,9 @@ export async function getOrEstablishReceiverSession(fromUserId, fromDeviceId, se
     created_at: Date.now()
   };
   await saveSession(session);
+  if (keyChanged) {
+    session.key_changed = true;
+  }
   return session;
 }
 

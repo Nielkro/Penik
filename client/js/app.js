@@ -477,6 +477,19 @@ async function onMsgRecvGlobal(payload) {
       newSession.session_init_ek = null;
 
       await saveSession(newSession);
+      if (newSession.key_changed) {
+        const messagesEl = document.querySelector(".chat-messages");
+        if (messagesEl && _activeChatCallback && String(_activeChatCallback.userId) === String(fromUserId)) {
+          const bubble = document.createElement("div");
+          bubble.className = "msg-bubble msg-system";
+          const span = document.createElement("span");
+          span.className = "msg-text";
+          span.textContent = "⚠️ Код безопасности изменился!";
+          bubble.appendChild(span);
+          messagesEl.appendChild(bubble);
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+      }
     }
 
     plaintext = decryptedText;
