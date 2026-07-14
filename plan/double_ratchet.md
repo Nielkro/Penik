@@ -1,182 +1,246 @@
-# План внедрения протокола Double Ratchet в Penik Messenger (Скорректированный)
+# RFC и План внедрения протокола Double Ratchet в Penik Messenger (Версия 1.2)
 
-Этот документ описывает скорректированный пошаговый план перехода от текущей статической схемы шифрования сессий (где общий секрет, полученный из X3DH, повторно используется для всех последующих сообщений) к полноценному динамическому протоколу **Double Ratchet (Двойной Хлыст)**. Это обеспечит приложению свойства **Forward Secrecy (прямая секретность)** и **Post-Compromise Security (пост-компромиссная безопасность)**.
+Этот документ представляет собой технический RFC (Request for Comments) и пошаговый план перехода от текущей статической схемы шифрования сессий (где общий секрет, полученный из X3DH, повторно используется для всех последующих сообщений) к полноценному динамическому протоколу **Double Ratchet (Двойной Хлыст)**. Это обеспечит приложению свойства **Forward Secrecy (прямая секретность)** и **Post-Compromise Security (пост-компромиссная безопасность)**.
 
 ---
 
-## Архитектура Double Ratchet
+## 1. Архитектура и транспортный формат (Вариант Б)
 
-Протокол состоит из двух типов хлыстов (цепочек KDF):
-1. **Symmetric Ratchet (Симметричный хлыст)**: продвигается вперед на каждое отправленное или полученное сообщение. Шаг хлыста выдает новый одноразовый ключ сообщения (`Message Key`) и обновляет ключ цепочки (`Chain Key`).
-2. **Diffie-Hellman Ratchet (DH-хлыст)**: продвигается вперед при получении ответа от собеседника с новым DH-ключом. Обновляет корневой ключ (`Root Key`) и инициализирует новые симметричные цепочки отправки/приема.
+Для сохранения совместимости с сервером мы выбираем **Вариант Б**: вся метаинформация Double Ratchet инкапсулируется внутри поля `cipher_bytes`. Таким образом, структуры данных на сервере Go (`server/internal/ws/protocol.go`) остаются без изменений.
 
-```mermaid
-graph TD
-    X3DH[X3DH Shared Secret] --> RK[Root Key]
-    RK -->|DH Step 1: DH(our_old_private, their_new_public)| RK_New1[New Root Key 1]
-    RK_New1 -->|KDF_RK| CK_Recv[Recv Chain Key]
-    RK_New1 -->|DH Step 2: DH(our_new_private, their_new_public)| RK_New2[New Root Key 2]
-    RK_New2 -->|KDF_RK| CK_Send[Send Chain Key]
-    
-    CK_Send -->|Symmetric Step| MK_Send[Message Key 1]
-    CK_Send -->|Symmetric Step| CK_Send_Next[Next Send Chain Key]
-    
-    CK_Recv -->|Symmetric Step| MK_Recv[Message Key 1]
-    CK_Recv -->|Symmetric Step| CK_Recv_Next[Next Recv Chain Key]
+Криптографический заголовок сообщения имеет различный формат в зависимости от того, является ли сообщение первым в сессии (Bootstrap) или последующим.
+
+### А. Формат первого сообщения (Bootstrap-пакет)
+Отправляется инициатором один раз при создании новой сессии, чтобы получатель мог произвести X3DH-согласование:
+```
++---------------------+-------------------+---------------+---------------+---------------+-----------------------+
+| session_init_ek(32B)|   dh_pub (32 B)   |  n (4 B, BE)  |  pn (4 B, BE) |   iv (12 B)   |  ciphertext (AES-GCM) |
++---------------------+-------------------+---------------+---------------+---------------+-----------------------+
+| <--                                  Header / AAD (72 Bytes)                             --> |
+```
+* `session_init_ek` (32 байта) — эфемерный ключ инициатора для X3DH (`EK_A`). Передается только в первом сообщении сессии.
+
+### Б. Формат последующих сообщений (Стандартный пакет)
+Используется для всех сообщений после успешной инициализации сессии. Позволяет экономить 32 байта трафика на каждом сообщении:
+```
++-------------------+---------------+---------------+---------------+-----------------------+
+|   dh_pub (32 B)   |  n (4 B, BE)  |  pn (4 B, BE) |   iv (12 B)   |  ciphertext (AES-GCM) |
++-------------------+---------------+---------------+---------------+-----------------------+
+| <--                         Header / AAD (40 Bytes)                           --> |
 ```
 
----
+* `dh_pub` (32 байта) — текущий публичный ключ DH-хлыста отправителя.
+* `n` (4 байта, Big-Endian) — порядковый номер сообщения в текущей цепочке отправки.
+* `pn` (4 байта, Big-Endian) — количество сообщений в предыдущей цепочке отправки.
 
-## Шаг 1: Обновление схемы данных в IndexedDB
-
-В таблице `sessions` вместо хранения одного ключа `sharedSecret` необходимо хранить полное криптографическое состояние сессии для каждого контакта и устройства.
-
-### Поля для таблицы `sessions` в `storage.js`:
-* `user_id` (PK)
-* `device_id` (PK)
-* `root_key` (32 байта, ArrayBuffer/Uint8Array)
-* `send_chain_key` (32 байта, Uint8Array / null)
-* `recv_chain_key` (32 байта, Uint8Array / null)
-* `our_dh_private_jwk` (JWK-формат нашего текущего DH-ключа. **Примечание:** Хранение в открытом виде — компромисс веб-средств; для защиты можно шифровать локальную БД с помощью ключа на базе пароля пользователя).
-* `our_dh_public_raw` (Raw-байты нашего текущего DH-ключа)
-* `their_dh_public_raw` (Raw-байты последнего полученного DH-ключа собеседника)
-* `n_send` (integer, счетчик отправленных сообщений в текущей цепочке)
-* `n_recv` (integer, счетчик полученных сообщений в текущей цепочке)
-* `pn` (integer, количество сообщений в предыдущей отправленной цепочке. **Коррекция:** переименовано из `pn_send` во избежание путаницы, это классический параметр `PN` из спецификации).
-* `skipped_keys` (Object/Map, хранит пропущенные ключи сообщений `{ [their_dh_pub_hex + "-" + sequence_number]: message_key_b64 }` для расшифровки пришедших с опозданием сообщений).
-  * > [!IMPORTANT]
-  * > **Лимит пропущенных ключей (DoS Protection):** Для предотвращения исчерпания памяти (Storage Exhaustion DoS) необходимо установить жесткий лимит на количество хранимых ключей в `skipped_keys` (например, максимум 1000 ключей на сессию). При превышении лимита старые ключи должны вытесняться по принципу FIFO (First In, First Out).
+### Защита заголовка через Associated Data (AAD)
+Для предотвращения атак типа десинхронизации (tampering заголовка с целью вызова сбоя состояния KDF), заголовок сообщения (первые 72 байта для Bootstrap-сообщения или 40 байт для стандартного сообщения) в обязательном порядке используется в качестве **Associated Data (AAD)** при шифровании и расшифровке AES-256-GCM.
 
 ---
 
-## Шаг 2: Математика KDF и криптографические примитивы (`crypto.js`)
+## 2. Схема хранения данных в IndexedDB (`storage.js`)
 
-Используем стандартные примитивы WebCrypto: `HKDF-SHA256` для корневой цепочки и `HMAC-SHA256` для симметричных цепочек.
+Мы обновляем схему базы данных. При обновлении `DB_VERSION` в `openDB()` создается дополнительное хранилище для пропущенных ключей.
 
-### Функции KDF в `crypto.js`:
+### Обновленная таблица `sessions`
+Вместо одного поля `sharedSecret` хранится состояние Double Ratchet:
+* `user_id` (PK, number)
+* `device_id` (PK, number)
+* `root_key` (Uint8Array, 32 байта)
+* `send_chain_key` (Uint8Array, 32 байта / null)
+* `recv_chain_key` (Uint8Array, 32 байта / null)
+* `our_dh_private_jwk` (Object, private key в JWK формате. *Примечание:* Хранение в открытом виде — компромисс веб-средств; для защиты можно шифровать локальную БД с помощью ключа на базе пароля пользователя).
+* `our_dh_public_raw` (Uint8Array, 32 байта)
+* `their_dh_public_raw` (Uint8Array, 32 байта / null)
+* `n_send` (number)
+* `n_recv` (number)
+* `pn` (number, длина предыдущей отправляющей цепочки)
+* `created_at` (number)
 
-1. **`kdf_rk(rootKeyBytes, dhSharedSecretBytes)`**:
-   * Принимает текущий 32-байтный `root_key` (в качестве salt) и вычисленный общий секрет DH (IKM).
-   * Вызывает HKDF-Extract: `PRK = HKDF-Extract(salt=rootKeyBytes, IKM=dhSharedSecretBytes)`.
-   * Выводит два 32-байтных ключа (через HKDF-Expand): `new_root_key` и `new_chain_key`.
-   * **Коррекция:** Параметр `info` должен быть явно задан как пустая строка `""` или `"DoubleRatchetRoot"`. Ни в коем случае нельзя использовать/переиспользовать `info="X3DH"`, чтобы исключить пересечение доменов ключей.
-   
-2. **`kdf_ck(chainKeyBytes)`**:
-   * Принимает текущий `chain_key`.
-   * Вычисляет два значения с помощью HMAC-SHA256:
-     * `message_key = HMAC(chainKeyBytes, 0x01)`
-     * `new_chain_key = HMAC(chainKeyBytes, 0x02)`
-   * **Коррекция:** Для WebCrypto API `chainKeyBytes` должен быть импортирован как объект `CryptoKey` с параметрами `{ name: "HMAC", hash: "SHA-256" }` и правами `["sign"]`. Вычисление HMAC производится через `subtle.sign("HMAC", keyObj, dataBytes)`, где `dataBytes` — это `0x01` или `0x02` в виде Uint8Array.
+### Новое хранилище `skipped_keys`
+Для масштабируемости и чистоты структуры пропущенные ключи выносятся в отдельный Object Store:
+* **Название store:** `skipped_keys`
+* **KeyPath:** `["user_id", "device_id", "dh_pub_hex", "n"]` (составной PK для быстрого точечного поиска)
+* **Поля записи:**
+  * `user_id` (number)
+  * `device_id` (number)
+  * `dh_pub_hex` (string, шестнадцатеричное представление публичного ключа отправителя)
+  * `n` (number, порядковый номер сообщения в цепочке)
+  * `key_bytes` (Uint8Array, 32 байта — Message Key)
+  * `created_at` (number, timestamp вставки для FIFO вытеснения)
+* **Индекс:** `session_time_idx` по полям `["user_id", "device_id", "created_at"]` для эффективной выборки и очистки старых записей конкретной сессии.
 
----
-
-## Шаг 3: Формат пакетов и транспорт (С обратной совместимостью)
-
-Для работы Double Ratchet сообщения должны переносить заголовок `{ dh_pub, n, pn }`. Существует два варианта реализации:
-
-### Вариант А: Поля на уровне WebSocket (Изменение структуры протокола)
-Поля добавляются напрямую в структуры `MsgSend` и `MsgRecv`.
-* **MsgSend** = `{ to_user_id, cipher_bytes, msg_id, dh_pub, n, pn }`
-* **MsgRecv** = `{ from_user_id, from_device_id, cipher_bytes, msg_id, ts, dh_pub, n, pn }`
-* *Плюсы:* Прозрачная структура пакетов.
-* *Минусы:* Немедленно ломает обратную совместимость. Требует изменения `protocol.go` и `client.go` на Go-сервере, а также одновременного обновления всех клиентов.
-
-### Вариант Б: Инкапсуляция в `cipher_bytes` (Упаковка на стороне клиента) — РЕКОМЕНДУЕТСЯ
-Заголовок упаковывается клиентом внутрь поля `cipher_bytes`. Сервер по-прежнему пересылает `cipher_bytes` как непрозрачный массив байтов, ничего не зная о внутренностях Double Ratchet.
-* *Схема упаковки (Wire Format):*
-  `[dh_pub (32 байта) || n (4 байта, Big-Endian) || pn (4 байта, Big-Endian) || iv (12 байт) || aes_ciphertext]`
-* *Плюсы:* **Полная обратная совместимость на сервере.** Серверный код вообще не меняется. Клиенты могут обновляться независимо.
-* *Минусы:* Клиент должен самостоятельно парсить префикс `cipher_bytes`.
-
----
-
-## Шаг 4: Реализация логики отправки и приема
-
-### А. Логика отправки сообщения
-1. Считываем сессию из IndexedDB.
-2. Делаем шаг симметричного хлыста для отправки: `(new_send_chain_key, message_key) = kdf_ck(send_chain_key)`.
-3. Сохраняем `send_chain_key = new_send_chain_key`.
-4. Шифруем сообщение с помощью `message_key` (`AES-256-GCM`).
-5. Формируем заголовок сообщения: `dh_pub = our_dh_public_raw`, `n = n_send`, `pn = pn`.
-6. Увеличиваем счетчик отправленных сообщений `n_send` на 1.
-7. Сохраняем обновленную сессию в IndexedDB.
-8. Отправляем сообщение получателю (используя выбранный формат из Шага 3).
-
-### Б. Логика приема сообщения
-При получении сообщения с заголовком `{ dh_pub, n, pn, ciphertext }`:
-1. Считываем сессию из IndexedDB.
-2. **Проверка пропущенных ключей (Out-of-order)**:
-   * Проверяем, нет ли ключа для `dh_pub` и `n` в `skipped_keys`.
-   * Если есть: расшифровываем сообщение с его помощью, удаляем ключ из `skipped_keys` в БД, сохраняем сообщение. Выходим.
-3. **Проверка нового DH-ключа (DH Ratchet Step)**:
-   * Если полученный `dh_pub` отличается от `their_dh_public_raw`, значит, отправитель сделал шаг DH-хлыста.
-   * **Сохраняем пропущенные ключи старой принимающей цепочки**:
-     * Вызываем `SkipMessageKeys(pn)`: проходим в цикле от текущего `n_recv` до `pn - 1`.
-     * На каждом шаге `i` вычисляем `(recv_chain_key, message_key) = kdf_ck(recv_chain_key)`.
-     * Сохраняем `message_key` в `skipped_keys` под ключом `their_dh_public_raw + "-" + i` (с контролем лимита 1000 ключей).
-   * **Выполняем шаги DH-хлыста (Два шага DH)**:
-     * **Первый DH (вычисление принимающей цепочки)**:
-       * Вычисляем `shared_secret_1 = DH(our_dh_private, dh_pub)` (используем текущий/старый приватный ключ и новый публичный ключ отправителя).
-       * `(new_root_key, new_recv_chain_key) = kdf_rk(root_key, shared_secret_1)`.
-     * **Генерация нового ключа**:
-       * Генерируем нашу новую локальную DH-пару (`new_our_dh`).
-     * **Второй DH (вычисление отправляющей цепочки)**:
-       * Вычисляем `shared_secret_2 = DH(new_our_dh_private, dh_pub)` (используем наш новый приватный ключ и тот же публичный ключ отправителя).
-       * `(new_root_key, new_send_chain_key) = kdf_rk(new_root_key, shared_secret_2)`.
-     * **Обновление состояния**:
-       * `their_dh_public_raw = dh_pub`
-       * `our_dh_private_jwk = new_our_dh.privJwk`, `our_dh_public_raw = new_our_dh.pubRaw`
-       * `root_key = new_root_key`
-       * `recv_chain_key = new_recv_chain_key`
-       * `send_chain_key = new_send_chain_key`
-       * Сбрасываем счетчики: `pn = n_send`, `n_send = 0`, `n_recv = 0`.
-4. **Сохраняем пропущенные сообщения в текущей цепочке**:
-   * Если `n > n_recv`, вызываем `SkipMessageKeys(n)`: проходим циклом от `n_recv` до `n - 1`, вычисляя ключи сообщений и складывая их в `skipped_keys`.
-5. **Вычисляем ключ текущего сообщения**:
-   * `(new_recv_chain_key, message_key) = kdf_ck(recv_chain_key)`.
-   * Обновляем `recv_chain_key = new_recv_chain_key`.
-   * Устанавливаем `n_recv = n + 1`.
-6. Расшифровываем `ciphertext` с помощью `message_key`.
-7. Сохраняем обновленное состояние сессии в IndexedDB.
+### Алгоритм транзакционного FIFO вытеснения для `skipped_keys`:
+Чтобы избежать race conditions при одновременной обработке сообщений, вставка нового ключа выполняется в рамках единой `readwrite` транзакции:
+1. Запускается `readwrite` транзакция по таблице `skipped_keys`.
+2. Запрашивается количество записей для сессии `(user_id, device_id)` через индекс `session_time_idx`.
+3. Если count >= 1000:
+   * Открывается курсор по `session_time_idx` в диапазоне сессии.
+   * Первая (самая старая по времени) запись удаляется.
+4. Выполняется запись (`put`) новой записи: `{ user_id, device_id, dh_pub_hex, n, key_bytes, created_at: Date.now() }`.
 
 ---
 
-## Шаг 5: Инициализация сессии на базе X3DH
+## 3. Начальное состояние Ratchet и Bootstrap сессии
 
-Начальные ключи для Double Ratchet выводятся из общего секрета X3DH:
-* `sharedSecret` из X3DH становится начальным `root_key` (`SK`).
-* **Инициатор (Алиса)**:
-  * Инициализирует `root_key = SK`.
-  * `their_dh_public_raw = their_SPK_Pub`.
-  * Генерирует эфемерный DH-ключ `our_dh`.
-  * Вычисляет `shared_secret = DH(our_dh_private, their_dh_public_raw)`.
-  * `(new_root_key, send_chain_key) = kdf_rk(root_key, shared_secret)`.
-  * `recv_chain_key = null`.
-  * `n_send = 0`, `n_recv = 0`, `pn = 0`.
-  * Алиса может сразу отправлять сообщения, используя `send_chain_key`.
-* **Получатель (Боб)**:
-  * Инициализирует `root_key = SK`.
-  * Наш текущий DH-ключ равен `SPK` (поскольку именно его публичную часть Алиса использовала для первого DH-согласования).
-  * `their_dh_public_raw = null` (будет инициализирован при получении первого сообщения от Алисы).
-  * `send_chain_key = null`, `recv_chain_key = null`.
-  * `n_send = 0`, `n_recv = 0`, `pn = 0`.
-  * При получении первого сообщения от Алисы, ее эфемерный ключ `dh_pub` (отличающийся от `null`) автоматически триггерит стандартный шаг DH-хлыста:
-    * `shared_secret_1 = DH(SPK_private, dh_pub)` -> `recv_chain_key`
-    * Генерируется новая DH-пара Боба `new_our_dh`.
-    * `shared_secret_2 = DH(new_our_dh_private, dh_pub)` -> `send_chain_key`
+### Алиса (Инициатор сессии)
+Алиса знает публичный ключ Боба (`their_SPK_Pub`) и генерирует свою первую эфемерную пару `our_dh`.
+* `root_key` = `SK` (X3DH Shared Secret)
+* `their_dh_public_raw` = `their_SPK_Pub`
+* `our_dh_private_jwk` = `our_dh.privJwk`, `our_dh_public_raw` = `our_dh.pubRaw`
+* Вычисляет `shared_secret = DH(our_dh, their_SPK_Pub)`
+* `(new_root_key, send_chain_key) = KDF_RK(root_key, shared_secret, "DoubleRatchetRoot")`
+* `recv_chain_key` = `null` (инициализируется при первом ответе от Боба)
+* `n_send` = `0`, `n_recv` = `0`, `pn` = `0`
+
+### Боб (Получатель первого сообщения) — Bootstrap первой принятой сессии
+
+#### Сигнатура `getOrEstablishReceiverSession`:
+```javascript
+export async function getOrEstablishReceiverSession(fromUserId, fromDeviceId, sessionInitEk, initialDHPub)
+```
+
+#### Алгоритм Bootstrap на стороне Боба:
+1. Если сессия уже существует в БД — возвращаем её.
+2. Иначе, выполняем X3DH responder: `SK = x3dhRespond(ourIKPriv, ourSPKPriv, null, theirIKPub, sessionInitEk)`.
+3. Создаем объект сессии в начальном состоянии Боба:
+   * `root_key` = `SK`
+   * `our_dh_private_jwk` = Bob_SPK_private_jwk (наш Signed Prekey используется как начальный DH-ключ)
+   * `our_dh_public_raw` = Bob_SPK_pubRaw
+   * `their_dh_public_raw` = `null`
+   * `send_chain_key` = `null`, `recv_chain_key` = `null`
+   * `n_send` = `0`, `n_recv` = `0`, `pn` = `0`
+4. Немедленно выполняем **первый DH-ratchet step** на базе полученного из заголовка первого сообщения `initialDHPub` (эфемера Алисы):
+   * Вычисляем `shared_secret_1 = DH(our_SPK_private, initialDHPub)`.
+   * Выводим `(root_key, recv_chain_key) = KDF_RK(root_key, shared_secret_1, "DoubleRatchetRoot")`.
+   * Генерируем новую DH-пару Боба `new_our_dh`.
+   * Вычисляем `shared_secret_2 = DH(new_our_dh_private, initialDHPub)`.
+   * Выводим `(root_key, send_chain_key) = KDF_RK(root_key, shared_secret_2, "DoubleRatchetRoot")`.
+   * Обновляем состояние сессии:
+     * `their_dh_public_raw` = `initialDHPub`
+     * `our_dh_private_jwk` = `new_our_dh.privJwk`, `our_dh_public_raw` = `new_our_dh.pubRaw`
+     * `root_key` = `root_key`, `recv_chain_key` = `recv_chain_key`, `send_chain_key` = `send_chain_key`
+     * Сбрасываем счетчики: `pn = 0`, `n_send = 0`, `n_recv = 0`.
+5. Сохраняем готовую сессию в IndexedDB и возвращаем её.
+
+> [!IMPORTANT]
+> **Атомарность Bootstrap:**
+> Процедура Bootstrap-инициализации сессии получателя и расшифровка самого первого входящего сообщения должны выполняться **строго атомарно** в рамках одного и того же синхронного/асинхронного потока выполнения (в одном обработчике `onMsgRecvGlobal`). Разделение этих шагов на независимые события или прерывания не допускается, чтобы избежать гонки состояний KDF.
 
 ---
 
-## Резюме изменений по файлам
+## 4. Спецификация логики шифрования и дешифрования
 
-1. **`client/js/crypto.js`**:
-   * Добавить функции `kdf_rk`, `kdf_ck` с правильным WebCrypto импортом и параметрами.
-   * Добавить вспомогательные методы для работы с DH-хлыстом.
-2. **`client/js/storage.js`**:
-   * Обновить логику `saveSession`, `getSession` под новую структуру данных.
-   * Реализовать логику `SkipMessageKeys` с лимитом 1000 ключей и FIFO вытеснением.
-3. **`client/js/ui/chat.js`**:
-   * Обновить `ensureSession` и логику отправки/приема для упаковки/распаковки заголовка Double Ratchet (по Варианту Б).
-4. **`server/internal/ws/protocol.go` и `server/internal/ws/client.go`**:
-   * В случае выбора Варианта Б изменения на сервере **не требуются**.
-   * В случае выбора Варианта А — расширить структуры MsgSend/MsgRecv и поддержать проброс новых полей в `client.go`.
+### Шаг симметричного хлыста (`KDF_CK`)
+Для WebCrypto:
+1. Импортируем `chain_key` как HMAC-ключ:
+   ```javascript
+   const key = await subtle.importKey(
+     "raw", chainKeyBytes,
+     { name: "HMAC", hash: "SHA-256" },
+     false, ["sign"]
+   );
+   ```
+2. Вычисляем HMAC:
+   * `message_key = await subtle.sign("HMAC", key, new Uint8Array([0x01]))` (берутся первые 32 байта)
+   * `new_chain_key = await subtle.sign("HMAC", key, new Uint8Array([0x02]))`
+
+### Отправка сообщения
+1. `(new_send_chain_key, message_key) = KDF_CK(send_chain_key)`
+2. `send_chain_key = new_send_chain_key`
+3. Вычисляем `ciphertext` с помощью `message_key` и AAD.
+   * Для первого сообщения AAD: `[session_init_ek || our_dh_public_raw || n_send || pn]` (72 байта)
+   * Для последующих сообщений AAD: `[our_dh_public_raw || n_send || pn]` (40 байт)
+4. Формируем итоговый `cipher_bytes`.
+5. `n_send = n_send + 1`
+6. Сохраняем сессию.
+
+### Прием сообщения
+При получении `cipher_bytes`:
+1. Проверяем наличие установленной сессии с отправителем:
+   * **Если сессия отсутствует:** парсим входящий пакет как **Bootstrap-пакет (72 байта префикса)**.
+     Извлекаем: `session_init_ek` (32 B), `dh_pub` (32 B), `n` (4 B), `pn` (4 B), `iv` (12 B), `ciphertext`.
+     Атомарно запускаем Bootstrap (`getOrEstablishReceiverSession`), получая готовую сессию, после чего переходим к пункту 5 (так как DH-хлыст уже продвинут в Bootstrap).
+   * **Если сессия существует:** парсим входящий пакет как **Стандартный пакет (40 байт префикса)**.
+     Извлекаем: `dh_pub` (32 B), `n` (4 B), `pn` (4 B), `iv` (12 B), `ciphertext`.
+2. Проверяем наличие ключа в `skipped_keys` по `(user_id, device_id, dh_pub_hex, n)`:
+   * Если найден:
+     * Расшифровываем `ciphertext` с помощью сохраненного `key_bytes` и соответствующего AAD.
+     * Удаляем ключ из `skipped_keys`.
+     * Возвращаем текст.
+   * Если не найден, продолжаем.
+3. **Обработка старых/дублированных сообщений (Правило n < n_recv):**
+   * Если `dh_pub === their_dh_public_raw` и при этом `n < n_recv`:
+     * > [!WARNING]
+     * > Поскольку ключа в `skipped_keys` нет, это означает, что сообщение уже было успешно обработано ранее (дубликат) или ключ был вытеснен из-за превышения лимита. **Сообщение отбрасывается (discard/ignore)**, выбрасывается исключение дешифрования.
+4. Проверяем смену DH-ключа (`dh_pub !== their_dh_public_raw`):
+   * Если сменился (выполняем DH Ratchet):
+     * **`SkipMessageKeys(pn)`**: для каждого `i` от `n_recv` до `pn - 1`:
+       * `(recv_chain_key, skipped_key) = KDF_CK(recv_chain_key)`
+       * Сохраняем `skipped_key` в `skipped_keys` (с FIFO вытеснением).
+     * **Первый DH:** `shared_secret_1 = DH(our_dh_private, dh_pub)`
+     * `(new_root_key, new_recv_chain_key) = KDF_RK(root_key, shared_secret_1, "DoubleRatchetRoot")`
+     * **Генерация нового ключа:** `new_our_dh = GENERATE_DH()`
+     * **Второй DH:** `shared_secret_2 = DH(new_our_dh_private, dh_pub)`
+     * `(new_root_key, new_send_chain_key) = KDF_RK(new_root_key, shared_secret_2, "DoubleRatchetRoot")`
+     * Обновляем состояние сессии: `root_key = new_root_key`, `recv_chain_key = new_recv_chain_key`, `send_chain_key = new_send_chain_key`, `our_dh_private_jwk = new_our_dh.privJwk`, `our_dh_public_raw = new_our_dh.pubRaw`, `their_dh_public_raw = dh_pub`.
+     * Сбрасываем: `pn = n_send`, `n_send = 0`, `n_recv = 0`.
+5. **`SkipMessageKeys(n)`**: для каждого `i` от `n_recv` до `n - 1`:
+   * `(recv_chain_key, skipped_key) = KDF_CK(recv_chain_key)`
+   * Сохраняем `skipped_key` в `skipped_keys` (с FIFO вытеснением).
+6. **Вычисление текущего ключа сообщения:**
+   * `(new_recv_chain_key, message_key) = KDF_CK(recv_chain_key)`
+   * `recv_chain_key = new_recv_chain_key`
+   * `n_recv = n + 1`
+7. Расшифровываем `ciphertext` с помощью `message_key` и AAD.
+8. Сохраняем обновленную сессию в IndexedDB.
+
+---
+
+## 5. Миграция легаси-сессий
+
+Так как старые сессии хранят только статический `sharedSecret` без необходимых счетчиков и эфемерных DH-ключей, автоматическая миграция криптографического состояния невозможна.
+
+### Стратегия миграции: Автоматический сброс (One-time Reset)
+1. При чтении сессии из базы данных (`getSession`), если у нее отсутствует поле `root_key` (или заполнено старое поле `sharedSecret`):
+   * Сессия удаляется из IndexedDB.
+   * Метод возвращает `null`.
+2. Это прозрачно инициирует стандартный флоу:
+   * **При отправке:** `ensureSession` не находит сессию, запрашивает новый ключевой бандл получателя через WebSocket (0x10) и инициализирует полноценное состояние Double Ratchet.
+   * **При получении:** получатель не находит сессию, запрашивает ключевой бандл отправителя через WebSocket (0x10) и производит инициализацию со своей стороны.
+3. Сообщения, пришедшие в переходный период со старыми ключами, могут не расшифроваться, поэтому обновление должно сопровождаться очисткой оффлайн-очереди на сервере при обновлении схемы.
+
+---
+
+## 6. Пошаговый план изменений по файлам
+
+### 1. `client/js/crypto.js`
+* Добавить экспорт функций `kdf_rk(rootKey, dhSharedSecret, info)` и `kdf_ck(chainKey)`.
+* Реализовать правильный импорт ключей HMAC и deriveBits для KDF.
+* Обновить функции `encryptMessage` и `decryptMessage` для поддержки Associated Data (AAD) в качестве третьего параметра.
+
+### 2. `client/js/storage.js`
+* Обновить функцию инициализации БД `openDB()`: добавить создание objectStore `"skipped_keys"` с PK `["user_id", "device_id", "dh_pub_hex", "n"]` (где `user_id` и `device_id` — типы `number`) и индексом по `created_at`.
+* Обновить `getSession(userId, deviceId)`: добавить логику детектирования старых легаси-сессий (содержащих `sharedSecret`) с их удалением и возвратом `null` для перезапуска сессии.
+* Добавить экспортируемые функции для управления `skipped_keys`:
+  * `saveSkippedKey(userId, deviceId, dhPubHex, n, keyBytes)` с лимитом в 1000 записей и транзакционным FIFO-вытеснением старых по индексу `session_time_idx`.
+  * `getAndRemoveSkippedKey(userId, deviceId, dhPubHex, n)`.
+* Обновить `getOrEstablishReceiverSession` для поддержки передачи `sessionInitEk` и выполнения первого DH-шага в процессе Bootstrap сессии Боба.
+
+### 3. `client/js/app.js`
+* Переписать глобальный обработчик входящих сообщений `onMsgRecvGlobal`:
+  1. Проверить наличие сессии.
+  2. Если сессия отсутствует, извлечь 72 байта заголовка (`session_init_ek`, `dh_pub`, `n`, `pn`, `iv`). Атомарно выполнить Bootstrap сессии Боба и расшифровку.
+  3. Если сессия существует, извлечь 40 байт заголовка (`dh_pub`, `n`, `pn`, `iv`).
+  4. Выполнить логику приема Double Ratchet (поиск в `skipped_keys`, проверка правила `n < n_recv` для отброса устаревших дубликатов, проверка поворота DH, вызовы `SkipMessageKeys`, вычисление `message_key`).
+  5. Вызвать `decryptMessage` с полученным `message_key`, используя заголовок в качестве AAD.
+  6. Сохранить обновленную сессию.
+
+### 4. `client/js/ui/chat.js`
+* Обновить функцию отправки сообщений `sendMessage`:
+  1. Вызвать `ensureSession` для получения состояния Double Ratchet.
+  2. Выполнить симметричный шаг отправки (`KDF_CK`), получить `message_key`.
+  3. Зашифровать сообщение через `encryptMessage(message_key, text, headerBytes)`.
+  4. Сформировать результирующий `cipher_bytes` в виде `[session_init_ek || dh_pub || n || pn || iv || ciphertext]` (если это первое отправляемое сообщение в сессии) или `[dh_pub || n || pn || iv || ciphertext]` (для последующих сообщений).
+  5. Обновить состояние сессии и сохранить ее.
+* Обновить `ensureSession` для правильной инициализации Алисы при установке новой сессии.
