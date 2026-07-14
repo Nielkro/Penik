@@ -1,7 +1,4 @@
-/* E2EE: X25519 key agreement + AES-256-GCM
-   X3DH key agreement is implemented for session establishment.
-   The Double Ratchet is stubbed — sharedSecret is reused per session
-   until the ratchet layer is added on top. */
+/* E2EE: X25519 key agreement + AES-256-GCM + Double Ratchet protocol */
 
 const subtle = crypto.subtle;
 
