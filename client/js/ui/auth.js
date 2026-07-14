@@ -9,7 +9,7 @@ import {
   encryptIdentityEnvelope,
   decryptIdentityEnvelope,
 } from "../crypto.js";
-import { saveIdentity, saveOPKs, getIdentity, importIdentityData } from "../storage.js";
+import { saveIdentity, saveOPKs, getIdentity, importIdentityData, saveContact, saveMessage } from "../storage.js";
 import { navigate, setCurrentUser } from "../app.js";
 import { el, showToast, spinner, showPinModal } from "./components.js";
 
@@ -119,30 +119,20 @@ async function handleRegister(inputs, btn, errEl) {
         user_id:      res.user_id,
       };
 
-      let backupPassword = password;
-      let backupMethod = "password";
+      let backupPassword = "";
+      const backupMethod = "pin";
 
-      const usePin = confirm(
-        "Хотите защитить резервную копию ключей E2EE отдельным PIN-кодом/паролем?\n\n" +
-        "Если вы выберете 'Отмена', резервная копия будет зашифрована вашим паролем аккаунта."
-      );
-      if (usePin) {
-        let pin = "";
-        while (pin.length < 6) {
-          pin = await showPinModal("Придумайте PIN-код или пароль для резервной копии ключей (не менее 6 символов):", "PIN-код (от 6 символов)") || "";
-          if (pin === "") {
-            backupMethod = "password";
-            backupPassword = password;
-            break;
-          }
-          if (pin.length < 6) {
-            alert("Слишком короткий пароль/PIN (минимум 6 символов)!");
-          } else {
-            backupMethod = "pin";
-            backupPassword = pin;
-          }
+      while (backupPassword.length < 6) {
+        backupPassword = await showPinModal("Придумайте PIN-код или пароль для резервной копии ключей E2EE (не менее 6 символов):", "PIN-код (от 6 символов)") || "";
+        if (backupPassword === "") {
+          alert("PIN-код обязателен для создания резервной копии E2EE!");
+          continue;
+        }
+        if (backupPassword.length < 6) {
+          alert("Слишком короткий пароль/PIN (минимум 6 символов)!");
         }
       }
+      sessionStorage.setItem("backup_pin", backupPassword);
 
       const env = await encryptIdentityEnvelope(dataToBackup, backupPassword);
       const backupWrapper = {
@@ -258,9 +248,13 @@ async function handleLogin(inputs, btn, errEl) {
             throw new Error("Неподдерживаемая версия облачного бэкапа");
           }
 
-          let backupPassword = password;
-          if (backupData.method === "pin") {
-            backupPassword = await showPinModal("Этот аккаунт защищен отдельным паролем/PIN для E2EE. Введите PIN-код бэкапа:", "PIN-код бэкапа") || "";
+          let backupPassword = "";
+          while (backupPassword.length < 6) {
+            backupPassword = await showPinModal("Введите PIN-код для расшифрования резервной копии E2EE:", "PIN-код бэкапа") || "";
+            if (backupPassword === "") {
+              alert("PIN-код обязателен для восстановления резервной копии!");
+              continue;
+            }
           }
 
           const envelope = {
@@ -272,6 +266,7 @@ async function handleLogin(inputs, btn, errEl) {
           };
 
           const decrypted = await decryptIdentityEnvelope(envelope, backupPassword);
+          sessionStorage.setItem("backup_pin", backupPassword);
 
           // Validate keys mathematically
           const ikPrivKey = await importX25519Priv(decrypted.ik_priv_jwk);
@@ -299,6 +294,17 @@ async function handleLogin(inputs, btn, errEl) {
             privJwk: decrypted.spk_priv_jwk,
             sig: new Uint8Array(decrypted.spk_sig),
           };
+
+          if (decrypted.contacts && Array.isArray(decrypted.contacts)) {
+            for (const c of decrypted.contacts) {
+              await saveContact(c);
+            }
+          }
+          if (decrypted.messages && Array.isArray(decrypted.messages)) {
+            for (const m of decrypted.messages) {
+              await saveMessage(m);
+            }
+          }
 
           restored = true;
         }

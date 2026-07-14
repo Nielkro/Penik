@@ -9,7 +9,7 @@ import {
   updateMessageDelivered, getContact, saveContact, getAllContacts,
   getIdentity, deleteChatData, clearUserSessions
 } from "../storage.js";
-import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcksQueue } from "../app.js";
+import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcksQueue, triggerBackgroundBackup } from "../app.js";
 import { avatar, formatTime, formatDate, el, showToast, spinner, showSafetyNumberModal } from "./components.js";
 
 // Helper to convert a number to a 32-bit Big-Endian Uint8Array
@@ -527,6 +527,7 @@ export async function renderChat(container, userId) {
       };
       await saveMessage(storedMsg);
       await saveContact({ ...contact, last_message: text, last_ts: now });
+      triggerBackgroundBackup();
 
       const oldBubble = messagesEl.querySelector(`[data-msg-id="${tempId}"]`);
       if (oldBubble) oldBubble.dataset.msgId = msgId;

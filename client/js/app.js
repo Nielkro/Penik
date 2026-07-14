@@ -1,4 +1,4 @@
-import { getToken, setToken, getUserById, apiGet } from './api.js';
+import { getToken, setToken, getUserById, apiGet, apiPost } from './api.js';
 import {
   openDB, getIdentity, getOrEstablishReceiverSession, saveMessage,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
@@ -7,7 +7,8 @@ import {
 } from './storage.js';
 import {
   decryptMessage, importX25519Priv, importX25519Pub,
-  diffieHellman, generateDH, kdf_rk, kdf_ck, decodeKey
+  diffieHellman, generateDH, kdf_rk, kdf_ck, decodeKey,
+  encryptIdentityEnvelope, encodeKey
 } from './crypto.js';
 import { ws } from './ws.js';
 import { renderAuth } from './ui/auth.js';
@@ -535,6 +536,7 @@ async function onMsgRecvGlobal(payload) {
   if (_chatListUpdateCallback) {
     _chatListUpdateCallback();
   }
+  triggerBackgroundBackup();
 }
 
 async function onMsgAckGlobal(payload) {
@@ -658,6 +660,80 @@ export async function syncMessageHistory() {
     triggerChatListUpdate();
   } catch (err) {
     console.error("Failed to sync message history:", err);
+  }
+}
+
+let backupTimeout = null;
+export function triggerBackgroundBackup() {
+  const pin = sessionStorage.getItem("backup_pin");
+  if (!pin) return;
+
+  if (backupTimeout) clearTimeout(backupTimeout);
+  backupTimeout = setTimeout(() => {
+    exportAndUploadBackup();
+  }, 5000); // 5 seconds debounce
+}
+
+export async function exportAndUploadBackup() {
+  const pin = sessionStorage.getItem("backup_pin");
+  if (!pin) return;
+
+  try {
+    const identity = await getIdentity();
+    if (!identity) return;
+
+    await openDB();
+    const contacts = await new Promise((resolve, reject) => {
+      const transaction = _db.transaction(["contacts"], "readonly");
+      const store = transaction.objectStore("contacts");
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+
+    const messages = await new Promise((resolve, reject) => {
+      const transaction = _db.transaction(["messages"], "readonly");
+      const store = transaction.objectStore("messages");
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+
+    const dataToBackup = {
+      ik_priv_jwk: identity.ik_priv_jwk,
+      ik_pub_raw: Array.from(identity.ik_pub_raw),
+      sig_priv_jwk: identity.sig_priv_jwk,
+      sig_pub_raw: Array.from(identity.sig_pub_raw),
+      spk_priv_jwk: identity.spk_priv_jwk,
+      spk_pub_raw: Array.from(identity.spk_pub_raw),
+      spk_sig: Array.from(identity.spk_sig),
+      user_id: identity.user_id,
+      contacts: contacts,
+      messages: messages
+    };
+
+    const env = await encryptIdentityEnvelope(dataToBackup, pin);
+    const backupWrapper = {
+      version: 2,
+      method: "pin",
+      encrypted_dek_b64: encodeKey(env.encrypted_dek),
+      iv_kek_b64: encodeKey(env.iv_kek),
+      salt_kek_b64: encodeKey(env.salt_kek),
+      encrypted_keys_b64: encodeKey(env.encrypted_keys),
+      iv_dek_b64: encodeKey(env.iv_dek)
+    };
+
+    const jsonStr = JSON.stringify(backupWrapper);
+    const encoder = new TextEncoder();
+    const combinedBlob = encoder.encode(jsonStr);
+
+    await apiPost("/keys/backup", {
+      encrypted_blob: encodeKey(combinedBlob),
+      kdf_salt: encodeKey(env.salt_kek)
+    });
+    console.log("Cloud E2EE database backup updated successfully.");
+  } catch (err) {
+    console.error("Failed to update cloud backup:", err);
   }
 }
 
