@@ -563,6 +563,34 @@ export async function updateMsgId(oldId, newId) {
   });
 }
 
+export async function findAndResolvePendingSentMessage(chatId, timestamp, serverId) {
+  await openDB();
+  return new Promise((resolve) => {
+    const transaction = _db.transaction(["messages"], "readwrite");
+    const store = transaction.objectStore("messages");
+    store.openCursor().onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const msg = cursor.value;
+        const timeDiff = Math.abs(msg.created_at - timestamp * 1000);
+        const isTemp = typeof msg.msg_id === "string" && (msg.msg_id.startsWith("tmp-") || msg.msg_id.includes("-"));
+        
+        if (String(msg.chat_id) === String(chatId) && isTemp && timeDiff < 10000) {
+          cursor.delete();
+          msg.msg_id = serverId;
+          msg.delivered = 1;
+          store.put(msg);
+          resolve(true);
+          return;
+        }
+        cursor.continue();
+      } else {
+        resolve(false);
+      }
+    };
+  });
+}
+
 export async function clearIndexedDB() {
   await openDB();
   return new Promise((resolve, reject) => {
