@@ -134,21 +134,78 @@ async function ensureSession(toUserId) {
   })).sort((a, b) => a.device_id - b.device_id);
   const activeDevice = devices[devices.length - 1];
 
+  const toRaw = v => v instanceof Uint8Array ? v : decodeKey(v);
+  const theirIKRaw  = toRaw(activeDevice.ik_pub);
+  let theirIKDH = theirIKRaw;
+  if (theirIKRaw.length === 64) {
+    theirIKDH = theirIKRaw.slice(0, 32);
+  }
+
   // Check if we already have a session for this specific active device
   const existing = await getSession(toUserId, activeDevice.device_id);
-  if (existing) return existing;
+  if (existing) {
+    if (existing.their_ik_pub) {
+      let isSame = true;
+      for (let i = 0; i < 32; i++) {
+        if (existing.their_ik_pub[i] !== theirIKDH[i]) {
+          isSame = false;
+          break;
+        }
+      }
+      if (!isSame) {
+        const systemMsg = {
+          msg_id: crypto.randomUUID(),
+          chat_id: String(toUserId),
+          sender_id: 0,
+          plaintext: "⚠️ Код безопасности изменился!",
+          created_at: Date.now(),
+          delivered: 1
+        };
+        await saveMessage(systemMsg);
+        
+        existing.their_ik_pub = theirIKDH;
+        await saveSession(existing);
+        triggerChatListUpdate();
+      }
+    } else {
+      existing.their_ik_pub = theirIKDH;
+      await saveSession(existing);
+    }
+    return existing;
+  }
+
+  // Check if we have any other session with this user to detect identity key change
+  const anyExisting = await getAnySession(toUserId);
+  if (anyExisting && anyExisting.their_ik_pub) {
+    let isSame = true;
+    for (let i = 0; i < 32; i++) {
+      if (anyExisting.their_ik_pub[i] !== theirIKDH[i]) {
+        isSame = false;
+        break;
+      }
+    }
+    if (!isSame) {
+      const systemMsg = {
+        msg_id: crypto.randomUUID(),
+        chat_id: String(toUserId),
+        sender_id: 0,
+        plaintext: "⚠️ Код безопасности изменился!",
+        created_at: Date.now(),
+        delivered: 1
+      };
+      await saveMessage(systemMsg);
+      triggerChatListUpdate();
+    }
+  }
 
   const identity = await getIdentity();
   if (!identity) throw new Error("Нет локального ключа идентификации");
 
   const ourIKPriv = await importX25519Priv(identity.ik_priv_jwk);
 
-  const toRaw = v => v instanceof Uint8Array ? v : decodeKey(v);
-  const theirIKRaw  = toRaw(activeDevice.ik_pub);
   const theirSPKRaw = toRaw(activeDevice.spk_pub);
   const theirSPKSig = toRaw(activeDevice.spk_sig);
 
-  let theirIKDH = theirIKRaw;
   if (theirIKRaw.length === 64) {
     theirIKDH = theirIKRaw.slice(0, 32);
     const theirIKSig = theirIKRaw.slice(32, 64);
@@ -343,6 +400,16 @@ export async function renderChat(container, userId) {
   loadEl.remove();
 
   function appendMessage(msg, prepend = false) {
+    const isSystem = msg.sender_id === 0;
+    if (isSystem) {
+      const bubble = el("div", { class: "msg-bubble msg-system" },
+        el("span", { class: "msg-text" }, msg.plaintext || "")
+      );
+      bubble.dataset.msgId = msg.msg_id;
+      prepend ? messagesEl.prepend(bubble) : messagesEl.appendChild(bubble);
+      return;
+    }
+
     const isMine = String(msg.sender_id) === String(me && (me.id || me.user_id));
     const ts = msg.created_at || Date.now();
 
