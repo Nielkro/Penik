@@ -237,7 +237,8 @@ export async function getMessages(chatId, limit = 50, before = null) {
     req.onsuccess = (e) => {
       const cursor = e.target.result;
       if (!cursor || results.length >= limit) {
-        resolve(results.reverse());
+        results.sort((a, b) => a.created_at - b.created_at);
+        resolve(results);
         return;
       }
       const msg = cursor.value;
@@ -471,6 +472,31 @@ export async function deleteChatData(userId) {
 
     transaction.oncomplete = () => resolve();
     transaction.onerror = (e) => reject(e.target.error);
+  });
+}
+
+export async function updateMsgId(oldId, newId) {
+  await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = _db.transaction(["messages"], "readwrite");
+    const store = transaction.objectStore("messages");
+    const getReq = store.get(oldId);
+    getReq.onsuccess = () => {
+      const msg = getReq.result;
+      if (!msg) {
+        resolve();
+        return;
+      }
+      const delReq = store.delete(oldId);
+      delReq.onsuccess = () => {
+        msg.msg_id = newId;
+        const putReq = store.put(msg);
+        putReq.onsuccess = () => resolve();
+        putReq.onerror = () => reject(putReq.error);
+      };
+      delReq.onerror = () => reject(delReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
   });
 }
 

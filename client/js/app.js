@@ -2,7 +2,8 @@ import { getToken, setToken, getUserById } from './api.js';
 import {
   openDB, getIdentity, getOrEstablishReceiverSession, saveMessage,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
-  getSession, saveSession, saveSkippedKey, getAndRemoveSkippedKey
+  getSession, saveSession, saveSkippedKey, getAndRemoveSkippedKey,
+  updateMsgId
 } from './storage.js';
 import {
   decryptMessage, importX25519Priv, importX25519Pub,
@@ -22,6 +23,8 @@ function read32BE(buf, offset) {
   const view = new DataView(buf.buffer, buf.byteOffset + offset, 4);
   return view.getUint32(0, false);
 }
+
+export const pendingAcksQueue = [];
 
 /* ── App state ── */
 export const state = {
@@ -543,8 +546,34 @@ async function onOfflineBatchGlobal(payload) {
   }
 }
 
+async function onMsgAckReceivedGlobal(payload) {
+  const serverMsgId = payload.msg_id;
+  if (!serverMsgId) return;
+
+  const pending = pendingAcksQueue.shift();
+  if (!pending) return;
+
+  try {
+    await updateMsgId(pending.tempId, serverMsgId);
+
+    if (_activeChatCallback && String(_activeChatCallback.userId) === String(pending.userId)) {
+      const bubble = document.querySelector(`[data-msg-id="${pending.tempId}"]`);
+      if (bubble) {
+        bubble.dataset.msgId = serverMsgId;
+        const statusEl = bubble.querySelector(".msg-status");
+        if (statusEl) {
+          statusEl.dataset.msgId = serverMsgId;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Failed to process MSG_ACK:", err);
+  }
+}
+
 function setupGlobalWSListeners() {
   ws.on(0x02, onMsgRecvGlobal);
+  ws.on(0x03, onMsgAckReceivedGlobal);
   ws.on(0x04, onMsgAckGlobal);
   ws.on(0x05, onOfflineBatchGlobal);
 }

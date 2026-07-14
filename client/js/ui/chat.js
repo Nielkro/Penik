@@ -9,7 +9,7 @@ import {
   updateMessageDelivered, getContact, saveContact, getAllContacts,
   getIdentity, deleteChatData
 } from "../storage.js";
-import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate } from "../app.js";
+import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcksQueue } from "../app.js";
 import { avatar, formatTime, formatDate, el, showToast, spinner } from "./components.js";
 
 // Helper to convert a number to a 32-bit Big-Endian Uint8Array
@@ -353,6 +353,8 @@ export async function renderChat(container, userId) {
         cipher_bytes: cipherBytes,
         msg_id: msgId,
       });
+
+      pendingAcksQueue.push({ tempId: msgId, userId: userId });
 
       // 5. Update session state
       session.send_chain_key = newChainKey;
