@@ -412,7 +412,6 @@ async function onMsgRecvGlobal(payload) {
           await saveSession(session);
         }
       } catch (err) {
-        console.warn("Standard packet decryption failed, trying Bootstrap fallback...", err);
         isBootstrapFallback = true;
       }
     }
@@ -494,7 +493,7 @@ async function onMsgRecvGlobal(payload) {
 
     plaintext = decryptedText;
   } catch (err) {
-    console.error("Ошибка дешифрования сообщения:", err);
+    console.warn("Не удалось расшифровать сообщение (возможно, отправлено на другое устройство):", err.message || err);
   }
 
   const inMsg = {
