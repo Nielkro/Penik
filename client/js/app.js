@@ -3,7 +3,7 @@ import {
   openDB, getIdentity, getOrEstablishReceiverSession, saveMessage,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   getSession, saveSession, saveSkippedKey, getAndRemoveSkippedKey,
-  updateMsgId
+  updateMsgId, getMessage
 } from './storage.js';
 import {
   decryptMessage, importX25519Priv, importX25519Pub,
@@ -600,14 +600,7 @@ export async function syncMessageHistory() {
     history.sort((a, b) => a.timestamp - b.timestamp);
 
     for (const item of history) {
-      await openDB();
-      const transaction = _db.transaction(["messages"], "readonly");
-      const store = transaction.objectStore("messages");
-      const existing = await new Promise((resolve) => {
-        const req = store.get(item.id);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => resolve(null);
-      });
+      const existing = await getMessage(item.id);
       if (existing) continue;
 
       const peerId = Number(item.sender_id) === myId ? Number(item.recipient_id) : Number(item.sender_id);
