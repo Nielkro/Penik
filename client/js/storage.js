@@ -1,8 +1,11 @@
-import { decryptMessage, x3dhRespond, decodeKey, encodeKey, importX25519Priv } from "./crypto.js";
+import {
+  decryptMessage, x3dhRespond, decodeKey, encodeKey,
+  importX25519Priv, importX25519Pub, diffieHellman, generateDH, kdf_rk, kdf_ck
+} from "./crypto.js";
 import { ws } from "./ws.js";
 
 const DB_NAME = "penik-messenger";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let _db = null;
 
@@ -27,6 +30,10 @@ export function openDB() {
       }
       if (!db.objectStoreNames.contains("opk_pool")) {
         db.createObjectStore("opk_pool", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("skipped_keys")) {
+        const sk = db.createObjectStore("skipped_keys", { keyPath: ["user_id", "device_id", "dh_pub_hex", "n"] });
+        sk.createIndex("session_time_idx", ["user_id", "device_id", "created_at"], { unique: false });
       }
     };
     req.onsuccess = (e) => {
@@ -89,13 +96,110 @@ export async function saveIdentity(identity) {
 
 export async function getSession(userId, deviceId) {
   await openDB();
-  return get(tx("sessions"), [userId, deviceId]);
+  const uId = Number(userId);
+  const dId = Number(deviceId);
+  const session = await get(tx("sessions"), [uId, dId]);
+  if (session) {
+    if (!session.root_key && session.sharedSecret) {
+      // Legacy session: delete and return null
+      await new Promise((resolve, reject) => {
+        const store = tx("sessions", "readwrite");
+        const req = store.delete([uId, dId]);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+      return null;
+    }
+  }
+  return session;
 }
 
 export async function saveSession(session) {
   await openDB();
+  if (session) {
+    session.user_id = Number(session.user_id);
+    session.device_id = Number(session.device_id);
+  }
   return put(tx("sessions", "readwrite"), session);
 }
+
+export async function saveSkippedKey(userId, deviceId, dhPubHex, n, keyBytes) {
+  await openDB();
+  const uId = Number(userId);
+  const dId = Number(deviceId);
+  
+  return new Promise((resolve, reject) => {
+    const transaction = _db.transaction(["skipped_keys"], "readwrite");
+    const store = transaction.objectStore("skipped_keys");
+    const index = store.index("session_time_idx");
+    
+    const range = IDBKeyRange.only([uId, dId]);
+    const countReq = index.count(range);
+    
+    countReq.onsuccess = () => {
+      const count = countReq.result;
+      if (count >= 1000) {
+        const cursorReq = index.openCursor(range, "next");
+        cursorReq.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) {
+            const delReq = cursor.delete();
+            delReq.onsuccess = () => {
+              writeKey();
+            };
+            delReq.onerror = () => reject(delReq.error);
+          } else {
+            writeKey();
+          }
+        };
+        cursorReq.onerror = () => reject(cursorReq.error);
+      } else {
+        writeKey();
+      }
+    };
+    countReq.onerror = () => reject(countReq.error);
+    
+    function writeKey() {
+      const entry = {
+        user_id: uId,
+        device_id: dId,
+        dh_pub_hex: dhPubHex,
+        n: Number(n),
+        key_bytes: keyBytes,
+        created_at: Date.now()
+      };
+      const putReq = store.put(entry);
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    }
+  });
+}
+
+export async function getAndRemoveSkippedKey(userId, deviceId, dhPubHex, n) {
+  await openDB();
+  const uId = Number(userId);
+  const dId = Number(deviceId);
+  const numN = Number(n);
+  
+  return new Promise((resolve, reject) => {
+    const transaction = _db.transaction(["skipped_keys"], "readwrite");
+    const store = transaction.objectStore("skipped_keys");
+    
+    const getReq = store.get([uId, dId, dhPubHex, numN]);
+    getReq.onsuccess = () => {
+      const entry = getReq.result;
+      if (!entry) {
+        resolve(null);
+        return;
+      }
+      const delReq = store.delete([uId, dId, dhPubHex, numN]);
+      delReq.onsuccess = () => resolve(entry.key_bytes);
+      delReq.onerror = () => reject(delReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
 
 export async function getAnySession(userId) {
   await openDB();
@@ -259,7 +363,7 @@ export async function importIdentityData(data) {
   return identity;
 }
 
-export async function getOrEstablishReceiverSession(fromUserId, fromDeviceId, theirEKPub) {
+export async function getOrEstablishReceiverSession(fromUserId, fromDeviceId, sessionInitEk, initialDHPub) {
   let session = await getSession(fromUserId, fromDeviceId);
   if (session) return session;
 
@@ -284,27 +388,101 @@ export async function getOrEstablishReceiverSession(fromUserId, fromDeviceId, th
     theirIKPub = theirIKPub.slice(0, 32);
   }
 
-  const sharedSecret = await x3dhRespond(ourIKPriv, ourSPKPriv, null, theirIKPub, theirEKPub);
+  // 1. Perform X3DH respond to establish initial shared secret (SK)
+  const rootKey = await x3dhRespond(ourIKPriv, ourSPKPriv, null, theirIKPub, sessionInitEk);
+
+  // 2. Import Signed Prekey as our initial DH key pair
+  const spkPriv = await importX25519Priv(identity.spk_priv_jwk);
+  const theirDHPubImported = await importX25519Pub(initialDHPub);
+
+  // 3. First DH-ratchet step
+  const sharedSecret1 = await diffieHellman(spkPriv, theirDHPubImported);
+  const step1 = await kdf_rk(rootKey, sharedSecret1, "DoubleRatchetRoot");
+  let currentRootKey = step1.newRootKey;
+  const recvChainKey = step1.chainKey;
+
+  // 4. Generate new Bob's ephemeral key
+  const newOurDH = await generateDH();
+  const sharedSecret2 = await diffieHellman(newOurDH.privateKey, theirDHPubImported);
+  const step2 = await kdf_rk(currentRootKey, sharedSecret2, "DoubleRatchetRoot");
+  currentRootKey = step2.newRootKey;
+  const sendChainKey = step2.chainKey;
 
   session = {
-    user_id: fromUserId,
-    device_id: fromDeviceId,
-    sharedSecret,
-    ekPubB64: encodeKey(theirEKPub),
+    user_id: Number(fromUserId),
+    device_id: Number(fromDeviceId),
+    root_key: currentRootKey,
+    send_chain_key: sendChainKey,
+    recv_chain_key: recvChainKey,
+    our_dh_private_jwk: newOurDH.privJwk,
+    our_dh_public_raw: newOurDH.pubRaw,
+    their_dh_public_raw: initialDHPub,
+    n_send: 0,
+    n_recv: 0,
+    pn: 0,
     created_at: Date.now()
   };
   await saveSession(session);
   return session;
 }
 
+export async function deleteChatData(userId) {
+  await openDB();
+  const uId = Number(userId);
+  const uIdStr = String(userId);
+
+  return new Promise((resolve, reject) => {
+    const transaction = _db.transaction(["contacts", "messages", "sessions", "skipped_keys"], "readwrite");
+
+    transaction.objectStore("contacts").delete(uId);
+
+    const msgStore = transaction.objectStore("messages");
+    const msgIndex = msgStore.index("chat_id");
+    const msgRange = IDBKeyRange.only(uIdStr);
+    msgIndex.openCursor(msgRange).onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        cursor.delete();
+        cursor.continue();
+      }
+    };
+
+    const sessionStore = transaction.objectStore("sessions");
+    sessionStore.openCursor().onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        if (Number(cursor.value.user_id) === uId) {
+          cursor.delete();
+        }
+        cursor.continue();
+      }
+    };
+
+    const skStore = transaction.objectStore("skipped_keys");
+    skStore.openCursor().onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        if (Number(cursor.value.user_id) === uId) {
+          cursor.delete();
+        }
+        cursor.continue();
+      }
+    };
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = (e) => reject(e.target.error);
+  });
+}
+
 export async function clearIndexedDB() {
   await openDB();
   return new Promise((resolve, reject) => {
-    const transaction = _db.transaction(["identity", "sessions", "contacts", "messages"], "readwrite");
+    const transaction = _db.transaction(["identity", "sessions", "contacts", "messages", "skipped_keys"], "readwrite");
     transaction.objectStore("identity").clear();
     transaction.objectStore("sessions").clear();
     transaction.objectStore("contacts").clear();
     transaction.objectStore("messages").clear();
+    transaction.objectStore("skipped_keys").clear();
     transaction.oncomplete = () => resolve();
     transaction.onerror = (e) => reject(e.target.error);
   });

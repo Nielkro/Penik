@@ -129,12 +129,16 @@ export async function x3dhRespond(ourIKPriv, ourSPKPriv, ourOPKPriv, theirIKPub,
 
 /* ── AES-256-GCM encrypt/decrypt ── */
 
-export async function encryptMessage(sharedSecretBytes, plaintext) {
+export async function encryptMessage(sharedSecretBytes, plaintext, aadBytes = null) {
   const aesKey = await importAESKey(sharedSecretBytes);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const enc = new TextEncoder();
+  const params = { name: 'AES-GCM', iv };
+  if (aadBytes) {
+    params.additionalData = aadBytes;
+  }
   const ciphertext = new Uint8Array(
-    await subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, enc.encode(plaintext))
+    await subtle.encrypt(params, aesKey, enc.encode(plaintext))
   );
   /* Pack iv (12 bytes) + ciphertext together */
   const out = new Uint8Array(12 + ciphertext.length);
@@ -143,14 +147,55 @@ export async function encryptMessage(sharedSecretBytes, plaintext) {
   return out;
 }
 
-export async function decryptMessage(sharedSecretBytes, cipherBytes) {
+export async function decryptMessage(sharedSecretBytes, cipherBytes, aadBytes = null) {
   if (cipherBytes.length < 13) throw new Error('cipher_bytes too short');
   const iv = cipherBytes.slice(0, 12);
   const ciphertext = cipherBytes.slice(12);
   const aesKey = await importAESKey(sharedSecretBytes);
-  const plain = await subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, ciphertext);
+  const params = { name: 'AES-GCM', iv };
+  if (aadBytes) {
+    params.additionalData = aadBytes;
+  }
+  const plain = await subtle.decrypt(params, aesKey, ciphertext);
   return new TextDecoder().decode(plain);
 }
+
+/* ── Double Ratchet KDF Functions ── */
+
+export async function kdf_rk(rootKeyBytes, dhSharedSecretBytes, info = "DoubleRatchetRoot") {
+  const ikmKey = await subtle.importKey('raw', dhSharedSecretBytes, 'HKDF', false, ['deriveBits']);
+  const bits = await subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: rootKeyBytes,
+      info: new TextEncoder().encode(info),
+    },
+    ikmKey,
+    64 * 8
+  );
+  const derived = new Uint8Array(bits);
+  return {
+    newRootKey: derived.slice(0, 32),
+    chainKey: derived.slice(32, 64)
+  };
+}
+
+export async function kdf_ck(chainKeyBytes) {
+  const key = await subtle.importKey(
+    "raw", chainKeyBytes,
+    { name: "HMAC", hash: "SHA-256" },
+    false, ["sign"]
+  );
+  const messageKey = new Uint8Array(
+    await subtle.sign("HMAC", key, new Uint8Array([0x01]))
+  );
+  const newChainKey = new Uint8Array(
+    await subtle.sign("HMAC", key, new Uint8Array([0x02]))
+  );
+  return { newChainKey, messageKey };
+}
+
 
 /* ── Key import/export helpers ── */
 
@@ -180,7 +225,7 @@ export function decodeKey(b64) {
 
 /* ── Internal helpers ── */
 
-async function diffieHellman(privKey, pubKey) {
+export async function diffieHellman(privKey, pubKey) {
   const bits = await subtle.deriveBits(
     { name: 'X25519', public: pubKey },
     privKey,
@@ -188,6 +233,19 @@ async function diffieHellman(privKey, pubKey) {
   );
   return new Uint8Array(bits);
 }
+
+export async function generateDH() {
+  const kp = await subtle.generateKey({ name: 'X25519' }, true, ['deriveKey', 'deriveBits']);
+  const pubRaw = new Uint8Array(await subtle.exportKey('raw', kp.publicKey));
+  const privJwk = await subtle.exportKey('jwk', kp.privateKey);
+  return {
+    privateKey: kp.privateKey,
+    publicKey: kp.publicKey,
+    pubRaw,
+    privJwk
+  };
+}
+
 
 async function hkdf(ikm, length, info) {
   const salt = new Uint8Array(32);
