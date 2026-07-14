@@ -9,13 +9,14 @@ import (
 )
 
 type historyMessageResponse struct {
-	ID          int64  `json:"id"`
-	ChatID      int64  `json:"chat_id"`
-	SenderID    int64  `json:"sender_id"`
-	RecipientID int64  `json:"recipient_id"`
-	CipherBytes []byte `json:"cipher_bytes"`
-	Timestamp   int64  `json:"timestamp"`
-	Delivered   int    `json:"delivered"`
+	ID             int64  `json:"id"`
+	ChatID         int64  `json:"chat_id"`
+	SenderID       int64  `json:"sender_id"`
+	SenderDeviceID int64  `json:"sender_device_id"`
+	RecipientID    int64  `json:"recipient_id"`
+	CipherBytes    []byte `json:"cipher_bytes"`
+	Timestamp      int64  `json:"timestamp"`
+	Delivered      int    `json:"delivered"`
 }
 
 // GetMessageHistory handles GET /api/v1/messages/history.
@@ -24,7 +25,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 		userID := middleware.UserIDFromCtx(r.Context())
 
 		rows, err := database.QueryContext(r.Context(),
-			`SELECT m.id, m.chat_id, d_sender.user_id, d_recv.user_id, m.ciphertext, m.timestamp, m.delivered
+			`SELECT m.id, m.chat_id, d_sender.user_id, m.sender_device_id, d_recv.user_id, m.ciphertext, m.timestamp, m.delivered
 			 FROM messages m
 			 JOIN chats c ON m.chat_id = c.id
 			 JOIN devices d_sender ON m.sender_device_id = d_sender.id
@@ -41,7 +42,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 		list := make([]historyMessageResponse, 0)
 		for rows.Next() {
 			var m historyMessageResponse
-			err := rows.Scan(&m.ID, &m.ChatID, &m.SenderID, &m.RecipientID, &m.CipherBytes, &m.Timestamp, &m.Delivered)
+			err := rows.Scan(&m.ID, &m.ChatID, &m.SenderID, &m.SenderDeviceID, &m.RecipientID, &m.CipherBytes, &m.Timestamp, &m.Delivered)
 			if err != nil {
 				continue
 			}

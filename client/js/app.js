@@ -626,7 +626,7 @@ export async function syncMessageHistory() {
         const wsPayload = {
           msg_id: item.id,
           from_user_id: item.sender_id,
-          from_device_id: 1, // fallback device_id
+          from_device_id: item.sender_device_id,
           cipher_bytes: typeof item.cipher_bytes === "string" ? decodeKey(item.cipher_bytes) : new Uint8Array(item.cipher_bytes),
           ts: item.timestamp
         };
