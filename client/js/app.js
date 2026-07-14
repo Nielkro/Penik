@@ -624,6 +624,10 @@ export async function syncMessageHistory() {
       }
 
       if (Number(item.sender_id) !== myId) {
+        // Skip if we already have this message stored (already decrypted)
+        const existing = await getMessage(item.id);
+        if (existing) continue;
+
         const wsPayload = {
           msg_id: item.id,
           from_user_id: item.sender_id,
@@ -637,26 +641,25 @@ export async function syncMessageHistory() {
           console.error(`Failed to decrypt history message ${item.id}:`, err);
         }
       } else {
+        // Skip if already stored with real text (not a placeholder)
+        const existing = await getMessage(item.id);
+        if (existing && existing.plaintext && !existing.plaintext.startsWith("🔒")) continue;
+
+        // Try to match a pending tmp- message first
         const resolved = await findAndResolvePendingSentMessage(peerId, item.timestamp, item.id);
         if (resolved) continue;
 
-        const storedMsg = {
-          msg_id: item.id,
-          chat_id: String(peerId),
-          sender_id: myId,
-          plaintext: "🔒 Зашифрованное отправленное сообщение",
-          created_at: item.timestamp * 1000,
-          delivered: 1
-        };
-        await saveMessage(storedMsg);
-        
-        if (contact) {
-          await saveContact({
-            ...contact,
-            user_id: peerId,
-            last_message: "🔒 Зашифрованное отправленное сообщение",
-            last_ts: item.timestamp * 1000
-          });
+        // Only write lock placeholder if nothing better exists
+        if (!existing) {
+          const storedMsg = {
+            msg_id: item.id,
+            chat_id: String(peerId),
+            sender_id: myId,
+            plaintext: "🔒 Зашифрованное отправленное сообщение",
+            created_at: item.timestamp * 1000,
+            delivered: 1
+          };
+          await saveMessage(storedMsg);
         }
       }
     }
