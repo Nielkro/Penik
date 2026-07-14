@@ -1,0 +1,318 @@
+package handlers
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"image"
+	"image/draw"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"io"
+	"net/http"
+	"regexp"
+	"strconv"
+	"time"
+
+	"github.com/chai2010/webp"
+	"messenger/server/internal/config"
+	"messenger/server/internal/db"
+	"messenger/server/internal/middleware"
+)
+
+
+
+var nicknamePattern = regexp.MustCompile(`^[a-z0-9_]{3,32}$`)
+
+const nicknameCooldown = 7 * 24 * time.Hour
+
+// SearchUsers handles GET /api/v1/users/search?q=&limit=20.
+func SearchUsers(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("q")
+		limit := 20
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 100 {
+				limit = n
+			}
+		}
+
+		pattern := "%" + q + "%"
+		rows, err := database.QueryContext(r.Context(),
+			`SELECT id, name, nickname FROM users
+			 WHERE nickname LIKE ? OR name LIKE ?
+			 LIMIT ?`, pattern, pattern, limit)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		type result struct {
+			ID       int64  `json:"id"`
+			Name     string `json:"name"`
+			Nickname string `json:"nickname"`
+		}
+		var results []result
+		for rows.Next() {
+			var res result
+			if err := rows.Scan(&res.ID, &res.Name, &res.Nickname); err == nil {
+				results = append(results, res)
+			}
+		}
+		if results == nil {
+			results = []result{}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(results)
+	}
+}
+
+// GetUser handles GET /api/v1/users/:id.
+func GetUser(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := r.PathValue("id")
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+
+		var name, nickname string
+		err = database.QueryRowContext(r.Context(),
+			`SELECT name, nickname FROM users WHERE id=?`, id).Scan(&name, &nickname)
+		if err != nil {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"id":       id,
+			"name":     name,
+			"nickname": nickname,
+		})
+	}
+}
+
+// UpdateName handles PUT /api/v1/users/me/name.
+func UpdateName(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+			http.Error(w, "name required", http.StatusBadRequest)
+			return
+		}
+		if len(body.Name) > 64 {
+			http.Error(w, "name too long (max 64 chars)", http.StatusBadRequest)
+			return
+		}
+
+		_, err := database.ExecContext(r.Context(),
+			`UPDATE users SET name=? WHERE id=?`, body.Name, userID)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// UpdateNickname handles PUT /api/v1/users/me/nickname with a 7-day cooldown.
+func UpdateNickname(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+
+		var body struct {
+			Nickname string `json:"nickname"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Nickname == "" {
+			http.Error(w, "nickname required", http.StatusBadRequest)
+			return
+		}
+		if !nicknamePattern.MatchString(body.Nickname) {
+			http.Error(w, "invalid nickname format", http.StatusBadRequest)
+			return
+		}
+
+		var changedAt int64
+		_ = database.QueryRowContext(r.Context(),
+			`SELECT nickname_changed_at FROM users WHERE id=?`, userID).Scan(&changedAt)
+
+		if time.Since(time.Unix(changedAt, 0)) < nicknameCooldown {
+			available := time.Unix(changedAt, 0).Add(nicknameCooldown)
+			http.Error(w, fmt.Sprintf("nickname can only be changed every 7 days; available at %s", available.UTC().Format(time.RFC3339)), http.StatusTooManyRequests)
+			return
+		}
+
+		_, err := database.ExecContext(r.Context(),
+			`UPDATE users SET nickname=?, nickname_changed_at=? WHERE id=?`,
+			body.Nickname, time.Now().Unix(), userID)
+		if err != nil {
+			http.Error(w, "nickname already taken", http.StatusConflict)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// UploadAvatar handles PUT /api/v1/avatar — multipart, WebP only, max 100KB.
+func UploadAvatar(database *db.DB, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+
+		if err := r.ParseMultipartForm(cfg.MaxAvatarSize + 1024); err != nil {
+			http.Error(w, "multipart parse error", http.StatusBadRequest)
+			return
+		}
+
+		file, _, err := r.FormFile("avatar")
+		if err != nil {
+			http.Error(w, "avatar field required", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		data, err := io.ReadAll(io.LimitReader(file, cfg.MaxAvatarSize+1))
+		if err != nil {
+			http.Error(w, "read error", http.StatusInternalServerError)
+			return
+		}
+		if int64(len(data)) > cfg.MaxAvatarSize {
+			http.Error(w, "avatar too large (max 100KB)", http.StatusRequestEntityTooLarge)
+			return
+		}
+
+		// Validate and decode as WebP.
+		img, err := webp.Decode(bytes.NewReader(data))
+		if err != nil {
+			http.Error(w, "only WebP images are accepted", http.StatusUnsupportedMediaType)
+			return
+		}
+
+		// Resize to 128×128.
+		resized := resizeImage(img, 128, 128)
+
+		// Encode as WebP for compact storage.
+		bounds := resized.Bounds()
+		rgba := image.NewRGBA(bounds)
+		draw.Draw(rgba, bounds, resized, bounds.Min, draw.Src)
+		var buf bytes.Buffer
+		if err := webp.Encode(&buf, rgba, &webp.Options{Quality: 85}); err != nil {
+			http.Error(w, "image encoding failed", http.StatusInternalServerError)
+			return
+		}
+		avatarBytes := buf.Bytes()
+
+		_, err = database.ExecContext(r.Context(),
+			`UPDATE users SET avatar=? WHERE id=?`, avatarBytes, userID)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// GetAvatar handles GET /api/v1/avatar/:user_id.
+func GetAvatar(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := r.PathValue("user_id")
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+
+		var avatar []byte
+		err = database.QueryRowContext(r.Context(),
+			`SELECT avatar FROM users WHERE id=?`, id).Scan(&avatar)
+		if err != nil || len(avatar) == 0 {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		// Stored as WebP; content-type reflects that.
+		w.Header().Set("Content-Type", "image/webp")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.WriteHeader(http.StatusOK)
+		w.Write(avatar)
+	}
+}
+
+// resizeImage scales src to fit within dstW×dstH using nearest-neighbour sampling.
+func resizeImage(src image.Image, dstW, dstH int) image.Image {
+	srcBounds := src.Bounds()
+	srcW := srcBounds.Dx()
+	srcH := srcBounds.Dy()
+
+	dst := image.NewRGBA(image.Rect(0, 0, dstW, dstH))
+	for y := 0; y < dstH; y++ {
+		for x := 0; x < dstW; x++ {
+			srcX := x * srcW / dstW
+			srcY := y * srcH / dstH
+			dst.Set(x, y, src.At(srcBounds.Min.X+srcX, srcBounds.Min.Y+srcY))
+		}
+	}
+	return dst
+}
+
+type updatePasswordRequest struct {
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
+}
+
+// UpdatePassword handles PUT /api/v1/users/me/password.
+func UpdatePassword(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+
+		var req updatePasswordRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		if req.OldPassword == "" || req.NewPassword == "" {
+			http.Error(w, "missing required fields", http.StatusBadRequest)
+			return
+		}
+
+		var storedHash string
+		err := database.QueryRowContext(r.Context(),
+			`SELECT password_hash FROM users WHERE id=?`, userID).Scan(&storedHash)
+		if err != nil {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+
+		if !verifyPassword(req.OldPassword, storedHash) {
+			http.Error(w, "invalid old password", http.StatusUnauthorized)
+			return
+		}
+
+		newHash, err := hashPassword(req.NewPassword)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		_, err = database.ExecContext(r.Context(),
+			`UPDATE users SET password_hash=? WHERE id=?`, newHash, userID)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
