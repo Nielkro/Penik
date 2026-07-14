@@ -226,3 +226,41 @@ export function showPinModal(title, placeholder = "Пароль/PIN-код") {
     input.focus();
   });
 }
+
+export function showSafetyNumberModal(title, safetyNumber) {
+  return new Promise((resolve) => {
+    const closeBtn = el("button", {
+      class: "btn-primary",
+      style: "width:100%;padding:12px;font-size:14px;border-radius:8px;cursor:pointer;margin-top:16px;"
+    }, "Закрыть");
+
+    const numEl = el("div", {
+      style: "background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:16px;color:#22c55e;font-family:monospace;font-size:18px;text-align:center;word-spacing:10px;line-height:1.6;margin-bottom:12px;letter-spacing:1px;user-select:all;"
+    }, safetyNumber);
+
+    const modalBox = el("div", {
+      style: "background:#1e1e24;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;width:100%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.5);display:flex;flex-direction:column;"
+    },
+      el("h3", { style: "font-size:18px;margin-bottom:12px;color:#fff;font-weight:600;line-height:1.4;text-align:center;" }, title),
+      el("p", { style: "font-size:13px;color:#a0a0b5;margin-bottom:16px;line-height:1.5;text-align:center;" }, "Сравните этот код безопасности с кодом вашего собеседника. Если они совпадают, сквозное шифрование на 100% защищено от перехвата (MitM)."),
+      numEl,
+      closeBtn
+    );
+
+    const overlay = el("div", {
+      style: "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;"
+    }, modalBox);
+
+    const cleanUp = () => {
+      document.body.removeChild(overlay);
+      resolve();
+    };
+
+    closeBtn.addEventListener("click", cleanUp);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) cleanUp();
+    });
+
+    document.body.appendChild(overlay);
+  });
+}
