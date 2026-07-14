@@ -3,7 +3,8 @@ import {
   openDB, getIdentity, getOrEstablishReceiverSession, saveMessage,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   getSession, saveSession, saveSkippedKey, getAndRemoveSkippedKey,
-  updateMsgId, getMessage, getAllContacts, getAllMessages
+  updateMsgId, getMessage, getAllContacts, getAllMessages,
+  findAndResolvePendingSentMessage
 } from './storage.js';
 import {
   decryptMessage, importX25519Priv, importX25519Pub,
@@ -636,6 +637,9 @@ export async function syncMessageHistory() {
           console.error(`Failed to decrypt history message ${item.id}:`, err);
         }
       } else {
+        const resolved = await findAndResolvePendingSentMessage(peerId, item.timestamp, item.id);
+        if (resolved) continue;
+
         const storedMsg = {
           msg_id: item.id,
           chat_id: String(peerId),
