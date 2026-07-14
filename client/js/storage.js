@@ -223,7 +223,15 @@ export async function getAnySession(userId) {
 
 export async function getMessage(msgId) {
   await openDB();
-  return get(tx("messages"), msgId);
+  let res = await get(tx("messages"), msgId);
+  if (!res) {
+    if (typeof msgId === "number") {
+      res = await get(tx("messages"), String(msgId));
+    } else if (typeof msgId === "string" && !isNaN(Number(msgId))) {
+      res = await get(tx("messages"), Number(msgId));
+    }
+  }
+  return res;
 }
 
 export async function saveMessage(message) {
@@ -262,19 +270,15 @@ export async function getAllMessages() {
 }
 
 export async function updateMessageDelivered(msgId, status) {
+  const msg = await getMessage(msgId);
+  if (!msg) return;
+  msg.delivery_status = status;
   await openDB();
   const store = tx("messages", "readwrite");
   return new Promise((resolve, reject) => {
-    const req = store.get(msgId);
-    req.onsuccess = () => {
-      const msg = req.result;
-      if (!msg) { resolve(); return; }
-      msg.delivery_status = status;
-      const putReq = store.put(msg);
-      putReq.onsuccess = () => resolve();
-      putReq.onerror = () => reject(putReq.error);
-    };
-    req.onerror = () => reject(req.error);
+    const putReq = store.put(msg);
+    putReq.onsuccess = () => resolve();
+    putReq.onerror = () => reject(putReq.error);
   });
 }
 
