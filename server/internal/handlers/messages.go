@@ -20,19 +20,24 @@ type historyMessageResponse struct {
 }
 
 // GetMessageHistory handles GET /api/v1/messages/history.
+// Returns only messages where the caller is either:
+// - the sender (their own device sent it), or
+// - the recipient (addressed to their current device_id).
+// This prevents returning N duplicate rows when a user has multiple historical devices.
 func GetMessageHistory(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
+		deviceID := middleware.DeviceIDFromCtx(r.Context())
 
 		rows, err := database.QueryContext(r.Context(),
 			`SELECT m.id, m.chat_id, d_sender.user_id, m.sender_device_id, d_recv.user_id, m.ciphertext, m.timestamp, m.delivered
 			 FROM messages m
-			 JOIN chats c ON m.chat_id = c.id
 			 JOIN devices d_sender ON m.sender_device_id = d_sender.id
-			 JOIN devices d_recv ON m.recipient_device_id = d_recv.id
-			 WHERE c.user1_id=? OR c.user2_id=?
+			 JOIN devices d_recv   ON m.recipient_device_id = d_recv.id
+			 WHERE d_sender.user_id = ?         -- messages we sent
+			    OR m.recipient_device_id = ?    -- messages sent to our current device
 			 ORDER BY m.timestamp ASC`,
-			userID, userID)
+			userID, deviceID)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -42,8 +47,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 		list := make([]historyMessageResponse, 0)
 		for rows.Next() {
 			var m historyMessageResponse
-			err := rows.Scan(&m.ID, &m.ChatID, &m.SenderID, &m.SenderDeviceID, &m.RecipientID, &m.CipherBytes, &m.Timestamp, &m.Delivered)
-			if err != nil {
+			if err := rows.Scan(&m.ID, &m.ChatID, &m.SenderID, &m.SenderDeviceID, &m.RecipientID, &m.CipherBytes, &m.Timestamp, &m.Delivered); err != nil {
 				continue
 			}
 			list = append(list, m)

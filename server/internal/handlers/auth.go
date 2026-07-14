@@ -195,6 +195,15 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
+		// Remove all previous devices for this user so we never accumulate
+		// stale devices that cause N-duplicate messages per send.
+		_, err = tx.ExecContext(r.Context(),
+			`DELETE FROM devices WHERE user_id=?`, userID)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
 		devRes, err := tx.ExecContext(r.Context(),
 			`INSERT INTO devices(user_id,device_name,created_at,last_seen) VALUES(?,?,?,?)`,
 			userID, req.DeviceName, now, now)
