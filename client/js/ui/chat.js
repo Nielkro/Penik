@@ -290,10 +290,14 @@ export async function renderChat(container, userId) {
       : null;
     if (statusEl) statusEl.dataset.msgId = msg.msg_id;
 
-    const bubble = el("div", { class: `msg-bubble ${isMine ? "msg-out" : "msg-in"}` },
-      el("span", { class: "msg-text" }, msg.plaintext || ""),
+    const metaEl = el("div", { class: "msg-meta" },
       el("span", { class: "msg-time" }, formatTime(ts)),
       statusEl
+    );
+
+    const bubble = el("div", { class: `msg-bubble ${isMine ? "msg-out" : "msg-in"}` },
+      el("span", { class: "msg-text" }, msg.plaintext || ""),
+      metaEl
     );
     bubble.dataset.msgId = msg.msg_id;
 

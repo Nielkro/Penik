@@ -555,6 +555,7 @@ async function onMsgAckReceivedGlobal(payload) {
 
   try {
     await updateMsgId(pending.tempId, serverMsgId);
+    await updateMessageDelivered(serverMsgId, 1);
 
     if (_activeChatCallback && String(_activeChatCallback.userId) === String(pending.userId)) {
       const bubble = document.querySelector(`[data-msg-id="${pending.tempId}"]`);
@@ -565,6 +566,7 @@ async function onMsgAckReceivedGlobal(payload) {
           statusEl.dataset.msgId = serverMsgId;
         }
       }
+      _activeChatCallback.onAck(serverMsgId);
     }
   } catch (err) {
     console.error("Failed to process MSG_ACK:", err);
