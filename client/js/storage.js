@@ -418,6 +418,7 @@ export async function getOrEstablishReceiverSession(fromUserId, fromDeviceId, se
     our_dh_private_jwk: newOurDH.privJwk,
     our_dh_public_raw: newOurDH.pubRaw,
     their_dh_public_raw: initialDHPub,
+    their_ik_pub: theirIKPub,
     n_send: 0,
     n_recv: 0,
     pn: 0,

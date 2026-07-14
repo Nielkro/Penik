@@ -2,7 +2,7 @@ import { apiGet } from "../api.js";
 import {
   x3dhInitiate, encryptMessage, decryptMessage,
   importX25519Priv, importX25519Pub, encodeKey, decodeKey, verifySignature,
-  diffieHellman, generateDH, kdf_rk, kdf_ck
+  diffieHellman, generateDH, kdf_rk, kdf_ck, computeSafetyNumber
 } from "../crypto.js";
 import {
   getSession, getAnySession, saveSession, saveMessage, getMessages,
@@ -10,7 +10,7 @@ import {
   getIdentity, deleteChatData
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcksQueue } from "../app.js";
-import { avatar, formatTime, formatDate, el, showToast, spinner } from "./components.js";
+import { avatar, formatTime, formatDate, el, showToast, spinner, showSafetyNumberModal } from "./components.js";
 
 // Helper to convert a number to a 32-bit Big-Endian Uint8Array
 function numTo32BE(num) {
@@ -184,6 +184,7 @@ async function ensureSession(toUserId) {
     our_dh_private_jwk: ourDH.privJwk,
     our_dh_public_raw: ourDH.pubRaw,
     their_dh_public_raw: theirSPKRaw,
+    their_ik_pub: theirIKDH,
     session_init_ek: sessionInitEk,
     n_send: 0,
     n_recv: 0,
@@ -231,10 +232,42 @@ export async function renderChat(container, userId) {
     }
   });
 
+  const safetyBtn = el("button", {
+    class: "icon-btn chat-safety",
+    title: "Код безопасности",
+    style: "margin-left: auto; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
+  }, "🛡️");
+  
+  safetyBtn.addEventListener("mouseenter", () => { safetyBtn.style.opacity = "1"; });
+  safetyBtn.addEventListener("mouseleave", () => { safetyBtn.style.opacity = "0.7"; });
+
+  safetyBtn.addEventListener("click", async () => {
+    try {
+      const session = await getAnySession(userId);
+      const identity = await getIdentity();
+      if (!session || !session.their_ik_pub) {
+        showToast("Код безопасности недоступен: сессия не установлена. Отправьте сообщение сначала.", "warning");
+        return;
+      }
+      if (!identity || !identity.ik_pub_raw) {
+        showToast("Код безопасности недоступен: локальный ключ не найден.", "error");
+        return;
+      }
+      const safetyNumber = await computeSafetyNumber(
+        new Uint8Array(identity.ik_pub_raw),
+        new Uint8Array(session.their_ik_pub)
+      );
+      await showSafetyNumberModal(`Код безопасности для ${contact.name || contact.nickname}`, safetyNumber);
+    } catch (err) {
+      console.error("Safety number error:", err);
+      showToast("Ошибка при расчете кода безопасности", "error");
+    }
+  });
+
   const deleteBtn = el("button", {
     class: "icon-btn chat-delete",
     title: "Удалить чат",
-    style: "margin-left: auto; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
+    style: "margin-left: 8px; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
   }, "🗑️");
   
   deleteBtn.addEventListener("mouseenter", () => { deleteBtn.style.opacity = "1"; });
@@ -263,6 +296,7 @@ export async function renderChat(container, userId) {
       el("span", { class: "chat-header-name" }, contact.name || contact.nickname),
       el("span", { class: "chat-header-nick" }, contact.nickname ? `@${contact.nickname}` : "")
     ),
+    safetyBtn,
     deleteBtn
   );
   header.querySelector(".chat-back").addEventListener("click", () => navigate("#chats"));

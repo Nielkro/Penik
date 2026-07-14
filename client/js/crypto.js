@@ -516,3 +516,28 @@ export async function verifySignature(publicKeyBytes, signatureBytes, dataBytes)
     return false;
   }
 }
+
+export async function computeSafetyNumber(ikPubA, ikPubB) {
+  const keys = [ikPubA, ikPubB].sort((a, b) => {
+    for (let i = 0; i < 32; i++) {
+      if (a[i] !== b[i]) return a[i] - b[i];
+    }
+    return 0;
+  });
+
+  const concatenated = new Uint8Array(64);
+  concatenated.set(keys[0], 0);
+  concatenated.set(keys[1], 32);
+
+  const hashBuffer = await crypto.subtle.digest("SHA-512", concatenated);
+  const hash = new Uint8Array(hashBuffer);
+
+  const groups = [];
+  const view = new DataView(hash.buffer);
+  for (let i = 0; i < 12; i++) {
+    const val = view.getUint32(i * 4, false);
+    const num = String(val % 100000).padStart(5, "0");
+    groups.push(num);
+  }
+  return groups.join(" ");
+}
