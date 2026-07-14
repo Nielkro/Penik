@@ -284,19 +284,7 @@ async function handleLogin(inputs, btn, errEl) {
             ["sign"]
           );
 
-          const ikPubExported = new Uint8Array(await subtle.exportKey('raw', ikPrivKey));
-          const spkPubExported = new Uint8Array(await subtle.exportKey('raw', spkPrivKey));
-          const sigPubExported = new Uint8Array(await subtle.exportKey('raw', sigPrivKey));
-
-          if (encodeKey(ikPubExported) !== encodeKey(new Uint8Array(decrypted.ik_pub_raw))) {
-            throw new Error("Несовпадение открытого и закрытого ключа IK");
-          }
-          if (encodeKey(spkPubExported) !== encodeKey(new Uint8Array(decrypted.spk_pub_raw))) {
-            throw new Error("Несовпадение открытого и закрытого ключа SPK");
-          }
-          if (encodeKey(sigPubExported) !== encodeKey(new Uint8Array(decrypted.sig_pub_raw))) {
-            throw new Error("Несовпадение открытого и закрытого ключа SIG");
-          }
+          restored = true;
 
           ik = {
             privateKey: ikPrivKey,
