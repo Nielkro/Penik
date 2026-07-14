@@ -243,16 +243,43 @@ export async function renderChat(container, userId) {
 
   safetyBtn.addEventListener("click", async () => {
     try {
-      const session = await getAnySession(userId);
+      let session = await getAnySession(userId);
       const identity = await getIdentity();
-      if (!session || !session.their_ik_pub) {
-        showToast("Код безопасности недоступен: сессия не установлена. Отправьте сообщение сначала.", "warning");
-        return;
-      }
+      
       if (!identity || !identity.ik_pub_raw) {
         showToast("Код безопасности недоступен: локальный ключ не найден.", "error");
         return;
       }
+
+      if (!session) {
+        showToast("Код безопасности недоступен: сессия не установлена. Отправьте сообщение сначала.", "warning");
+        return;
+      }
+
+      // Dynamic migration: if their_ik_pub is missing in old session, fetch it on-demand
+      if (!session.their_ik_pub) {
+        const ws = getWS();
+        if (!ws) throw new Error("WebSocket не подключён");
+        const keyBundle = await ws.request(0x10, { user_id: Number(userId) }, 0x11);
+        if (keyBundle && keyBundle.devices && keyBundle.devices.length) {
+          const devices = keyBundle.devices.map(d => ({
+            ...d,
+            device_id: Number(d.device_id)
+          })).sort((a, b) => a.device_id - b.device_id);
+          const activeDevice = devices[devices.length - 1];
+          const toRaw = v => v instanceof Uint8Array ? v : decodeKey(v);
+          let theirIKRaw = toRaw(activeDevice.ik_pub);
+          if (theirIKRaw.length === 64) {
+            theirIKRaw = theirIKRaw.slice(0, 32);
+          }
+          session.their_ik_pub = theirIKRaw;
+          await saveSession(session);
+        } else {
+          showToast("Код безопасности недоступен: не удалось загрузить ключи собеседника.", "error");
+          return;
+        }
+      }
+
       const safetyNumber = await computeSafetyNumber(
         new Uint8Array(identity.ik_pub_raw),
         new Uint8Array(session.their_ik_pub)
