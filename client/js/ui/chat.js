@@ -1,15 +1,33 @@
 import { apiGet } from "../api.js";
 import {
   x3dhInitiate, encryptMessage, decryptMessage,
-  importX25519Priv, encodeKey, decodeKey, verifySignature
+  importX25519Priv, importX25519Pub, encodeKey, decodeKey, verifySignature,
+  diffieHellman, generateDH, kdf_rk, kdf_ck
 } from "../crypto.js";
 import {
   getSession, getAnySession, saveSession, saveMessage, getMessages,
   updateMessageDelivered, getContact, saveContact, getAllContacts,
-  getIdentity,
+  getIdentity, deleteChatData
 } from "../storage.js";
-import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback } from "../app.js";
+import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate } from "../app.js";
 import { avatar, formatTime, formatDate, el, showToast, spinner } from "./components.js";
+
+// Helper to convert a number to a 32-bit Big-Endian Uint8Array
+function numTo32BE(num) {
+  const arr = new Uint8Array(4);
+  const view = new DataView(arr.buffer);
+  view.setUint32(0, num, false);
+  return arr;
+}
+
+// Helper to concatenate multiple Uint8Arrays
+function concatU8(...arrays) {
+  const total = arrays.reduce((n, a) => n + a.length, 0);
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const a of arrays) { out.set(a, off); off += a.length; }
+  return out;
+}
 
 // ── Chat list ────────────────────────────────────────────────────────────────
 
@@ -144,13 +162,33 @@ async function ensureSession(toUserId) {
   }
 
   const result = await x3dhInitiate(ourIKPriv, theirIKDH, theirSPKRaw, null);
+  const rootKey = result.sharedSecret; // SK
+  const sessionInitEk = result.ekPubRaw; // EK_A
+
+  // Generate Alice's first ephemeral DH key pair
+  const ourDH = await generateDH();
+
+  // Compute shared secret: DH(our_dh, their_SPK_Pub)
+  const theirSPKPubImported = await importX25519Pub(theirSPKRaw);
+  const sharedSecret = await diffieHellman(ourDH.privateKey, theirSPKPubImported);
+
+  // Derive root key and send chain key
+  const step = await kdf_rk(rootKey, sharedSecret, "DoubleRatchetRoot");
 
   const session = {
-    user_id:       toUserId,
-    device_id:     activeDevice.device_id,
-    sharedSecret:  result.sharedSecret,
-    ekPubB64:      encodeKey(result.ekPubRaw),
-    created_at:    Date.now(),
+    user_id: Number(toUserId),
+    device_id: activeDevice.device_id,
+    root_key: step.newRootKey,
+    send_chain_key: step.chainKey,
+    recv_chain_key: null,
+    our_dh_private_jwk: ourDH.privJwk,
+    our_dh_public_raw: ourDH.pubRaw,
+    their_dh_public_raw: theirSPKRaw,
+    session_init_ek: sessionInitEk,
+    n_send: 0,
+    n_recv: 0,
+    pn: 0,
+    created_at: Date.now()
   };
   await saveSession(session);
   return session;
@@ -193,6 +231,30 @@ export async function renderChat(container, userId) {
     }
   });
 
+  const deleteBtn = el("button", {
+    class: "icon-btn chat-delete",
+    title: "Удалить чат",
+    style: "margin-left: auto; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
+  }, "🗑️");
+  
+  deleteBtn.addEventListener("mouseenter", () => { deleteBtn.style.opacity = "1"; });
+  deleteBtn.addEventListener("mouseleave", () => { deleteBtn.style.opacity = "0.7"; });
+
+  deleteBtn.addEventListener("click", async () => {
+    if (!confirm("Вы действительно хотите удалить этот чат и все сообщения? Это также сбросит криптографическую сессию с пользователем.")) {
+      return;
+    }
+    try {
+      await deleteChatData(userId);
+      showToast("Чат удален");
+      navigate("#chats");
+      triggerChatListUpdate();
+    } catch (err) {
+      console.error("Failed to delete chat:", err);
+      showToast("Не удалось удалить чат", "error");
+    }
+  });
+
   const header = el("div", { class: "chat-header" },
     el("button", { class: "icon-btn chat-back" }, "←"),
     sidebarToggle,
@@ -200,7 +262,8 @@ export async function renderChat(container, userId) {
     el("div", { class: "chat-header-info" },
       el("span", { class: "chat-header-name" }, contact.name || contact.nickname),
       el("span", { class: "chat-header-nick" }, contact.nickname ? `@${contact.nickname}` : "")
-    )
+    ),
+    deleteBtn
   );
   header.querySelector(".chat-back").addEventListener("click", () => navigate("#chats"));
 
@@ -255,13 +318,31 @@ export async function renderChat(container, userId) {
 
     try {
       const session = await ensureSession(userId);
+      if (!session.send_chain_key) {
+        throw new Error("Отправляющая цепочка не инициализирована");
+      }
 
-      const aesCiphertext = await encryptMessage(session.sharedSecret, text);
-      const ekPubRaw = decodeKey(session.ekPubB64);
+      // 1. Derive message key and new send chain key
+      const { newChainKey, messageKey } = await kdf_ck(session.send_chain_key);
 
-      const cipherBytes = new Uint8Array(32 + aesCiphertext.length);
-      cipherBytes.set(ekPubRaw);
-      cipherBytes.set(aesCiphertext, 32);
+      // 2. Prepare header/AAD
+      const ourDhPub = session.our_dh_public_raw;
+      const nBytes = numTo32BE(session.n_send);
+      const pnBytes = numTo32BE(session.pn);
+
+      let aad;
+      if (session.n_send === 0 && session.session_init_ek) {
+        aad = concatU8(session.session_init_ek, ourDhPub, nBytes, pnBytes);
+      } else {
+        aad = concatU8(ourDhPub, nBytes, pnBytes);
+      }
+
+      // 3. Encrypt message with AAD
+      // encryptMessage returns [iv (12B) || ciphertext]
+      const ivAndCiphertext = await encryptMessage(messageKey, text, aad);
+
+      // 4. Form final packet: [aad || iv || ciphertext]
+      const cipherBytes = concatU8(aad, ivAndCiphertext);
 
       const msgId = crypto.randomUUID();
       const ws = getWS();
@@ -272,6 +353,11 @@ export async function renderChat(container, userId) {
         cipher_bytes: cipherBytes,
         msg_id: msgId,
       });
+
+      // 5. Update session state
+      session.send_chain_key = newChainKey;
+      session.n_send += 1;
+      await saveSession(session);
 
       const storedMsg = {
         msg_id: msgId,
@@ -288,6 +374,7 @@ export async function renderChat(container, userId) {
       if (oldBubble) oldBubble.dataset.msgId = msgId;
 
     } catch (err) {
+      console.error("SendMessage error:", err);
       const oldBubble = messagesEl.querySelector(`[data-msg-id="${tempId}"]`);
       if (oldBubble) oldBubble.classList.add("msg-failed");
       showToast(err.message || "Ошибка отправки", "error");
