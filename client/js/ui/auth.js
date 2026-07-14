@@ -276,7 +276,7 @@ async function handleLogin(inputs, btn, errEl) {
           // Validate keys mathematically
           const ikPrivKey = await importX25519Priv(decrypted.ik_priv_jwk);
           const spkPrivKey = await importX25519Priv(decrypted.spk_priv_jwk);
-          const sigPrivKey = await subtle.importKey(
+          const sigPrivKey = await window.crypto.subtle.importKey(
             "jwk",
             decrypted.sig_priv_jwk,
             { name: "Ed25519" },
@@ -303,7 +303,7 @@ async function handleLogin(inputs, btn, errEl) {
           restored = true;
         }
       } catch (backupErr) {
-        console.warn("Не удалось восстановить бэкап с сервера:", backupErr);
+        console.error("Не удалось восстановить бэкап с сервера. Детали ошибки:", backupErr);
       }
 
       if (restored) {
