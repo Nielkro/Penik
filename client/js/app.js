@@ -1,4 +1,4 @@
-import { getToken, setToken, getUserById } from './api.js';
+import { getToken, setToken, getUserById, apiGet } from './api.js';
 import {
   openDB, getIdentity, getOrEstablishReceiverSession, saveMessage,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
@@ -7,7 +7,7 @@ import {
 } from './storage.js';
 import {
   decryptMessage, importX25519Priv, importX25519Pub,
-  diffieHellman, generateDH, kdf_rk, kdf_ck
+  diffieHellman, generateDH, kdf_rk, kdf_ck, decodeKey
 } from './crypto.js';
 import { ws } from './ws.js';
 import { renderAuth } from './ui/auth.js';
@@ -587,9 +587,92 @@ async function onMsgAckReceivedGlobal(payload) {
   }
 }
 
+export async function syncMessageHistory() {
+  try {
+    const history = await apiGet("/messages/history");
+    if (!history || !Array.isArray(history)) return;
+
+    const me = state.currentUser;
+    if (!me) return;
+    const myId = Number(me.id || me.user_id);
+
+    // Sort by timestamp ascending just to be sure
+    history.sort((a, b) => a.timestamp - b.timestamp);
+
+    for (const item of history) {
+      await openDB();
+      const transaction = _db.transaction(["messages"], "readonly");
+      const store = transaction.objectStore("messages");
+      const existing = await new Promise((resolve) => {
+        const req = store.get(item.id);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+      });
+      if (existing) continue;
+
+      const peerId = Number(item.sender_id) === myId ? Number(item.recipient_id) : Number(item.sender_id);
+
+      let contact = await getContact(peerId);
+      if (!contact) {
+        try {
+          const res = await getUserById(String(peerId));
+          contact = res.user || res;
+          await saveContact({
+            ...contact,
+            user_id: peerId,
+            last_message: "",
+            last_ts: item.timestamp * 1000
+          });
+        } catch (e) {
+          console.error("Failed to fetch contact details for syncing:", e);
+        }
+      }
+
+      if (Number(item.sender_id) !== myId) {
+        const wsPayload = {
+          msg_id: item.id,
+          from_user_id: item.sender_id,
+          from_device_id: 1, // fallback device_id
+          cipher_bytes: typeof item.cipher_bytes === "string" ? decodeKey(item.cipher_bytes) : new Uint8Array(item.cipher_bytes),
+          ts: item.timestamp
+        };
+        try {
+          await onMsgRecvGlobal(wsPayload);
+        } catch (err) {
+          console.error(`Failed to decrypt history message ${item.id}:`, err);
+        }
+      } else {
+        const storedMsg = {
+          msg_id: item.id,
+          chat_id: String(peerId),
+          sender_id: myId,
+          plaintext: "🔒 Зашифрованное отправленное сообщение",
+          created_at: item.timestamp * 1000,
+          delivered: 1
+        };
+        await saveMessage(storedMsg);
+        
+        if (contact) {
+          await saveContact({
+            ...contact,
+            user_id: peerId,
+            last_message: "🔒 Зашифрованное отправленное сообщение",
+            last_ts: item.timestamp * 1000
+          });
+        }
+      }
+    }
+    
+    triggerChatListUpdate();
+  } catch (err) {
+    console.error("Failed to sync message history:", err);
+  }
+}
+
 function setupGlobalWSListeners() {
   ws.on(0x02, onMsgRecvGlobal);
   ws.on(0x03, onMsgAckReceivedGlobal);
   ws.on(0x04, onMsgAckGlobal);
   ws.on(0x05, onOfflineBatchGlobal);
+  ws.onConnect(syncMessageHistory);
 }

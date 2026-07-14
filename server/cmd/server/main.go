@@ -60,6 +60,8 @@ func main() {
 		authMW(http.HandlerFunc(handlers.UploadIdentityKeys(database))))
 	mux.Handle("POST /api/v1/keys/otk",
 		authMW(http.HandlerFunc(handlers.UploadOTK(database))))
+	mux.Handle("GET /api/v1/messages/history",
+		authMW(http.HandlerFunc(handlers.GetMessageHistory(database))))
 	mux.Handle("GET /api/v1/ws",
 		authMW(http.HandlerFunc(handlers.WebSocketHandler(hub, database))))
 
