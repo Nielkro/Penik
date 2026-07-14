@@ -315,9 +315,109 @@ async function onMsgRecvGlobal(payload) {
     }
 
     const session = await getSession(fromUserId, fromDeviceId);
+    let decryptedText = null;
+    let isBootstrapFallback = false;
 
-    if (!session) {
-      // ── Bootstrap Packet ──
+    if (session) {
+      try {
+        if (cipherBytes.length < 52) {
+          throw new Error("Стандартный пакет слишком короткий");
+        }
+        const dh_pub = cipherBytes.slice(0, 32);
+        const n = read32BE(cipherBytes, 32);
+        const pn = read32BE(cipherBytes, 36);
+        const iv = cipherBytes.slice(40, 52);
+        const ciphertext = cipherBytes.slice(52);
+        const aad = cipherBytes.slice(0, 40);
+
+        const dhPubHex = u8ToHex(dh_pub);
+        const skippedKey = await getAndRemoveSkippedKey(fromUserId, fromDeviceId, dhPubHex, n);
+        if (skippedKey) {
+          decryptedText = await decryptMessage(skippedKey, cipherBytes.slice(40), aad);
+        } else {
+          const isSameDH = (dhPubHex === u8ToHex(session.their_dh_public_raw));
+          if (isSameDH && n < session.n_recv) {
+            throw new Error("Сообщение устарело или является дубликатом");
+          }
+
+          let rootKey = session.root_key;
+          let recvChainKey = session.recv_chain_key;
+          let sendChainKey = session.send_chain_key;
+          let ourDhPrivateJwk = session.our_dh_private_jwk;
+          let ourDhPublicRaw = session.our_dh_public_raw;
+          let theirDhPub = session.their_dh_public_raw;
+          let n_recv = session.n_recv;
+          let n_send = session.n_send;
+          let pn_state = session.pn;
+
+          const pendingSkippedKeys = [];
+          async function skipMessageKeys(limit) {
+            if (recvChainKey === null) return;
+            if (n_recv + 1000 < limit) {
+              throw new Error("Слишком много пропущенных ключей");
+            }
+            while (n_recv < limit) {
+              const { newChainKey, messageKey } = await kdf_ck(recvChainKey);
+              recvChainKey = newChainKey;
+              const currentDhPubHex = u8ToHex(theirDhPub);
+              pendingSkippedKeys.push({ dhPubHex: currentDhPubHex, n: n_recv, keyBytes: messageKey });
+              n_recv += 1;
+            }
+          }
+
+          if (!isSameDH) {
+            await skipMessageKeys(pn);
+            const ourPrivKey = await importX25519Priv(ourDhPrivateJwk);
+            const theirPubImported = await importX25519Pub(dh_pub);
+
+            const sharedSecret1 = await diffieHellman(ourPrivKey, theirPubImported);
+            const step1 = await kdf_rk(rootKey, sharedSecret1, "DoubleRatchetRoot");
+            rootKey = step1.newRootKey;
+            recvChainKey = step1.chainKey;
+
+            const newOurDH = await generateDH();
+            const sharedSecret2 = await diffieHellman(newOurDH.privateKey, theirPubImported);
+            const step2 = await kdf_rk(rootKey, sharedSecret2, "DoubleRatchetRoot");
+            rootKey = step2.newRootKey;
+            sendChainKey = step2.chainKey;
+
+            ourDhPrivateJwk = newOurDH.privJwk;
+            ourDhPublicRaw = newOurDH.pubRaw;
+            theirDhPub = dh_pub;
+            pn_state = n_send;
+            n_send = 0;
+            n_recv = 0;
+          }
+
+          await skipMessageKeys(n);
+
+          const { newChainKey, messageKey } = await kdf_ck(recvChainKey);
+          decryptedText = await decryptMessage(messageKey, cipherBytes.slice(40), aad);
+
+          for (const sk of pendingSkippedKeys) {
+            await saveSkippedKey(fromUserId, fromDeviceId, sk.dhPubHex, sk.n, sk.keyBytes);
+          }
+
+          session.root_key = rootKey;
+          session.recv_chain_key = newChainKey;
+          session.send_chain_key = sendChainKey;
+          session.our_dh_private_jwk = ourDhPrivateJwk;
+          session.our_dh_public_raw = ourDhPublicRaw;
+          session.their_dh_public_raw = theirDhPub;
+          session.n_recv = n + 1;
+          session.n_send = n_send;
+          session.pn = pn_state;
+          session.session_init_ek = null;
+
+          await saveSession(session);
+        }
+      } catch (err) {
+        console.warn("Standard packet decryption failed, trying Bootstrap fallback...", err);
+        isBootstrapFallback = true;
+      }
+    }
+
+    if (!session || isBootstrapFallback) {
       if (cipherBytes.length < 84) {
         throw new Error("Bootstrap-пакет слишком короткий");
       }
@@ -329,10 +429,8 @@ async function onMsgRecvGlobal(payload) {
       const ciphertext = cipherBytes.slice(84);
       const aad = cipherBytes.slice(0, 72);
 
-      // Establish session (atomically saves session)
       const newSession = await getOrEstablishReceiverSession(fromUserId, fromDeviceId, session_init_ek, dh_pub);
 
-      // Extract state for inline ratchet advancement
       let rootKey = newSession.root_key;
       let recvChainKey = newSession.recv_chain_key;
       let sendChainKey = newSession.send_chain_key;
@@ -361,9 +459,8 @@ async function onMsgRecvGlobal(payload) {
       await skipMessageKeys(n);
 
       const { newChainKey, messageKey } = await kdf_ck(recvChainKey);
-      const decrypted = await decryptMessage(messageKey, cipherBytes.slice(72), aad);
+      decryptedText = await decryptMessage(messageKey, cipherBytes.slice(72), aad);
 
-      // If we got here, decryption succeeded! Commit changes.
       for (const sk of pendingSkippedKeys) {
         await saveSkippedKey(fromUserId, fromDeviceId, sk.dhPubHex, sk.n, sk.keyBytes);
       }
@@ -380,105 +477,9 @@ async function onMsgRecvGlobal(payload) {
       newSession.session_init_ek = null;
 
       await saveSession(newSession);
-      plaintext = decrypted;
-
-    } else {
-      // ── Standard Packet ──
-      if (cipherBytes.length < 52) {
-        throw new Error("Стандартный пакет слишком короткий");
-      }
-      const dh_pub = cipherBytes.slice(0, 32);
-      const n = read32BE(cipherBytes, 32);
-      const pn = read32BE(cipherBytes, 36);
-      const iv = cipherBytes.slice(40, 52);
-      const ciphertext = cipherBytes.slice(52);
-      const aad = cipherBytes.slice(0, 40);
-
-      const dhPubHex = u8ToHex(dh_pub);
-      const skippedKey = await getAndRemoveSkippedKey(fromUserId, fromDeviceId, dhPubHex, n);
-      if (skippedKey) {
-        plaintext = await decryptMessage(skippedKey, cipherBytes.slice(40), aad);
-      } else {
-        const isSameDH = (dhPubHex === u8ToHex(session.their_dh_public_raw));
-        if (isSameDH && n < session.n_recv) {
-          throw new Error("Сообщение устарело или является дубликатом");
-        }
-
-        // Temporary state copy to rollback on failure
-        let rootKey = session.root_key;
-        let recvChainKey = session.recv_chain_key;
-        let sendChainKey = session.send_chain_key;
-        let ourDhPrivateJwk = session.our_dh_private_jwk;
-        let ourDhPublicRaw = session.our_dh_public_raw;
-        let theirDhPub = session.their_dh_public_raw;
-        let n_recv = session.n_recv;
-        let n_send = session.n_send;
-        let pn_state = session.pn;
-
-        const pendingSkippedKeys = [];
-        async function skipMessageKeys(limit) {
-          if (recvChainKey === null) return;
-          if (n_recv + 1000 < limit) {
-            throw new Error("Слишком много пропущенных ключей");
-          }
-          while (n_recv < limit) {
-            const { newChainKey, messageKey } = await kdf_ck(recvChainKey);
-            recvChainKey = newChainKey;
-            const currentDhPubHex = u8ToHex(theirDhPub);
-            pendingSkippedKeys.push({ dhPubHex: currentDhPubHex, n: n_recv, keyBytes: messageKey });
-            n_recv += 1;
-          }
-        }
-
-        if (!isSameDH) {
-          await skipMessageKeys(pn);
-          const ourPrivKey = await importX25519Priv(ourDhPrivateJwk);
-          const theirPubImported = await importX25519Pub(dh_pub);
-
-          const sharedSecret1 = await diffieHellman(ourPrivKey, theirPubImported);
-          const step1 = await kdf_rk(rootKey, sharedSecret1, "DoubleRatchetRoot");
-          rootKey = step1.newRootKey;
-          recvChainKey = step1.chainKey;
-
-          const newOurDH = await generateDH();
-          const sharedSecret2 = await diffieHellman(newOurDH.privateKey, theirPubImported);
-          const step2 = await kdf_rk(rootKey, sharedSecret2, "DoubleRatchetRoot");
-          rootKey = step2.newRootKey;
-          sendChainKey = step2.chainKey;
-
-          ourDhPrivateJwk = newOurDH.privJwk;
-          ourDhPublicRaw = newOurDH.pubRaw;
-          theirDhPub = dh_pub;
-          pn_state = n_send;
-          n_send = 0;
-          n_recv = 0;
-        }
-
-        await skipMessageKeys(n);
-
-        const { newChainKey, messageKey } = await kdf_ck(recvChainKey);
-        const decrypted = await decryptMessage(messageKey, cipherBytes.slice(40), aad);
-
-        // If decryption succeeded:
-        for (const sk of pendingSkippedKeys) {
-          await saveSkippedKey(fromUserId, fromDeviceId, sk.dhPubHex, sk.n, sk.keyBytes);
-        }
-
-        session.root_key = rootKey;
-        session.recv_chain_key = newChainKey;
-        session.send_chain_key = sendChainKey;
-        session.our_dh_private_jwk = ourDhPrivateJwk;
-        session.our_dh_public_raw = ourDhPublicRaw;
-        session.their_dh_public_raw = theirDhPub;
-        session.n_recv = n + 1;
-        session.n_send = n_send;
-        session.pn = pn_state;
-        session.session_init_ek = null;
-
-        await saveSession(session);
-        plaintext = decrypted;
-      }
     }
+
+    plaintext = decryptedText;
   } catch (err) {
     console.error("Ошибка дешифрования сообщения:", err);
   }
