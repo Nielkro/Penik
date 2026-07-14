@@ -221,6 +221,11 @@ export async function getAnySession(userId) {
 
 // Messages
 
+export async function getMessage(msgId) {
+  await openDB();
+  return get(tx("messages"), msgId);
+}
+
 export async function saveMessage(message) {
   await openDB();
   return put(tx("messages", "readwrite"), message);
