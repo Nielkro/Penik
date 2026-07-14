@@ -3,7 +3,7 @@ import {
   openDB, getIdentity, getOrEstablishReceiverSession, saveMessage,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   getSession, saveSession, saveSkippedKey, getAndRemoveSkippedKey,
-  updateMsgId, getMessage
+  updateMsgId, getMessage, getAllContacts, getAllMessages
 } from './storage.js';
 import {
   decryptMessage, importX25519Priv, importX25519Pub,
@@ -682,22 +682,8 @@ export async function exportAndUploadBackup() {
     const identity = await getIdentity();
     if (!identity) return;
 
-    await openDB();
-    const contacts = await new Promise((resolve, reject) => {
-      const transaction = _db.transaction(["contacts"], "readonly");
-      const store = transaction.objectStore("contacts");
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-
-    const messages = await new Promise((resolve, reject) => {
-      const transaction = _db.transaction(["messages"], "readonly");
-      const store = transaction.objectStore("messages");
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+    const contacts = await getAllContacts();
+    const messages = await getAllMessages();
 
     const dataToBackup = {
       ik_priv_jwk: identity.ik_priv_jwk,

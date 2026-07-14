@@ -256,6 +256,11 @@ export async function getMessages(chatId, limit = 50, before = null) {
   });
 }
 
+export async function getAllMessages() {
+  await openDB();
+  return getAll(tx("messages"));
+}
+
 export async function updateMessageDelivered(msgId, status) {
   await openDB();
   const store = tx("messages", "readwrite");
