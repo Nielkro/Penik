@@ -7,7 +7,7 @@ import {
 import {
   getSession, getAnySession, saveSession, saveMessage, getMessages,
   updateMessageDelivered, getContact, saveContact, getAllContacts,
-  getIdentity, deleteChatData
+  getIdentity, deleteChatData, clearUserSessions
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcksQueue } from "../app.js";
 import { avatar, formatTime, formatDate, el, showToast, spinner, showSafetyNumberModal } from "./components.js";
@@ -163,15 +163,27 @@ async function ensureSession(toUserId) {
         };
         await saveMessage(systemMsg);
         
-        existing.their_ik_pub = theirIKDH;
-        await saveSession(existing);
+        // Append to DOM immediately if chat is open
+        const messagesEl = document.querySelector(`.chat-messages[data-user-id="${toUserId}"]`);
+        if (messagesEl) {
+          const bubble = el("div", { class: "msg-bubble msg-system" },
+            el("span", { class: "msg-text" }, "⚠️ Код безопасности изменился!")
+          );
+          messagesEl.appendChild(bubble);
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        await clearUserSessions(toUserId);
         triggerChatListUpdate();
+        // Do NOT return existing, let it fall through to negotiate a new session!
+      } else {
+        return existing;
       }
     } else {
       existing.their_ik_pub = theirIKDH;
       await saveSession(existing);
+      return existing;
     }
-    return existing;
   }
 
   // Check if we have any other session with this user to detect identity key change
@@ -194,6 +206,18 @@ async function ensureSession(toUserId) {
         delivered: 1
       };
       await saveMessage(systemMsg);
+
+      // Append to DOM immediately if chat is open
+      const messagesEl = document.querySelector(`.chat-messages[data-user-id="${toUserId}"]`);
+      if (messagesEl) {
+        const bubble = el("div", { class: "msg-bubble msg-system" },
+          el("span", { class: "msg-text" }, "⚠️ Код безопасности изменился!")
+        );
+        messagesEl.appendChild(bubble);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      await clearUserSessions(toUserId);
       triggerChatListUpdate();
     }
   }
@@ -385,7 +409,7 @@ export async function renderChat(container, userId) {
   );
   header.querySelector(".chat-back").addEventListener("click", () => navigate("#chats"));
 
-  const messagesEl = el("div", { class: "chat-messages" });
+  const messagesEl = el("div", { class: "chat-messages", "data-user-id": userId });
   const inputEl    = el("textarea", { class: "chat-input", placeholder: "Сообщение…", rows: "1" });
   const sendBtn    = el("button", { class: "chat-send-btn" }, "➤");
   const inputRow   = el("div", { class: "chat-input-row" }, inputEl, sendBtn);

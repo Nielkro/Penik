@@ -478,7 +478,7 @@ async function onMsgRecvGlobal(payload) {
 
       await saveSession(newSession);
       if (newSession.key_changed) {
-        const messagesEl = document.querySelector(".chat-messages");
+        const messagesEl = document.querySelector(`.chat-messages[data-user-id="${fromUserId}"]`);
         if (messagesEl && _activeChatCallback && String(_activeChatCallback.userId) === String(fromUserId)) {
           const bubble = document.createElement("div");
           bubble.className = "msg-bubble msg-system";

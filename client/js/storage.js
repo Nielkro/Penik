@@ -409,6 +409,26 @@ export async function getOrEstablishReceiverSession(fromUserId, fromDeviceId, se
   currentRootKey = step2.newRootKey;
   const sendChainKey = step2.chainKey;
 
+export async function clearUserSessions(userId) {
+  await openDB();
+  const uId = Number(userId);
+  return new Promise((resolve, reject) => {
+    const transaction = _db.transaction(["sessions"], "readwrite");
+    const store = transaction.objectStore("sessions");
+    store.openCursor().onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        if (Number(cursor.value.user_id) === uId) {
+          cursor.delete();
+        }
+        cursor.continue();
+      }
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = (e) => reject(e.target.error);
+  });
+}
+
   let keyChanged = false;
   const anyExisting = await getAnySession(fromUserId);
   if (anyExisting && anyExisting.their_ik_pub) {
@@ -430,6 +450,7 @@ export async function getOrEstablishReceiverSession(fromUserId, fromDeviceId, se
         delivered: 1
       };
       await saveMessage(systemMsg);
+      await clearUserSessions(fromUserId);
     }
   }
 
