@@ -616,24 +616,35 @@ export async function findAndResolvePendingSentMessage(chatId, timestamp, server
   return new Promise((resolve) => {
     const transaction = _db.transaction(["messages"], "readwrite");
     const store = transaction.objectStore("messages");
+    
+    let oldestMsg = null;
+    let oldestKey = null;
+
     store.openCursor().onsuccess = (e) => {
       const cursor = e.target.result;
       if (cursor) {
         const msg = cursor.value;
-        const timeDiff = Math.abs(msg.created_at - timestamp * 1000);
         const isTemp = typeof msg.msg_id === "string" && (msg.msg_id.startsWith("tmp-") || msg.msg_id.includes("-"));
         
-        if (String(msg.chat_id) === String(chatId) && isTemp && timeDiff < 10000) {
-          cursor.delete();
-          msg.msg_id = serverId;
-          msg.delivered = 1;
-          store.put(msg);
-          resolve(true);
-          return;
+        if (String(msg.chat_id) === String(chatId) && isTemp) {
+          if (!oldestMsg || msg.created_at < oldestMsg.created_at) {
+            oldestMsg = msg;
+            oldestKey = cursor.key;
+          }
         }
         cursor.continue();
       } else {
-        resolve(false);
+        if (oldestMsg) {
+          store.delete(oldestKey).onsuccess = () => {
+            oldestMsg.msg_id = serverId;
+            oldestMsg.delivered = 1;
+            store.put(oldestMsg).onsuccess = () => {
+              resolve(true);
+            };
+          };
+        } else {
+          resolve(false);
+        }
       }
     };
   });
