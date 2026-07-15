@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"embed"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -16,6 +18,11 @@ import (
 	"messenger/server/internal/middleware"
 	"messenger/server/internal/ws"
 )
+
+//go:generate sh -c "npm --prefix ../../../client run build && rm -rf dist && cp -r ../../../client/dist ./dist"
+
+//go:embed all:dist
+var frontendFS embed.FS
 
 func main() {
 	cfg := config.Load()
@@ -64,6 +71,13 @@ func main() {
 		authMW(http.HandlerFunc(handlers.GetMessageHistory(database))))
 	mux.Handle("GET /api/v1/ws",
 		authMW(http.HandlerFunc(handlers.WebSocketHandler(hub, database))))
+
+	// Serve static files from embedded FS.
+	distFS, err := fs.Sub(frontendFS, "dist")
+	if err != nil {
+		log.Fatalf("sub fs: %v", err)
+	}
+	mux.Handle("GET /", http.FileServer(http.FS(distFS)))
 
 	// Wrap mux with global middleware (max body, CORS).
 	var handler http.Handler = mux

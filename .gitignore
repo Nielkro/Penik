@@ -5,4 +5,7 @@ server/go.sum
 server/data/*.db
 server/data/*.db-shm
 server/data/*.db-wal
+client/node_modules/
+client/dist/
+server/cmd/server/dist/
 
