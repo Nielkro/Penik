@@ -54,7 +54,9 @@ CREATE TABLE IF NOT EXISTS messages (
   recipient_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
   ciphertext BLOB NOT NULL,
   timestamp INTEGER NOT NULL,
-  delivered INTEGER NOT NULL DEFAULT 0
+  delivered INTEGER NOT NULL DEFAULT 0,
+  deleted_by_sender INTEGER NOT NULL DEFAULT 0,
+  deleted_by_recipient INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

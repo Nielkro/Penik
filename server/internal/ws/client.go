@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/shamaton/msgpack/v2"
@@ -213,29 +214,79 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 		return fmt.Errorf("no target devices specified")
 	}
 
+	// 1. Gather all device IDs
+	deviceIDs := make([]int64, len(msg.Devices))
+	for i, dev := range msg.Devices {
+		deviceIDs[i] = dev.DeviceID
+	}
+
+	// 2. Fetch owners of these devices in a single query
+	placeholders := make([]string, len(deviceIDs))
+	args := make([]interface{}, len(deviceIDs))
+	for i, id := range deviceIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := fmt.Sprintf("SELECT id, user_id FROM devices WHERE id IN (%s)", strings.Join(placeholders, ","))
+	rows, err := c.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("lookup devices: %w", err)
+	}
+	defer rows.Close()
+
+	deviceOwnerMap := make(map[int64]int64)
+	for rows.Next() {
+		var id, ownerID int64
+		if err := rows.Scan(&id, &ownerID); err != nil {
+			return fmt.Errorf("scan device owner: %w", err)
+		}
+		deviceOwnerMap[id] = ownerID
+	}
+
+	// 3. Verify ownership before doing any writes (prevents unauthorized routing)
+	for _, devCipher := range msg.Devices {
+		devOwnerID, exists := deviceOwnerMap[devCipher.DeviceID]
+		if !exists {
+			return fmt.Errorf("ws msg send: device %d not found", devCipher.DeviceID)
+		}
+		// Security check: Only allow recipient devices or sender's own other devices
+		if devOwnerID != recipientUserID && devOwnerID != senderUserID {
+			return fmt.Errorf("ws msg send: security violation: device %d belongs to user %d", devCipher.DeviceID, devOwnerID)
+		}
+	}
+
+	// 4. Begin database transaction
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	var lastInsertedID int64
+	insertedMessages := make([]struct {
+		deviceID    int64
+		chatUserID  int64
+		cipherBytes []byte
+		msgID       int64
+	}, 0, len(msg.Devices))
 
 	for _, devCipher := range msg.Devices {
-		var devOwnerID int64
-		err := c.db.QueryRowContext(ctx, `SELECT user_id FROM devices WHERE id=?`, devCipher.DeviceID).Scan(&devOwnerID)
-		if err != nil {
-			log.Printf("ws msg send: device %d not found: %v", devCipher.DeviceID, err)
-			continue
-		}
-
-		res, err := c.db.ExecContext(ctx,
-			`INSERT INTO messages(chat_id,sender_device_id,recipient_device_id,ciphertext,timestamp,delivered)
-			 VALUES(?,?,?,?,?,0)`,
+		res, err := tx.ExecContext(ctx,
+			`INSERT INTO messages(chat_id, sender_device_id, recipient_device_id, ciphertext, timestamp, delivered)
+			 VALUES(?, ?, ?, ?, ?, 0)`,
 			chatID, c.deviceID, devCipher.DeviceID, devCipher.CipherBytes, now)
 		if err != nil {
-			log.Printf("store message for device %d: %v", devCipher.DeviceID, err)
-			continue
+			return fmt.Errorf("insert message for device %d: %w", devCipher.DeviceID, err)
 		}
-		id, _ := res.LastInsertId()
+		id, err := res.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("get last insert id: %w", err)
+		}
 		if lastInsertedID == 0 {
 			lastInsertedID = id
 		}
 
+		devOwnerID := deviceOwnerMap[devCipher.DeviceID]
 		var chatUserID int64
 		if devOwnerID == senderUserID {
 			chatUserID = recipientUserID
@@ -243,19 +294,39 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 			chatUserID = senderUserID
 		}
 
+		insertedMessages = append(insertedMessages, struct {
+			deviceID    int64
+			chatUserID  int64
+			cipherBytes []byte
+			msgID       int64
+		}{
+			deviceID:    devCipher.DeviceID,
+			chatUserID:  chatUserID,
+			cipherBytes: devCipher.CipherBytes,
+			msgID:       id,
+		})
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	// 5. Send real-time ws notifications to online devices
+	for _, mInfo := range insertedMessages {
 		recv := MsgRecv{
 			FromUserID:   senderUserID,
 			FromDeviceID: c.deviceID,
-			ChatUserID:   chatUserID,
-			CipherBytes:  devCipher.CipherBytes,
-			MsgID:        id,
+			ChatUserID:   mInfo.chatUserID,
+			CipherBytes:  mInfo.cipherBytes,
+			MsgID:        mInfo.msgID,
 			TS:           now,
 		}
 		frame, err := encodeFrame(OpMsgRecv, recv)
 		if err != nil {
 			continue
 		}
-		c.hub.SendToDevice(devCipher.DeviceID, frame)
+		c.hub.SendToDevice(mInfo.deviceID, frame)
 	}
 
 	// Ack back to sender with first message id.
@@ -339,7 +410,7 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 		 JOIN chats c ON m.chat_id = c.id
 		 JOIN devices d_sender ON d_sender.id = m.sender_device_id
 		 JOIN devices d_recv   ON d_recv.id = m.recipient_device_id
-		 WHERE m.recipient_device_id=? AND m.delivered=0
+		 WHERE m.recipient_device_id=? AND m.delivered=0 AND m.deleted_by_recipient=0
 		 ORDER BY m.timestamp ASC`,
 		c.userID, c.deviceID)
 	if err != nil {
