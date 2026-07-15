@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"time"
@@ -87,6 +88,7 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 
 		tx, err := database.BeginTx(r.Context(), nil)
 		if err != nil {
+			log.Printf("register: begin transaction: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
@@ -200,7 +202,7 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		_, err = tx.ExecContext(r.Context(),
 			`DELETE FROM devices WHERE user_id=?`, userID)
 		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			loginInternalError(w, "delete old devices", err)
 			return
 		}
 
@@ -208,24 +210,28 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			`INSERT INTO devices(user_id,device_name,created_at,last_seen) VALUES(?,?,?,?)`,
 			userID, req.DeviceName, now, now)
 		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			loginInternalError(w, "insert device", err)
 			return
 		}
-		deviceID, _ := devRes.LastInsertId()
+		deviceID, err := devRes.LastInsertId()
+		if err != nil {
+			loginInternalError(w, "get device id", err)
+			return
+		}
 
 		if len(req.IKPub) > 0 {
 			_, err = tx.ExecContext(r.Context(),
 				`INSERT OR REPLACE INTO identity_keys(device_id,ik_pub,spk_pub,spk_sig,updated_at) VALUES(?,?,?,?,?)`,
 				deviceID, req.IKPub, req.SPKPub, req.SPKSig, now)
 			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
+				loginInternalError(w, "insert identity keys", err)
 				return
 			}
 		}
 
 		token, err := generateToken()
 		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			loginInternalError(w, "generate session token", err)
 			return
 		}
 		expiresAt := time.Now().Add(cfg.SessionTTL).Unix()
@@ -233,12 +239,12 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			`INSERT INTO sessions(token,user_id,device_id,created_at,expires_at) VALUES(?,?,?,?,?)`,
 			token, userID, deviceID, now, expiresAt)
 		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			loginInternalError(w, "insert session", err)
 			return
 		}
 
 		if err := tx.Commit(); err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			loginInternalError(w, "commit transaction", err)
 			return
 		}
 
@@ -249,6 +255,11 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			DeviceID: deviceID,
 		})
 	}
+}
+
+func loginInternalError(w http.ResponseWriter, operation string, err error) {
+	log.Printf("login: %s: %v", operation, err)
+	http.Error(w, "internal error", http.StatusInternalServerError)
 }
 
 // hashPassword hashes a plaintext password using Argon2id and returns a

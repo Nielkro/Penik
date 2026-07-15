@@ -69,6 +69,7 @@ func main() {
 	var handler http.Handler = mux
 	handler = middleware.MaxBodySize(cfg.MaxBodySize)(handler)
 	handler = middleware.CORS(cfg)(handler)
+	handler = middleware.RequestLogger(handler)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	srv := &http.Server{
