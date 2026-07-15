@@ -396,6 +396,8 @@ export async function renderChat(container, userId) {
     try {
       await deleteChatData(userId);
       showToast("Чат удален");
+      const chatEl = document.getElementById('screen-chat');
+      if (chatEl) chatEl.innerHTML = '';
       navigate("#chats");
       triggerChatListUpdate();
     } catch (err) {
