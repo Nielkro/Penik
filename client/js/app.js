@@ -614,6 +614,7 @@ async function onMsgAckReceivedGlobal(payload) {
 export async function syncMessageHistory() {
   try {
     const history = await apiGet("/messages/history");
+    console.log(`[E2EE Debug] syncMessageHistory fetched ${history ? history.length : 0} items`);
     if (!history || !Array.isArray(history)) return;
 
     const me = state.currentUser;
@@ -624,8 +625,12 @@ export async function syncMessageHistory() {
     history.sort((a, b) => a.timestamp - b.timestamp);
 
     for (const item of history) {
+      console.log(`[E2EE Debug] processing history item.id=${item.id}, sender_id=${item.sender_id}, chat_user_id=${item.chat_user_id}`);
       const existing = await getMessage(item.id);
-      if (existing) continue;
+      if (existing) {
+        console.log(`[E2EE Debug] item.id=${item.id} already exists in local DB. Skipping.`);
+        continue;
+      }
 
       const peerId = Number(item.chat_user_id || (Number(item.sender_id) === myId ? item.recipient_id : item.sender_id));
 
@@ -666,14 +671,20 @@ export async function syncMessageHistory() {
       } else {
         // Skip if already stored with real text (not a placeholder)
         const existing = await getMessage(item.id);
-        if (existing && existing.plaintext && !existing.plaintext.startsWith("🔒")) continue;
+        console.log(`[E2EE Debug] outgoing item.id=${item.id}: existing in DB=${JSON.stringify(existing)}`);
+        if (existing && existing.plaintext && !existing.plaintext.startsWith("🔒")) {
+          console.log(`[E2EE Debug] outgoing item.id=${item.id} already has plaintext "${existing.plaintext}". Skipping.`);
+          continue;
+        }
 
         // Try to match a pending tmp- message first
         const resolved = await findAndResolvePendingSentMessage(peerId, item.timestamp, item.id);
+        console.log(`[E2EE Debug] findAndResolvePendingSentMessage returned resolved=${resolved}`);
         if (resolved) continue;
 
         // Only write lock placeholder if nothing better exists
         if (!existing) {
+          console.log(`[E2EE Debug] No existing message, writing lock placeholder for item.id=${item.id}`);
           const storedMsg = {
             msg_id: item.id,
             chat_id: String(peerId),

@@ -613,6 +613,7 @@ export async function updateMsgId(oldId, newId) {
 
 export async function findAndResolvePendingSentMessage(chatId, timestamp, serverId) {
   await openDB();
+  console.log(`[E2EE Debug] findAndResolvePendingSentMessage called for chatId=${chatId}, serverId=${serverId}`);
   return new Promise((resolve) => {
     const transaction = _db.transaction(["messages"], "readwrite");
     const store = transaction.objectStore("messages");
@@ -626,6 +627,8 @@ export async function findAndResolvePendingSentMessage(chatId, timestamp, server
         const msg = cursor.value;
         const isTemp = typeof msg.msg_id === "string" && (msg.msg_id.startsWith("tmp-") || msg.msg_id.includes("-"));
         
+        console.log(`[E2EE Debug] checking message msg_id=${msg.msg_id}, chat_id=${msg.chat_id}, isTemp=${isTemp}`);
+        
         if (String(msg.chat_id) === String(chatId) && isTemp) {
           if (!oldestMsg || msg.created_at < oldestMsg.created_at) {
             oldestMsg = msg;
@@ -635,14 +638,17 @@ export async function findAndResolvePendingSentMessage(chatId, timestamp, server
         cursor.continue();
       } else {
         if (oldestMsg) {
+          console.log(`[E2EE Debug] Matched oldest pending message key=${oldestKey}, renaming to serverId=${serverId}`);
           store.delete(oldestKey).onsuccess = () => {
             oldestMsg.msg_id = serverId;
             oldestMsg.delivered = 1;
             store.put(oldestMsg).onsuccess = () => {
+              console.log(`[E2EE Debug] Successfully resolved message msg_id=${serverId}`);
               resolve(true);
             };
           };
         } else {
+          console.log(`[E2EE Debug] No pending message matched for chatId=${chatId}`);
           resolve(false);
         }
       }
