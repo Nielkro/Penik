@@ -475,7 +475,7 @@ async function onMsgRecvGlobal(payload) {
       await skipMessageKeys(n);
 
       const { newChainKey, messageKey } = await kdf_ck(recvChainKey);
-      decryptedText = await decryptMessage(messageKey, cipherBytes.slice(72), aad);
+      decryptedText = await decryptMessage(messageKey, cipherBytes.slice(104), aad);
 
       for (const sk of pendingSkippedKeys) {
         await saveSkippedKey(fromUserId, fromDeviceId, sk.dhPubHex, sk.n, sk.keyBytes);
