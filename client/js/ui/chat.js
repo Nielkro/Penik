@@ -10,7 +10,7 @@ import {
   getIdentity, deleteChatData, clearUserSessions
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcksQueue, triggerBackgroundBackup } from "../app.js";
-import { avatar, formatTime, formatDate, el, showToast, spinner, showSafetyNumberModal } from "./components.js";
+import { avatar, formatTime, formatDate, el, showToast, spinner, showSafetyNumberModal, showConfirmModal } from "./components.js";
 
 // Helper to convert a number to a 32-bit Big-Endian Uint8Array
 function numTo32BE(num) {
@@ -117,23 +117,7 @@ export async function renderChatList(container) {
 
 // ── X3DH: establish session with recipient device ────────────────────────────
 
-async function ensureSession(toUserId) {
-  const ws = getWS();
-  if (!ws) throw new Error("WebSocket не подключён");
-
-  // Fetch recipient keys via WS KEY_FETCH_REQ (0x10)
-  const keyBundle = await ws.request(0x10, { user_id: Number(toUserId) }, 0x11);
-  if (!keyBundle || !keyBundle.devices || !keyBundle.devices.length) {
-    throw new Error("Ключи получателя не найдены");
-  }
-
-  // Find the latest active device
-  const devices = keyBundle.devices.map(d => ({
-    ...d,
-    device_id: Number(d.device_id)
-  })).sort((a, b) => a.device_id - b.device_id);
-  const activeDevice = devices[devices.length - 1];
-
+async function ensureSessionForDevice(toUserId, activeDevice) {
   const toRaw = v => v instanceof Uint8Array ? v : decodeKey(v);
   const theirIKRaw  = toRaw(activeDevice.ik_pub);
   let theirIKDH = theirIKRaw;
@@ -153,6 +137,14 @@ async function ensureSession(toUserId) {
         }
       }
       if (!isSame) {
+        const trusted = await showConfirmModal(
+          "Изменение кода безопасности",
+          `Код безопасности для устройства ${activeDevice.device_id} пользователя изменился. Это может означать попытку взлома или то, что пользователь переустановил приложение. Вы доверяете новому коду?`
+        );
+        if (!trusted) {
+          throw new Error("Отправка отменена: код безопасности устройства не подтвержден.");
+        }
+
         const systemMsg = {
           msg_id: crypto.randomUUID(),
           chat_id: String(toUserId),
@@ -197,6 +189,14 @@ async function ensureSession(toUserId) {
       }
     }
     if (!isSame) {
+      const trusted = await showConfirmModal(
+        "Изменение кода безопасности",
+        `Код безопасности пользователя изменился. Вы доверяете новому коду?`
+      );
+      if (!trusted) {
+        throw new Error("Отправка отменена: код безопасности пользователя не подтвержден.");
+      }
+
       const systemMsg = {
         msg_id: crypto.randomUUID(),
         chat_id: String(toUserId),
@@ -242,7 +242,12 @@ async function ensureSession(toUserId) {
     console.warn("Предупреждение: Получен устаревший 32-байтный ключ идентичности, проверка подписи SPK пропущена.");
   }
 
-  const result = await x3dhInitiate(ourIKPriv, theirIKDH, theirSPKRaw, null);
+  let theirOPKRaw = null;
+  if (activeDevice.opk_pub) {
+    theirOPKRaw = toRaw(activeDevice.opk_pub);
+  }
+
+  const result = await x3dhInitiate(ourIKPriv, theirIKDH, theirSPKRaw, theirOPKRaw);
   const rootKey = result.sharedSecret; // SK
   const sessionInitEk = result.ekPubRaw; // EK_A
 
@@ -272,6 +277,9 @@ async function ensureSession(toUserId) {
     pn: 0,
     created_at: Date.now()
   };
+  if (theirOPKRaw) {
+    session.used_opk_pub = theirOPKRaw;
+  }
   await saveSession(session);
   return session;
 }
@@ -469,58 +477,95 @@ export async function renderChat(container, userId) {
 
     const tempId = `tmp-${Date.now()}`;
     const now = Date.now();
-    appendMessage({ msg_id: tempId, sender_id: me && (me.id || me.user_id), plaintext: text, created_at: now });
+    const myId = me && (me.id || me.user_id);
+    appendMessage({ msg_id: tempId, sender_id: myId, plaintext: text, created_at: now });
     messagesEl.scrollTop = messagesEl.scrollHeight;
 
     try {
-      const session = await ensureSession(userId);
-      if (!session.send_chain_key) {
-        throw new Error("Отправляющая цепочка не инициализирована");
-      }
-
-      // 1. Derive message key and new send chain key
-      const { newChainKey, messageKey } = await kdf_ck(session.send_chain_key);
-
-      // 2. Prepare header/AAD
-      const ourDhPub = session.our_dh_public_raw;
-      const nBytes = numTo32BE(session.n_send);
-      const pnBytes = numTo32BE(session.pn);
-
-      let aad;
-      if (session.n_send === 0 && session.session_init_ek) {
-        aad = concatU8(session.session_init_ek, ourDhPub, nBytes, pnBytes);
-      } else {
-        aad = concatU8(ourDhPub, nBytes, pnBytes);
-      }
-
-      // 3. Encrypt message with AAD
-      // encryptMessage returns [iv (12B) || ciphertext]
-      const ivAndCiphertext = await encryptMessage(messageKey, text, aad);
-
-      // 4. Form final packet: [aad || iv || ciphertext]
-      const cipherBytes = concatU8(aad, ivAndCiphertext);
-
-      const msgId = crypto.randomUUID();
       const ws = getWS();
       if (!ws || !ws.isConnected()) throw new Error("Нет соединения");
 
+      // 1. Fetch key bundles for recipient
+      const keyBundle = await ws.request(0x10, { user_id: Number(userId) }, 0x11);
+      if (!keyBundle || !keyBundle.devices || !keyBundle.devices.length) {
+        throw new Error("У собеседника нет активных устройств");
+      }
+
+      // 2. Fetch key bundles for our own other devices (for multi-device sync)
+      let ourBundle = null;
+      try {
+        ourBundle = await ws.request(0x10, { user_id: Number(myId) }, 0x11);
+      } catch (e) {
+        console.warn("Failed to fetch our own devices:", e);
+      }
+
+      // 3. Collect target devices
+      const targetDevices = [];
+      for (const dev of keyBundle.devices) {
+        targetDevices.push({ userId: Number(userId), dev });
+      }
+
+      if (ourBundle && ourBundle.devices) {
+        const myDeviceId = Number(localStorage.getItem("device_id"));
+        for (const dev of ourBundle.devices) {
+          if (Number(dev.device_id) !== myDeviceId) {
+            targetDevices.push({ userId: Number(myId), dev });
+          }
+        }
+      }
+
+      // 4. Encrypt separately for each target device
+      const devicesCiphertexts = [];
+      for (const target of targetDevices) {
+        const session = await ensureSessionForDevice(target.userId, target.dev);
+        if (!session.send_chain_key) {
+          throw new Error(`Отправляющая цепочка не инициализирована для устройства ${target.dev.device_id}`);
+        }
+
+        // Derive message key and new send chain key
+        const { newChainKey, messageKey } = await kdf_ck(session.send_chain_key);
+
+        const ourDhPub = session.our_dh_public_raw;
+        const nBytes = numTo32BE(session.n_send);
+        const pnBytes = numTo32BE(session.pn);
+
+        let aad;
+        if (session.n_send === 0 && session.session_init_ek) {
+          const usedOpkPub = session.used_opk_pub ? new Uint8Array(session.used_opk_pub) : new Uint8Array(32);
+          aad = concatU8(session.session_init_ek, ourDhPub, usedOpkPub, nBytes, pnBytes);
+        } else {
+          aad = concatU8(ourDhPub, nBytes, pnBytes);
+        }
+
+        // Encrypt message with AAD
+        const ivAndCiphertext = await encryptMessage(messageKey, text, aad);
+        const cipherBytes = concatU8(aad, ivAndCiphertext);
+
+        // Update session state
+        session.send_chain_key = newChainKey;
+        session.n_send += 1;
+        await saveSession(session);
+
+        devicesCiphertexts.push({
+          device_id: Number(target.dev.device_id),
+          cipher_bytes: cipherBytes
+        });
+      }
+
+      const msgId = crypto.randomUUID();
+
       ws.send(0x01, {
         to_user_id: Number(userId),
-        cipher_bytes: cipherBytes,
+        devices: devicesCiphertexts,
         msg_id: msgId,
       });
 
       pendingAcksQueue.push({ tempId: msgId, userId: userId });
 
-      // 5. Update session state
-      session.send_chain_key = newChainKey;
-      session.n_send += 1;
-      await saveSession(session);
-
       const storedMsg = {
         msg_id: msgId,
         chat_id: userId,
-        sender_id: me && (me.id || me.user_id),
+        sender_id: myId,
         plaintext: text,
         created_at: now,
         delivered: 0,

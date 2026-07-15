@@ -336,6 +336,43 @@ export async function getAndRemoveOPK(id) {
   });
 }
 
+export async function getAndRemoveOPKByPub(pubBytes) {
+  await openDB();
+  return new Promise((resolve, reject) => {
+    const store = tx("opk_pool", "readwrite");
+    const req = store.openCursor();
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const opk = cursor.value;
+        if (opk.pubRaw) {
+          const a = new Uint8Array(opk.pubRaw);
+          const b = new Uint8Array(pubBytes);
+          let match = a.length === b.length;
+          if (match) {
+            for (let i = 0; i < a.length; i++) {
+              if (a[i] !== b[i]) {
+                match = false;
+                break;
+              }
+            }
+          }
+          if (match) {
+            const delReq = store.delete(cursor.key);
+            delReq.onsuccess = () => resolve(opk);
+            delReq.onerror = () => reject(delReq.error);
+            return;
+          }
+        }
+        cursor.continue();
+      } else {
+        resolve(null);
+      }
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
 export async function countOPKs() {
   await openDB();
   return new Promise((resolve, reject) => {

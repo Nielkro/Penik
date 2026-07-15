@@ -264,3 +264,42 @@ export function showSafetyNumberModal(title, safetyNumber) {
     document.body.appendChild(overlay);
   });
 }
+
+export function showConfirmModal(title, text) {
+  return new Promise((resolve) => {
+    const cancelBtn = el("button", {
+      class: "btn-secondary",
+      style: "flex:1;padding:12px;font-size:14px;border-radius:8px;cursor:pointer;margin-right:8px;background:rgba(255,255,255,0.05);color:#fff;border:1px solid rgba(255,255,255,0.1);"
+    }, "Отмена");
+
+    const confirmBtn = el("button", {
+      class: "btn-primary",
+      style: "flex:1;padding:12px;font-size:14px;border-radius:8px;cursor:pointer;background:#22c55e;color:#fff;border:none;"
+    }, "Доверять");
+
+    const modalBox = el("div", {
+      style: "background:#1e1e24;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;width:100%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.5);display:flex;flex-direction:column;"
+    },
+      el("h3", { style: "font-size:18px;margin-bottom:12px;color:#fff;font-weight:600;line-height:1.4;text-align:center;" }, title),
+      el("p", { style: "font-size:13px;color:#a0a0b5;margin-bottom:20px;line-height:1.5;text-align:center;" }, text),
+      el("div", { style: "display:flex;justify-content:space-between;" }, cancelBtn, confirmBtn)
+    );
+
+    const overlay = el("div", {
+      style: "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;"
+    }, modalBox);
+
+    const closeWithResult = (result) => {
+      document.body.removeChild(overlay);
+      resolve(result);
+    };
+
+    confirmBtn.addEventListener("click", () => closeWithResult(true));
+    cancelBtn.addEventListener("click", () => closeWithResult(false));
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) closeWithResult(false);
+    });
+
+    document.body.appendChild(overlay);
+  });
+}

@@ -419,18 +419,33 @@ async function onMsgRecvGlobal(payload) {
     }
 
     if (!session || isBootstrapFallback) {
-      if (cipherBytes.length < 84) {
+      if (cipherBytes.length < 116) {
         throw new Error("Bootstrap-пакет слишком короткий");
       }
       const session_init_ek = cipherBytes.slice(0, 32);
       const dh_pub = cipherBytes.slice(32, 64);
-      const n = read32BE(cipherBytes, 64);
-      const pn = read32BE(cipherBytes, 68);
-      const iv = cipherBytes.slice(72, 84);
-      const ciphertext = cipherBytes.slice(84);
-      const aad = cipherBytes.slice(0, 72);
+      const used_opk_pub = cipherBytes.slice(64, 96);
+      const n = read32BE(cipherBytes, 96);
+      const pn = read32BE(cipherBytes, 100);
+      const iv = cipherBytes.slice(104, 116);
+      const ciphertext = cipherBytes.slice(116);
+      const aad = cipherBytes.slice(0, 104);
 
-      const newSession = await getOrEstablishReceiverSession(fromUserId, fromDeviceId, session_init_ek, dh_pub);
+      let isAllZeros = true;
+      for (let i = 0; i < 32; i++) {
+        if (used_opk_pub[i] !== 0) {
+          isAllZeros = false;
+          break;
+        }
+      }
+
+      const newSession = await getOrEstablishReceiverSession(
+        fromUserId,
+        fromDeviceId,
+        session_init_ek,
+        dh_pub,
+        isAllZeros ? null : used_opk_pub
+      );
 
       let rootKey = newSession.root_key;
       let recvChainKey = newSession.recv_chain_key;
@@ -498,9 +513,10 @@ async function onMsgRecvGlobal(payload) {
     console.warn("Не удалось расшифровать сообщение (возможно, отправлено на другое устройство):", err.message || err);
   }
 
+  const chatPartnerId = payload.chat_user_id || fromUserId;
   const inMsg = {
     msg_id: payload.msg_id,
-    chat_id: String(fromUserId),
+    chat_id: String(chatPartnerId),
     sender_id: fromUserId,
     plaintext,
     created_at: payload.ts ? payload.ts * 1000 : Date.now(),
@@ -509,19 +525,19 @@ async function onMsgRecvGlobal(payload) {
 
   await saveMessage(inMsg);
 
-  let contact = await getContact(fromUserId);
+  let contact = await getContact(chatPartnerId);
   if (!contact) {
     try {
-      const res = await getUserById(String(fromUserId));
+      const res = await getUserById(String(chatPartnerId));
       contact = res.user || res;
     } catch {
-      contact = { user_id: fromUserId, name: "Неизвестный", nickname: "" };
+      contact = { user_id: chatPartnerId, name: "Неизвестный", nickname: "" };
     }
   }
 
   await saveContact({
     ...contact,
-    user_id: fromUserId,
+    user_id: chatPartnerId,
     last_message: plaintext,
     last_ts: inMsg.created_at,
   });
@@ -530,7 +546,7 @@ async function onMsgRecvGlobal(payload) {
     ws.send(0x04, { msg_id: payload.msg_id });
   }
 
-  if (_activeChatCallback && String(_activeChatCallback.userId) === String(fromUserId)) {
+  if (_activeChatCallback && String(_activeChatCallback.userId) === String(chatPartnerId)) {
     _activeChatCallback.fn(inMsg);
   }
 
@@ -605,7 +621,7 @@ export async function syncMessageHistory() {
       const existing = await getMessage(item.id);
       if (existing) continue;
 
-      const peerId = Number(item.sender_id) === myId ? Number(item.recipient_id) : Number(item.sender_id);
+      const peerId = Number(item.chat_user_id || (Number(item.sender_id) === myId ? item.recipient_id : item.sender_id));
 
       let contact = await getContact(peerId);
       if (!contact) {
@@ -632,6 +648,7 @@ export async function syncMessageHistory() {
           msg_id: item.id,
           from_user_id: item.sender_id,
           from_device_id: item.sender_device_id,
+          chat_user_id: item.chat_user_id,
           cipher_bytes: typeof item.cipher_bytes === "string" ? decodeKey(item.cipher_bytes) : new Uint8Array(item.cipher_bytes),
           ts: item.timestamp
         };
