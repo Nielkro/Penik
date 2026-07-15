@@ -99,6 +99,19 @@ func DeleteChat(database *db.DB) http.HandlerFunc {
 			u1, u2 = u2, u1
 		}
 
+		everyone := r.URL.Query().Get("everyone") == "true"
+		if everyone {
+			// Hard delete the chat for both users (cascades to all messages)
+			_, err := database.ExecContext(r.Context(),
+				`DELETE FROM chats WHERE user1_id=? AND user2_id=?`, u1, u2)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		// Find the chat_id
 		var chatID int64
 		err := database.QueryRowContext(r.Context(),

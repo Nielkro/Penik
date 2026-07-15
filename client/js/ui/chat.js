@@ -10,7 +10,7 @@ import {
   getIdentity, deleteChatData, clearUserSessions
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcksQueue, triggerBackgroundBackup } from "../app.js";
-import { avatar, formatTime, formatDate, el, showToast, spinner, showSafetyNumberModal, showConfirmModal, showSafetyExplanationModal } from "./components.js";
+import { avatar, formatTime, formatDate, el, showToast, spinner, showSafetyNumberModal, showConfirmModal, showSafetyExplanationModal, showDeleteChatConfirmModal } from "./components.js";
 
 // Helper to convert a number to a 32-bit Big-Endian Uint8Array
 function numTo32BE(num) {
@@ -402,15 +402,18 @@ export async function renderChat(container, userId) {
   deleteBtn.addEventListener("mouseleave", () => { deleteBtn.style.opacity = "0.7"; });
 
   deleteBtn.addEventListener("click", async () => {
-    if (!confirm("Вы действительно хотите удалить этот чат и все сообщения? Это также сбросит криптографическую сессию с пользователем.")) {
+    const res = await showDeleteChatConfirmModal();
+    if (!res.confirmed) {
       return;
     }
     try {
       // 1. Delete on the server
-      await apiDelete(`/chats/${userId}`);
+      const url = res.deleteForEveryone ? `/chats/${userId}?everyone=true` : `/chats/${userId}`;
+      await apiDelete(url);
+      
       // 2. Delete locally in IndexedDB
       await deleteChatData(userId);
-      showToast("Чат удален");
+      showToast(res.deleteForEveryone ? "Чат удален для всех" : "Чат удален");
       const chatEl = document.getElementById('screen-chat');
       if (chatEl) chatEl.innerHTML = '';
       navigate("#chats");

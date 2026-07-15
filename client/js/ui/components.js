@@ -344,3 +344,61 @@ export function showSafetyExplanationModal() {
     document.body.appendChild(overlay);
   });
 }
+
+export function showDeleteChatConfirmModal() {
+  return new Promise((resolve) => {
+    const checkboxId = "delete-for-everyone-chk";
+    const checkbox = el("input", {
+      type: "checkbox",
+      id: checkboxId,
+      style: "margin-right:8px;cursor:pointer;width:16px;height:16px;accent-color:#ef4444;"
+    });
+
+    const checkboxLabel = el("label", {
+      for: checkboxId,
+      style: "font-size:13px;color:#e2e2e9;cursor:pointer;user-select:none;display:flex;align-items:center;"
+    }, checkbox, "Удалить также для собеседника");
+
+    const checkboxRow = el("div", {
+      style: "display:flex;align-items:center;margin-bottom:20px;padding:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:8px;"
+    }, checkboxLabel);
+
+    const cancelBtn = el("button", {
+      class: "btn-secondary",
+      style: "flex:1;padding:12px;font-size:14px;border-radius:8px;cursor:pointer;margin-right:8px;background:rgba(255,255,255,0.05);color:#fff;border:1px solid rgba(255,255,255,0.1);"
+    }, "Отмена");
+
+    const confirmBtn = el("button", {
+      class: "btn-primary",
+      style: "flex:1;padding:12px;font-size:14px;border-radius:8px;cursor:pointer;background:#ef4444;color:#fff;border:none;"
+    }, "Удалить");
+
+    const modalBox = el("div", {
+      style: "background:#1e1e24;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;width:100%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.5);display:flex;flex-direction:column;"
+    },
+      el("h3", { style: "font-size:18px;margin-bottom:12px;color:#fff;font-weight:600;line-height:1.4;text-align:center;" }, "Удалить чат"),
+      el("p", { style: "font-size:13px;color:#a0a0b5;margin-bottom:16px;line-height:1.5;text-align:center;" }, 
+        "Вы действительно хотите удалить этот чат и все сообщения? Это также сбросит криптографическую сессию с пользователем."
+      ),
+      checkboxRow,
+      el("div", { style: "display:flex;justify-content:space-between;" }, cancelBtn, confirmBtn)
+    );
+
+    const overlay = el("div", {
+      style: "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;"
+    }, modalBox);
+
+    const closeWithResult = (confirmed) => {
+      document.body.removeChild(overlay);
+      resolve({ confirmed, deleteForEveryone: checkbox.checked });
+    };
+
+    confirmBtn.addEventListener("click", () => closeWithResult(true));
+    cancelBtn.addEventListener("click", () => closeWithResult(false));
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) closeWithResult(false);
+    });
+
+    document.body.appendChild(overlay);
+  });
+}
