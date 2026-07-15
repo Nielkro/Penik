@@ -188,7 +188,6 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 	now := time.Now().Unix()
 
-	// Get or create chat between sender's user and recipient user.
 	senderUserID := c.userID
 	recipientUserID := msg.ToUserID
 
@@ -210,30 +209,26 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 		return fmt.Errorf("lookup chat: %w", err)
 	}
 
-	// Get all devices of recipient.
-	rows, err := c.db.QueryContext(ctx,
-		`SELECT id FROM devices WHERE user_id=?`, recipientUserID)
-	if err != nil {
-		return fmt.Errorf("get recipient devices: %w", err)
+	if len(msg.Devices) == 0 {
+		return fmt.Errorf("no target devices specified")
 	}
-	var recipientDeviceIDs []int64
-	for rows.Next() {
-		var did int64
-		if err := rows.Scan(&did); err == nil {
-			recipientDeviceIDs = append(recipientDeviceIDs, did)
-		}
-	}
-	rows.Close()
 
 	var lastInsertedID int64
 
-	for _, rdid := range recipientDeviceIDs {
+	for _, devCipher := range msg.Devices {
+		var devOwnerID int64
+		err := c.db.QueryRowContext(ctx, `SELECT user_id FROM devices WHERE id=?`, devCipher.DeviceID).Scan(&devOwnerID)
+		if err != nil {
+			log.Printf("ws msg send: device %d not found: %v", devCipher.DeviceID, err)
+			continue
+		}
+
 		res, err := c.db.ExecContext(ctx,
 			`INSERT INTO messages(chat_id,sender_device_id,recipient_device_id,ciphertext,timestamp,delivered)
 			 VALUES(?,?,?,?,?,0)`,
-			chatID, c.deviceID, rdid, msg.CipherBytes, now)
+			chatID, c.deviceID, devCipher.DeviceID, devCipher.CipherBytes, now)
 		if err != nil {
-			log.Printf("store message for device %d: %v", rdid, err)
+			log.Printf("store message for device %d: %v", devCipher.DeviceID, err)
 			continue
 		}
 		id, _ := res.LastInsertId()
@@ -241,10 +236,18 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 			lastInsertedID = id
 		}
 
+		var chatUserID int64
+		if devOwnerID == senderUserID {
+			chatUserID = recipientUserID
+		} else {
+			chatUserID = senderUserID
+		}
+
 		recv := MsgRecv{
 			FromUserID:   senderUserID,
 			FromDeviceID: c.deviceID,
-			CipherBytes:  msg.CipherBytes,
+			ChatUserID:   chatUserID,
+			CipherBytes:  devCipher.CipherBytes,
 			MsgID:        id,
 			TS:           now,
 		}
@@ -252,7 +255,7 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 		if err != nil {
 			continue
 		}
-		c.hub.SendToDevice(rdid, frame)
+		c.hub.SendToDevice(devCipher.DeviceID, frame)
 	}
 
 	// Ack back to sender with first message id.
@@ -329,12 +332,16 @@ func (c *Client) handleKeyFetchReq(ctx context.Context, req *KeyFetchReq) error 
 
 func (c *Client) sendOfflineBatch(ctx context.Context) error {
 	rows, err := c.db.QueryContext(ctx,
-		`SELECT m.id, d.user_id, m.sender_device_id, m.ciphertext, m.timestamp
+		`SELECT m.id, d_sender.user_id, m.sender_device_id,
+		        CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END as chat_user_id,
+		        m.ciphertext, m.timestamp
 		 FROM messages m
-		 JOIN devices d ON d.id = m.sender_device_id
+		 JOIN chats c ON m.chat_id = c.id
+		 JOIN devices d_sender ON d_sender.id = m.sender_device_id
+		 JOIN devices d_recv   ON d_recv.id = m.recipient_device_id
 		 WHERE m.recipient_device_id=? AND m.delivered=0
 		 ORDER BY m.timestamp ASC`,
-		c.deviceID)
+		c.userID, c.deviceID)
 	if err != nil {
 		return err
 	}
@@ -343,7 +350,7 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 	var msgs []MsgRecv
 	for rows.Next() {
 		var m MsgRecv
-		if err := rows.Scan(&m.MsgID, &m.FromUserID, &m.FromDeviceID, &m.CipherBytes, &m.TS); err != nil {
+		if err := rows.Scan(&m.MsgID, &m.FromUserID, &m.FromDeviceID, &m.ChatUserID, &m.CipherBytes, &m.TS); err != nil {
 			continue
 		}
 		msgs = append(msgs, m)
