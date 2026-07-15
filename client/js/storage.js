@@ -415,7 +415,7 @@ export async function importIdentityData(data) {
   return identity;
 }
 
-export async function getOrEstablishReceiverSession(fromUserId, fromDeviceId, sessionInitEk, initialDHPub) {
+export async function getOrEstablishReceiverSession(fromUserId, fromDeviceId, sessionInitEk, initialDHPub, usedOpkPub) {
   let session = await getSession(fromUserId, fromDeviceId);
   if (session) return session;
 
@@ -440,8 +440,19 @@ export async function getOrEstablishReceiverSession(fromUserId, fromDeviceId, se
     theirIKPub = theirIKPub.slice(0, 32);
   }
 
+  // Retrieve and remove OPK private key if usedOpkPub was supplied by sender
+  let ourOPKPriv = null;
+  if (usedOpkPub) {
+    const opk = await getAndRemoveOPKByPub(usedOpkPub);
+    if (opk) {
+      ourOPKPriv = await importX25519Priv(opk.privJwk);
+    } else {
+      console.warn("OPK was specified in bootstrap packet but not found in our local opk_pool!");
+    }
+  }
+
   // 1. Perform X3DH respond to establish initial shared secret (SK)
-  const rootKey = await x3dhRespond(ourIKPriv, ourSPKPriv, null, theirIKPub, sessionInitEk);
+  const rootKey = await x3dhRespond(ourIKPriv, ourSPKPriv, ourOPKPriv, theirIKPub, sessionInitEk);
 
   // 2. Import Signed Prekey as our initial DH key pair
   const spkPriv = await importX25519Priv(identity.spk_priv_jwk);
