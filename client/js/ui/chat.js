@@ -10,7 +10,7 @@ import {
   getIdentity, deleteChatData, clearUserSessions
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcksQueue, triggerBackgroundBackup } from "../app.js";
-import { avatar, formatTime, formatDate, el, showToast, spinner, showSafetyNumberModal, showConfirmModal } from "./components.js";
+import { avatar, formatTime, formatDate, el, showToast, spinner, showSafetyNumberModal, showConfirmModal, showSafetyExplanationModal } from "./components.js";
 
 // Helper to convert a number to a 32-bit Big-Endian Uint8Array
 function numTo32BE(num) {
@@ -158,9 +158,15 @@ async function ensureSessionForDevice(toUserId, activeDevice) {
         // Append to DOM immediately if chat is open
         const messagesEl = document.querySelector(`.chat-messages[data-user-id="${toUserId}"]`);
         if (messagesEl) {
-          const bubble = el("div", { class: "msg-bubble msg-system" },
+          const bubble = el("div", {
+            class: "msg-bubble msg-system",
+            style: "cursor: pointer; text-decoration: underline;"
+          },
             el("span", { class: "msg-text" }, "⚠️ Код безопасности изменился!")
           );
+          bubble.addEventListener("click", () => {
+            showSafetyExplanationModal();
+          });
           messagesEl.appendChild(bubble);
           messagesEl.scrollTop = messagesEl.scrollHeight;
         }
@@ -210,9 +216,15 @@ async function ensureSessionForDevice(toUserId, activeDevice) {
       // Append to DOM immediately if chat is open
       const messagesEl = document.querySelector(`.chat-messages[data-user-id="${toUserId}"]`);
       if (messagesEl) {
-        const bubble = el("div", { class: "msg-bubble msg-system" },
+        const bubble = el("div", {
+          class: "msg-bubble msg-system",
+          style: "cursor: pointer; text-decoration: underline;"
+        },
           el("span", { class: "msg-text" }, "⚠️ Код безопасности изменился!")
         );
+        bubble.addEventListener("click", () => {
+          showSafetyExplanationModal();
+        });
         messagesEl.appendChild(bubble);
         messagesEl.scrollTop = messagesEl.scrollHeight;
       }
@@ -439,9 +451,18 @@ export async function renderChat(container, userId) {
   function appendMessage(msg, prepend = false) {
     const isSystem = msg.sender_id === 0;
     if (isSystem) {
-      const bubble = el("div", { class: "msg-bubble msg-system" },
+      const isKeyChange = (msg.plaintext === "⚠️ Код безопасности изменился!");
+      const bubble = el("div", {
+        class: "msg-bubble msg-system",
+        style: isKeyChange ? "cursor: pointer; text-decoration: underline;" : ""
+      },
         el("span", { class: "msg-text" }, msg.plaintext || "")
       );
+      if (isKeyChange) {
+        bubble.addEventListener("click", () => {
+          showSafetyExplanationModal();
+        });
+      }
       bubble.dataset.msgId = msg.msg_id;
       prepend ? messagesEl.prepend(bubble) : messagesEl.appendChild(bubble);
       return;
