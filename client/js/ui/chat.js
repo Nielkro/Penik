@@ -1,4 +1,4 @@
-import { apiGet } from "../api.js";
+import { apiGet, apiDelete } from "../api.js";
 import {
   x3dhInitiate, encryptMessage, decryptMessage,
   importX25519Priv, importX25519Pub, encodeKey, decodeKey, verifySignature,
@@ -394,6 +394,9 @@ export async function renderChat(container, userId) {
       return;
     }
     try {
+      // 1. Delete on the server
+      await apiDelete(`/chats/${userId}`);
+      // 2. Delete locally in IndexedDB
       await deleteChatData(userId);
       showToast("Чат удален");
       const chatEl = document.getElementById('screen-chat');

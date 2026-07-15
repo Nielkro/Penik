@@ -64,6 +64,7 @@ const del = (path, opts) => request('DELETE', path, undefined, opts);
 export const apiPost = post;
 export const apiGet  = get;
 export const apiPatch = patch;
+export const apiDelete = del;
 
 /* ── Auth ── */
 
