@@ -48,6 +48,11 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate legacy schema: %w", err)
 	}
 
+	if err := migrateDeleteFlags(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate delete flags: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
 }
 
@@ -183,4 +188,42 @@ func hasCascadeForeignKeys(database *sql.DB) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+func migrateDeleteFlags(database *sql.DB) error {
+	rows, err := database.Query("PRAGMA table_info(messages)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasSender := false
+	hasRecipient := false
+	for rows.Next() {
+		var cid int
+		var name, typeStr string
+		var notnull, pk int
+		var dfltVal sql.NullString
+		if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err != nil {
+			return err
+		}
+		if name == "deleted_by_sender" {
+			hasSender = true
+		}
+		if name == "deleted_by_recipient" {
+			hasRecipient = true
+		}
+	}
+
+	if !hasSender {
+		if _, err := database.Exec("ALTER TABLE messages ADD COLUMN deleted_by_sender INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
+	if !hasRecipient {
+		if _, err := database.Exec("ALTER TABLE messages ADD COLUMN deleted_by_recipient INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
