@@ -32,16 +32,31 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 		deviceID := middleware.DeviceIDFromCtx(r.Context())
 
 		rows, err := database.QueryContext(r.Context(),
-			`SELECT m.id, m.chat_id, d_sender.user_id, m.sender_device_id, d_recv.user_id,
-			        CASE WHEN d_sender.user_id = ? THEN d_recv.user_id ELSE d_sender.user_id END as chat_user_id,
-			        m.ciphertext, m.timestamp, m.delivered
-			 FROM messages m
-			 JOIN devices d_sender ON m.sender_device_id = d_sender.id
-			 JOIN devices d_recv   ON m.recipient_device_id = d_recv.id
-			 WHERE d_sender.user_id = ?         -- messages we sent
-			    OR m.recipient_device_id = ?    -- messages sent to our current device
-			 ORDER BY m.timestamp ASC`,
-			userID, userID, deviceID)
+			`SELECT id, chat_id, sender_id, sender_device_id, recipient_id, chat_user_id, ciphertext, timestamp, delivered
+			 FROM (
+				 -- Incoming messages from other users addressed to our current device
+				 SELECT m.id, m.chat_id, d_sender.user_id as sender_id, m.sender_device_id, d_recv.user_id as recipient_id,
+				        d_sender.user_id as chat_user_id,
+				        m.ciphertext, m.timestamp, m.delivered
+				 FROM messages m
+				 JOIN devices d_sender ON m.sender_device_id = d_sender.id
+				 JOIN devices d_recv   ON m.recipient_device_id = d_recv.id
+				 WHERE m.recipient_device_id = ? AND d_sender.user_id != ?
+
+				 UNION ALL
+
+				 -- Outgoing messages sent by us, deduplicated by timestamp to avoid multi-device row duplication
+				 SELECT MIN(m.id) as id, m.chat_id, d_sender.user_id as sender_id, m.sender_device_id, d_recv.user_id as recipient_id,
+				        d_recv.user_id as chat_user_id,
+				        m.ciphertext, m.timestamp, m.delivered
+				 FROM messages m
+				 JOIN devices d_sender ON m.sender_device_id = d_sender.id
+				 JOIN devices d_recv   ON m.recipient_device_id = d_recv.id
+				 WHERE d_sender.user_id = ?
+				 GROUP BY m.chat_id, m.sender_device_id, m.timestamp
+			 )
+			 ORDER BY timestamp ASC`,
+			deviceID, userID, userID)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
