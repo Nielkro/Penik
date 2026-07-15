@@ -16,6 +16,7 @@ import { renderAuth } from './ui/auth.js';
 import { renderChatList, renderChat } from './ui/chat.js';
 import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
+import { showSafetyExplanationModal } from './ui/components.js';
 
 function u8ToHex(arr) {
   return Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
@@ -498,6 +499,11 @@ async function onMsgRecvGlobal(payload) {
         if (messagesEl && _activeChatCallback && String(_activeChatCallback.userId) === String(fromUserId)) {
           const bubble = document.createElement("div");
           bubble.className = "msg-bubble msg-system";
+          bubble.style.cursor = "pointer";
+          bubble.style.textDecoration = "underline";
+          bubble.addEventListener("click", () => {
+            showSafetyExplanationModal();
+          });
           const span = document.createElement("span");
           span.className = "msg-text";
           span.textContent = "⚠️ Код безопасности изменился!";

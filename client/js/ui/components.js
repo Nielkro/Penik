@@ -303,3 +303,44 @@ export function showConfirmModal(title, text) {
     document.body.appendChild(overlay);
   });
 }
+
+export function showSafetyExplanationModal() {
+  return new Promise((resolve) => {
+    const closeBtn = el("button", {
+      class: "btn-primary",
+      style: "width:100%;padding:12px;font-size:14px;border-radius:8px;cursor:pointer;margin-top:16px;"
+    }, "Понятно");
+
+    const modalBox = el("div", {
+      style: "background:#1e1e24;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;width:100%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.5);display:flex;flex-direction:column;"
+    },
+      el("h3", { style: "font-size:18px;margin-bottom:12px;color:#fff;font-weight:600;line-height:1.4;text-align:center;" }, "Изменение кода безопасности"),
+      el("p", { style: "font-size:13px;color:#a0a0b5;margin-bottom:12px;line-height:1.6;" }, 
+        "Код безопасности (Safety Number) используется для подтверждения того, что ваши звонки и сообщения защищены сквозным шифрованием (E2EE) и не могут быть перехвачены третьей стороной."
+      ),
+      el("p", { style: "font-size:13px;color:#a0a0b5;margin-bottom:12px;line-height:1.6;" }, 
+        "Обычно этот код изменяется, когда ваш собеседник переустановил приложение, сменил телефон или зашел с нового устройства."
+      ),
+      el("p", { style: "font-size:13px;color:#ff9800;margin-bottom:16px;line-height:1.6;font-weight:500;" }, 
+        "⚠️ Если собеседник не переустанавливал приложение и не менял устройство, это может указывать на атаку типа Man-in-the-Middle (попытку перехвата переписки)."
+      ),
+      closeBtn
+    );
+
+    const overlay = el("div", {
+      style: "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;"
+    }, modalBox);
+
+    const cleanUp = () => {
+      document.body.removeChild(overlay);
+      resolve();
+    };
+
+    closeBtn.addEventListener("click", cleanUp);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) cleanUp();
+    });
+
+    document.body.appendChild(overlay);
+  });
+}
