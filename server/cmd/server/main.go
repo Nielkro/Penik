@@ -69,6 +69,8 @@ func main() {
 		authMW(http.HandlerFunc(handlers.UploadOTK(database))))
 	mux.Handle("GET /api/v1/messages/history",
 		authMW(http.HandlerFunc(handlers.GetMessageHistory(database))))
+	mux.Handle("DELETE /api/v1/chats/{peer_id}",
+		authMW(http.HandlerFunc(handlers.DeleteChat(database))))
 	mux.Handle("GET /api/v1/ws",
 		authMW(http.HandlerFunc(handlers.WebSocketHandler(hub, database))))
 
