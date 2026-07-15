@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"fmt"
@@ -33,12 +34,153 @@ func Open(path string) (*DB, error) {
 
 	schema, err := schemaFS.ReadFile("schema.sql")
 	if err != nil {
+		sqlDB.Close()
 		return nil, fmt.Errorf("db: read schema: %w", err)
 	}
 
 	if _, err := sqlDB.Exec(string(schema)); err != nil {
+		sqlDB.Close()
 		return nil, fmt.Errorf("db: migrate: %w", err)
 	}
 
+	if err := migrateLegacySchema(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate legacy schema: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
+}
+
+func migrateLegacySchema(database *sql.DB) error {
+	current, err := hasCascadeForeignKeys(database)
+	if err != nil {
+		return err
+	}
+	if current {
+		return nil
+	}
+
+	ctx := context.Background()
+	if _, err := database.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("disable foreign keys: %w", err)
+	}
+	defer database.ExecContext(ctx, `PRAGMA foreign_keys = ON`)
+
+	tx, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Old databases did not cascade device deletion into messages. Remove rows
+	// whose parent was already deleted before rebuilding the affected tables.
+	const migration = `
+DELETE FROM messages
+WHERE chat_id NOT IN (SELECT id FROM chats)
+   OR sender_device_id NOT IN (SELECT id FROM devices)
+   OR recipient_device_id NOT IN (SELECT id FROM devices);
+DELETE FROM sessions
+WHERE user_id NOT IN (SELECT id FROM users)
+   OR device_id NOT IN (SELECT id FROM devices);
+DELETE FROM identity_keys WHERE device_id NOT IN (SELECT id FROM devices);
+DELETE FROM one_time_keys WHERE device_id NOT IN (SELECT id FROM devices);
+DELETE FROM key_backups
+WHERE user_id NOT IN (SELECT id FROM users)
+   OR device_id NOT IN (SELECT id FROM devices);
+DELETE FROM chats
+WHERE user1_id NOT IN (SELECT id FROM users)
+   OR user2_id NOT IN (SELECT id FROM users);
+
+CREATE TEMP TABLE legacy_chats AS SELECT * FROM chats;
+CREATE TEMP TABLE legacy_messages AS SELECT * FROM messages;
+DROP TABLE messages;
+DROP TABLE chats;
+
+CREATE TABLE chats (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user1_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user2_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  UNIQUE(user1_id, user2_id)
+);
+CREATE TABLE messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  sender_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  recipient_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  ciphertext BLOB NOT NULL,
+  timestamp INTEGER NOT NULL,
+  delivered INTEGER NOT NULL DEFAULT 0
+);
+
+INSERT INTO chats SELECT * FROM legacy_chats;
+INSERT INTO messages SELECT * FROM legacy_messages;
+DROP TABLE legacy_messages;
+DROP TABLE legacy_chats;
+
+CREATE INDEX idx_messages_recipient_undelivered
+ON messages(recipient_device_id, delivered);
+`
+	if _, err := tx.ExecContext(ctx, migration); err != nil {
+		return fmt.Errorf("rebuild chats and messages: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+
+	if _, err := database.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		return fmt.Errorf("enable foreign keys: %w", err)
+	}
+
+	var table string
+	if err := database.QueryRowContext(ctx, `PRAGMA foreign_key_check`).Scan(&table, new(any), new(any), new(any)); err != sql.ErrNoRows {
+		if err != nil {
+			return fmt.Errorf("check foreign keys: %w", err)
+		}
+		return fmt.Errorf("foreign key check failed for table %s", table)
+	}
+	return nil
+}
+
+func hasCascadeForeignKeys(database *sql.DB) (bool, error) {
+	type requiredKey struct {
+		table string
+		from  string
+	}
+	required := map[requiredKey]bool{
+		{table: "users", from: "user1_id"}:              false,
+		{table: "users", from: "user2_id"}:              false,
+		{table: "chats", from: "chat_id"}:               false,
+		{table: "devices", from: "sender_device_id"}:    false,
+		{table: "devices", from: "recipient_device_id"}: false,
+	}
+
+	for _, table := range []string{"chats", "messages"} {
+		rows, err := database.Query(`PRAGMA foreign_key_list(` + table + `)`)
+		if err != nil {
+			return false, fmt.Errorf("inspect %s foreign keys: %w", table, err)
+		}
+		for rows.Next() {
+			var id, seq int
+			var parent, from, to, onUpdate, onDelete, match string
+			if err := rows.Scan(&id, &seq, &parent, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+				rows.Close()
+				return false, fmt.Errorf("scan %s foreign keys: %w", table, err)
+			}
+			key := requiredKey{table: parent, from: from}
+			if _, ok := required[key]; ok && onDelete == "CASCADE" {
+				required[key] = true
+			}
+		}
+		if err := rows.Close(); err != nil {
+			return false, fmt.Errorf("close %s foreign keys: %w", table, err)
+		}
+	}
+
+	for _, present := range required {
+		if !present {
+			return false, nil
+		}
+	}
+	return true, nil
 }
