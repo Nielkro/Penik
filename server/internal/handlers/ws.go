@@ -18,6 +18,7 @@ func WebSocketHandler(hub *ws.Hub, database *db.DB) http.HandlerFunc {
 
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 			InsecureSkipVerify: true, // auth/CORS already enforced by middleware
+			Subprotocols:       []string{"access_token"},
 		})
 		if err != nil {
 			// websocket.Accept already wrote the HTTP error response.

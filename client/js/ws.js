@@ -132,10 +132,10 @@ class WSManager {
   /* ── Private ── */
 
   _doConnect(token) {
-    const url = `${WS_URL}?token=${encodeURIComponent(token)}`;
+    const url = WS_URL;
 
     try {
-      this._ws = new WebSocket(url);
+      this._ws = new WebSocket(url, ["access_token", token]);
       this._ws.binaryType = 'arraybuffer';
     } catch (e) {
       console.error('[ws] Failed to create WebSocket', e);

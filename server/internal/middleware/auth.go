@@ -55,6 +55,16 @@ func extractToken(r *http.Request) string {
 			return strings.TrimPrefix(h, "Bearer ")
 		}
 	}
+	// Check Sec-WebSocket-Protocol for WebSocket auth token
+	if proto := r.Header.Get("Sec-WebSocket-Protocol"); proto != "" {
+		parts := strings.Split(proto, ",")
+		for i, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "access_token" && i+1 < len(parts) {
+				return strings.TrimSpace(parts[i+1])
+			}
+		}
+	}
 	// Fall back to ?token= for WebSocket handshakes.
 	return r.URL.Query().Get("token")
 }
