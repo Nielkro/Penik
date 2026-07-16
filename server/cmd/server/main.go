@@ -59,10 +59,7 @@ func main() {
 		authMW(http.HandlerFunc(handlers.UpdatePassword(database))))
 	mux.Handle("PUT /api/v1/avatar",
 		authMW(http.HandlerFunc(handlers.UploadAvatar(database, cfg))))
-	mux.Handle("POST /api/v1/keys/backup",
-		authMW(http.HandlerFunc(handlers.UploadKeyBackup(database))))
-	mux.Handle("GET /api/v1/keys/backup",
-		authMW(http.HandlerFunc(handlers.GetKeyBackup(database))))
+
 	mux.Handle("POST /api/v1/keys/init",
 		authMW(http.HandlerFunc(handlers.UploadIdentityKeys(database))))
 	mux.Handle("POST /api/v1/keys/otk",
