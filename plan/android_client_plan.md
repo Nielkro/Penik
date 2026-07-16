@@ -62,43 +62,42 @@
 
 ---
 
-## 3. Спецификация сетевого протокола (WebSocket + REST)
+## 3. Цветовая палитра и Дизайн (Идентичность с Веб-клиентом)
 
-### А. REST API
-Клиент выполняет стандартные HTTP-запросы к бэкенду Go:
-* `POST /api/v1/register` — { `name`, `nickname`, `password`, `device_name` } -> получение токена, `user_id`, `device_id`.
-* `POST /api/v1/login` — { `nickname`, `password`, `device_name` } -> получение токена и ID.
-* `GET /api/v1/users/search?q=...` — поиск контактов.
-* `GET /api/v1/messages/history?limit=100&after_id=...` — синхронизация истории сообщений.
+Для обеспечения единого визуального стиля (UI/UX) на мобильном и веб-клиенте, Android-приложение обязано полностью унаследовать цветовую палитру веб-версии (описанную в `client/css/main.css`). 
 
-### Б. Бинарный WebSocket (MessagePack)
-При подключении по адресу `ws://<host>/api/v1/ws` клиент передает токен авторизации через WebSocket-субпротокол `["access_token", token]` (заголовок `Sec-WebSocket-Protocol: access_token, <token>`). После соединения клиент обменивается бинарными фреймами, где **первый байт — это Опкод**, а **оставшиеся байты — MessagePack payload**.
+Необходимо перенести следующие цветовые токены в `Theme.kt` (`Color.kt` в Jetpack Compose):
 
-#### Опкоды протокола:
-* `0x01` (**MSG_SEND** клиент -> сервер):
-  ```kotlin
-  data class MsgSend(
-      val to_user_id: Long,
-      val plaintext: String,
-      val msg_id: String // UUID генерируемый клиентом для надежности
-  )
-  ```
-* `0x02` (**MSG_RECV** сервер -> клиент):
-  ```kotlin
-  data class MsgRecv(
-      val from_user_id: Long,
-      val chat_user_id: Long,
-      val plaintext: String,
-      val msg_id: Long, // ID назначенный сервером
-      val ts: Long
-  )
-  ```
-* `0x03` (**MSG_ACK** сервер -> клиент): подтверждает получение сервером. Содержит `msg_id` (server id) и `client_msg_id`.
-* `0x04` (**MSG_DELIVERED** клиент -> сервер): клиент отправляет при получении сообщения `MsgRecv` для отображения второй галочки у отправителя.
-* `0x05` (**OFFLINE_BATCH** сервер -> клиент): список недоставленных сообщений `msgs[]` типа `MsgRecv`.
-* `0x06` / `0x07` (**PING / PONG**): отправляются периодически для поддержания соединения.
-* `0x08` (**ChatPurge** сервер -> клиент): сигнал стереть историю чата локально.
-* `0x09` (**ChatPurgeAck** клиент -> server): подтверждение очистки.
+* **Основной фон приложения (Background):** `val Background = Color(0xFF0D0D12)` (`--bg`)
+* **Контейнеры и панели первого уровня:** `val Panel = Color(0xFF13131A)` (`--panel`)
+* **Панели второго уровня:** `val PanelSecondary = Color(0xFF1A1A24)` (`--panel2`)
+* **Поля ввода (Inputs):** `val InputBg = Color(0xFF1E1E2A)` (`--input`)
+* **Цвет границ элементов (Borders):** `val Border = Color(0xFF252535)` (`--border`)
+* **Светлые границы:** `val BorderLight = Color(0xFF2E2E42)` (`--border-light`)
+* **Акцентный цвет (Brand Accent):** `val Accent = Color(0xFF5B6EF5)` (`--accent`)
+* **Акцентный цвет при нажатии/наведении:** `val AccentHover = Color(0xFF4A5DE4)` (`--accent-hover`)
+* **Основной текст:** `val TextPrimary = Color(0xFFEEEEF5)` (`--text`)
+* **Приглушенный текст:** `val TextMuted = Color(0xFF7B7B9B)` (`--text-muted`)
+* **Тусклый текст:** `val TextDim = Color(0xFF44445A)` (`--text-dim`)
+* **Фон отправленного сообщения (вы):** `val SentMessageBg = Color(0xFF2B2D6B)` (`--sent-bg`)
+* **Цвет текста отправленного сообщения:** `val SentMessageText = Color(0xFFC8CDFF)` (`--sent-text`)
+* **Фон полученного сообщения (собеседник):** `val RecvMessageBg = Color(0xFF1A1A24)` (`--recv-bg`)
+* **Цвет ошибки/опасности:** `val Danger = Color(0xFFF05A5A)` (`--danger`)
+* **Цвет успеха:** `val Success = Color(0xFF4EC97A)` (`--success`)
+* **Цвет предупреждений:** `val Warning = Color(0xFFF5A623)` (`--warning`)
+
+*Скругления углов (Corners):*
+* Стандартный радиус элементов: `14.dp` (`--r`)
+* Малый радиус: `10.dp` (`--r-sm`)
+
+---
+
+## 4. Сетевой протокол взаимодействия
+
+Все детали взаимодействия по REST API и WebSocket выделены в отдельный подробный документ:
+👉 **[Спецификация сетевого протокола Penik Messenger (REST & WebSocket)](file:///filepomorika/Mysor/RandomProjets/Penik/plan/api_protocol.md)**.
+
+Перед началом реализации сетевого слоя OkHttp и парсера MessagePack необходимо ознакомиться с этим файлом.
 
 ---
 
