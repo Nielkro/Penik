@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS devices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   device_name TEXT NOT NULL,
+  registration_id INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   last_seen INTEGER NOT NULL
 );
@@ -27,13 +28,13 @@ CREATE TABLE IF NOT EXISTS identity_keys (
 CREATE TABLE IF NOT EXISTS one_time_keys (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  key_id INTEGER NOT NULL DEFAULT 0,
   opk_pub BLOB NOT NULL,
   used INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS key_backups (
-  device_id INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   encrypted_blob BLOB NOT NULL,
   kdf_salt BLOB NOT NULL,
   created_at INTEGER NOT NULL
@@ -52,11 +53,14 @@ CREATE TABLE IF NOT EXISTS messages (
   chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
   sender_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
   recipient_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  client_msg_id TEXT,
   ciphertext BLOB NOT NULL,
   timestamp INTEGER NOT NULL,
   delivered INTEGER NOT NULL DEFAULT 0,
   deleted_by_sender INTEGER NOT NULL DEFAULT 0,
-  deleted_by_recipient INTEGER NOT NULL DEFAULT 0
+  deleted_by_recipient INTEGER NOT NULL DEFAULT 0,
+  purge_pending INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(sender_device_id, recipient_device_id, client_msg_id)
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

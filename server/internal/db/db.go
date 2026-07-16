@@ -53,6 +53,31 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate delete flags: %w", err)
 	}
 
+	if err := migratePurgePending(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate purge pending: %w", err)
+	}
+
+	if err := migrateRegistrationId(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate registration id: %w", err)
+	}
+
+	if err := migrateOneTimeKeysKeyId(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate otk key id: %w", err)
+	}
+
+	if err := migrateKeyBackupsPrimaryKey(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate key backups pk: %w", err)
+	}
+
+	if err := migrateMessagesClientMsgId(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate messages client msg id: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
 }
 
@@ -90,8 +115,7 @@ WHERE user_id NOT IN (SELECT id FROM users)
 DELETE FROM identity_keys WHERE device_id NOT IN (SELECT id FROM devices);
 DELETE FROM one_time_keys WHERE device_id NOT IN (SELECT id FROM devices);
 DELETE FROM key_backups
-WHERE user_id NOT IN (SELECT id FROM users)
-   OR device_id NOT IN (SELECT id FROM devices);
+WHERE user_id NOT IN (SELECT id FROM users);
 DELETE FROM chats
 WHERE user1_id NOT IN (SELECT id FROM users)
    OR user2_id NOT IN (SELECT id FROM users);
@@ -224,6 +248,195 @@ func migrateDeleteFlags(database *sql.DB) error {
 		if _, err := database.Exec("ALTER TABLE messages ADD COLUMN deleted_by_recipient INTEGER NOT NULL DEFAULT 0"); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func migratePurgePending(database *sql.DB) error {
+	rows, err := database.Query("PRAGMA table_info(messages)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasPurge := false
+	for rows.Next() {
+		var cid int
+		var name, typeStr string
+		var notnull, pk int
+		var dfltVal sql.NullString
+		if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err != nil {
+			return err
+		}
+		if name == "purge_pending" {
+			hasPurge = true
+		}
+	}
+
+	if !hasPurge {
+		if _, err := database.Exec("ALTER TABLE messages ADD COLUMN purge_pending INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func migrateRegistrationId(database *sql.DB) error {
+	rows, err := database.Query("PRAGMA table_info(devices)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasReg := false
+	for rows.Next() {
+		var cid int
+		var name, typeStr string
+		var notnull, pk int
+		var dfltVal sql.NullString
+		if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err != nil {
+			return err
+		}
+		if name == "registration_id" {
+			hasReg = true
+		}
+	}
+
+	if !hasReg {
+		if _, err := database.Exec("ALTER TABLE devices ADD COLUMN registration_id INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func migrateOneTimeKeysKeyId(database *sql.DB) error {
+	rows, err := database.Query("PRAGMA table_info(one_time_keys)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasKeyId := false
+	for rows.Next() {
+		var cid int
+		var name, typeStr string
+		var notnull, pk int
+		var dfltVal sql.NullString
+		if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err != nil {
+			return err
+		}
+		if name == "key_id" {
+			hasKeyId = true
+		}
+	}
+
+	if !hasKeyId {
+		if _, err := database.Exec("ALTER TABLE one_time_keys ADD COLUMN key_id INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+		// Clean up old OPKs to force client key rotation / re-upload with correct key_id
+		if _, err := database.Exec("DELETE FROM one_time_keys;"); err != nil {
+			return err
+		}
+	}
+	// Create the unique index now that the key_id column is guaranteed to exist
+	if _, err := database.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_otk_device_key ON one_time_keys(device_id, key_id)"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func migrateKeyBackupsPrimaryKey(database *sql.DB) error {
+	rows, err := database.Query("PRAGMA table_info(key_backups)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	isUserIdPK := false
+	for rows.Next() {
+		var cid int
+		var name, typeStr string
+		var notnull, pk int
+		var dfltVal sql.NullString
+		if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err != nil {
+			return err
+		}
+		if name == "user_id" && pk == 1 {
+			isUserIdPK = true
+		}
+	}
+
+	if !isUserIdPK {
+		tx, err := database.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		if _, err := tx.Exec(`CREATE TEMP TABLE legacy_backups AS SELECT * FROM key_backups;`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DROP TABLE key_backups;`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`
+		CREATE TABLE key_backups (
+		  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+		  encrypted_blob BLOB NOT NULL,
+		  kdf_salt BLOB NOT NULL,
+		  created_at INTEGER NOT NULL
+		);`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`
+		INSERT OR IGNORE INTO key_backups(user_id, encrypted_blob, kdf_salt, created_at)
+		SELECT user_id, encrypted_blob, kdf_salt, MAX(created_at)
+		FROM legacy_backups
+		GROUP BY user_id;`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DROP TABLE legacy_backups;`); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func migrateMessagesClientMsgId(database *sql.DB) error {
+	rows, err := database.Query("PRAGMA table_info(messages)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasClientMsgId := false
+	for rows.Next() {
+		var cid int
+		var name, typeStr string
+		var notnull, pk int
+		var dfltVal sql.NullString
+		if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err != nil {
+			return err
+		}
+		if name == "client_msg_id" {
+			hasClientMsgId = true
+		}
+	}
+
+	if !hasClientMsgId {
+		if _, err := database.Exec("ALTER TABLE messages ADD COLUMN client_msg_id TEXT"); err != nil {
+			return err
+		}
+	}
+
+	// Create unique index for idempotency
+	if _, err := database.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_msg_id ON messages(sender_device_id, recipient_device_id, client_msg_id)"); err != nil {
+		return err
 	}
 	return nil
 }

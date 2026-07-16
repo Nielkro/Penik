@@ -1,14 +1,13 @@
 import { apiPatch, apiPost, apiGet } from "../api.js";
 import { navigate, getCurrentUser, setCurrentUser, logout } from "../app.js";
 import { avatar, el, showToast, spinner, showPinModal } from "./components.js";
-import { exportIdentityData, importIdentityData } from "../storage.js";
+import { exportHistoryData, importHistoryData } from "../storage.js";
 import {
   encryptIdentityEnvelope,
   decryptIdentityEnvelope,
   rewrapEnvelope,
   encodeKey,
-  decodeKey,
-  decryptIdentityWithPassphrase
+  decodeKey
 } from "../crypto.js";
 
 export function renderProfile(container) {
@@ -112,16 +111,16 @@ export function renderProfile(container) {
   });
 
   // Backup buttons
-  const backupBtn = el("button", { class: "btn-secondary profile-backup-btn" }, "Скачать ключи (.json)");
+  const backupBtn = el("button", { class: "btn-secondary profile-backup-btn" }, "Экспортировать историю (.json)");
   backupBtn.addEventListener("click", async () => {
     try {
-      const data = await exportIdentityData();
+      const data = await exportHistoryData();
       if (!data) {
-        showToast("Не удалось экспортировать ключи", "error");
+        showToast("Не удалось экспортировать историю", "error");
         return;
       }
 
-      const password = await showPinModal("Придумайте пароль/PIN для шифрования файла ключей (не менее 6 символов):", "Пароль/PIN-код");
+      const password = await showPinModal("Придумайте пароль/PIN для шифрования файла истории (не менее 6 символов):", "Пароль/PIN-код");
       if (!password) return;
       if (password.length < 6) {
         showToast("Пароль должен быть не менее 6 символов", "error");
@@ -142,12 +141,12 @@ export function renderProfile(container) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `penik_keys_backup_${user.username || user.nickname || "user"}.json`;
+      a.download = `penik_history_backup_${user.username || user.nickname || "user"}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast("Зашифрованная резервная копия ключей скачана!", "success");
+      showToast("Зашифрованная резервная копия истории скачана!", "success");
     } catch (err) {
-      showToast("Ошибка создания бэкапа: " + err.message, "error");
+      showToast("Ошибка создания бэкапа истории: " + err.message, "error");
     }
   });
 
@@ -164,7 +163,7 @@ export function renderProfile(container) {
             throw new Error("Неверный формат или файл не зашифрован");
           }
 
-          const password = await showPinModal("Введите пароль/PIN для расшифрования файла ключей:", "Пароль/PIN-код");
+          const password = await showPinModal("Введите пароль/PIN для расшифрования файла истории:", "Пароль/PIN-код");
           if (!password) return;
 
           let decrypted;
@@ -177,39 +176,32 @@ export function renderProfile(container) {
               iv_dek: decodeKey(data.iv_dek_b64)
             };
             decrypted = await decryptIdentityEnvelope(envelope, password);
-          } else if (data.version === 1) {
-            decrypted = await decryptIdentityWithPassphrase(
-              decodeKey(data.ciphertext_b64),
-              decodeKey(data.iv_b64),
-              decodeKey(data.salt_b64),
-              password
-            );
           } else {
             throw new Error("Неподдерживаемая версия файла");
           }
 
-          await importIdentityData(decrypted);
-          showToast("Ключи успешно импортированы!", "success");
+          await importHistoryData(decrypted);
+          showToast("История успешно импортирована!", "success");
           // Refresh profile screen to show correct user id / username
           renderProfile(container);
         } catch (err) {
-          showToast("Неверный формат резервной копии: " + err.message, "error");
+          showToast("Неверный формат резервной копии истории: " + err.message, "error");
         }
       };
       reader.readAsText(file);
     } catch (err) {
-      showToast(err.message || "Ошибка импорта ключей", "error");
+      showToast(err.message || "Ошибка импорта истории", "error");
     }
   });
 
-  const restoreBtn = el("button", { class: "btn-secondary profile-restore-btn" }, "Импортировать ключи");
+  const restoreBtn = el("button", { class: "btn-secondary profile-restore-btn" }, "Импортировать историю");
   restoreBtn.addEventListener("click", () => {
     restoreInput.click();
   });
 
   const backupSection = el("div", { class: "profile-backup-section", style: "margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px; width: 100%;" },
-    el("h3", { style: "font-size: 14px; margin-bottom: 8px; color: #aaa;" }, "Резервное копирование (E2EE)"),
-    el("p", { style: "font-size: 12px; margin-bottom: 12px; color: #888; line-height: 1.4;" }, "Сохраните ваши секретные ключи. Без них вы потеряете доступ к переписке при очистке кэша браузера или смене устройства."),
+    el("h3", { style: "font-size: 14px; margin-bottom: 8px; color: #aaa;" }, "Резервное копирование переписки (E2EE)"),
+    el("p", { style: "font-size: 12px; margin-bottom: 12px; color: #888; line-height: 1.4;" }, "Экспортируйте историю переписки в зашифрованный файл. Обратите внимание, что криптографические ключи устройств не переносятся ради безопасности."),
     el("div", { style: "display: flex; gap: 8px; flex-wrap: wrap;" }, backupBtn, restoreBtn, restoreInput)
   );
 

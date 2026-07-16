@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -32,10 +33,18 @@ func UploadOTK(database *db.DB) http.HandlerFunc {
 			return
 		}
 
-		for _, opk := range req.OPKList {
+		for _, opkRaw := range req.OPKList {
+			var keyID int64
+			var pubKey []byte
+			if len(opkRaw) == 37 {
+				keyID = int64(binary.BigEndian.Uint32(opkRaw[:4]))
+				pubKey = opkRaw[4:]
+			} else {
+				pubKey = opkRaw
+			}
 			_, err := database.ExecContext(r.Context(),
-				`INSERT INTO one_time_keys(device_id,opk_pub,used) VALUES(?,?,0)`,
-				deviceID, opk)
+				`INSERT OR IGNORE INTO one_time_keys(device_id,key_id,opk_pub,used) VALUES(?,?,?,0)`,
+				deviceID, keyID, pubKey)
 			if err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
@@ -62,7 +71,6 @@ type keyBackupResponse struct {
 func UploadKeyBackup(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
-		deviceID := middleware.DeviceIDFromCtx(r.Context())
 
 		var req keyBackupRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -76,9 +84,9 @@ func UploadKeyBackup(database *db.DB) http.HandlerFunc {
 
 		now := time.Now().Unix()
 		_, err := database.ExecContext(r.Context(),
-			`INSERT OR REPLACE INTO key_backups(device_id,user_id,encrypted_blob,kdf_salt,created_at)
-			 VALUES(?,?,?,?,?)`,
-			deviceID, userID, req.EncryptedBlob, req.KDFSalt, now)
+			`INSERT OR REPLACE INTO key_backups(user_id,encrypted_blob,kdf_salt,created_at)
+			 VALUES(?,?,?,?)`,
+			userID, req.EncryptedBlob, req.KDFSalt, now)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -95,11 +103,10 @@ func GetKeyBackup(database *db.DB) http.HandlerFunc {
 
 		var resp keyBackupResponse
 		err := database.QueryRowContext(r.Context(),
-			`SELECT device_id, encrypted_blob, kdf_salt, created_at 
+			`SELECT encrypted_blob, kdf_salt, created_at 
 			 FROM key_backups 
-			 WHERE user_id=? 
-			 ORDER BY created_at DESC LIMIT 1`,
-			userID).Scan(&resp.DeviceID, &resp.EncryptedBlob, &resp.KDFSalt, &resp.CreatedAt)
+			 WHERE user_id=?`,
+			userID).Scan(&resp.EncryptedBlob, &resp.KDFSalt, &resp.CreatedAt)
 		if err != nil {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
@@ -111,9 +118,11 @@ func GetKeyBackup(database *db.DB) http.HandlerFunc {
 }
 
 type keysInitRequest struct {
-	IKPub  []byte `json:"ik_pub"`
-	SPKPub []byte `json:"spk_pub"`
-	SPKSig []byte `json:"spk_sig"`
+	IKPub          []byte   `json:"ik_pub"`
+	SPKPub         []byte   `json:"spk_pub"`
+	SPKSig         []byte   `json:"spk_sig"`
+	RegistrationID int64    `json:"registration_id"`
+	OPKList        [][]byte `json:"opk_list"`
 }
 
 // UploadIdentityKeys handles POST /api/v1/keys/init — upload new identity key and signed pre-key.
@@ -131,11 +140,57 @@ func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
 			http.Error(w, "missing fields", http.StatusBadRequest)
 			return
 		}
+		if !validCurveKey(req.IKPub) || !validCurveKey(req.SPKPub) || len(req.SPKSig) != 64 {
+			http.Error(w, "malformed identity key material", http.StatusBadRequest)
+			return
+		}
 
-		_, err := database.ExecContext(r.Context(),
+		tx, err := database.BeginTx(r.Context(), nil)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		defer tx.Rollback()
+
+		_, err = tx.ExecContext(r.Context(),
 			`INSERT OR REPLACE INTO identity_keys(device_id,ik_pub,spk_pub,spk_sig,updated_at) VALUES(?,?,?,?,?)`,
 			deviceID, req.IKPub, req.SPKPub, req.SPKSig, now)
 		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		if req.RegistrationID > 0 {
+			_, err = tx.ExecContext(r.Context(),
+				`UPDATE devices SET registration_id=? WHERE id=?`,
+				req.RegistrationID, deviceID)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if len(req.OPKList) > 0 {
+			for _, opkRaw := range req.OPKList {
+				var keyID int64
+				var pubKey []byte
+				if len(opkRaw) == 37 {
+					keyID = int64(binary.BigEndian.Uint32(opkRaw[:4]))
+					pubKey = opkRaw[4:]
+				} else {
+					pubKey = opkRaw
+				}
+				_, err = tx.ExecContext(r.Context(),
+					`INSERT OR IGNORE INTO one_time_keys(device_id,key_id,opk_pub,used) VALUES(?,?,?,0)`,
+					deviceID, keyID, pubKey)
+				if err != nil {
+					http.Error(w, "internal error", http.StatusInternalServerError)
+					return
+				}
+			}
+		}
+
+		if err := tx.Commit(); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}

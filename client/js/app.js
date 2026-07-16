@@ -1,15 +1,14 @@
 import { getToken, setToken, getUserById, apiGet, apiPost } from './api.js';
 import {
-  openDB, getIdentity, getOrEstablishReceiverSession, saveMessage,
+  openDB, getIdentity, saveMessage,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
-  getSession, saveSession, saveSkippedKey, getAndRemoveSkippedKey,
-  updateMsgId, getMessage, getAllContacts, getAllMessages,
-  findAndResolvePendingSentMessage
+  updateMsgId, updateMsgIdAndDelivered, getMaxServerMsgId, getMessage, getAllContacts, getAllMessages,
+  findAndResolvePendingSentMessage, exportAllData, importAllData,
+  deleteChatData,
+  signalStore, SignalProtocolAddress, SessionCipher, BoundSignalStore
 } from './storage.js';
 import {
-  decryptMessage, importX25519Priv, importX25519Pub,
-  diffieHellman, generateDH, kdf_rk, kdf_ck, decodeKey,
-  encryptIdentityEnvelope, encodeKey
+  decodeKey, encryptIdentityEnvelope, encodeKey, replacer, reviver
 } from './crypto.js';
 import { ws } from './ws.js';
 import { renderAuth } from './ui/auth.js';
@@ -27,7 +26,7 @@ function read32BE(buf, offset) {
   return view.getUint32(0, false);
 }
 
-export const pendingAcksQueue = [];
+export const pendingAcks = new Map();
 
 /* ── App state ── */
 export const state = {
@@ -311,210 +310,37 @@ async function onMsgRecvGlobal(payload) {
   const fromDeviceId = Number(payload.from_device_id);
 
   let plaintext = "⚠️ Не удалось расшифровать";
-  try {
+  
+  const decryptFn = async () => {
     const cipherBytes = payload.cipher_bytes;
-    if (!cipherBytes || cipherBytes.length < 13) {
+    if (!cipherBytes || cipherBytes.length < 2) {
       throw new Error("Сообщение слишком короткое");
     }
 
-    const session = await getSession(fromUserId, fromDeviceId);
-    let decryptedText = null;
-    let isBootstrapFallback = false;
+    const typeByte = cipherBytes[0];
+    const bodyBinaryString = String.fromCharCode(...cipherBytes.slice(1));
 
-    if (session) {
-      try {
-        if (cipherBytes.length < 52) {
-          throw new Error("Стандартный пакет слишком короткий");
-        }
-        const dh_pub = cipherBytes.slice(0, 32);
-        const n = read32BE(cipherBytes, 32);
-        const pn = read32BE(cipherBytes, 36);
-        const iv = cipherBytes.slice(40, 52);
-        const ciphertext = cipherBytes.slice(52);
-        const aad = cipherBytes.slice(0, 40);
+    const address = new SignalProtocolAddress(String(fromUserId), fromDeviceId);
+    const boundStore = new BoundSignalStore(signalStore, address);
+    const cipher = new SessionCipher(boundStore, address);
 
-        const dhPubHex = u8ToHex(dh_pub);
-        const skippedKey = await getAndRemoveSkippedKey(fromUserId, fromDeviceId, dhPubHex, n);
-        if (skippedKey) {
-          decryptedText = await decryptMessage(skippedKey, cipherBytes.slice(40), aad);
-        } else {
-          const isSameDH = (dhPubHex === u8ToHex(session.their_dh_public_raw));
-          if (isSameDH && n < session.n_recv) {
-            throw new Error("Сообщение устарело или является дубликатом");
-          }
-
-          let rootKey = session.root_key;
-          let recvChainKey = session.recv_chain_key;
-          let sendChainKey = session.send_chain_key;
-          let ourDhPrivateJwk = session.our_dh_private_jwk;
-          let ourDhPublicRaw = session.our_dh_public_raw;
-          let theirDhPub = session.their_dh_public_raw;
-          let n_recv = session.n_recv;
-          let n_send = session.n_send;
-          let pn_state = session.pn;
-
-          const pendingSkippedKeys = [];
-          async function skipMessageKeys(limit) {
-            if (recvChainKey === null) return;
-            if (n_recv + 1000 < limit) {
-              throw new Error("Слишком много пропущенных ключей");
-            }
-            while (n_recv < limit) {
-              const { newChainKey, messageKey } = await kdf_ck(recvChainKey);
-              recvChainKey = newChainKey;
-              const currentDhPubHex = u8ToHex(theirDhPub);
-              pendingSkippedKeys.push({ dhPubHex: currentDhPubHex, n: n_recv, keyBytes: messageKey });
-              n_recv += 1;
-            }
-          }
-
-          if (!isSameDH) {
-            await skipMessageKeys(pn);
-            const ourPrivKey = await importX25519Priv(ourDhPrivateJwk);
-            const theirPubImported = await importX25519Pub(dh_pub);
-
-            const sharedSecret1 = await diffieHellman(ourPrivKey, theirPubImported);
-            const step1 = await kdf_rk(rootKey, sharedSecret1, "DoubleRatchetRoot");
-            rootKey = step1.newRootKey;
-            recvChainKey = step1.chainKey;
-
-            const newOurDH = await generateDH();
-            const sharedSecret2 = await diffieHellman(newOurDH.privateKey, theirPubImported);
-            const step2 = await kdf_rk(rootKey, sharedSecret2, "DoubleRatchetRoot");
-            rootKey = step2.newRootKey;
-            sendChainKey = step2.chainKey;
-
-            ourDhPrivateJwk = newOurDH.privJwk;
-            ourDhPublicRaw = newOurDH.pubRaw;
-            theirDhPub = dh_pub;
-            pn_state = n_send;
-            n_send = 0;
-            n_recv = 0;
-          }
-
-          await skipMessageKeys(n);
-
-          const { newChainKey, messageKey } = await kdf_ck(recvChainKey);
-          decryptedText = await decryptMessage(messageKey, cipherBytes.slice(40), aad);
-
-          for (const sk of pendingSkippedKeys) {
-            await saveSkippedKey(fromUserId, fromDeviceId, sk.dhPubHex, sk.n, sk.keyBytes);
-          }
-
-          session.root_key = rootKey;
-          session.recv_chain_key = newChainKey;
-          session.send_chain_key = sendChainKey;
-          session.our_dh_private_jwk = ourDhPrivateJwk;
-          session.our_dh_public_raw = ourDhPublicRaw;
-          session.their_dh_public_raw = theirDhPub;
-          session.n_recv = n + 1;
-          session.n_send = n_send;
-          session.pn = pn_state;
-          session.session_init_ek = null;
-
-          await saveSession(session);
-        }
-      } catch (err) {
-        isBootstrapFallback = true;
-      }
+    let decryptedBytes;
+    if (typeByte === 3) {
+      decryptedBytes = await cipher.decryptPreKeyWhisperMessage(bodyBinaryString, 'binary');
+    } else {
+      decryptedBytes = await cipher.decryptWhisperMessage(bodyBinaryString, 'binary');
     }
 
-    if (!session || isBootstrapFallback) {
-      if (cipherBytes.length < 116) {
-        throw new Error("Bootstrap-пакет слишком короткий");
-      }
-      const session_init_ek = cipherBytes.slice(0, 32);
-      const dh_pub = cipherBytes.slice(32, 64);
-      const used_opk_pub = cipherBytes.slice(64, 96);
-      const n = read32BE(cipherBytes, 96);
-      const pn = read32BE(cipherBytes, 100);
-      const iv = cipherBytes.slice(104, 116);
-      const ciphertext = cipherBytes.slice(116);
-      const aad = cipherBytes.slice(0, 104);
+    plaintext = new TextDecoder().decode(decryptedBytes);
+  };
 
-      let isAllZeros = true;
-      for (let i = 0; i < 32; i++) {
-        if (used_opk_pub[i] !== 0) {
-          isAllZeros = false;
-          break;
-        }
-      }
-
-      const newSession = await getOrEstablishReceiverSession(
-        fromUserId,
-        fromDeviceId,
-        session_init_ek,
-        dh_pub,
-        isAllZeros ? null : used_opk_pub
-      );
-
-      let rootKey = newSession.root_key;
-      let recvChainKey = newSession.recv_chain_key;
-      let sendChainKey = newSession.send_chain_key;
-      let ourDhPrivateJwk = newSession.our_dh_private_jwk;
-      let ourDhPublicRaw = newSession.our_dh_public_raw;
-      let theirDhPub = newSession.their_dh_public_raw;
-      let n_recv = newSession.n_recv;
-      let n_send = newSession.n_send;
-      let pn_state = newSession.pn;
-
-      const pendingSkippedKeys = [];
-      async function skipMessageKeys(limit) {
-        if (recvChainKey === null) return;
-        if (n_recv + 1000 < limit) {
-          throw new Error("Слишком много пропущенных ключей");
-        }
-        while (n_recv < limit) {
-          const { newChainKey, messageKey } = await kdf_ck(recvChainKey);
-          recvChainKey = newChainKey;
-          const dhPubHex = u8ToHex(theirDhPub);
-          pendingSkippedKeys.push({ dhPubHex, n: n_recv, keyBytes: messageKey });
-          n_recv += 1;
-        }
-      }
-
-      await skipMessageKeys(n);
-
-      const { newChainKey, messageKey } = await kdf_ck(recvChainKey);
-      decryptedText = await decryptMessage(messageKey, cipherBytes.slice(104), aad);
-
-      for (const sk of pendingSkippedKeys) {
-        await saveSkippedKey(fromUserId, fromDeviceId, sk.dhPubHex, sk.n, sk.keyBytes);
-      }
-
-      newSession.root_key = rootKey;
-      newSession.recv_chain_key = newChainKey;
-      newSession.send_chain_key = sendChainKey;
-      newSession.our_dh_private_jwk = ourDhPrivateJwk;
-      newSession.our_dh_public_raw = ourDhPublicRaw;
-      newSession.their_dh_public_raw = theirDhPub;
-      newSession.n_recv = n + 1;
-      newSession.n_send = n_send;
-      newSession.pn = pn_state;
-      newSession.session_init_ek = null;
-
-      await saveSession(newSession);
-      if (newSession.key_changed) {
-        const messagesEl = document.querySelector(`.chat-messages[data-user-id="${fromUserId}"]`);
-        if (messagesEl && _activeChatCallback && String(_activeChatCallback.userId) === String(fromUserId)) {
-          const bubble = document.createElement("div");
-          bubble.className = "msg-bubble msg-system";
-          bubble.style.cursor = "pointer";
-          bubble.style.textDecoration = "underline";
-          bubble.addEventListener("click", () => {
-            showSafetyExplanationModal();
-          });
-          const span = document.createElement("span");
-          span.className = "msg-text";
-          span.textContent = "⚠️ Код безопасности изменился!";
-          bubble.appendChild(span);
-          messagesEl.appendChild(bubble);
-          messagesEl.scrollTop = messagesEl.scrollHeight;
-        }
-      }
+  try {
+    const lockName = `penik-crypto-lock-${fromUserId}.${fromDeviceId}`;
+    if (navigator.locks) {
+      await navigator.locks.request(lockName, decryptFn);
+    } else {
+      await decryptFn();
     }
-
-    plaintext = decryptedText;
   } catch (err) {
     console.warn("Не удалось расшифровать сообщение (возможно, отправлено на другое устройство):", err.message || err);
   }
@@ -584,16 +410,37 @@ async function onOfflineBatchGlobal(payload) {
   }
 }
 
+async function onChatPurgeGlobal(payload) {
+  const chatUserId = payload && (payload.chat_user_id ?? payload.chatUserId);
+  if (chatUserId === undefined || chatUserId === null) return;
+  try {
+    await deleteChatData(chatUserId);
+    // Ack so the server can hard-delete its tombstoned rows.
+    ws.send(0x09, { chat_user_id: Number(chatUserId) });
+
+    // If the wiped chat is open, clear the view.
+    if (_activeChatCallback && String(_activeChatCallback.userId) === String(chatUserId)) {
+      const chatEl = document.getElementById('screen-chat');
+      if (chatEl) chatEl.innerHTML = '';
+      navigate("#chats");
+    }
+    triggerChatListUpdate();
+  } catch (err) {
+    console.error("Failed to apply chat purge:", err);
+  }
+}
+
 async function onMsgAckReceivedGlobal(payload) {
   const serverMsgId = payload.msg_id;
   if (!serverMsgId) return;
 
-  const pending = pendingAcksQueue.shift();
+  const clientMsgId = payload.client_msg_id || serverMsgId;
+  const pending = pendingAcks.get(String(clientMsgId));
   if (!pending) return;
+  pendingAcks.delete(String(clientMsgId));
 
   try {
-    await updateMsgId(pending.tempId, serverMsgId);
-    await updateMessageDelivered(serverMsgId, 1);
+    await updateMsgIdAndDelivered(pending.tempId, serverMsgId, 1);
 
     if (_activeChatCallback && String(_activeChatCallback.userId) === String(pending.userId)) {
       const bubble = document.querySelector(`[data-msg-id="${pending.tempId}"]`);
@@ -613,83 +460,123 @@ async function onMsgAckReceivedGlobal(payload) {
 
 export async function syncMessageHistory() {
   try {
-    const history = await apiGet("/messages/history");
-    if (!history || !Array.isArray(history)) return;
+    const lastId = await getMaxServerMsgId();
+    let afterId = lastId;
+    const limit = 100;
+    while (true) {
+      const history = await apiGet(`/messages/history?limit=${limit}&after_id=${afterId}`);
+      if (!history || !Array.isArray(history) || history.length === 0) break;
 
-    const me = state.currentUser;
-    if (!me) return;
-    const myId = Number(me.id || me.user_id);
+      const me = state.currentUser;
+      if (!me) break;
+      const myId = Number(me.id || me.user_id);
 
-    // Sort by timestamp ascending just to be sure
-    history.sort((a, b) => a.timestamp - b.timestamp);
+      // Sort by timestamp ascending just to be sure
+      history.sort((a, b) => a.timestamp - b.timestamp);
 
-    for (const item of history) {
-      const existing = await getMessage(item.id);
-      if (existing) continue;
-
-      const peerId = Number(item.chat_user_id || (Number(item.sender_id) === myId ? item.recipient_id : item.sender_id));
-
-      let contact = await getContact(peerId);
-      if (!contact) {
-        try {
-          const res = await getUserById(String(peerId));
-          contact = res.user || res;
-          await saveContact({
-            ...contact,
-            user_id: peerId,
-            last_message: "",
-            last_ts: item.timestamp * 1000
-          });
-        } catch (e) {
-          console.error("Failed to fetch contact details for syncing:", e);
+      for (const item of history) {
+        if (Number(item.id) > afterId) {
+          afterId = Number(item.id);
         }
-      }
 
-      if (Number(item.sender_id) !== myId) {
-        // Skip if we already have this message stored (already decrypted)
         const existing = await getMessage(item.id);
-        if (existing) continue;
-
-        const wsPayload = {
-          msg_id: item.id,
-          from_user_id: item.sender_id,
-          from_device_id: item.sender_device_id,
-          chat_user_id: item.chat_user_id,
-          cipher_bytes: typeof item.cipher_bytes === "string" ? decodeKey(item.cipher_bytes) : new Uint8Array(item.cipher_bytes),
-          ts: item.timestamp
-        };
-        try {
-          await onMsgRecvGlobal(wsPayload);
-        } catch (err) {
-          console.error(`Failed to decrypt history message ${item.id}:`, err);
+        if (existing) {
+          continue;
         }
-      } else {
-        // Skip if already stored with real text (not a placeholder)
-        const existing = await getMessage(item.id);
-        if (existing && existing.plaintext && !existing.plaintext.startsWith("🔒")) continue;
 
-        // Try to match a pending tmp- message first
-        const resolved = await findAndResolvePendingSentMessage(peerId, item.timestamp, item.id);
-        if (resolved) continue;
+        const peerId = Number(item.chat_user_id || (Number(item.sender_id) === myId ? item.recipient_id : item.sender_id));
 
-        // Only write lock placeholder if nothing better exists
-        if (!existing) {
-          const storedMsg = {
+        let contact = await getContact(peerId);
+        if (!contact) {
+          try {
+            const res = await getUserById(String(peerId));
+            contact = res.user || res;
+            await saveContact({
+              ...contact,
+              user_id: peerId,
+              last_message: "",
+              last_ts: item.timestamp * 1000
+            });
+          } catch (e) {
+            console.error("Failed to fetch contact details for syncing:", e);
+          }
+        }
+
+        if (Number(item.sender_id) !== myId) {
+          // Skip if we already have this message stored (already decrypted)
+          const existing = await getMessage(item.id);
+          if (existing) continue;
+
+          const wsPayload = {
             msg_id: item.id,
-            chat_id: String(peerId),
-            sender_id: myId,
-            plaintext: "🔒 Зашифрованное отправленное сообщение",
-            created_at: item.timestamp * 1000,
-            delivered: 1
+            from_user_id: item.sender_id,
+            from_device_id: item.sender_device_id,
+            chat_user_id: item.chat_user_id,
+            cipher_bytes: typeof item.cipher_bytes === "string" ? decodeKey(item.cipher_bytes) : new Uint8Array(item.cipher_bytes),
+            ts: item.timestamp
           };
-          await saveMessage(storedMsg);
+          try {
+            await onMsgRecvGlobal(wsPayload);
+          } catch (err) {
+            console.error(`Failed to decrypt history message ${item.id}:`, err);
+          }
+        } else {
+          // Skip if already stored with real text (not a placeholder)
+          const existing = await getMessage(item.id);
+          if (existing && existing.plaintext && !existing.plaintext.startsWith("🔒")) continue;
+
+          // Try to match a pending tmp- message first
+          const resolved = await findAndResolvePendingSentMessage(peerId, item.timestamp, item.id);
+          if (resolved) continue;
+
+          // Only write lock placeholder if nothing better exists
+          if (!existing) {
+            const storedMsg = {
+              msg_id: item.id,
+              chat_id: String(peerId),
+              sender_id: myId,
+              plaintext: "🔒 Зашифрованное отправленное сообщение",
+              created_at: item.timestamp * 1000,
+              delivered: 1
+            };
+            await saveMessage(storedMsg);
+          }
         }
       }
+
+      if (history.length < limit) break;
     }
-    
+
     triggerChatListUpdate();
   } catch (err) {
     console.error("Failed to sync message history:", err);
+  }
+}
+
+export async function flushOutbox() {
+  const me = state.currentUser;
+  if (!me) return;
+  const myId = Number(me.id || me.user_id);
+  try {
+    const allMsgs = await getAllMessages();
+    const unsent = allMsgs.filter(m => String(m.sender_id) === String(myId) && m.delivered === 0 && m.ciphertexts);
+    for (const msg of unsent) {
+      const clientMsgId = msg.client_msg_id || String(msg.msg_id);
+      if (!pendingAcks.has(clientMsgId)) {
+        pendingAcks.set(clientMsgId, { tempId: msg.msg_id, userId: msg.chat_id });
+      }
+      const sent = ws.send(0x01, {
+        to_user_id: Number(msg.chat_id),
+        devices: msg.ciphertexts,
+        msg_id: clientMsgId,
+      });
+      if (!sent) {
+        pendingAcks.delete(clientMsgId);
+        break;
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to flush outbox:", e);
   }
 }
 
@@ -709,23 +596,13 @@ export async function exportAndUploadBackup() {
   if (!pin) return;
 
   try {
+    const allDbData = await exportAllData();
     const identity = await getIdentity();
     if (!identity) return;
 
-    const contacts = await getAllContacts();
-    const messages = await getAllMessages();
-
     const dataToBackup = {
-      ik_priv_jwk: identity.ik_priv_jwk,
-      ik_pub_raw: Array.from(identity.ik_pub_raw),
-      sig_priv_jwk: identity.sig_priv_jwk,
-      sig_pub_raw: Array.from(identity.sig_pub_raw),
-      spk_priv_jwk: identity.spk_priv_jwk,
-      spk_pub_raw: Array.from(identity.spk_pub_raw),
-      spk_sig: Array.from(identity.spk_sig),
+      db_dump: allDbData,
       user_id: identity.user_id,
-      contacts: contacts,
-      messages: messages
     };
 
     const env = await encryptIdentityEnvelope(dataToBackup, pin);
@@ -758,5 +635,9 @@ function setupGlobalWSListeners() {
   ws.on(0x03, onMsgAckReceivedGlobal);
   ws.on(0x04, onMsgAckGlobal);
   ws.on(0x05, onOfflineBatchGlobal);
-  ws.onConnect(syncMessageHistory);
+  ws.on(0x08, onChatPurgeGlobal);
+  ws.onConnect(async () => {
+    await flushOutbox();
+    await syncMessageHistory();
+  });
 }
