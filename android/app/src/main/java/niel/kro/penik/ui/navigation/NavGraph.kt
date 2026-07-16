@@ -10,8 +10,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import niel.kro.penik.ui.screen.auth.AuthScreen
 import niel.kro.penik.ui.screen.chatroom.ChatRoomScreen
-import niel.kro.penik.ui.screen.chatslist.ChatsListScreen
-import niel.kro.penik.ui.screen.profile.ProfileScreen
 import niel.kro.penik.ui.viewmodel.StartupViewModel
 
 @Composable
@@ -20,7 +18,7 @@ fun NavGraph(
     startupViewModel: StartupViewModel = hiltViewModel()
 ) {
     val startDestination = remember {
-        if (startupViewModel.isLoggedIn()) Screen.ChatsList.route
+        if (startupViewModel.isLoggedIn()) Screen.Main.route
         else Screen.Auth.route
     }
 
@@ -31,27 +29,18 @@ fun NavGraph(
         composable(Screen.Auth.route) {
             AuthScreen(
                 onLoginSuccess = {
-                    navController.navigate(Screen.ChatsList.route) {
+                    navController.navigate(Screen.Main.route) {
                         popUpTo(Screen.Auth.route) { inclusive = true }
                     }
                 }
             )
         }
 
-        composable(Screen.ChatsList.route) {
-            ChatsListScreen(
+        composable(Screen.Main.route) {
+            MainScreen(
                 onChatClick = { userId, name ->
                     navController.navigate(Screen.ChatRoom.createRoute(userId, name))
                 },
-                onProfileClick = {
-                    navController.navigate(Screen.Profile.route)
-                }
-            )
-        }
-
-        composable(Screen.Profile.route) {
-            ProfileScreen(
-                onBack = { navController.popBackStack() },
                 onLogout = {
                     navController.navigate(Screen.Auth.route) {
                         popUpTo(0) { inclusive = true }
