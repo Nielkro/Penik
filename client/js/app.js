@@ -1,15 +1,10 @@
 import { getToken, setToken, getUserById, apiGet, apiPost } from './api.js';
 import {
-  openDB, getIdentity, saveMessage,
+  openDB, saveMessage,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   updateMsgId, updateMsgIdAndDelivered, getMaxServerMsgId, getMessage, getAllContacts, getAllMessages,
-  findAndResolvePendingSentMessage, exportAllData, importAllData,
-  deleteChatData,
-  signalStore, SignalProtocolAddress, SessionCipher, BoundSignalStore
+  findAndResolvePendingSentMessage, deleteChatData
 } from './storage.js';
-import {
-  decodeKey, encryptIdentityEnvelope, encodeKey, replacer, reviver
-} from './crypto.js';
 import { ws } from './ws.js';
 import { renderAuth } from './ui/auth.js';
 import { renderChatList, renderChat } from './ui/chat.js';
@@ -348,7 +343,6 @@ async function onMsgRecvGlobal(payload) {
   if (_chatListUpdateCallback) {
     _chatListUpdateCallback();
   }
-  triggerBackgroundBackup();
 }
 
 async function onMsgAckGlobal(payload) {
@@ -522,55 +516,7 @@ export async function flushOutbox() {
   }
 }
 
-let backupTimeout = null;
-export function triggerBackgroundBackup() {
-  const pin = sessionStorage.getItem("backup_pin");
-  if (!pin) return;
 
-  if (backupTimeout) clearTimeout(backupTimeout);
-  backupTimeout = setTimeout(() => {
-    exportAndUploadBackup();
-  }, 5000); // 5 seconds debounce
-}
-
-export async function exportAndUploadBackup() {
-  const pin = sessionStorage.getItem("backup_pin");
-  if (!pin) return;
-
-  try {
-    const allDbData = await exportAllData();
-    const identity = await getIdentity();
-    if (!identity) return;
-
-    const dataToBackup = {
-      db_dump: allDbData,
-      user_id: identity.user_id,
-    };
-
-    const env = await encryptIdentityEnvelope(dataToBackup, pin);
-    const backupWrapper = {
-      version: 2,
-      method: "pin",
-      encrypted_dek_b64: encodeKey(env.encrypted_dek),
-      iv_kek_b64: encodeKey(env.iv_kek),
-      salt_kek_b64: encodeKey(env.salt_kek),
-      encrypted_keys_b64: encodeKey(env.encrypted_keys),
-      iv_dek_b64: encodeKey(env.iv_dek)
-    };
-
-    const jsonStr = JSON.stringify(backupWrapper);
-    const encoder = new TextEncoder();
-    const combinedBlob = encoder.encode(jsonStr);
-
-    await apiPost("/keys/backup", {
-      encrypted_blob: encodeKey(combinedBlob),
-      kdf_salt: encodeKey(env.salt_kek)
-    });
-    console.log("Cloud E2EE database backup updated successfully.");
-  } catch (err) {
-    console.error("Failed to update cloud backup:", err);
-  }
-}
 
 function setupGlobalWSListeners() {
   ws.on(0x02, onMsgRecvGlobal);
