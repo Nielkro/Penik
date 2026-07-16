@@ -13,8 +13,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.UserSearchResult
+import niel.kro.penik.data.network.websocket.ConnectionState
 import niel.kro.penik.data.network.websocket.WebSocketManager
-import niel.kro.penik.domain.usecase.HandleWebSocketEventUseCase
 import niel.kro.penik.domain.usecase.LoadChatsUseCase
 import niel.kro.penik.domain.usecase.LogoutUseCase
 import niel.kro.penik.domain.usecase.SyncHistoryUseCase
@@ -24,7 +24,6 @@ import javax.inject.Inject
 @HiltViewModel
 class ChatsListViewModel @Inject constructor(
     private val loadChatsUseCase: LoadChatsUseCase,
-    private val handleWebSocketEventUseCase: HandleWebSocketEventUseCase,
     private val syncHistoryUseCase: SyncHistoryUseCase,
     private val logoutUseCase: LogoutUseCase,
     private val authRepository: AuthRepository,
@@ -43,11 +42,6 @@ class ChatsListViewModel @Inject constructor(
     private var searchJob: Job? = null
 
     init {
-        viewModelScope.launch {
-            webSocketManager.events.collect { event ->
-                handleWebSocketEventUseCase(event)
-            }
-        }
         viewModelScope.launch {
             syncHistoryUseCase()
         }
@@ -79,7 +73,7 @@ class ChatsListViewModel @Inject constructor(
 
     private fun reconnectIfNeeded() {
         val token = authRepository.getToken() ?: return
-        if (webSocketManager.connectionState.value != niel.kro.penik.data.network.websocket.ConnectionState.CONNECTED) {
+        if (webSocketManager.connectionState.value == ConnectionState.DISCONNECTED) {
             webSocketManager.connect("penik.dev.slavchat.ru", 443, token)
         }
     }

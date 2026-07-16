@@ -97,7 +97,6 @@ fun ChatRoomScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .imePadding()
         ) {
             LazyColumn(
                 state = listState,
@@ -120,6 +119,7 @@ fun ChatRoomScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Panel)
+                    .imePadding()
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.Bottom
             ) {

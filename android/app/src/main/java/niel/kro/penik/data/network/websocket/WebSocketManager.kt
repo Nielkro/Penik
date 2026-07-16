@@ -118,19 +118,23 @@ class WebSocketManager @Inject constructor() {
     private var token: String = ""
     private var reconnectAttempt = 0
     private var pingJob: kotlinx.coroutines.Job? = null
+    private var manualDisconnect = false
 
     private var connectHost: String = ""
     private var connectPort: Int = 0
 
     fun connect(host: String, port: Int, token: String) {
+        if (_connectionState.value != ConnectionState.DISCONNECTED) return
         this.connectHost = host
         this.connectPort = port
         this.token = token
+        manualDisconnect = false
         reconnectAttempt = 0
         doConnect()
     }
 
     fun disconnect() {
+        manualDisconnect = true
         pingJob?.cancel()
         webSocket?.close(1000, "Client disconnect")
         webSocket = null
@@ -178,7 +182,7 @@ class WebSocketManager @Inject constructor() {
         _connectionState.value = ConnectionState.DISCONNECTED
         pingJob?.cancel()
         scope.launch { _events.emit(WebSocketEvent.Disconnected) }
-        reconnectWithBackoff()
+        if (!manualDisconnect) reconnectWithBackoff()
     }
 
     private fun reconnectWithBackoff() {
@@ -225,7 +229,7 @@ class WebSocketManager @Inject constructor() {
             chatUserId = (map["chat_user_id"] as? Number)?.toLong() ?: 0,
             text = (map["plaintext"] as? String) ?: "",
             msgId = (map["msg_id"] as? Number)?.toLong() ?: 0,
-            ts = (map["ts"] as? Number)?.toLong() ?: 0
+            ts = ((map["ts"] as? Number)?.toLong() ?: 0) * 1000
         )
         scope.launch { _events.emit(event) }
     }
@@ -263,7 +267,7 @@ class WebSocketManager @Inject constructor() {
                 chatUserId = (map["chat_user_id"] as? Number)?.toLong() ?: 0,
                 text = (map["plaintext"] as? String) ?: "",
                 msgId = (map["msg_id"] as? Number)?.toLong() ?: 0,
-                ts = (map["ts"] as? Number)?.toLong() ?: 0
+                ts = ((map["ts"] as? Number)?.toLong() ?: 0) * 1000
             ))
         }
         unpacker.close()
@@ -274,7 +278,9 @@ class WebSocketManager @Inject constructor() {
         val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
         val map = unpacker.readMsgRecvMap()
         unpacker.close()
-        val event = WebSocketEvent.ChatPurge(peerId = (map["peer_id"] as? Number)?.toLong() ?: 0)
+        val event = WebSocketEvent.ChatPurge(
+            peerId = (map["chat_user_id"] as? Number)?.toLong() ?: 0
+        )
         scope.launch { _events.emit(event) }
     }
 
@@ -316,7 +322,7 @@ class WebSocketManager @Inject constructor() {
         val bos = ByteArrayOutputStream()
         val packer = MessagePack.newDefaultPacker(bos)
         packer.packMapHeader(1)
-        packer.packString("peer_id")
+        packer.packString("chat_user_id")
         packer.packLong(peerId)
         packer.close()
 

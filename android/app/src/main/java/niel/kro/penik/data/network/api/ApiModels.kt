@@ -35,11 +35,13 @@ data class UserSearchResult(
 
 @Serializable
 data class HistoryMessageResponse(
-    @SerialName("msg_id") val msgId: Long,
+    @SerialName("id") val msgId: Long,
     @SerialName("chat_id") val chatId: Long,
     @SerialName("sender_id") val senderId: Long,
+    @SerialName("recipient_id") val recipientId: Long,
+    @SerialName("chat_user_id") val chatUserId: Long,
     val plaintext: String,
-    @SerialName("created_at") val createdAt: Long,
+    @SerialName("timestamp") val createdAt: Long,
     val delivered: Int
 )
 
