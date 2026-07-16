@@ -43,7 +43,7 @@ class ChatsListViewModel @Inject constructor(
 
     private fun reconnectIfNeeded() {
         val token = authRepository.getToken() ?: return
-        if (!webSocketManager.connectionState.value) {
+        if (webSocketManager.connectionState.value != niel.kro.penik.data.network.websocket.ConnectionState.CONNECTED) {
             webSocketManager.connect("penik.dev.slavchat.ru", 443, token)
         }
     }

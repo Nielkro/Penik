@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import niel.kro.penik.ui.theme.Accent
 import niel.kro.penik.ui.theme.Background
+import niel.kro.penik.ui.theme.Danger
 import niel.kro.penik.ui.theme.PanelSecondary
 import niel.kro.penik.ui.theme.SentMessageBg
 import niel.kro.penik.ui.theme.SentMessageText
