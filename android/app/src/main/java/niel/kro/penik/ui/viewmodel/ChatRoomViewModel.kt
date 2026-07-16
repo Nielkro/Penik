@@ -23,6 +23,7 @@ class ChatRoomViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val chatUserId: Long = savedStateHandle.get<Long>("chatUserId") ?: 0L
+    private val chatName: String = savedStateHandle.get<String>("chatName") ?: ""
 
     val messages = loadMessagesUseCase(chatUserId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -38,7 +39,7 @@ class ChatRoomViewModel @Inject constructor(
     fun sendMessage(text: String) {
         if (text.isBlank()) return
         viewModelScope.launch {
-            sendMessageUseCase(chatUserId, text)
+            sendMessageUseCase(chatUserId, text, chatName)
         }
     }
 }
