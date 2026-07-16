@@ -74,103 +74,19 @@ async function handleRegister(inputs, btn, errEl) {
   errEl.classList.add("hidden");
 
   try {
-    const ik = await KeyHelper.generateIdentityKeyPair();
-    const registrationId = KeyHelper.generateRegistrationId();
-    const spk = await KeyHelper.generateSignedPreKey(ik, 1);
-    
-    const opks = [];
-    for (let i = 1; i <= 100; i++) {
-      const o = await KeyHelper.generatePreKey(i);
-      opks.push(o);
-    }
-
-    const ikPubB64  = encodeKey(new Uint8Array(ik.pubKey));
-    const spkPubB64 = encodeKey(new Uint8Array(spk.keyPair.pubKey));
-    const spkSigB64 = encodeKey(new Uint8Array(spk.signature));
-    
-    const opkList = opks.map(o => {
-      const buf = new Uint8Array(37);
-      const view = new DataView(buf.buffer);
-      view.setUint32(0, o.keyId, false);
-      buf.set(new Uint8Array(o.keyPair.pubKey), 4);
-      return encodeKey(buf);
-    });
-
     const res = await apiPost("/register", {
       name,
       nickname,
       password,
       device_name: getPersistentDeviceName(),
-      registration_id: registrationId,
-      ik_pub:   ikPubB64,
-      spk_pub:  spkPubB64,
-      spk_sig:  spkSigB64,
-      opk_list: opkList,
     });
-
-    await saveIdentity({
-      identityKeyPair: ik,
-      registrationId: registrationId,
-      user_id: res.user_id,
-      device_id: res.device_id,
-    });
-
-    await signalStore.storeSignedPreKey(1, spk.keyPair, spk.signature);
-    for (const o of opks) {
-      await signalStore.storePreKey(o.keyId, o.keyPair);
-    }
 
     setToken(res.token);
     localStorage.setItem("user_id", String(res.user_id));
     localStorage.setItem("device_id", String(res.device_id));
     setCurrentUser({ id: res.user_id, user_id: res.user_id, name, nickname, username: nickname });
 
-    try {
-      const allDbData = await exportAllData();
-      const dataToBackup = {
-        db_dump: allDbData,
-        user_id: res.user_id,
-      };
-
-      let backupPassword = "";
-      const backupMethod = "pin";
-
-      while (backupPassword.length < 6) {
-        backupPassword = await showPinModal("Придумайте PIN-код или пароль для резервной копии ключей E2EE (не менее 6 символов):", "PIN-код (от 6 символов)") || "";
-        if (backupPassword === "") {
-          alert("PIN-код обязателен для создания резервной копии E2EE!");
-          continue;
-        }
-        if (backupPassword.length < 6) {
-          alert("Слишком короткий пароль/PIN (минимум 6 символов)!");
-        }
-      }
-      sessionStorage.setItem("backup_pin", backupPassword);
-
-      const env = await encryptIdentityEnvelope(dataToBackup, backupPassword);
-      const backupWrapper = {
-        version: 2,
-        method: backupMethod,
-        encrypted_dek_b64: encodeKey(env.encrypted_dek),
-        iv_kek_b64: encodeKey(env.iv_kek),
-        salt_kek_b64: encodeKey(env.salt_kek),
-        encrypted_keys_b64: encodeKey(env.encrypted_keys),
-        iv_dek_b64: encodeKey(env.iv_dek)
-      };
-
-      const jsonStr = JSON.stringify(backupWrapper);
-      const encoder = new TextEncoder();
-      const combinedBlob = encoder.encode(jsonStr);
-
-      await apiPost("/keys/backup", {
-        encrypted_blob: encodeKey(combinedBlob),
-        kdf_salt: encodeKey(env.salt_kek)
-      });
-    } catch (backupErr) {
-      console.warn("Не удалось создать резервную копию на сервере:", backupErr);
-    }
-
-    showToast("Аккаунт создан!", "success");
+    showToast("Регистрация успешна!", "success");
     navigate("#chats");
   } catch (err) {
     authErr(errEl, err.message || "Ошибка регистрации.");
@@ -196,252 +112,21 @@ async function handleLogin(inputs, btn, errEl) {
   errEl.classList.add("hidden");
 
   try {
-    let ik;
-    let res;
-    const existingIdentity = await getIdentity();
-    if (existingIdentity && existingIdentity.identityKeyPair) {
-      ik = existingIdentity.identityKeyPair;
-      const spkKeyPair = await signalStore.loadSignedPreKey(1);
-      const spkRecord = await getSignedPreKeyRecord(1);
+    const res = await apiPost("/login", {
+      nickname,
+      password,
+      device_name: getPersistentDeviceName(),
+    });
 
-      res = await apiPost("/login", {
-        nickname,
-        password,
-        device_name: getPersistentDeviceName(),
-        registration_id: existingIdentity.registrationId,
-        ik_pub:  encodeKey(new Uint8Array(ik.pubKey)),
-        spk_pub: spkKeyPair ? encodeKey(new Uint8Array(spkKeyPair.pubKey)) : "",
-        spk_sig: spkRecord ? encodeKey(new Uint8Array(spkRecord.signature)) : "",
-      });
-
-      setToken(res.token);
-      localStorage.setItem("user_id", String(res.user_id));
-      localStorage.setItem("device_id", String(res.device_id));
-
-      await saveIdentity({
-        identityKeyPair: ik,
-        registrationId: existingIdentity.registrationId,
-        user_id: res.user_id,
-        device_id: res.device_id,
-      });
-
-      // Generate and upload 100 fresh OPKs on repeat login
-      const opks = [];
-      for (let i = 1; i <= 100; i++) {
-        const o = await KeyHelper.generatePreKey(i);
-        opks.push(o);
-      }
-      for (const o of opks) {
-        await signalStore.storePreKey(o.keyId, o.keyPair);
-      }
-      const opkList = opks.map(o => {
-        const buf = new Uint8Array(37);
-        const view = new DataView(buf.buffer);
-        view.setUint32(0, o.keyId, false);
-        buf.set(new Uint8Array(o.keyPair.pubKey), 4);
-        return encodeKey(buf);
-      });
-      try {
-        await apiPost("/keys/otk", { opk_list: opkList });
-      } catch (otkErr) {
-        console.error("Failed to upload repeat login OPKs:", otkErr);
-        showToast("Предупреждение: Не удалось обновить ключи шифрования E2EE на сервере. Обратитесь к администратору.", "error");
-      }
-
-    } else {
-      res = await apiPost("/login", {
-        nickname,
-        password,
-        device_name: getPersistentDeviceName(),
-        ik_pub:  "",
-        spk_pub: "",
-        spk_sig: "",
-      });
-
-      setToken(res.token);
-      localStorage.setItem("user_id", String(res.user_id));
-      localStorage.setItem("device_id", String(res.device_id));
-
-      let restored = false;
-      let backupPasswordForBackup = password;
-      let backupMethod = "password";
-
-      try {
-        const backup = await apiGet("/keys/backup");
-        if (backup && backup.encrypted_blob) {
-          const combinedBlob = decodeKey(backup.encrypted_blob);
-          const jsonStr = new TextDecoder().decode(combinedBlob);
-          const backupData = JSON.parse(jsonStr);
-
-          let backupPassword = "";
-          while (backupPassword.length < 6) {
-            backupPassword = await showPinModal("Введите PIN-код для расшифрования резервной копии E2EE:", "PIN-код бэкапа") || "";
-            if (backupPassword === "") {
-              alert("PIN-код обязателен для восстановления резервной копии!");
-              continue;
-            }
-          }
-
-          const envelope = {
-            encrypted_dek: decodeKey(backupData.encrypted_dek_b64),
-            iv_kek: decodeKey(backupData.iv_kek_b64),
-            salt_kek: decodeKey(backupData.salt_kek_b64),
-            encrypted_keys: decodeKey(backupData.encrypted_keys_b64),
-            iv_dek: decodeKey(backupData.iv_dek_b64)
-          };
-
-          const decrypted = await decryptIdentityEnvelope(envelope, backupPassword);
-          sessionStorage.setItem("backup_pin", backupPassword);
-          backupPasswordForBackup = backupPassword;
-          backupMethod = "pin";
-
-          if (decrypted.db_dump) {
-            await importAllData(decrypted.db_dump);
-            restored = true;
-          } else {
-            console.warn("Legacy backup format detected, generating new identity...");
-          }
-        }
-      } catch (backupErr) {
-        console.error("Не удалось восстановить бэкап с сервера. Детали ошибки:", backupErr);
-      }
-
-      // Reuse the restored identity if the backup contained one — regenerating
-      // here would change the safety number and orphan restored sessions.
-      let registrationId = null;
-      let ikPubB64 = null, spkPubB64 = null, spkSigB64 = null;
-      let reusedIdentity = false;
-
-      if (restored) {
-        const restoredIdentity = await getIdentity();
-        const spkKeyPair = await signalStore.loadSignedPreKey(1);
-        const spkRecord = await getSignedPreKeyRecord(1);
-        if (restoredIdentity && restoredIdentity.identityKeyPair && spkKeyPair && spkRecord) {
-          ik = restoredIdentity.identityKeyPair;
-          registrationId = restoredIdentity.registrationId;
-          ikPubB64  = encodeKey(new Uint8Array(ik.pubKey));
-          spkPubB64 = encodeKey(new Uint8Array(spkKeyPair.pubKey));
-          spkSigB64 = encodeKey(new Uint8Array(spkRecord.signature));
-          reusedIdentity = true;
-        }
-      }
-
-      if (!reusedIdentity) {
-        // No usable backup identity — generate fresh E2EE keys for this device
-        ik = await KeyHelper.generateIdentityKeyPair();
-        registrationId = KeyHelper.generateRegistrationId();
-        const spk = await KeyHelper.generateSignedPreKey(ik, 1);
-
-        ikPubB64  = encodeKey(new Uint8Array(ik.pubKey));
-        spkPubB64 = encodeKey(new Uint8Array(spk.keyPair.pubKey));
-        spkSigB64 = encodeKey(new Uint8Array(spk.signature));
-
-        await signalStore.storeSignedPreKey(1, spk.keyPair, spk.signature);
-      }
-
-      const opks = [];
-      for (let i = 1; i <= 100; i++) {
-        const o = await KeyHelper.generatePreKey(i);
-        opks.push(o);
-      }
-
-      const opkList = opks.map(o => {
-        const buf = new Uint8Array(37);
-        const view = new DataView(buf.buffer);
-        view.setUint32(0, o.keyId, false);
-        buf.set(new Uint8Array(o.keyPair.pubKey), 4);
-        return encodeKey(buf);
-      });
-
-      await saveIdentity({
-        identityKeyPair: ik,
-        registrationId: registrationId,
-        user_id: res.user_id,
-        device_id: res.device_id,
-      });
-
-      for (const o of opks) {
-        await signalStore.storePreKey(o.keyId, o.keyPair);
-      }
-
-      await apiPost("/keys/init", {
-        ik_pub:  ikPubB64,
-        spk_pub: spkPubB64,
-        spk_sig: spkSigB64,
-        registration_id: registrationId,
-        opk_list: opkList,
-      });
-
-      if (restored) {
-        showToast("История переписки восстановлена из облачного бэкапа!", "success");
-      } else {
-        const usePin = confirm(
-          "На сервере не найден бэкап переписки. Хотите защитить создаваемую резервную копию E2EE отдельным PIN-кодом/паролем?\n\n" +
-          "Если вы выберете 'Отмена', резервная копия будет зашифрована вашим паролем аккаунта."
-        );
-        if (usePin) {
-          let pin = "";
-          while (pin.length < 6) {
-            pin = await showPinModal("Придумайте PIN-код или пароль для резервной копии ключей (не менее 6 символов):", "PIN-код (от 6 символов)") || "";
-            if (pin === "") {
-              backupMethod = "password";
-              backupPasswordForBackup = password;
-              break;
-            }
-            if (pin.length < 6) {
-              alert("Слишком короткий пароль/PIN (минимум 6 символов)!");
-            } else {
-              backupMethod = "pin";
-              backupPasswordForBackup = pin;
-            }
-          }
-        }
-      }
-
-      sessionStorage.setItem("backup_pin", backupPasswordForBackup);
-
-      try {
-        const allDbData = await exportAllData();
-        const dataToBackup = {
-          db_dump: allDbData,
-          user_id: res.user_id,
-        };
-
-        const env = await encryptIdentityEnvelope(dataToBackup, backupPasswordForBackup);
-        const backupWrapper = {
-          version: 2,
-          method: backupMethod,
-          encrypted_dek_b64: encodeKey(env.encrypted_dek),
-          iv_kek_b64: encodeKey(env.iv_kek),
-          salt_kek_b64: encodeKey(env.salt_kek),
-          encrypted_keys_b64: encodeKey(env.encrypted_keys),
-          iv_dek_b64: encodeKey(env.iv_dek)
-        };
-
-        const jsonStr = JSON.stringify(backupWrapper);
-        const encoder = new TextEncoder();
-        const combinedBlob = encoder.encode(jsonStr);
-
-        await apiPost("/keys/backup", {
-          encrypted_blob: encodeKey(combinedBlob),
-          kdf_salt: encodeKey(env.salt_kek)
-        });
-      } catch (backupErr) {
-        console.warn("Не удалось создать резервную копию на сервере:", backupErr);
-      }
-
-      if (reusedIdentity) {
-        showToast("Ключи E2EE восстановлены из бэкапа — код безопасности сохранён.", "success");
-      } else {
-        showToast("Сгенерированы новые ключи шифрования E2EE для устройства!", "info");
-      }
-    }
+    setToken(res.token);
+    localStorage.setItem("user_id", String(res.user_id));
+    localStorage.setItem("device_id", String(res.device_id));
 
     const user = await getUserById(res.user_id);
     if (user) {
       user.user_id = user.id;
       user.username = user.nickname;
-      setCurrentUser(user);
+      setCurrentUser(user.user || user);
     }
 
     showToast("Добро пожаловать!", "success");

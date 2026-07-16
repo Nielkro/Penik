@@ -233,75 +233,10 @@ export async function renderChat(container, userId) {
     }
   });
 
-  const safetyBtn = el("button", {
-    class: "icon-btn chat-safety",
-    title: "Код безопасности",
-    style: "margin-left: auto; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
-  }, "🛡️");
-  
-  safetyBtn.addEventListener("mouseenter", () => { safetyBtn.style.opacity = "1"; });
-  safetyBtn.addEventListener("mouseleave", () => { safetyBtn.style.opacity = "0.7"; });
-
-  safetyBtn.addEventListener("click", async () => {
-    try {
-      let session = await getAnySession(userId);
-      const identity = await getIdentity();
-
-      const myIKRaw = identity && (identity.ik_pub_raw
-        ? new Uint8Array(identity.ik_pub_raw)
-        : (identity.identityKeyPair && identity.identityKeyPair.pubKey
-            ? new Uint8Array(identity.identityKeyPair.pubKey)
-            : null));
-
-      if (!myIKRaw) {
-        showToast("Код безопасности недоступен: локальный ключ не найден.", "error");
-        return;
-      }
-
-      if (!session) {
-        showToast("Код безопасности недоступен: сессия не установлена. Отправьте сообщение сначала.", "warning");
-        return;
-      }
-
-      // Dynamic migration: if their_ik_pub is missing in old session, fetch it on-demand
-      if (!session.their_ik_pub) {
-        const ws = getWS();
-        if (!ws) throw new Error("WebSocket не подключён");
-        const keyBundle = await ws.request(0x10, { user_id: Number(userId) }, 0x11);
-        if (keyBundle && keyBundle.devices && keyBundle.devices.length) {
-          const devices = keyBundle.devices.map(d => ({
-            ...d,
-            device_id: Number(d.device_id)
-          })).sort((a, b) => a.device_id - b.device_id);
-          const activeDevice = devices[devices.length - 1];
-          const toRaw = v => v instanceof Uint8Array ? v : decodeKey(v);
-          let theirIKRaw = toRaw(activeDevice.ik_pub);
-          if (theirIKRaw.length === 64) {
-            theirIKRaw = theirIKRaw.slice(0, 32);
-          }
-          session.their_ik_pub = theirIKRaw;
-          await saveSession(session);
-        } else {
-          showToast("Код безопасности недоступен: не удалось загрузить ключи собеседника.", "error");
-          return;
-        }
-      }
-
-      const safetyNumber = await computeSafetyNumber(
-        myIKRaw,
-        new Uint8Array(session.their_ik_pub)
-      );
-      await showSafetyNumberModal(`Код безопасности для ${contact.name || contact.nickname}`, safetyNumber);
-    } catch (err) {
-      console.error("Safety number error:", err);
-      showToast("Ошибка при расчете кода безопасности", "error");
-    }
-  });
-
   const deleteBtn = el("button", {
     class: "icon-btn chat-delete",
     title: "Удалить чат",
-    style: "margin-left: 8px; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
+    style: "margin-left: auto; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
   }, "🗑️");
   
   deleteBtn.addEventListener("mouseenter", () => { deleteBtn.style.opacity = "1"; });
@@ -338,7 +273,6 @@ export async function renderChat(container, userId) {
       el("span", { class: "chat-header-name" }, contact.name || contact.nickname),
       el("span", { class: "chat-header-nick" }, contact.nickname ? `@${contact.nickname}` : "")
     ),
-    safetyBtn,
     deleteBtn
   );
   header.querySelector(".chat-back").addEventListener("click", () => navigate("#chats"));
@@ -420,94 +354,6 @@ export async function renderChat(container, userId) {
       const ws = getWS();
       if (!ws || !ws.isConnected()) throw new Error("Нет соединения");
 
-      // 1. Fetch key bundles for recipient with no_otk: true
-      const keyBundle = await ws.request(0x10, { user_id: Number(userId), no_otk: true }, 0x11);
-      if (!keyBundle || !keyBundle.devices || !keyBundle.devices.length) {
-        throw new Error("У собеседника нет активных устройств");
-      }
-
-      // 2. Fetch key bundles for our own other devices (for multi-device sync) with no_otk: true
-      let ourBundle = null;
-      try {
-        ourBundle = await ws.request(0x10, { user_id: Number(myId), no_otk: true }, 0x11);
-      } catch (e) {
-        console.warn("Failed to fetch our own devices:", e);
-      }
-
-      // 3. Collect target devices
-      const targetDevices = [];
-      for (const dev of keyBundle.devices) {
-        targetDevices.push({ userId: Number(userId), dev });
-      }
-
-      if (ourBundle && ourBundle.devices) {
-        const myDeviceId = Number(localStorage.getItem("device_id"));
-        for (const dev of ourBundle.devices) {
-          if (Number(dev.device_id) !== myDeviceId) {
-            targetDevices.push({ userId: Number(myId), dev });
-          }
-        }
-      }
-
-      // 4. Encrypt separately for each target device using libsignal
-      const devicesCiphertexts = [];
-      for (const target of targetDevices) {
-        const address = new SignalProtocolAddress(String(target.userId), target.dev.device_id);
-        const lockName = `penik-crypto-lock-${target.userId}.${target.dev.device_id}`;
-
-        const encryptForDevice = async () => {
-          const boundStore = new BoundSignalStore(signalStore, address);
-          const cipher = new SessionCipher(boundStore, address);
-          
-          const hasSession = await cipher.hasOpenSession();
-          if (!hasSession) {
-            try {
-              const singleBundle = await ws.request(0x10, {
-                user_id: target.userId,
-                device_id: target.dev.device_id,
-                no_otk: false
-              }, 0x11);
-              if (singleBundle && singleBundle.devices && singleBundle.devices.length > 0) {
-                const fetchedDev = singleBundle.devices[0];
-                target.dev.opk_pub = fetchedDev.opk_pub;
-                target.dev.opk_id = fetchedDev.opk_id;
-              }
-            } catch (e) {
-              console.warn(`Failed to fetch OPK for device ${target.dev.device_id}:`, e);
-            }
-          }
-
-          // Check connection state again to prevent advancing the ratchet locally if the socket disconnected in the meantime
-          if (!ws.isConnected()) {
-            throw new Error("Соединение потеряно перед шифрованием");
-          }
-
-          await ensureSessionForDevice(target.userId, target.dev);
-
-          const textBytes = new TextEncoder().encode(text);
-          const signalMsg = await cipher.encrypt(textBytes.buffer);
-
-          const typeByte = signalMsg.type; // 1 (WhisperMessage) or 3 (PreKeyWhisperMessage)
-          const bodyBytes = new Uint8Array(
-            Array.from(signalMsg.body).map(c => c.charCodeAt(0))
-          );
-          const cipherBytes = new Uint8Array(1 + bodyBytes.length);
-          cipherBytes[0] = typeByte;
-          cipherBytes.set(bodyBytes, 1);
-
-          devicesCiphertexts.push({
-            device_id: Number(target.dev.device_id),
-            cipher_bytes: cipherBytes
-          });
-        };
-
-        if (navigator.locks) {
-          await navigator.locks.request(lockName, encryptForDevice);
-        } else {
-          await encryptForDevice();
-        }
-      }
-
       const msgId = crypto.randomUUID();
 
       const storedMsg = {
@@ -517,12 +363,10 @@ export async function renderChat(container, userId) {
         sender_id: myId,
         plaintext: text,
         created_at: now,
-        delivered: 0,
-        ciphertexts: devicesCiphertexts
+        delivered: 0
       };
       await saveMessage(storedMsg);
       await saveContact({ ...contact, last_message: text, last_ts: now });
-      triggerBackgroundBackup();
 
       pendingAcks.set(String(msgId), { tempId: msgId, userId: userId });
 
@@ -530,7 +374,7 @@ export async function renderChat(container, userId) {
       try {
         sent = ws.send(0x01, {
           to_user_id: Number(userId),
-          devices: devicesCiphertexts,
+          plaintext: text,
           msg_id: msgId,
         });
       } catch (sendErr) {

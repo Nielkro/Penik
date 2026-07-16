@@ -19,7 +19,7 @@ type historyMessageResponse struct {
 	SenderDeviceID int64  `json:"sender_device_id"`
 	RecipientID    int64  `json:"recipient_id"`
 	ChatUserID     int64  `json:"chat_user_id"` // Owner of the other side of the chat
-	CipherBytes    []byte `json:"cipher_bytes"`
+	Plaintext      string `json:"plaintext"`
 	Timestamp      int64  `json:"timestamp"`
 	Delivered      int    `json:"delivered"`
 }
@@ -93,9 +93,11 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 		list := make([]historyMessageResponse, 0)
 		for rows.Next() {
 			var m historyMessageResponse
-			if err := rows.Scan(&m.ID, &m.ChatID, &m.SenderID, &m.SenderDeviceID, &m.RecipientID, &m.ChatUserID, &m.CipherBytes, &m.Timestamp, &m.Delivered); err != nil {
+			var ciphertextBytes []byte
+			if err := rows.Scan(&m.ID, &m.ChatID, &m.SenderID, &m.SenderDeviceID, &m.RecipientID, &m.ChatUserID, &ciphertextBytes, &m.Timestamp, &m.Delivered); err != nil {
 				continue
 			}
+			m.Plaintext = string(ciphertextBytes)
 			list = append(list, m)
 		}
 

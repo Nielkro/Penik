@@ -307,43 +307,7 @@ export function triggerChatListUpdate() {
 
 async function onMsgRecvGlobal(payload) {
   const fromUserId = Number(payload.from_user_id);
-  const fromDeviceId = Number(payload.from_device_id);
-
-  let plaintext = "⚠️ Не удалось расшифровать";
-  
-  const decryptFn = async () => {
-    const cipherBytes = payload.cipher_bytes;
-    if (!cipherBytes || cipherBytes.length < 2) {
-      throw new Error("Сообщение слишком короткое");
-    }
-
-    const typeByte = cipherBytes[0];
-    const bodyBinaryString = String.fromCharCode(...cipherBytes.slice(1));
-
-    const address = new SignalProtocolAddress(String(fromUserId), fromDeviceId);
-    const boundStore = new BoundSignalStore(signalStore, address);
-    const cipher = new SessionCipher(boundStore, address);
-
-    let decryptedBytes;
-    if (typeByte === 3) {
-      decryptedBytes = await cipher.decryptPreKeyWhisperMessage(bodyBinaryString, 'binary');
-    } else {
-      decryptedBytes = await cipher.decryptWhisperMessage(bodyBinaryString, 'binary');
-    }
-
-    plaintext = new TextDecoder().decode(decryptedBytes);
-  };
-
-  try {
-    const lockName = `penik-crypto-lock-${fromUserId}.${fromDeviceId}`;
-    if (navigator.locks) {
-      await navigator.locks.request(lockName, decryptFn);
-    } else {
-      await decryptFn();
-    }
-  } catch (err) {
-    console.warn("Не удалось расшифровать сообщение (возможно, отправлено на другое устройство):", err.message || err);
-  }
+  const plaintext = payload.plaintext || "";
 
   const chatPartnerId = payload.chat_user_id || fromUserId;
   const inMsg = {
@@ -503,46 +467,24 @@ export async function syncMessageHistory() {
           }
         }
 
-        if (Number(item.sender_id) !== myId) {
-          // Skip if we already have this message stored (already decrypted)
-          const existing = await getMessage(item.id);
-          if (existing) continue;
+        const existingMsg = await getMessage(item.id);
+        if (existingMsg) continue;
 
-          const wsPayload = {
-            msg_id: item.id,
-            from_user_id: item.sender_id,
-            from_device_id: item.sender_device_id,
-            chat_user_id: item.chat_user_id,
-            cipher_bytes: typeof item.cipher_bytes === "string" ? decodeKey(item.cipher_bytes) : new Uint8Array(item.cipher_bytes),
-            ts: item.timestamp
-          };
-          try {
-            await onMsgRecvGlobal(wsPayload);
-          } catch (err) {
-            console.error(`Failed to decrypt history message ${item.id}:`, err);
-          }
-        } else {
-          // Skip if already stored with real text (not a placeholder)
-          const existing = await getMessage(item.id);
-          if (existing && existing.plaintext && !existing.plaintext.startsWith("🔒")) continue;
-
+        if (Number(item.sender_id) === myId) {
           // Try to match a pending tmp- message first
           const resolved = await findAndResolvePendingSentMessage(peerId, item.timestamp, item.id);
           if (resolved) continue;
-
-          // Only write lock placeholder if nothing better exists
-          if (!existing) {
-            const storedMsg = {
-              msg_id: item.id,
-              chat_id: String(peerId),
-              sender_id: myId,
-              plaintext: "🔒 Зашифрованное отправленное сообщение",
-              created_at: item.timestamp * 1000,
-              delivered: 1
-            };
-            await saveMessage(storedMsg);
-          }
         }
+
+        const storedMsg = {
+          msg_id: item.id,
+          chat_id: String(peerId),
+          sender_id: Number(item.sender_id),
+          plaintext: item.plaintext,
+          created_at: item.timestamp * 1000,
+          delivered: 1
+        };
+        await saveMessage(storedMsg);
       }
 
       if (history.length < limit) break;
