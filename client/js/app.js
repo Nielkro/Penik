@@ -440,7 +440,9 @@ async function onMsgAckReceivedGlobal(payload) {
   pendingAcks.delete(String(clientMsgId));
 
   try {
-    await updateMsgIdAndDelivered(pending.tempId, serverMsgId, 1);
+    // Server stored the message (single check). Real delivery (double check)
+    // arrives later via MSG_DELIVERED once the recipient's device receives it.
+    await updateMsgIdAndDelivered(pending.tempId, serverMsgId, 0);
 
     if (_activeChatCallback && String(_activeChatCallback.userId) === String(pending.userId)) {
       const bubble = document.querySelector(`[data-msg-id="${pending.tempId}"]`);
@@ -451,7 +453,6 @@ async function onMsgAckReceivedGlobal(payload) {
           statusEl.dataset.msgId = serverMsgId;
         }
       }
-      _activeChatCallback.onAck(serverMsgId);
     }
   } catch (err) {
     console.error("Failed to process MSG_ACK:", err);

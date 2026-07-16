@@ -306,10 +306,38 @@ async function handleLogin(inputs, btn, errEl) {
         console.error("Не удалось восстановить бэкап с сервера. Детали ошибки:", backupErr);
       }
 
-      // Always generate new E2EE identity keys and signed prekeys for the new device
-      ik = await KeyHelper.generateIdentityKeyPair();
-      const registrationId = KeyHelper.generateRegistrationId();
-      const spk = await KeyHelper.generateSignedPreKey(ik, 1);
+      // Reuse the restored identity if the backup contained one — regenerating
+      // here would change the safety number and orphan restored sessions.
+      let registrationId = null;
+      let ikPubB64 = null, spkPubB64 = null, spkSigB64 = null;
+      let reusedIdentity = false;
+
+      if (restored) {
+        const restoredIdentity = await getIdentity();
+        const spkKeyPair = await signalStore.loadSignedPreKey(1);
+        const spkRecord = await getSignedPreKeyRecord(1);
+        if (restoredIdentity && restoredIdentity.identityKeyPair && spkKeyPair && spkRecord) {
+          ik = restoredIdentity.identityKeyPair;
+          registrationId = restoredIdentity.registrationId;
+          ikPubB64  = encodeKey(new Uint8Array(ik.pubKey));
+          spkPubB64 = encodeKey(new Uint8Array(spkKeyPair.pubKey));
+          spkSigB64 = encodeKey(new Uint8Array(spkRecord.signature));
+          reusedIdentity = true;
+        }
+      }
+
+      if (!reusedIdentity) {
+        // No usable backup identity — generate fresh E2EE keys for this device
+        ik = await KeyHelper.generateIdentityKeyPair();
+        registrationId = KeyHelper.generateRegistrationId();
+        const spk = await KeyHelper.generateSignedPreKey(ik, 1);
+
+        ikPubB64  = encodeKey(new Uint8Array(ik.pubKey));
+        spkPubB64 = encodeKey(new Uint8Array(spk.keyPair.pubKey));
+        spkSigB64 = encodeKey(new Uint8Array(spk.signature));
+
+        await signalStore.storeSignedPreKey(1, spk.keyPair, spk.signature);
+      }
 
       const opks = [];
       for (let i = 1; i <= 100; i++) {
@@ -317,10 +345,6 @@ async function handleLogin(inputs, btn, errEl) {
         opks.push(o);
       }
 
-      const ikPubB64  = encodeKey(new Uint8Array(ik.pubKey));
-      const spkPubB64 = encodeKey(new Uint8Array(spk.keyPair.pubKey));
-      const spkSigB64 = encodeKey(new Uint8Array(spk.signature));
-      
       const opkList = opks.map(o => {
         const buf = new Uint8Array(37);
         const view = new DataView(buf.buffer);
@@ -336,7 +360,6 @@ async function handleLogin(inputs, btn, errEl) {
         device_id: res.device_id,
       });
 
-      await signalStore.storeSignedPreKey(1, spk.keyPair, spk.signature);
       for (const o of opks) {
         await signalStore.storePreKey(o.keyId, o.keyPair);
       }
@@ -407,7 +430,11 @@ async function handleLogin(inputs, btn, errEl) {
         console.warn("Не удалось создать резервную копию на сервере:", backupErr);
       }
 
-      showToast("Сгенерированы новые ключи шифрования E2EE для устройства!", "info");
+      if (reusedIdentity) {
+        showToast("Ключи E2EE восстановлены из бэкапа — код безопасности сохранён.", "success");
+      } else {
+        showToast("Сгенерированы новые ключи шифрования E2EE для устройства!", "info");
+      }
     }
 
     const user = await getUserById(res.user_id);

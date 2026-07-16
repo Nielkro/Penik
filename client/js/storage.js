@@ -630,6 +630,11 @@ export async function getAnySession(userId) {
   });
 }
 
+export async function saveSession(session) {
+  await openDB();
+  return put(tx("sessions_v2", "readwrite"), session);
+}
+
 export async function getIdentityKeyForUser(userId) {
   const list = await getIdentitiesForUser(userId);
   if (list.length > 0) {
@@ -654,11 +659,15 @@ export async function getSignedPreKeyRecord(keyId) {
   });
 }
 
+// Object stores included in the encrypted cloud backup. Besides chat data we
+// back up the full E2EE state (identity, prekeys, sessions) so that a restore
+// keeps the same safety number instead of regenerating keys.
+const BACKUP_STORES = ["contacts", "messages", "identity", "pre_keys", "signed_pre_keys", "sessions_v2", "identities"];
+
 export async function exportAllData() {
   await openDB();
-  const stores = ["contacts", "messages"];
   const dump = {};
-  for (const sName of stores) {
+  for (const sName of BACKUP_STORES) {
     if (_db.objectStoreNames.contains(sName)) {
       dump[sName] = await new Promise((resolve) => {
         const transaction = _db.transaction(sName, "readonly");
@@ -673,7 +682,7 @@ export async function exportAllData() {
 export async function importAllData(dump) {
   await openDB();
   for (const sName in dump) {
-    if (sName !== "contacts" && sName !== "messages") continue;
+    if (!BACKUP_STORES.includes(sName)) continue;
     if (_db.objectStoreNames.contains(sName)) {
       await new Promise((resolve, reject) => {
         const transaction = _db.transaction(sName, "readwrite");
@@ -694,6 +703,11 @@ export async function importAllData(dump) {
         transaction.onerror = (e) => reject(e.target.error);
       });
     }
+  }
+  // Refresh the in-memory trusted identities cache (loaded once at openDB)
+  if (dump.identities) {
+    trustedIdentities.clear();
+    await preloadIdentities(_db);
   }
 }
 
