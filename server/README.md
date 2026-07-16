@@ -9,7 +9,6 @@ Go backend для E2EE мессенджера. Signal Protocol, мульти-д�
 - **WebSocket** — `nhooyr.io/websocket`, бинарные фреймы
 - **MessagePack** — `github.com/shamaton/msgpack/v2`
 - **Пароли** — Argon2id
-- **E2EE** — Signal Protocol (X3DH + Double Ratchet, ключи на клиенте)
 
 ## Запуск
 
@@ -99,38 +98,11 @@ WS /api/v1/ws?token=<session_token>
 | 0x05  | сервер → клиент | OFFLINE_BATCH    | `msgs[]` — при подключении                                           |
 | 0x06  | оба             | PING             | —                                                                    |
 | 0x07  | оба             | PONG             | —                                                                    |
-| 0x10  | клиент → сервер | KEY_FETCH_REQ    | `user_id`                                                            |
-| 0x11  | сервер → клиент | KEY_FETCH_RESP   | `devices[{device_id, ik_pub, spk_pub, spk_sig, opk_pub}]`           |
-
-## E2EE — Signal Protocol
-
-Сервер **не видит контент сообщений**. Хранит только `ciphertext BLOB`.
-
-```
-Регистрация:
-  клиент генерирует IK + SPK + 100 OPK
-  → сервер хранит публичные части
-
-Первое сообщение A → B:
-  A: KEY_FETCH_REQ для B → получает ключи всех девайсов B
-  A: X3DH × (кол-во девайсов B) → shared secret на каждый
-  A: Double Ratchet шифрует, MSG_SEND на каждый девайс отдельно
-
-Мульти-девайс:
-  каждый девайс = отдельный Signal адресат
-  сообщение шифруется N раз (N = кол-во девайсов получателя)
-
-Бэкап ключей:
-  клиент: PIN → Argon2 → backup_key → AES-256-GCM(приватные ключи) → blob
-  сервер хранит непрозрачный blob
-  восстановление: скачать blob → ввести PIN → расшифровать → импорт
-```
-
 ## База данных
 
 SQLite с WAL режимом. Миграции применяются при старте автоматически.
 
-Таблицы: `users`, `devices`, `identity_keys`, `one_time_keys`, `key_backups`, `chats`, `messages`, `sessions`
+Таблицы: `users`, `devices`, `chats`, `messages`, `sessions`
 
 ## Rate limits
 

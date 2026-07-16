@@ -200,8 +200,8 @@ export function renderProfile(container) {
   });
 
   const backupSection = el("div", { class: "profile-backup-section", style: "margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px; width: 100%;" },
-    el("h3", { style: "font-size: 14px; margin-bottom: 8px; color: #aaa;" }, "Резервное копирование переписки (E2EE)"),
-    el("p", { style: "font-size: 12px; margin-bottom: 12px; color: #888; line-height: 1.4;" }, "Экспортируйте историю переписки в зашифрованный файл. Обратите внимание, что криптографические ключи устройств не переносятся ради безопасности."),
+    el("h3", { style: "font-size: 14px; margin-bottom: 8px; color: #aaa;" }, "Резервное копирование переписки"),
+    el("p", { style: "font-size: 12px; margin-bottom: 12px; color: #888; line-height: 1.4;" }, "Экспортируйте историю переписки в зашифрованный файл для переноса или резервного хранения."),
     el("div", { style: "display: flex; gap: 8px; flex-wrap: wrap;" }, backupBtn, restoreBtn, restoreInput)
   );
 
