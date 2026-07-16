@@ -2,7 +2,7 @@ import { getToken, setToken, getUserById, apiGet, apiPost } from './api.js';
 import {
   openDB, saveMessage,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
-  updateMsgId, updateMsgIdAndDelivered, getMaxServerMsgId, getMessage, getAllContacts, getAllMessages,
+  updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
   findAndResolvePendingSentMessage, deleteChatData
 } from './storage.js';
 import { ws } from './ws.js';
@@ -411,69 +411,59 @@ async function onMsgAckReceivedGlobal(payload) {
 
 export async function syncMessageHistory() {
   try {
-    const lastId = await getMaxServerMsgId();
-    let afterId = lastId;
     const limit = 100;
-    while (true) {
-      const history = await apiGet(`/messages/history?limit=${limit}&after_id=${afterId}`);
-      if (!history || !Array.isArray(history) || history.length === 0) break;
+    const history = await apiGet(`/messages/history?limit=${limit}`);
+    if (!history || !Array.isArray(history) || history.length === 0) return;
 
-      const me = state.currentUser;
-      if (!me) break;
-      const myId = Number(me.id || me.user_id);
+    const me = state.currentUser;
+    if (!me) return;
+    const myId = Number(me.id || me.user_id);
 
-      // Sort by timestamp ascending just to be sure
-      history.sort((a, b) => a.timestamp - b.timestamp);
+    // Sort by timestamp ascending just to be sure
+    history.sort((a, b) => a.timestamp - b.timestamp);
 
-      for (const item of history) {
-        if (Number(item.id) > afterId) {
-          afterId = Number(item.id);
-        }
-
-        const existing = await getMessage(item.id);
-        if (existing) {
-          continue;
-        }
-
-        const peerId = Number(item.chat_user_id || (Number(item.sender_id) === myId ? item.recipient_id : item.sender_id));
-
-        let contact = await getContact(peerId);
-        if (!contact) {
-          try {
-            const res = await getUserById(String(peerId));
-            contact = res.user || res;
-            await saveContact({
-              ...contact,
-              user_id: peerId,
-              last_message: "",
-              last_ts: item.timestamp * 1000
-            });
-          } catch (e) {
-            console.error("Failed to fetch contact details for syncing:", e);
-          }
-        }
-
-        const existingMsg = await getMessage(item.id);
-        if (existingMsg) continue;
-
-        if (Number(item.sender_id) === myId) {
-          // Try to match a pending tmp- message first
-          const resolved = await findAndResolvePendingSentMessage(peerId, item.timestamp, item.id);
-          if (resolved) continue;
-        }
-
-        const storedMsg = {
-          msg_id: item.id,
-          chat_id: String(peerId),
-          sender_id: Number(item.sender_id),
-          plaintext: item.plaintext,
-          created_at: item.timestamp * 1000,
-          delivered: 1
-        };
-        await saveMessage(storedMsg);
+    for (const item of history) {
+      const existing = await getMessage(item.id);
+      if (existing) {
+        continue;
       }
 
-      if (history.length < limit) break;
+      const peerId = Number(item.chat_user_id || (Number(item.sender_id) === myId ? item.recipient_id : item.sender_id));
+
+      let contact = await getContact(peerId);
+      if (!contact) {
+        try {
+          const res = await getUserById(String(peerId));
+          contact = res.user || res;
+          await saveContact({
+            ...contact,
+            user_id: peerId,
+            last_message: "",
+            last_ts: item.timestamp * 1000
+          });
+        } catch (e) {
+          console.error("Failed to fetch contact details for syncing:", e);
+        }
+      }
+
+      const existingMsg = await getMessage(item.id);
+      if (existingMsg) continue;
+
+      if (Number(item.sender_id) === myId) {
+        // Try to match a pending tmp- message first
+        const resolved = await findAndResolvePendingSentMessage(peerId, item.timestamp, item.id);
+        if (resolved) continue;
+      }
+
+      const storedMsg = {
+        msg_id: item.id,
+        chat_id: String(peerId),
+        sender_id: Number(item.sender_id),
+        plaintext: item.plaintext,
+        created_at: item.timestamp * 1000,
+        delivered: 1
+      };
+      await saveMessage(storedMsg);
     }
 
     triggerChatListUpdate();

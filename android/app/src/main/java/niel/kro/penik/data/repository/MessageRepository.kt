@@ -76,8 +76,7 @@ class MessageRepository @Inject constructor(
     }
 
     suspend fun syncHistory() {
-        val maxId = messageDao.getMaxServerId() ?: 0
-        val response = apiService.getMessageHistory(limit = 100, afterId = maxId)
+        val response = apiService.getMessageHistory(limit = 100)
         if (response.isSuccessful) {
             val messages = response.body() ?: emptyList()
             val myId = tokenStorage.getUserId()
@@ -96,8 +95,6 @@ class MessageRepository @Inject constructor(
             messageDao.insertMessages(entities)
         }
     }
-
-    suspend fun getMaxServerId(): Long? = messageDao.getMaxServerId()
 
     suspend fun deleteChatMessages(chatUserId: Long) {
         messageDao.deleteChatMessages(chatUserId)

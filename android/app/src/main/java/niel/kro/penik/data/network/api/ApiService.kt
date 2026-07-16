@@ -30,7 +30,6 @@ interface ApiService {
 
     @GET("messages/history")
     suspend fun getMessageHistory(
-        @Query("limit") limit: Int = 100,
-        @Query("after_id") afterId: Long? = null
+        @Query("limit") limit: Int = 100
     ): Response<List<HistoryMessageResponse>>
 }
