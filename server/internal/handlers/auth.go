@@ -79,13 +79,11 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			http.Error(w, "nickname must be 3-32 chars: a-z A-Z 0-9 _", http.StatusBadRequest)
 			return
 		}
-		if len(req.IKPub) == 0 || len(req.SPKPub) == 0 || len(req.SPKSig) == 0 {
-			http.Error(w, "identity key fields required", http.StatusBadRequest)
-			return
-		}
-		if !validCurveKey(req.IKPub) || !validCurveKey(req.SPKPub) || len(req.SPKSig) != 64 {
-			http.Error(w, "malformed identity key material", http.StatusBadRequest)
-			return
+		if len(req.IKPub) > 0 || len(req.SPKPub) > 0 || len(req.SPKSig) > 0 {
+			if !validCurveKey(req.IKPub) || !validCurveKey(req.SPKPub) || len(req.SPKSig) != 64 {
+				http.Error(w, "malformed identity key material", http.StatusBadRequest)
+				return
+			}
 		}
 		if len(req.OPKList) > maxOPKUpload {
 			http.Error(w, fmt.Sprintf("too many one-time keys (max %d)", maxOPKUpload), http.StatusBadRequest)
@@ -126,29 +124,33 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		}
 		deviceID, _ := devRes.LastInsertId()
 
-		_, err = tx.ExecContext(r.Context(),
-			`INSERT INTO identity_keys(device_id,ik_pub,spk_pub,spk_sig,updated_at) VALUES(?,?,?,?,?)`,
-			deviceID, req.IKPub, req.SPKPub, req.SPKSig, now)
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-
-		for _, opkRaw := range req.OPKList {
-			var keyID int64
-			var pubKey []byte
-			if len(opkRaw) == 37 {
-				keyID = int64(binary.BigEndian.Uint32(opkRaw[:4]))
-				pubKey = opkRaw[4:]
-			} else {
-				pubKey = opkRaw
-			}
+		if len(req.IKPub) > 0 {
 			_, err = tx.ExecContext(r.Context(),
-				`INSERT OR IGNORE INTO one_time_keys(device_id,key_id,opk_pub,used) VALUES(?,?,?,0)`,
-				deviceID, keyID, pubKey)
+				`INSERT INTO identity_keys(device_id,ik_pub,spk_pub,spk_sig,updated_at) VALUES(?,?,?,?,?)`,
+				deviceID, req.IKPub, req.SPKPub, req.SPKSig, now)
 			if err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
+			}
+		}
+
+		if len(req.OPKList) > 0 {
+			for _, opkRaw := range req.OPKList {
+				var keyID int64
+				var pubKey []byte
+				if len(opkRaw) == 37 {
+					keyID = int64(binary.BigEndian.Uint32(opkRaw[:4]))
+					pubKey = opkRaw[4:]
+				} else {
+					pubKey = opkRaw
+				}
+				_, err = tx.ExecContext(r.Context(),
+					`INSERT OR IGNORE INTO one_time_keys(device_id,key_id,opk_pub,used) VALUES(?,?,?,0)`,
+					deviceID, keyID, pubKey)
+				if err != nil {
+					http.Error(w, "internal error", http.StatusInternalServerError)
+					return
+				}
 			}
 		}
 

@@ -20,26 +20,19 @@ const (
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]
 // All messages are sent as binary WebSocket frames.
 
-type DeviceCiphertext struct {
-	DeviceID    int64  `msgpack:"device_id"`
-	CipherBytes []byte `msgpack:"cipher_bytes"`
-}
-
-// MsgSend is sent by a client to deliver E2EE ciphertexts to target devices.
 type MsgSend struct {
-	ToUserID int64              `msgpack:"to_user_id"`
-	Devices  []DeviceCiphertext `msgpack:"devices"`
-	MsgID    string             `msgpack:"msg_id"` // client-generated idempotency key
+	ToUserID  int64  `msgpack:"to_user_id"`
+	Plaintext string `msgpack:"plaintext"`
+	MsgID     string `msgpack:"msg_id"` // client-generated idempotency key
 }
 
 // MsgRecv is pushed to recipient clients.
 type MsgRecv struct {
-	FromUserID   int64  `msgpack:"from_user_id"`
-	FromDeviceID int64  `msgpack:"from_device_id"`
-	ChatUserID   int64  `msgpack:"chat_user_id"` // User ID of the other party in this chat
-	CipherBytes  []byte `msgpack:"cipher_bytes"`
-	MsgID        int64  `msgpack:"msg_id"` // server-assigned DB id
-	TS           int64  `msgpack:"ts"`
+	FromUserID int64  `msgpack:"from_user_id"`
+	ChatUserID int64  `msgpack:"chat_user_id"` // User ID of the other party in this chat
+	Plaintext  string `msgpack:"plaintext"`
+	MsgID      int64  `msgpack:"msg_id"` // server-assigned DB id
+	TS         int64  `msgpack:"ts"`
 }
 
 // MsgAck is sent server→client to confirm receipt/storage of a MsgSend.
