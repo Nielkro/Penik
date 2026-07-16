@@ -46,9 +46,9 @@ class SendMessageUseCase @Inject constructor(
     private val messageRepository: MessageRepository,
     private val chatRepository: ChatRepository
 ) {
-    suspend operator fun invoke(toUserId: Long, text: String) {
-        val clientMsgId = messageRepository.sendMessage(toUserId, text)
-        chatRepository.updateLastMessage(toUserId, text, System.currentTimeMillis())
+    suspend operator fun invoke(toUserId: Long, text: String, chatName: String = "") {
+        messageRepository.sendMessage(toUserId, text)
+        chatRepository.updateLastMessage(toUserId, text, System.currentTimeMillis(), name = chatName)
     }
 }
 

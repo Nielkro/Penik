@@ -26,13 +26,13 @@ class ChatRepository @Inject constructor(
         return chat
     }
 
-    suspend fun updateLastMessage(userId: Long, text: String, timestamp: Long) {
+    suspend fun updateLastMessage(userId: Long, text: String, timestamp: Long, name: String = "", nickname: String = "") {
         val existing = chatDao.getChat(userId)
         if (existing == null) {
             chatDao.insertChat(ChatEntity(
                 userId = userId,
-                nickname = "",
-                name = "",
+                nickname = nickname,
+                name = name,
                 lastMessage = text,
                 lastMessageTimestamp = timestamp
             ))
