@@ -33,6 +33,8 @@ import niel.kro.penik.ui.theme.SentMessageBg
 import niel.kro.penik.ui.theme.SentMessageText
 import niel.kro.penik.ui.theme.TextMuted
 import niel.kro.penik.ui.theme.TextPrimary
+import niel.kro.penik.ui.theme.Warning
+import niel.kro.penik.data.network.websocket.ConnectionState
 
 private fun initialsColor(name: String): Color {
     val hue = name.fold(0L) { acc, ch -> acc + ch.code } % 360
@@ -173,20 +175,27 @@ fun MessageBubble(
 }
 
 @Composable
-fun ConnectionStatusBar(isConnected: Boolean) {
-    if (!isConnected) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFFF05A5A).copy(alpha = 0.15f))
-                .padding(vertical = 6.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "Нет соединения...",
-                color = Color(0xFFF05A5A),
-                fontSize = 13.sp
-            )
-        }
+fun ConnectionStatusBar(connectionState: ConnectionState) {
+    val text = when (connectionState) {
+        ConnectionState.CONNECTING -> "Устанавливается соединение..."
+        ConnectionState.DISCONNECTED -> "Нет соединения"
+        ConnectionState.CONNECTED -> return
+    }
+    val color = when (connectionState) {
+        ConnectionState.CONNECTING -> Warning
+        else -> Danger
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color.copy(alpha = 0.15f))
+            .padding(vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = color,
+            fontSize = 13.sp
+        )
     }
 }

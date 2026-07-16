@@ -93,6 +93,12 @@ private fun MessageUnpacker.readMsgRecvMap(): Map<String, Any?> {
     return map
 }
 
+enum class ConnectionState {
+    DISCONNECTED,
+    CONNECTING,
+    CONNECTED
+}
+
 @Singleton
 class WebSocketManager @Inject constructor() {
 
@@ -106,8 +112,8 @@ class WebSocketManager @Inject constructor() {
     private val _events = MutableSharedFlow<WebSocketEvent>(extraBufferCapacity = 64)
     val events: SharedFlow<WebSocketEvent> = _events.asSharedFlow()
 
-    private val _connectionState = MutableStateFlow(false)
-    val connectionState: StateFlow<Boolean> = _connectionState.asStateFlow()
+    private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
+    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
     private var token: String = ""
     private var reconnectAttempt = 0
@@ -128,10 +134,11 @@ class WebSocketManager @Inject constructor() {
         pingJob?.cancel()
         webSocket?.close(1000, "Client disconnect")
         webSocket = null
-        _connectionState.value = false
+        _connectionState.value = ConnectionState.DISCONNECTED
     }
 
     private fun doConnect() {
+        _connectionState.value = ConnectionState.CONNECTING
         val scheme = if (connectPort == 443) "wss" else "ws"
         val request = Request.Builder()
             .url("$scheme://$connectHost:$connectPort/api/v1/ws")
@@ -141,7 +148,7 @@ class WebSocketManager @Inject constructor() {
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d("WS", "Connected")
-                _connectionState.value = true
+                _connectionState.value = ConnectionState.CONNECTED
                 reconnectAttempt = 0
                 scope.launch { _events.emit(WebSocketEvent.Connected) }
                 startPingLoop()
@@ -168,7 +175,7 @@ class WebSocketManager @Inject constructor() {
     }
 
     private fun handleDisconnect() {
-        _connectionState.value = false
+        _connectionState.value = ConnectionState.DISCONNECTED
         pingJob?.cancel()
         scope.launch { _events.emit(WebSocketEvent.Disconnected) }
         reconnectWithBackoff()

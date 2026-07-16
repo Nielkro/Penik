@@ -55,7 +55,7 @@ fun ChatsListScreen(
     viewModel: ChatsListViewModel = hiltViewModel()
 ) {
     val chats by viewModel.chats.collectAsState()
-    val isConnected by viewModel.connectionState.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(0) }
 
@@ -128,7 +128,7 @@ fun ChatsListScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            ConnectionStatusBar(isConnected = isConnected)
+            ConnectionStatusBar(connectionState = connectionState)
 
             OutlinedTextField(
                 value = searchQuery,
