@@ -1,6 +1,6 @@
 # Messenger Server
 
-Go backend для E2EE мессенджера. Signal Protocol, мульти-девайс, бинарный WebSocket (MessagePack).
+Go backend для мессенджера Penik. Мульти-девайс, бинарный WebSocket (MessagePack).
 
 ## Стек
 
@@ -73,18 +73,11 @@ PUT  /api/v1/avatar                          // multipart, WebP, ≤100KB → с
 GET  /api/v1/avatar/:user_id
 ```
 
-### Ключи (X3DH)
-
-```
-POST /api/v1/keys/otk        // загрузить одноразовые ключи { "opk_list": [...] }
-POST /api/v1/keys/backup     // { "encrypted_blob": "<base64>", "kdf_salt": "<base64>" }
-GET  /api/v1/keys/backup     // скачать зашифрованный бэкап ключей
-```
-
 ### WebSocket
 
 ```
-WS /api/v1/ws?token=<session_token>
+WS /api/v1/ws
+Передача токена через Sec-WebSocket-Protocol: access_token, <token>
 ```
 
 Бинарный протокол: первый байт — опкод, остаток — MessagePack payload.

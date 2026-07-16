@@ -221,13 +221,6 @@ async function boot() {
   if (token) {
     try {
       let localUserId = localStorage.getItem("user_id");
-      if (!localUserId) {
-        const identity = await getIdentity();
-        if (identity && identity.user_id) {
-          localUserId = String(identity.user_id);
-          localStorage.setItem("user_id", localUserId);
-        }
-      }
 
       if (localUserId) {
         const user = await getUserById(localUserId);

@@ -1,29 +1,9 @@
-import { decodeKey, encodeKey, replacer, reviver } from "./crypto.js";
 import { ws } from "./ws.js";
-import { KeyHelper, SessionBuilder, SessionCipher, SignalProtocolAddress } from '@privacyresearch/libsignal-protocol-typescript';
 
 const DB_NAME = "penik-messenger";
 const DB_VERSION = 4;
 
 let _db = null;
-const trustedIdentities = new Map();
-
-export async function preloadIdentities(dbInstance) {
-  return new Promise((resolve, reject) => {
-    const transaction = dbInstance.transaction("identities", "readonly");
-    const store = transaction.objectStore("identities");
-    store.openCursor().onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (cursor) {
-        trustedIdentities.set(cursor.value.address, cursor.value.publicKey);
-        cursor.continue();
-      } else {
-        resolve();
-      }
-    };
-    transaction.onerror = () => reject(transaction.error);
-  });
-}
 
 export function openDB() {
   if (_db) return Promise.resolve(_db);
@@ -31,9 +11,6 @@ export function openDB() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
-      if (!db.objectStoreNames.contains("identity")) {
-        db.createObjectStore("identity", { keyPath: "id" });
-      }
       if (!db.objectStoreNames.contains("messages")) {
         const ms = db.createObjectStore("messages", { keyPath: "msg_id" });
         ms.createIndex("chat_id", "chat_id", { unique: false });
@@ -41,21 +18,9 @@ export function openDB() {
       if (!db.objectStoreNames.contains("contacts")) {
         db.createObjectStore("contacts", { keyPath: "user_id" });
       }
-      // V3 stores for libsignal
-      if (!db.objectStoreNames.contains("pre_keys")) {
-        db.createObjectStore("pre_keys", { keyPath: "keyId" });
-      }
-      if (!db.objectStoreNames.contains("signed_pre_keys")) {
-        db.createObjectStore("signed_pre_keys", { keyPath: "keyId" });
-      }
-      if (!db.objectStoreNames.contains("sessions_v2")) {
-        db.createObjectStore("sessions_v2", { keyPath: "address" });
-      }
-      if (!db.objectStoreNames.contains("identities")) {
-        db.createObjectStore("identities", { keyPath: "address" });
-      }
-      // Clean up legacy object stores
-      for (const legacy of ["sessions", "opk_pool", "skipped_keys"]) {
+      // Clean up legacy object stores if they exist
+      const legacyStores = ["identity", "pre_keys", "signed_pre_keys", "sessions_v2", "identities", "sessions", "opk_pool", "skipped_keys"];
+      for (const legacy of legacyStores) {
         if (db.objectStoreNames.contains(legacy)) {
           db.deleteObjectStore(legacy);
         }
@@ -63,9 +28,7 @@ export function openDB() {
     };
     req.onsuccess = (e) => {
       _db = e.target.result;
-      preloadIdentities(_db)
-        .then(() => resolve(_db))
-        .catch((err) => reject(err));
+      resolve(_db);
     };
     req.onerror = () => reject(req.error);
   });
@@ -107,23 +70,6 @@ function getAll(store) {
   });
 }
 
-// Identity
-
-export async function getIdentity() {
-  await openDB();
-  return get(tx("identity"), "local");
-}
-
-export async function saveIdentity(identity) {
-  await openDB();
-  return put(tx("identity", "readwrite"), { id: "local", ...identity });
-}
-
-
-
-
-
-
 // Messages
 
 export async function getMessage(msgId) {
@@ -147,23 +93,34 @@ export async function saveMessage(message) {
 export async function getMessages(chatId, limit = 50, before = null) {
   await openDB();
   return new Promise((resolve, reject) => {
-    const store = tx("messages");
+    const transaction = _db.transaction("messages", "readonly");
+    const store = transaction.objectStore("messages");
     const index = store.index("chat_id");
-    const results = [];
-    const range = IDBKeyRange.only(chatId);
-    const req = index.openCursor(range, "prev");
+    const list = [];
+
+    const keyRange = IDBKeyRange.only(String(chatId));
+    const req = index.openCursor(keyRange, "prev");
+
     req.onsuccess = (e) => {
       const cursor = e.target.result;
-      if (!cursor || results.length >= limit) {
-        results.sort((a, b) => a.created_at - b.created_at);
-        resolve(results);
-        return;
+      if (cursor) {
+        const msg = cursor.value;
+        if (before) {
+          const beforeTime = typeof before === "number" ? before : Number(before);
+          if (msg.created_at >= beforeTime) {
+            cursor.continue();
+            return;
+          }
+        }
+        list.push(msg);
+        if (list.length < limit) {
+          cursor.continue();
+        } else {
+          resolve(list.reverse());
+        }
+      } else {
+        resolve(list.reverse());
       }
-      const msg = cursor.value;
-      if (before === null || msg.created_at < before) {
-        results.push(msg);
-      }
-      cursor.continue();
     };
     req.onerror = () => reject(req.error);
   });
@@ -177,37 +134,39 @@ export async function getAllMessages() {
 export async function getMaxServerMsgId() {
   await openDB();
   return new Promise((resolve, reject) => {
-    const store = tx("messages");
+    const transaction = _db.transaction("messages", "readonly");
+    const store = transaction.objectStore("messages");
     let maxId = 0;
-    const req = store.openCursor();
-    req.onsuccess = (e) => {
+
+    store.openCursor().onsuccess = (e) => {
       const cursor = e.target.result;
       if (cursor) {
-        const id = Number(cursor.value.msg_id);
-        if (!isNaN(id) && id > maxId) {
-          maxId = id;
+        const msg = cursor.value;
+        const numericId = Number(msg.msg_id);
+        if (!isNaN(numericId) && numericId > maxId) {
+          maxId = numericId;
         }
         cursor.continue();
       } else {
         resolve(maxId);
       }
     };
-    req.onerror = () => reject(req.error);
+    store.openCursor().onerror = (e) => reject(e.target.error);
   });
 }
 
 export async function updateMessageDelivered(msgId, status) {
-  const msg = await getMessage(msgId);
-  if (!msg) return;
-  msg.delivered = status;
-  msg.delivery_status = status;
   await openDB();
-  const store = tx("messages", "readwrite");
-  return new Promise((resolve, reject) => {
-    const putReq = store.put(msg);
-    putReq.onsuccess = () => resolve();
-    putReq.onerror = () => reject(putReq.error);
-  });
+  const transaction = _db.transaction(["messages"], "readwrite");
+  const store = transaction.objectStore("messages");
+  
+  const msg = await get(store, msgId);
+  if (msg) {
+    msg.delivered = status;
+    await put(store, msg);
+    return true;
+  }
+  return false;
 }
 
 // Contacts
@@ -219,10 +178,8 @@ export async function getContact(userId) {
 
 export async function saveContact(contact) {
   await openDB();
-  if (contact && contact.user_id !== undefined) {
-    contact.user_id = Number(contact.user_id);
-  }
-  return put(tx("contacts", "readwrite"), contact);
+  const c = { ...contact, user_id: Number(contact.user_id || contact.id) };
+  return put(tx("contacts", "readwrite"), c);
 }
 
 export async function getAllContacts() {
@@ -230,177 +187,64 @@ export async function getAllContacts() {
   return getAll(tx("contacts"));
 }
 
-export async function exportHistoryData() {
-  const dump = await exportAllData();
-  return {
-    db_dump: dump,
-  };
-}
-
-export async function importHistoryData(data) {
-  if (data && data.db_dump) {
-    await importAllData(data.db_dump);
-  } else {
-    throw new Error("Неверный формат резервной копии");
-  }
-}
-
-
-
-export async function clearUserSessions(userId) {
-  await openDB();
-  const uIdStr = String(userId);
-
-  // Clear from cache
-  for (const addr of trustedIdentities.keys()) {
-    if (addr.split(".")[0] === uIdStr) {
-      trustedIdentities.delete(addr);
-    }
-  }
-  
-  // Clear sessions_v2
-  await new Promise((resolve, reject) => {
-    const transaction = _db.transaction(["sessions_v2"], "readwrite");
-    const store = transaction.objectStore("sessions_v2");
-    store.openCursor().onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (cursor) {
-        const parts = cursor.value.address.split(".");
-        if (parts[0] === uIdStr) {
-          cursor.delete();
-        }
-        cursor.continue();
-      }
-    };
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = (e) => reject(e.target.error);
-  });
-
-  // Clear identities
-  await new Promise((resolve, reject) => {
-    const transaction = _db.transaction(["identities"], "readwrite");
-    const store = transaction.objectStore("identities");
-    store.openCursor().onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (cursor) {
-        const parts = cursor.value.address.split(".");
-        if (parts[0] === uIdStr) {
-          cursor.delete();
-        }
-        cursor.continue();
-      }
-    };
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = (e) => reject(e.target.error);
-  });
-}
+// Database Management
 
 export async function deleteChatData(userId) {
   await openDB();
   const uId = Number(userId);
-  const uIdStr = String(userId);
-
-  return new Promise((resolve, reject) => {
-    const transaction = _db.transaction(["contacts", "messages", "sessions_v2", "identities"], "readwrite");
-
-    transaction.objectStore("contacts").delete(uId);
-
-    const msgStore = transaction.objectStore("messages");
-    const msgIndex = msgStore.index("chat_id");
-    const msgRange = IDBKeyRange.only(uIdStr);
-    msgIndex.openCursor(msgRange).onsuccess = (e) => {
+  await new Promise((resolve, reject) => {
+    const transaction = _db.transaction(["messages"], "readwrite");
+    const store = transaction.objectStore("messages");
+    store.openCursor().onsuccess = (e) => {
       const cursor = e.target.result;
       if (cursor) {
-        cursor.delete();
-        cursor.continue();
-      }
-    };
-
-    const sessionStore = transaction.objectStore("sessions_v2");
-    sessionStore.openCursor().onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (cursor) {
-        const parts = cursor.value.address.split(".");
-        if (parts[0] === uIdStr) {
+        if (String(cursor.value.chat_id) === String(uId)) {
           cursor.delete();
         }
         cursor.continue();
+      } else {
+        resolve();
       }
     };
-
-    const identStore = transaction.objectStore("identities");
-    identStore.openCursor().onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (cursor) {
-        const parts = cursor.value.address.split(".");
-        if (parts[0] === uIdStr) {
-          cursor.delete();
-        }
-        cursor.continue();
-      }
-    };
-
-    transaction.oncomplete = () => resolve();
     transaction.onerror = (e) => reject(e.target.error);
+  });
+
+  await new Promise((resolve, reject) => {
+    const transaction = _db.transaction(["contacts"], "readwrite");
+    const store = transaction.objectStore("contacts");
+    const req = store.delete(uId);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
   });
 }
 
 export async function updateMsgId(oldId, newId) {
   await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = _db.transaction(["messages"], "readwrite");
-    const store = transaction.objectStore("messages");
-    const getReq = store.get(oldId);
-    getReq.onsuccess = () => {
-      const msg = getReq.result;
-      if (!msg) {
-        resolve();
-        return;
-      }
-      const delReq = store.delete(oldId);
-      delReq.onsuccess = () => {
-        msg.msg_id = newId;
-        if (!msg.client_msg_id) {
-          msg.client_msg_id = oldId;
-        }
-        const putReq = store.put(msg);
-        putReq.onsuccess = () => resolve();
-        putReq.onerror = () => reject(putReq.error);
-      };
-      delReq.onerror = () => reject(delReq.error);
-    };
-    getReq.onerror = () => reject(getReq.error);
-  });
+  const transaction = _db.transaction(["messages"], "readwrite");
+  const store = transaction.objectStore("messages");
+  const msg = await get(store, oldId);
+  if (msg) {
+    await del(store, oldId);
+    msg.msg_id = newId;
+    await put(store, msg);
+    return true;
+  }
+  return false;
 }
 
 export async function updateMsgIdAndDelivered(oldId, newId, deliveredStatus) {
   await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = _db.transaction(["messages"], "readwrite");
-    const store = transaction.objectStore("messages");
-    const getReq = store.get(oldId);
-    getReq.onsuccess = () => {
-      const msg = getReq.result;
-      if (!msg) {
-        resolve();
-        return;
-      }
-      const delReq = store.delete(oldId);
-      delReq.onsuccess = () => {
-        msg.msg_id = newId;
-        msg.delivered = deliveredStatus;
-        msg.delivery_status = deliveredStatus;
-        if (!msg.client_msg_id) {
-          msg.client_msg_id = oldId;
-        }
-        const putReq = store.put(msg);
-        putReq.onsuccess = () => resolve();
-        putReq.onerror = () => reject(putReq.error);
-      };
-      delReq.onerror = () => reject(delReq.error);
-    };
-    getReq.onerror = () => reject(getReq.error);
-  });
+  const transaction = _db.transaction(["messages"], "readwrite");
+  const store = transaction.objectStore("messages");
+  const msg = await get(store, oldId);
+  if (msg) {
+    await del(store, oldId);
+    msg.msg_id = newId;
+    msg.delivered = deliveredStatus;
+    await put(store, msg);
+    return true;
+  }
+  return false;
 }
 
 export async function findAndResolvePendingSentMessage(chatId, timestamp, serverId) {
@@ -448,9 +292,8 @@ export async function findAndResolvePendingSentMessage(chatId, timestamp, server
 
 export async function clearIndexedDB() {
   await openDB();
-  trustedIdentities.clear();
   return new Promise((resolve, reject) => {
-    const list = ["identity", "contacts", "messages", "pre_keys", "signed_pre_keys", "sessions_v2", "identities"];
+    const list = ["contacts", "messages"];
     const transaction = _db.transaction(list, "readwrite");
     for (const s of list) {
       transaction.objectStore(s).clear();
@@ -460,290 +303,11 @@ export async function clearIndexedDB() {
   });
 }
 
-export class IndexedDBSignalStore {
-  async getIdentityKeyPair() {
-    const idData = await getIdentity();
-    if (!idData) return undefined;
-    return idData.identityKeyPair;
-  }
-
-  async getLocalRegistrationId() {
-    const idData = await getIdentity();
-    if (!idData) return undefined;
-    return idData.registrationId;
-  }
-
-  isTrustedIdentity(identifier, identityKey, direction) {
-    const existing = trustedIdentities.get(identifier);
-    if (!existing) return true; // auto-trust first use per-device!
-    
-    const existingKey = new Uint8Array(existing);
-    const newKey = new Uint8Array(identityKey);
-    if (existingKey.length !== newKey.length) return false;
-    for (let i = 0; i < existingKey.length; i++) {
-      if (existingKey[i] !== newKey[i]) return false;
-    }
-    return true;
-  }
-
-  async saveIdentity(encodedAddress, publicKey) {
-    trustedIdentities.set(encodedAddress, publicKey);
-    await openDB();
-    await new Promise((resolve, reject) => {
-      const t = _db.transaction("identities", "readwrite");
-      t.objectStore("identities").put({ address: encodedAddress, publicKey });
-      t.oncomplete = () => resolve();
-      t.onerror = (e) => reject(e.target.error);
-    });
-    return true;
-  }
-
-  async loadPreKey(keyId) {
-    await openDB();
-    const k = await new Promise((resolve, reject) => {
-      const req = tx("pre_keys").get(Number(keyId));
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    if (!k) return undefined;
-    return k.keyPair;
-  }
-
-  async storePreKey(keyId, keyPair) {
-    await openDB();
-    await new Promise((resolve, reject) => {
-      const t = _db.transaction("pre_keys", "readwrite");
-      t.objectStore("pre_keys").put({ keyId: Number(keyId), keyPair });
-      t.oncomplete = () => resolve();
-      t.onerror = (e) => reject(e.target.error);
-    });
-  }
-
-  async removePreKey(keyId) {
-    await openDB();
-    await new Promise((resolve, reject) => {
-      const t = _db.transaction("pre_keys", "readwrite");
-      t.objectStore("pre_keys").delete(Number(keyId));
-      t.oncomplete = () => resolve();
-      t.onerror = (e) => reject(e.target.error);
-    });
-  }
-
-  async storeSession(encodedAddress, record) {
-    await openDB();
-    await new Promise((resolve, reject) => {
-      const t = _db.transaction("sessions_v2", "readwrite");
-      t.objectStore("sessions_v2").put({ address: encodedAddress, record });
-      t.oncomplete = () => resolve();
-      t.onerror = (e) => reject(e.target.error);
-    });
-  }
-
-  async loadSession(encodedAddress) {
-    await openDB();
-    const s = await new Promise((resolve, reject) => {
-      const req = tx("sessions_v2").get(encodedAddress);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    if (!s) return undefined;
-    return s.record;
-  }
-
-  async loadSignedPreKey(keyId) {
-    await openDB();
-    const k = await new Promise((resolve, reject) => {
-      const req = tx("signed_pre_keys").get(Number(keyId));
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    if (!k) return undefined;
-    return k.keyPair;
-  }
-
-  async storeSignedPreKey(keyId, keyPair, signature) {
-    await openDB();
-    await new Promise((resolve, reject) => {
-      const t = _db.transaction("signed_pre_keys", "readwrite");
-      t.objectStore("signed_pre_keys").put({ keyId: Number(keyId), keyPair, signature });
-      t.oncomplete = () => resolve();
-      t.onerror = (e) => reject(e.target.error);
-    });
-  }
-
-  async removeSignedPreKey(keyId) {
-    await openDB();
-    await new Promise((resolve, reject) => {
-      const t = _db.transaction("signed_pre_keys", "readwrite");
-      t.objectStore("signed_pre_keys").delete(Number(keyId));
-      t.oncomplete = () => resolve();
-      t.onerror = (e) => reject(e.target.error);
-    });
-  }
-}
-
-export const signalStore = new IndexedDBSignalStore();
-
-export async function getIdentitiesForUser(userId) {
-  await openDB();
-  const uIdStr = String(userId);
-  return new Promise((resolve, reject) => {
-    const list = [];
-    const transaction = _db.transaction("identities", "readonly");
-    const store = transaction.objectStore("identities");
-    
-    store.openCursor().onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (cursor) {
-        const addr = cursor.value.address;
-        const parts = addr.split(".");
-        if (parts[0] === uIdStr) {
-          list.push(cursor.value);
-        }
-        cursor.continue();
-      } else {
-        resolve(list);
-      }
-    };
-    transaction.onerror = () => reject(transaction.error);
-  });
-}
-
-export async function getAnySession(userId) {
-  await openDB();
-  const uIdStr = String(userId);
-  return new Promise((resolve, reject) => {
-    const store = tx("sessions_v2");
-    const req = store.openCursor();
-    req.onsuccess = () => {
-      const cursor = req.result;
-      if (!cursor) { resolve(null); return; }
-      const addr = cursor.value.address;
-      const parts = addr.split(".");
-      if (parts[0] === uIdStr) {
-        resolve(cursor.value);
-      } else {
-        cursor.continue();
-      }
-    };
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function saveSession(session) {
-  await openDB();
-  return put(tx("sessions_v2", "readwrite"), session);
-}
-
-export async function getIdentityKeyForUser(userId) {
-  const list = await getIdentitiesForUser(userId);
-  if (list.length > 0) {
-    return list[0].publicKey;
-  }
-  return null;
-}
-
-
-
-export async function getIdentityKey(encodedAddress) {
-  const existing = trustedIdentities.get(encodedAddress);
-  return existing || null;
-}
-
-export async function getSignedPreKeyRecord(keyId) {
-  await openDB();
-  return new Promise((resolve, reject) => {
-    const req = tx("signed_pre_keys").get(Number(keyId));
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-// Object stores included in the database backup.
-const BACKUP_STORES = ["contacts", "messages"];
-
-export async function exportAllData() {
-  await openDB();
-  const dump = {};
-  for (const sName of BACKUP_STORES) {
-    if (_db.objectStoreNames.contains(sName)) {
-      dump[sName] = await new Promise((resolve) => {
-        const transaction = _db.transaction(sName, "readonly");
-        const req = transaction.objectStore(sName).getAll();
-        req.onsuccess = () => resolve(req.result);
-      });
-    }
-  }
-  return dump;
-}
-
-export async function importAllData(dump) {
-  await openDB();
-  for (const sName in dump) {
-    if (!BACKUP_STORES.includes(sName)) continue;
-    if (_db.objectStoreNames.contains(sName)) {
-      await new Promise((resolve, reject) => {
-        const transaction = _db.transaction(sName, "readwrite");
-        const store = transaction.objectStore(sName);
-        store.clear().onsuccess = () => {
-          let count = dump[sName].length;
-          if (count === 0) {
-            resolve();
-            return;
-          }
-          for (const val of dump[sName]) {
-            store.put(val).onsuccess = () => {
-              count--;
-              if (count === 0) resolve();
-            };
-          }
-        };
-        transaction.onerror = (e) => reject(e.target.error);
-      });
-    }
-  }
-  // Refresh the in-memory trusted identities cache (loaded once at openDB)
-  if (dump.identities) {
-    trustedIdentities.clear();
-    await preloadIdentities(_db);
-  }
-}
-
-export class BoundSignalStore {
-  constructor(store, address) {
-    this.store = store;
-    this.address = address;
-  }
-
-  isTrustedIdentity(identifier, identityKey, direction) {
-    // Override the identifier to be the full device address
-    return this.store.isTrustedIdentity(this.address.toString(), identityKey, direction);
-  }
-
-  saveIdentity(encodedAddress, publicKey) {
-    return this.store.saveIdentity(encodedAddress, publicKey);
-  }
-
-  getIdentityKeyPair() { return this.store.getIdentityKeyPair(); }
-  getLocalRegistrationId() { return this.store.getLocalRegistrationId(); }
-  loadPreKey(keyId) { return this.store.loadPreKey(keyId); }
-  storePreKey(keyId, keyPair) { return this.store.storePreKey(keyId, keyPair); }
-  removePreKey(keyId) { return this.store.removePreKey(keyId); }
-  storeSession(encodedAddress, record) { return this.store.storeSession(encodedAddress, record); }
-  loadSession(encodedAddress) { return this.store.loadSession(encodedAddress); }
-  loadSignedPreKey(keyId) { return this.store.loadSignedPreKey(keyId); }
-  storeSignedPreKey(keyId, keyPair, signature) { return this.store.storeSignedPreKey(keyId, keyPair, signature); }
-  removeSignedPreKey(keyId) { return this.store.removeSignedPreKey(keyId); }
-}
-
 export function getPersistentDeviceName() {
-  let instId = localStorage.getItem("installation_id");
-  if (!instId) {
-    instId = crypto.randomUUID();
-    localStorage.setItem("installation_id", instId);
+  let name = localStorage.getItem("device_name");
+  if (!name) {
+    name = "Web Client " + Math.random().toString(36).substring(2, 8).toUpperCase();
+    localStorage.setItem("device_name", name);
   }
-  const browserName = navigator.userAgent.slice(0, 60);
-  return `${browserName} [ID: ${instId}]`;
+  return name;
 }
-
-export { KeyHelper, SessionBuilder, SessionCipher, SignalProtocolAddress, replacer, reviver };
