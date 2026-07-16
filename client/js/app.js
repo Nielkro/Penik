@@ -15,7 +15,6 @@ import { renderAuth } from './ui/auth.js';
 import { renderChatList, renderChat } from './ui/chat.js';
 import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
-import { showSafetyExplanationModal } from './ui/components.js';
 
 function u8ToHex(arr) {
   return Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");

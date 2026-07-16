@@ -659,10 +659,8 @@ export async function getSignedPreKeyRecord(keyId) {
   });
 }
 
-// Object stores included in the encrypted cloud backup. Besides chat data we
-// back up the full E2EE state (identity, prekeys, sessions) so that a restore
-// keeps the same safety number instead of regenerating keys.
-const BACKUP_STORES = ["contacts", "messages", "identity", "pre_keys", "signed_pre_keys", "sessions_v2", "identities"];
+// Object stores included in the database backup.
+const BACKUP_STORES = ["contacts", "messages"];
 
 export async function exportAllData() {
   await openDB();

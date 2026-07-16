@@ -1,16 +1,11 @@
 import { apiGet, apiDelete } from "../api.js";
 import {
-  encodeKey, decodeKey, computeSafetyNumber
-} from "../crypto.js";
-import {
   saveMessage, getMessages,
   updateMessageDelivered, getContact, saveContact, getAllContacts,
-  getIdentity, deleteChatData, clearUserSessions,
-  signalStore, SignalProtocolAddress, SessionBuilder, SessionCipher,
-  getIdentityKey, BoundSignalStore, getAnySession, saveSession
+  deleteChatData
 } from "../storage.js";
-import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, triggerBackgroundBackup } from "../app.js";
-import { avatar, formatTime, formatDate, el, showToast, spinner, showSafetyNumberModal, showConfirmModal, showSafetyExplanationModal, showDeleteChatConfirmModal } from "./components.js";
+import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks } from "../app.js";
+import { avatar, formatTime, formatDate, el, showToast, spinner, showDeleteChatConfirmModal } from "./components.js";
 
 
 
@@ -98,102 +93,6 @@ export async function renderChatList(container) {
     }
   });
   obs.observe(document.body, { childList: true, subtree: true });
-}
-
-// ── X3DH: establish session with recipient device ────────────────────────────
-
-async function ensureSessionForDevice(toUserId, activeDevice) {
-  const toRaw = v => v instanceof Uint8Array ? v : decodeKey(v);
-  // Return a tight ArrayBuffer. WS msgpack decode yields Uint8Array views into
-  // the whole frame, so `.buffer` would expose the entire frame, not the key.
-  const toBuf = v => {
-    const u = toRaw(v);
-    return u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength);
-  };
-  const theirIKRaw = toRaw(activeDevice.ik_pub);
-  const address = new SignalProtocolAddress(String(toUserId), activeDevice.device_id);
-  const boundStore = new BoundSignalStore(signalStore, address);
-  const cipher = new SessionCipher(boundStore, address);
-  
-  const fn = async () => {
-    const hasSession = await cipher.hasOpenSession();
-    if (hasSession) {
-      return;
-    }
-
-    const existingKey = await getIdentityKey(address.toString());
-    if (existingKey) {
-      const existingKeyU8 = new Uint8Array(existingKey);
-      let isSame = (existingKeyU8.length === theirIKRaw.length);
-      if (isSame) {
-        for (let i = 0; i < existingKeyU8.length; i++) {
-          if (existingKeyU8[i] !== theirIKRaw[i]) {
-            isSame = false;
-            break;
-          }
-        }
-      }
-      if (!isSame) {
-        const confirmed = await showConfirmModal(
-          "Изменение кода безопасности",
-          `Код безопасности для устройства ${activeDevice.device_id} пользователя изменился. Вы доверяете новому коду?`
-        );
-        if (!confirmed) {
-          throw new Error("Отправка отменена: код безопасности устройства не подтвержден.");
-        }
-
-        const systemMsg = {
-          msg_id: crypto.randomUUID(),
-          chat_id: String(toUserId),
-          sender_id: 0,
-          plaintext: "⚠️ Код безопасности изменился!",
-          created_at: Date.now(),
-          delivered: 1
-        };
-        await saveMessage(systemMsg);
-
-        const messagesEl = document.querySelector(`.chat-messages[data-user-id="${toUserId}"]`);
-        if (messagesEl) {
-          const bubble = el("div", {
-            class: "msg-bubble msg-system",
-            style: "cursor: pointer; text-decoration: underline;"
-          },
-            el("span", { class: "msg-text" }, "⚠️ Код безопасности изменился!")
-          );
-          bubble.addEventListener("click", () => {
-            showSafetyExplanationModal();
-          });
-          messagesEl.appendChild(bubble);
-          messagesEl.scrollTop = messagesEl.scrollHeight;
-        }
-
-        await clearUserSessions(toUserId);
-        triggerChatListUpdate();
-      }
-    }
-
-    const builder = new SessionBuilder(boundStore, address);
-
-    const preKeyBundle = {
-      identityKey: toBuf(activeDevice.ik_pub),
-      registrationId: Number(activeDevice.registration_id || 1),
-      signedPreKey: {
-        keyId: 1,
-        publicKey: toBuf(activeDevice.spk_pub),
-        signature: toBuf(activeDevice.spk_sig)
-      }
-    };
-
-    if (activeDevice.opk_pub) {
-      preKeyBundle.preKey = {
-        keyId: Number(activeDevice.opk_id || 0),
-        publicKey: toBuf(activeDevice.opk_pub)
-      };
-    }
-
-    await builder.processPreKey(preKeyBundle);
-  };
-  await fn();
 }
 
 // ── Chat view ────────────────────────────────────────────────────────────────
