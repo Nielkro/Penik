@@ -445,7 +445,7 @@ func (c *Client) handleKeyFetchReq(ctx context.Context, req *KeyFetchReq) error 
 		// Skip devices with malformed key material (legacy/corrupt rows). A valid
 		// curve25519 pubkey is 32 bytes or 33 with a 0x05 version prefix; an
 		// Ed25519 signature is 64 bytes. Serving garbage here breaks the sender's
-		// libsignal session build ("Invalid public key").
+		// session build ("Invalid public key").
 		if !validPubKey(b.IKPub) || !validPubKey(b.SPKPub) || len(b.SPKSig) != 64 {
 			log.Printf("ws key fetch: skip device %d with malformed keys (ik=%d spk=%d sig=%d)",
 				b.DeviceID, len(b.IKPub), len(b.SPKPub), len(b.SPKSig))

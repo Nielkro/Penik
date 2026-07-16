@@ -1,26 +1,7 @@
-import { apiPost, apiGet, setToken, getUserById } from "../api.js";
-import {
-  encodeKey,
-  decodeKey,
-  encryptIdentityEnvelope,
-  decryptIdentityEnvelope,
-} from "../crypto.js";
-import { 
-  saveIdentity, 
-  getIdentity, 
-  saveContact, 
-  saveMessage, 
-  KeyHelper, 
-  getPersistentDeviceName, 
-  replacer, 
-  reviver,
-  signalStore,
-  exportAllData,
-  importAllData,
-  getSignedPreKeyRecord
-} from "../storage.js";
+import { apiPost, setToken, getUserById } from "../api.js";
+import { getPersistentDeviceName } from "../storage.js";
 import { navigate, setCurrentUser } from "../app.js";
-import { el, showToast, spinner, showPinModal } from "./components.js";
+import { el, showToast, spinner } from "./components.js";
 
 function authErr(errEl, msg) {
   errEl.textContent = msg;
@@ -183,63 +164,8 @@ export function renderAuth(container, mode = "login") {
     switchLink
   );
 
-  const importInput = el("input", { type: "file", accept: ".json", style: "display:none;" });
-  importInput.addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          const data = JSON.parse(event.target.result);
-          if (!data.version || (!data.ciphertext_b64 && !data.encrypted_keys_b64)) {
-            throw new Error("Неверный формат или файл не зашифрован");
-          }
-
-          const password = await showPinModal("Введите пароль/PIN для расшифрования файла ключей:", "Пароль/PIN-код");
-          if (!password) return;
-
-          let decrypted;
-          if (data.version === 2) {
-            const envelope = {
-              encrypted_dek: decodeKey(data.encrypted_dek_b64),
-              iv_kek: decodeKey(data.iv_kek_b64),
-              salt_kek: decodeKey(data.salt_kek_b64),
-              encrypted_keys: decodeKey(data.encrypted_keys_b64),
-              iv_dek: decodeKey(data.iv_dek_b64)
-            };
-            decrypted = await decryptIdentityEnvelope(envelope, password);
-          } else if (data.version === 1) {
-            decrypted = await decryptIdentityWithPassphrase(
-              decodeKey(data.ciphertext_b64),
-              decodeKey(data.iv_b64),
-              decodeKey(data.salt_b64),
-              password
-            );
-          } else {
-            throw new Error("Неподдерживаемая версия файла");
-          }
-
-          await importIdentityData(decrypted);
-          showToast("Резервная копия ключей успешно импортирована! Войдите в аккаунт.", "success");
-        } catch (err) {
-          showToast("Неверный формат резервной копии или неверный пароль: " + err.message, "error");
-        }
-      };
-      reader.readAsText(file);
-    } catch (err) {
-      showToast(err.message || "Ошибка импорта ключей", "error");
-    }
-  });
-
-  const importBtn = el("button", { class: "btn-secondary auth-import-btn", style: "margin-top:12px;width:100%;" }, "Импортировать ключи (.json)");
-  importBtn.addEventListener("click", (e) => {
-    e.preventDefault();
-    importInput.click();
-  });
-
   const title = el("h1", { class: "auth-title" }, isRegister ? "Регистрация" : "Вход");
-  const card  = el("div", { class: "auth-card" }, title, form, switchEl, importBtn, importInput);
+  const card  = el("div", { class: "auth-card" }, title, form, switchEl);
   const wrap  = el("div", { class: "auth-wrap" }, card);
 
   container.appendChild(wrap);

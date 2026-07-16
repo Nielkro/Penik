@@ -9,7 +9,7 @@ type IdentityKey struct {
 	UpdatedAt int64
 }
 
-// OneTimeKey is a single pre-key for the X3DH handshake.
+// OneTimeKey is a single pre-key for the handshake.
 type OneTimeKey struct {
 	ID       int64
 	DeviceID int64
