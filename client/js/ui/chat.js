@@ -7,7 +7,7 @@ import {
   updateMessageDelivered, getContact, saveContact, getAllContacts,
   getIdentity, deleteChatData, clearUserSessions,
   signalStore, SignalProtocolAddress, SessionBuilder, SessionCipher,
-  getIdentityKey, BoundSignalStore
+  getIdentityKey, BoundSignalStore, getAnySession, saveSession
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, triggerBackgroundBackup } from "../app.js";
 import { avatar, formatTime, formatDate, el, showToast, spinner, showSafetyNumberModal, showConfirmModal, showSafetyExplanationModal, showDeleteChatConfirmModal } from "./components.js";
@@ -246,8 +246,14 @@ export async function renderChat(container, userId) {
     try {
       let session = await getAnySession(userId);
       const identity = await getIdentity();
-      
-      if (!identity || !identity.ik_pub_raw) {
+
+      const myIKRaw = identity && (identity.ik_pub_raw
+        ? new Uint8Array(identity.ik_pub_raw)
+        : (identity.identityKeyPair && identity.identityKeyPair.pubKey
+            ? new Uint8Array(identity.identityKeyPair.pubKey)
+            : null));
+
+      if (!myIKRaw) {
         showToast("Код безопасности недоступен: локальный ключ не найден.", "error");
         return;
       }
@@ -282,7 +288,7 @@ export async function renderChat(container, userId) {
       }
 
       const safetyNumber = await computeSafetyNumber(
-        new Uint8Array(identity.ik_pub_raw),
+        myIKRaw,
         new Uint8Array(session.their_ik_pub)
       );
       await showSafetyNumberModal(`Код безопасности для ${contact.name || contact.nickname}`, safetyNumber);

@@ -447,10 +447,31 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 }
 
 func (c *Client) handleMsgDelivered(ctx context.Context, msg *MsgDelivered) error {
-	_, err := c.db.ExecContext(ctx,
+	res, err := c.db.ExecContext(ctx,
 		`UPDATE messages SET delivered=1 WHERE id=? AND recipient_device_id=?`,
 		msg.MsgID, c.deviceID)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil
+	}
+
+	// Notify the sender's device (if online) so its UI can show the
+	// second "delivered" checkmark in real time.
+	var senderDeviceID int64
+	err = c.db.QueryRowContext(ctx,
+		`SELECT sender_device_id FROM messages WHERE id=?`, msg.MsgID).
+		Scan(&senderDeviceID)
+	if err != nil {
+		return nil
+	}
+	frame, err := encodeFrame(OpMsgDelivered, MsgDelivered{MsgID: msg.MsgID})
+	if err != nil {
+		return nil
+	}
+	c.hub.SendToDevice(senderDeviceID, frame)
+	return nil
 }
 
 // validPubKey reports whether b is a well-formed curve25519 public key:
