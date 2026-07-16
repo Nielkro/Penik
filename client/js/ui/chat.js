@@ -1,33 +1,18 @@
 import { apiGet, apiDelete } from "../api.js";
 import {
-  x3dhInitiate, encryptMessage, decryptMessage,
-  importX25519Priv, importX25519Pub, encodeKey, decodeKey, verifySignature,
-  diffieHellman, generateDH, kdf_rk, kdf_ck, computeSafetyNumber
+  encodeKey, decodeKey, computeSafetyNumber
 } from "../crypto.js";
 import {
-  getSession, getAnySession, saveSession, saveMessage, getMessages,
+  saveMessage, getMessages,
   updateMessageDelivered, getContact, saveContact, getAllContacts,
-  getIdentity, deleteChatData, clearUserSessions
+  getIdentity, deleteChatData, clearUserSessions,
+  signalStore, SignalProtocolAddress, SessionBuilder, SessionCipher,
+  getIdentityKey, BoundSignalStore
 } from "../storage.js";
-import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcksQueue, triggerBackgroundBackup } from "../app.js";
+import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, triggerBackgroundBackup } from "../app.js";
 import { avatar, formatTime, formatDate, el, showToast, spinner, showSafetyNumberModal, showConfirmModal, showSafetyExplanationModal, showDeleteChatConfirmModal } from "./components.js";
 
-// Helper to convert a number to a 32-bit Big-Endian Uint8Array
-function numTo32BE(num) {
-  const arr = new Uint8Array(4);
-  const view = new DataView(arr.buffer);
-  view.setUint32(0, num, false);
-  return arr;
-}
 
-// Helper to concatenate multiple Uint8Arrays
-function concatU8(...arrays) {
-  const total = arrays.reduce((n, a) => n + a.length, 0);
-  const out = new Uint8Array(total);
-  let off = 0;
-  for (const a of arrays) { out.set(a, off); off += a.length; }
-  return out;
-}
 
 // ── Chat list ────────────────────────────────────────────────────────────────
 
@@ -119,29 +104,41 @@ export async function renderChatList(container) {
 
 async function ensureSessionForDevice(toUserId, activeDevice) {
   const toRaw = v => v instanceof Uint8Array ? v : decodeKey(v);
-  const theirIKRaw  = toRaw(activeDevice.ik_pub);
-  let theirIKDH = theirIKRaw;
-  if (theirIKRaw.length === 64) {
-    theirIKDH = theirIKRaw.slice(0, 32);
-  }
+  // Return a tight ArrayBuffer. WS msgpack decode yields Uint8Array views into
+  // the whole frame, so `.buffer` would expose the entire frame, not the key.
+  const toBuf = v => {
+    const u = toRaw(v);
+    return u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength);
+  };
+  const theirIKRaw = toRaw(activeDevice.ik_pub);
+  const address = new SignalProtocolAddress(String(toUserId), activeDevice.device_id);
+  const boundStore = new BoundSignalStore(signalStore, address);
+  const cipher = new SessionCipher(boundStore, address);
+  
+  const fn = async () => {
+    const hasSession = await cipher.hasOpenSession();
+    if (hasSession) {
+      return;
+    }
 
-  // Check if we already have a session for this specific active device
-  const existing = await getSession(toUserId, activeDevice.device_id);
-  if (existing) {
-    if (existing.their_ik_pub) {
-      let isSame = true;
-      for (let i = 0; i < 32; i++) {
-        if (existing.their_ik_pub[i] !== theirIKDH[i]) {
-          isSame = false;
-          break;
+    const existingKey = await getIdentityKey(address.toString());
+    if (existingKey) {
+      const existingKeyU8 = new Uint8Array(existingKey);
+      let isSame = (existingKeyU8.length === theirIKRaw.length);
+      if (isSame) {
+        for (let i = 0; i < existingKeyU8.length; i++) {
+          if (existingKeyU8[i] !== theirIKRaw[i]) {
+            isSame = false;
+            break;
+          }
         }
       }
       if (!isSame) {
-        const trusted = await showConfirmModal(
+        const confirmed = await showConfirmModal(
           "Изменение кода безопасности",
-          `Код безопасности для устройства ${activeDevice.device_id} пользователя изменился. Это может означать попытку взлома или то, что пользователь переустановил приложение. Вы доверяете новому коду?`
+          `Код безопасности для устройства ${activeDevice.device_id} пользователя изменился. Вы доверяете новому коду?`
         );
-        if (!trusted) {
+        if (!confirmed) {
           throw new Error("Отправка отменена: код безопасности устройства не подтвержден.");
         }
 
@@ -154,8 +151,7 @@ async function ensureSessionForDevice(toUserId, activeDevice) {
           delivered: 1
         };
         await saveMessage(systemMsg);
-        
-        // Append to DOM immediately if chat is open
+
         const messagesEl = document.querySelector(`.chat-messages[data-user-id="${toUserId}"]`);
         if (messagesEl) {
           const bubble = el("div", {
@@ -173,127 +169,31 @@ async function ensureSessionForDevice(toUserId, activeDevice) {
 
         await clearUserSessions(toUserId);
         triggerChatListUpdate();
-        // Do NOT return existing, let it fall through to negotiate a new session!
-      } else {
-        return existing;
-      }
-    } else {
-      existing.their_ik_pub = theirIKDH;
-      await saveSession(existing);
-      return existing;
-    }
-  }
-
-  // Check if we have any other session with this user to detect identity key change
-  const anyExisting = await getAnySession(toUserId);
-  if (anyExisting && anyExisting.their_ik_pub) {
-    let isSame = true;
-    for (let i = 0; i < 32; i++) {
-      if (anyExisting.their_ik_pub[i] !== theirIKDH[i]) {
-        isSame = false;
-        break;
       }
     }
-    if (!isSame) {
-      const trusted = await showConfirmModal(
-        "Изменение кода безопасности",
-        `Код безопасности пользователя изменился. Вы доверяете новому коду?`
-      );
-      if (!trusted) {
-        throw new Error("Отправка отменена: код безопасности пользователя не подтвержден.");
-      }
 
-      const systemMsg = {
-        msg_id: crypto.randomUUID(),
-        chat_id: String(toUserId),
-        sender_id: 0,
-        plaintext: "⚠️ Код безопасности изменился!",
-        created_at: Date.now(),
-        delivered: 1
+    const builder = new SessionBuilder(boundStore, address);
+
+    const preKeyBundle = {
+      identityKey: toBuf(activeDevice.ik_pub),
+      registrationId: Number(activeDevice.registration_id || 1),
+      signedPreKey: {
+        keyId: 1,
+        publicKey: toBuf(activeDevice.spk_pub),
+        signature: toBuf(activeDevice.spk_sig)
+      }
+    };
+
+    if (activeDevice.opk_pub) {
+      preKeyBundle.preKey = {
+        keyId: Number(activeDevice.opk_id || 0),
+        publicKey: toBuf(activeDevice.opk_pub)
       };
-      await saveMessage(systemMsg);
-
-      // Append to DOM immediately if chat is open
-      const messagesEl = document.querySelector(`.chat-messages[data-user-id="${toUserId}"]`);
-      if (messagesEl) {
-        const bubble = el("div", {
-          class: "msg-bubble msg-system",
-          style: "cursor: pointer; text-decoration: underline;"
-        },
-          el("span", { class: "msg-text" }, "⚠️ Код безопасности изменился!")
-        );
-        bubble.addEventListener("click", () => {
-          showSafetyExplanationModal();
-        });
-        messagesEl.appendChild(bubble);
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      }
-
-      await clearUserSessions(toUserId);
-      triggerChatListUpdate();
     }
-  }
 
-  const identity = await getIdentity();
-  if (!identity) throw new Error("Нет локального ключа идентификации");
-
-  const ourIKPriv = await importX25519Priv(identity.ik_priv_jwk);
-
-  const theirSPKRaw = toRaw(activeDevice.spk_pub);
-  const theirSPKSig = toRaw(activeDevice.spk_sig);
-
-  if (theirIKRaw.length === 64) {
-    theirIKDH = theirIKRaw.slice(0, 32);
-    const theirIKSig = theirIKRaw.slice(32, 64);
-
-    const isValid = await verifySignature(theirIKSig, theirSPKSig, theirSPKRaw);
-    if (!isValid) {
-      throw new Error("Критическая ошибка E2EE: Невалидная подпись SPK! Возможна атака типа Man-in-the-Middle (MitM).");
-    }
-  } else {
-    console.warn("Предупреждение: Получен устаревший 32-байтный ключ идентичности, проверка подписи SPK пропущена.");
-  }
-
-  let theirOPKRaw = null;
-  if (activeDevice.opk_pub) {
-    theirOPKRaw = toRaw(activeDevice.opk_pub);
-  }
-
-  const result = await x3dhInitiate(ourIKPriv, theirIKDH, theirSPKRaw, theirOPKRaw);
-  const rootKey = result.sharedSecret; // SK
-  const sessionInitEk = result.ekPubRaw; // EK_A
-
-  // Generate Alice's first ephemeral DH key pair
-  const ourDH = await generateDH();
-
-  // Compute shared secret: DH(our_dh, their_SPK_Pub)
-  const theirSPKPubImported = await importX25519Pub(theirSPKRaw);
-  const sharedSecret = await diffieHellman(ourDH.privateKey, theirSPKPubImported);
-
-  // Derive root key and send chain key
-  const step = await kdf_rk(rootKey, sharedSecret, "DoubleRatchetRoot");
-
-  const session = {
-    user_id: Number(toUserId),
-    device_id: activeDevice.device_id,
-    root_key: step.newRootKey,
-    send_chain_key: step.chainKey,
-    recv_chain_key: null,
-    our_dh_private_jwk: ourDH.privJwk,
-    our_dh_public_raw: ourDH.pubRaw,
-    their_dh_public_raw: theirSPKRaw,
-    their_ik_pub: theirIKDH,
-    session_init_ek: sessionInitEk,
-    n_send: 0,
-    n_recv: 0,
-    pn: 0,
-    created_at: Date.now()
+    await builder.processPreKey(preKeyBundle);
   };
-  if (theirOPKRaw) {
-    session.used_opk_pub = theirOPKRaw;
-  }
-  await saveSession(session);
-  return session;
+  await fn();
 }
 
 // ── Chat view ────────────────────────────────────────────────────────────────
@@ -510,20 +410,20 @@ export async function renderChat(container, userId) {
     appendMessage({ msg_id: tempId, sender_id: myId, plaintext: text, created_at: now });
     messagesEl.scrollTop = messagesEl.scrollHeight;
 
-    try {
+    const sendFn = async () => {
       const ws = getWS();
       if (!ws || !ws.isConnected()) throw new Error("Нет соединения");
 
-      // 1. Fetch key bundles for recipient
-      const keyBundle = await ws.request(0x10, { user_id: Number(userId) }, 0x11);
+      // 1. Fetch key bundles for recipient with no_otk: true
+      const keyBundle = await ws.request(0x10, { user_id: Number(userId), no_otk: true }, 0x11);
       if (!keyBundle || !keyBundle.devices || !keyBundle.devices.length) {
         throw new Error("У собеседника нет активных устройств");
       }
 
-      // 2. Fetch key bundles for our own other devices (for multi-device sync)
+      // 2. Fetch key bundles for our own other devices (for multi-device sync) with no_otk: true
       let ourBundle = null;
       try {
-        ourBundle = await ws.request(0x10, { user_id: Number(myId) }, 0x11);
+        ourBundle = await ws.request(0x10, { user_id: Number(myId), no_otk: true }, 0x11);
       } catch (e) {
         console.warn("Failed to fetch our own devices:", e);
       }
@@ -543,69 +443,105 @@ export async function renderChat(container, userId) {
         }
       }
 
-      // 4. Encrypt separately for each target device
+      // 4. Encrypt separately for each target device using libsignal
       const devicesCiphertexts = [];
       for (const target of targetDevices) {
-        const session = await ensureSessionForDevice(target.userId, target.dev);
-        if (!session.send_chain_key) {
-          throw new Error(`Отправляющая цепочка не инициализирована для устройства ${target.dev.device_id}`);
-        }
+        const address = new SignalProtocolAddress(String(target.userId), target.dev.device_id);
+        const lockName = `penik-crypto-lock-${target.userId}.${target.dev.device_id}`;
 
-        // Derive message key and new send chain key
-        const { newChainKey, messageKey } = await kdf_ck(session.send_chain_key);
+        const encryptForDevice = async () => {
+          const boundStore = new BoundSignalStore(signalStore, address);
+          const cipher = new SessionCipher(boundStore, address);
+          
+          const hasSession = await cipher.hasOpenSession();
+          if (!hasSession) {
+            try {
+              const singleBundle = await ws.request(0x10, {
+                user_id: target.userId,
+                device_id: target.dev.device_id,
+                no_otk: false
+              }, 0x11);
+              if (singleBundle && singleBundle.devices && singleBundle.devices.length > 0) {
+                const fetchedDev = singleBundle.devices[0];
+                target.dev.opk_pub = fetchedDev.opk_pub;
+                target.dev.opk_id = fetchedDev.opk_id;
+              }
+            } catch (e) {
+              console.warn(`Failed to fetch OPK for device ${target.dev.device_id}:`, e);
+            }
+          }
 
-        const ourDhPub = session.our_dh_public_raw;
-        const nBytes = numTo32BE(session.n_send);
-        const pnBytes = numTo32BE(session.pn);
+          // Check connection state again to prevent advancing the ratchet locally if the socket disconnected in the meantime
+          if (!ws.isConnected()) {
+            throw new Error("Соединение потеряно перед шифрованием");
+          }
 
-        let aad;
-        if (session.n_send === 0 && session.session_init_ek) {
-          const usedOpkPub = session.used_opk_pub ? new Uint8Array(session.used_opk_pub) : new Uint8Array(32);
-          aad = concatU8(session.session_init_ek, ourDhPub, usedOpkPub, nBytes, pnBytes);
+          await ensureSessionForDevice(target.userId, target.dev);
+
+          const textBytes = new TextEncoder().encode(text);
+          const signalMsg = await cipher.encrypt(textBytes.buffer);
+
+          const typeByte = signalMsg.type; // 1 (WhisperMessage) or 3 (PreKeyWhisperMessage)
+          const bodyBytes = new Uint8Array(
+            Array.from(signalMsg.body).map(c => c.charCodeAt(0))
+          );
+          const cipherBytes = new Uint8Array(1 + bodyBytes.length);
+          cipherBytes[0] = typeByte;
+          cipherBytes.set(bodyBytes, 1);
+
+          devicesCiphertexts.push({
+            device_id: Number(target.dev.device_id),
+            cipher_bytes: cipherBytes
+          });
+        };
+
+        if (navigator.locks) {
+          await navigator.locks.request(lockName, encryptForDevice);
         } else {
-          aad = concatU8(ourDhPub, nBytes, pnBytes);
+          await encryptForDevice();
         }
-
-        // Encrypt message with AAD
-        const ivAndCiphertext = await encryptMessage(messageKey, text, aad);
-        const cipherBytes = concatU8(aad, ivAndCiphertext);
-
-        // Update session state
-        session.send_chain_key = newChainKey;
-        session.n_send += 1;
-        await saveSession(session);
-
-        devicesCiphertexts.push({
-          device_id: Number(target.dev.device_id),
-          cipher_bytes: cipherBytes
-        });
       }
 
       const msgId = crypto.randomUUID();
 
-      ws.send(0x01, {
-        to_user_id: Number(userId),
-        devices: devicesCiphertexts,
-        msg_id: msgId,
-      });
-
-      pendingAcksQueue.push({ tempId: msgId, userId: userId });
-
       const storedMsg = {
         msg_id: msgId,
+        client_msg_id: msgId,
         chat_id: userId,
         sender_id: myId,
         plaintext: text,
         created_at: now,
         delivered: 0,
+        ciphertexts: devicesCiphertexts
       };
       await saveMessage(storedMsg);
       await saveContact({ ...contact, last_message: text, last_ts: now });
       triggerBackgroundBackup();
 
+      pendingAcks.set(String(msgId), { tempId: msgId, userId: userId });
+
+      let sent = false;
+      try {
+        sent = ws.send(0x01, {
+          to_user_id: Number(userId),
+          devices: devicesCiphertexts,
+          msg_id: msgId,
+        });
+      } catch (sendErr) {
+        console.warn("WebSocket send threw an error:", sendErr);
+      }
+
+      if (!sent) {
+        pendingAcks.delete(String(msgId));
+        throw new Error("Не удалось отправить сообщение (ошибка сокета)");
+      }
+
       const oldBubble = messagesEl.querySelector(`[data-msg-id="${tempId}"]`);
       if (oldBubble) oldBubble.dataset.msgId = msgId;
+    };
 
+    try {
+      await sendFn();
     } catch (err) {
       console.error("SendMessage error:", err);
       const oldBubble = messagesEl.querySelector(`[data-msg-id="${tempId}"]`);

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"messenger/server/internal/db"
 	"messenger/server/internal/middleware"
+	"messenger/server/internal/ws"
 )
 
 type historyMessageResponse struct {
@@ -32,6 +34,26 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 		userID := middleware.UserIDFromCtx(r.Context())
 		deviceID := middleware.DeviceIDFromCtx(r.Context())
 
+		limitStr := r.URL.Query().Get("limit")
+		afterIDStr := r.URL.Query().Get("after_id")
+
+		limit := 100
+		afterID := int64(0)
+
+		if limitStr != "" {
+			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+				limit = l
+				if limit > 500 {
+					limit = 500
+				}
+			}
+		}
+		if afterIDStr != "" {
+			if a, err := strconv.ParseInt(afterIDStr, 10, 64); err == nil && a >= 0 {
+				afterID = a
+			}
+		}
+
 		rows, err := database.QueryContext(r.Context(),
 			`SELECT id, chat_id, sender_id, sender_device_id, recipient_id, chat_user_id, ciphertext, timestamp, delivered
 			 FROM (
@@ -43,11 +65,11 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				 JOIN chats c ON m.chat_id = c.id
 				 JOIN devices d_sender ON m.sender_device_id = d_sender.id
 				 JOIN devices d_recv   ON m.recipient_device_id = d_recv.id
-				 WHERE m.recipient_device_id = ? AND d_sender.user_id != ? AND m.deleted_by_recipient = 0
+				 WHERE m.recipient_device_id = ? AND d_sender.user_id != ? AND m.deleted_by_recipient = 0 AND m.purge_pending = 0
 
 				 UNION ALL
 
-				 -- Outgoing messages sent by us, deduplicated by timestamp to avoid multi-device row duplication (excluding soft-deleted ones)
+				 -- Outgoing messages sent by us, deduplicated by client_msg_id to avoid multi-device row duplication (excluding soft-deleted ones)
 				 SELECT MAX(m.id) as id, m.chat_id, d_sender.user_id as sender_id, m.sender_device_id, d_recv.user_id as recipient_id,
 				        CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END as chat_user_id,
 				        m.ciphertext, m.timestamp, m.delivered
@@ -56,10 +78,12 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				 JOIN devices d_sender ON m.sender_device_id = d_sender.id
 				 JOIN devices d_recv   ON m.recipient_device_id = d_recv.id
 				 WHERE d_sender.user_id = ? AND m.deleted_by_sender = 0
-				 GROUP BY m.chat_id, m.sender_device_id, m.timestamp
+				 GROUP BY m.chat_id, m.sender_device_id, COALESCE(m.client_msg_id, 'legacy-' || m.id)
 			 )
-			 ORDER BY timestamp ASC`,
-			userID, deviceID, userID, userID, userID)
+			 WHERE id > ?
+			 ORDER BY id ASC
+			 LIMIT ?`,
+			userID, deviceID, userID, userID, userID, afterID, limit)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -83,7 +107,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 // DeleteChat handles DELETE /api/v1/chats/{peer_id}.
 // Deletes messages in the chat only for the caller.
 // If messages are already deleted by both participants, they are purged from the database.
-func DeleteChat(database *db.DB) http.HandlerFunc {
+func DeleteChat(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
 		peerIDStr := r.PathValue("peer_id")
@@ -101,13 +125,64 @@ func DeleteChat(database *db.DB) http.HandlerFunc {
 
 		everyone := r.URL.Query().Get("everyone") == "true"
 		if everyone {
-			// Hard delete the chat for both users (cascades to all messages)
-			_, err := database.ExecContext(r.Context(),
-				`DELETE FROM chats WHERE user1_id=? AND user2_id=?`, u1, u2)
+			// Find the chat_id first.
+			var chatID int64
+			err := database.QueryRowContext(r.Context(),
+				`SELECT id FROM chats WHERE user1_id=? AND user2_id=?`, u1, u2).Scan(&chatID)
+			if err != nil {
+				if err == sql.ErrNoRows {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+
+			// Tombstone every message addressed to the peer's devices so the purge
+			// survives if the peer is offline. Rows are hard-deleted later on ack.
+			_, err = database.ExecContext(r.Context(),
+				`UPDATE messages SET purge_pending = 1
+				 WHERE chat_id = ? AND recipient_device_id IN (SELECT id FROM devices WHERE user_id = ?)`,
+				chatID, peerID)
 			if err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}
+
+			// Hard-delete the caller's own copies (sent + received) immediately.
+			_, err = database.ExecContext(r.Context(),
+				`DELETE FROM messages
+				 WHERE chat_id = ?
+				   AND (sender_device_id   IN (SELECT id FROM devices WHERE user_id = ?)
+				     OR recipient_device_id IN (SELECT id FROM devices WHERE user_id = ?))`,
+				chatID, userID, userID)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+
+			// Push a live purge to any online devices of the peer.
+			if hub != nil {
+				rows, err := database.QueryContext(r.Context(),
+					`SELECT id FROM devices WHERE user_id = ?`, peerID)
+				if err == nil {
+					var deviceIDs []int64
+					for rows.Next() {
+						var id int64
+						if err := rows.Scan(&id); err == nil {
+							deviceIDs = append(deviceIDs, id)
+						}
+					}
+					rows.Close()
+					frame, encErr := ws.EncodeFrame(ws.OpChatPurge, ws.ChatPurge{ChatUserID: userID})
+					if encErr == nil {
+						for _, did := range deviceIDs {
+							hub.SendToDevice(did, frame)
+						}
+					}
+				}
+			}
+
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

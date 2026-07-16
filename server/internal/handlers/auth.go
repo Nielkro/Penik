@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -18,23 +19,26 @@ import (
 var nicknameRe = regexp.MustCompile(`^[a-zA-Z0-9_]{3,32}$`)
 
 type registerRequest struct {
-	Name       string   `json:"name"`
-	Nickname   string   `json:"nickname"`
-	Password   string   `json:"password"`
-	DeviceName string   `json:"device_name"`
-	IKPub      []byte   `json:"ik_pub"`
-	SPKPub     []byte   `json:"spk_pub"`
-	SPKSig     []byte   `json:"spk_sig"`
-	OPKList    [][]byte `json:"opk_list"`
+	Name           string   `json:"name"`
+	Nickname       string   `json:"nickname"`
+	Password       string   `json:"password"`
+	DeviceName     string   `json:"device_name"`
+	RegistrationID int64    `json:"registration_id"`
+	IKPub          []byte   `json:"ik_pub"`
+	SPKPub         []byte   `json:"spk_pub"`
+	SPKSig         []byte   `json:"spk_sig"`
+	OPKList        [][]byte `json:"opk_list"`
 }
 
 type loginRequest struct {
-	Nickname   string `json:"nickname"`
-	Password   string `json:"password"`
-	DeviceName string `json:"device_name"`
-	IKPub      []byte `json:"ik_pub"`
-	SPKPub     []byte `json:"spk_pub"`
-	SPKSig     []byte `json:"spk_sig"`
+	Nickname       string   `json:"nickname"`
+	Password       string   `json:"password"`
+	DeviceName     string   `json:"device_name"`
+	RegistrationID int64    `json:"registration_id"`
+	IKPub          []byte   `json:"ik_pub"`
+	SPKPub         []byte   `json:"spk_pub"`
+	SPKSig         []byte   `json:"spk_sig"`
+	OPKList        [][]byte `json:"opk_list"`
 }
 
 type loginResponse struct {
@@ -51,6 +55,12 @@ const (
 	saltLen       = 16
 	maxOPKUpload  = 1000
 )
+
+// validCurveKey reports whether b is a well-formed curve25519 public key:
+// 32 raw bytes, or 33 bytes with a 0x05 version prefix.
+func validCurveKey(b []byte) bool {
+	return len(b) == 32 || (len(b) == 33 && b[0] == 0x05)
+}
 
 // Register handles POST /api/v1/register.
 func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
@@ -71,6 +81,10 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		}
 		if len(req.IKPub) == 0 || len(req.SPKPub) == 0 || len(req.SPKSig) == 0 {
 			http.Error(w, "identity key fields required", http.StatusBadRequest)
+			return
+		}
+		if !validCurveKey(req.IKPub) || !validCurveKey(req.SPKPub) || len(req.SPKSig) != 64 {
+			http.Error(w, "malformed identity key material", http.StatusBadRequest)
 			return
 		}
 		if len(req.OPKList) > maxOPKUpload {
@@ -104,8 +118,8 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		userID, _ := res.LastInsertId()
 
 		devRes, err := tx.ExecContext(r.Context(),
-			`INSERT INTO devices(user_id,device_name,created_at,last_seen) VALUES(?,?,?,?)`,
-			userID, req.DeviceName, now, now)
+			`INSERT INTO devices(user_id,device_name,registration_id,created_at,last_seen) VALUES(?,?,?,?,?)`,
+			userID, req.DeviceName, req.RegistrationID, now, now)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -120,10 +134,18 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		for _, opk := range req.OPKList {
+		for _, opkRaw := range req.OPKList {
+			var keyID int64
+			var pubKey []byte
+			if len(opkRaw) == 37 {
+				keyID = int64(binary.BigEndian.Uint32(opkRaw[:4]))
+				pubKey = opkRaw[4:]
+			} else {
+				pubKey = opkRaw
+			}
 			_, err = tx.ExecContext(r.Context(),
-				`INSERT INTO one_time_keys(device_id,opk_pub,used) VALUES(?,?,0)`,
-				deviceID, opk)
+				`INSERT OR IGNORE INTO one_time_keys(device_id,key_id,opk_pub,used) VALUES(?,?,?,0)`,
+				deviceID, keyID, pubKey)
 			if err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
@@ -197,18 +219,18 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		// Remove all previous devices for this user so we never accumulate
-		// stale devices that cause N-duplicate messages per send.
+		// Remove only the device with the same name for this user to avoid stale duplicate devices,
+		// while supporting proper multi-device setups.
 		_, err = tx.ExecContext(r.Context(),
-			`DELETE FROM devices WHERE user_id=?`, userID)
+			`DELETE FROM devices WHERE user_id=? AND device_name=?`, userID, req.DeviceName)
 		if err != nil {
-			loginInternalError(w, "delete old devices", err)
+			loginInternalError(w, "delete old device", err)
 			return
 		}
 
 		devRes, err := tx.ExecContext(r.Context(),
-			`INSERT INTO devices(user_id,device_name,created_at,last_seen) VALUES(?,?,?,?)`,
-			userID, req.DeviceName, now, now)
+			`INSERT INTO devices(user_id,device_name,registration_id,created_at,last_seen) VALUES(?,?,?,?,?)`,
+			userID, req.DeviceName, req.RegistrationID, now, now)
 		if err != nil {
 			loginInternalError(w, "insert device", err)
 			return
@@ -219,12 +241,34 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		if len(req.IKPub) > 0 {
+		if len(req.IKPub) > 0 && len(req.SPKSig) > 0 {
+			if !validCurveKey(req.IKPub) || !validCurveKey(req.SPKPub) || len(req.SPKSig) != 64 {
+				http.Error(w, "malformed identity key material", http.StatusBadRequest)
+				return
+			}
 			_, err = tx.ExecContext(r.Context(),
 				`INSERT OR REPLACE INTO identity_keys(device_id,ik_pub,spk_pub,spk_sig,updated_at) VALUES(?,?,?,?,?)`,
 				deviceID, req.IKPub, req.SPKPub, req.SPKSig, now)
 			if err != nil {
 				loginInternalError(w, "insert identity keys", err)
+				return
+			}
+		}
+
+		for _, opkRaw := range req.OPKList {
+			var keyID int64
+			var pubKey []byte
+			if len(opkRaw) == 37 {
+				keyID = int64(binary.BigEndian.Uint32(opkRaw[:4]))
+				pubKey = opkRaw[4:]
+			} else {
+				pubKey = opkRaw
+			}
+			_, err = tx.ExecContext(r.Context(),
+				`INSERT OR IGNORE INTO one_time_keys(device_id,key_id,opk_pub,used) VALUES(?,?,?,0)`,
+				deviceID, keyID, pubKey)
+			if err != nil {
+				loginInternalError(w, "insert one time keys", err)
 				return
 			}
 		}

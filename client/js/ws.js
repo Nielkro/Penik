@@ -10,6 +10,8 @@ export const OP = {
   OFFLINE_BATCH: 0x05,
   PING:          0x06,
   PONG:          0x07,
+  CHAT_PURGE:     0x08,
+  CHAT_PURGE_ACK: 0x09,
   KEY_FETCH_REQ: 0x10,
   KEY_FETCH_RESP: 0x11,
 };
@@ -31,6 +33,7 @@ class WSManager {
     this._connectListeners = [];
     this._disconnectListeners = [];
     this._queue = [];
+    this._requestQueue = Promise.resolve();
   }
 
   connect() {
@@ -110,7 +113,7 @@ class WSManager {
 
   /* Send and wait for a specific reply opcode */
   request(sendOp, sendPayload, replyOp, timeoutMs = 10_000) {
-    return new Promise((resolve, reject) => {
+    const next = () => new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this._pendingReplies.delete(replyOp);
         reject(new Error(`WS request timeout op=${sendOp}`));
@@ -127,6 +130,10 @@ class WSManager {
         reject(new Error('WebSocket not connected'));
       }
     });
+
+    const result = this._requestQueue.then(next, next);
+    this._requestQueue = result.catch(() => {});
+    return result;
   }
 
   /* ── Private ── */
