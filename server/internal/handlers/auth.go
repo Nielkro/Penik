@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -221,26 +222,41 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		// Remove only the device with the same name for this user to avoid stale duplicate devices,
-		// while supporting proper multi-device setups.
-		_, err = tx.ExecContext(r.Context(),
-			`DELETE FROM devices WHERE user_id=? AND device_name=?`, userID, req.DeviceName)
-		if err != nil {
-			loginInternalError(w, "delete old device", err)
+		// A device ID is part of message ownership. Deleting and recreating the
+		// device here would cascade-delete every offline message addressed to it.
+		var deviceID int64
+		err = tx.QueryRowContext(r.Context(),
+			`SELECT id FROM devices
+			 WHERE user_id=? AND device_name=?
+			 ORDER BY id DESC
+			 LIMIT 1`,
+			userID, req.DeviceName).Scan(&deviceID)
+		if err == sql.ErrNoRows {
+			devRes, insertErr := tx.ExecContext(r.Context(),
+				`INSERT INTO devices(user_id,device_name,registration_id,created_at,last_seen) VALUES(?,?,?,?,?)`,
+				userID, req.DeviceName, req.RegistrationID, now, now)
+			if insertErr != nil {
+				loginInternalError(w, "insert device", insertErr)
+				return
+			}
+			deviceID, err = devRes.LastInsertId()
+			if err != nil {
+				loginInternalError(w, "get device id", err)
+				return
+			}
+		} else if err != nil {
+			loginInternalError(w, "lookup device", err)
 			return
-		}
-
-		devRes, err := tx.ExecContext(r.Context(),
-			`INSERT INTO devices(user_id,device_name,registration_id,created_at,last_seen) VALUES(?,?,?,?,?)`,
-			userID, req.DeviceName, req.RegistrationID, now, now)
-		if err != nil {
-			loginInternalError(w, "insert device", err)
-			return
-		}
-		deviceID, err := devRes.LastInsertId()
-		if err != nil {
-			loginInternalError(w, "get device id", err)
-			return
+		} else {
+			_, err = tx.ExecContext(r.Context(),
+				`UPDATE devices
+				 SET registration_id=?, last_seen=?
+				 WHERE id=?`,
+				req.RegistrationID, now, deviceID)
+			if err != nil {
+				loginInternalError(w, "update device", err)
+				return
+			}
 		}
 
 		if len(req.IKPub) > 0 && len(req.SPKSig) > 0 {

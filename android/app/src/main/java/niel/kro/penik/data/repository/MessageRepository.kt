@@ -85,10 +85,10 @@ class MessageRepository @Inject constructor(
                 MessageEntity(
                     localId = "server-${msg.msgId}",
                     serverId = msg.msgId,
-                    chatUserId = msg.chatId,
+                    chatUserId = msg.chatUserId,
                     senderId = msg.senderId,
                     text = msg.plaintext,
-                    timestamp = msg.createdAt,
+                    timestamp = msg.createdAt * 1000,
                     sentByMe = msg.senderId == myId,
                     delivered = msg.delivered == 1
                 )
