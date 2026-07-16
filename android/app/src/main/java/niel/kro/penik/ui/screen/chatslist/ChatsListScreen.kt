@@ -7,11 +7,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -36,9 +36,10 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import niel.kro.penik.ui.components.ChatListItem
 import niel.kro.penik.ui.components.ConnectionStatusBar
+import niel.kro.penik.ui.components.SearchUserItem
 import niel.kro.penik.ui.theme.Background
-import niel.kro.penik.ui.theme.InputBg
 import niel.kro.penik.ui.theme.Border
+import niel.kro.penik.ui.theme.InputBg
 import niel.kro.penik.ui.theme.TextMuted
 import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.ChatsListViewModel
@@ -51,6 +52,7 @@ fun ChatsListContent(
 ) {
     val chats by viewModel.chats.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
+    val searchResults by viewModel.searchResults.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
@@ -61,14 +63,19 @@ fun ChatsListContent(
         }
     }
 
+    LaunchedEffect(searchQuery) {
+        viewModel.searchUsers(searchQuery)
+    }
+
     val filteredChats = if (searchQuery.isBlank()) {
         chats
     } else {
         chats.filter {
-            it.name.contains(searchQuery, ignoreCase = true) ||
-                    it.nickname.contains(searchQuery, ignoreCase = true)
+            it.lastMessage?.contains(searchQuery, ignoreCase = true) == true
         }
     }
+
+    val isSearching = searchQuery.isNotBlank()
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
@@ -80,7 +87,7 @@ fun ChatsListContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(focusRequester),
-                        placeholder = { Text("Поиск...", color = TextMuted) },
+                        placeholder = { Text("Поиск людей...", color = TextMuted) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = InputBg,
@@ -104,6 +111,7 @@ fun ChatsListContent(
                     IconButton(onClick = {
                         isSearchActive = false
                         searchQuery = ""
+                        viewModel.clearSearch()
                     }) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
@@ -132,29 +140,100 @@ fun ChatsListContent(
 
         ConnectionStatusBar(connectionState = connectionState)
 
-        if (filteredChats.isEmpty()) {
+        if (isSearching && searchResults.isNotEmpty()) {
+            Text(
+                text = "Люди",
+                color = TextMuted,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(searchResults, key = { it.id }) { user ->
+                    SearchUserItem(
+                        name = user.name,
+                        nickname = user.nickname,
+                        onClick = {
+                            onChatClick(user.id, user.name.ifBlank { user.nickname })
+                        }
+                    )
+                    HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
+                }
+
+                if (filteredChats.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Сообщения",
+                            color = TextMuted,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                    items(filteredChats, key = { it.userId }) { chat ->
+                        ChatListItem(
+                            name = chat.name.ifBlank { chat.nickname },
+                            lastMessage = chat.lastMessage,
+                            timestamp = chat.lastMessageTimestamp,
+                            unreadCount = chat.unreadCount,
+                            onClick = {
+                                onChatClick(chat.userId, chat.name.ifBlank { chat.nickname })
+                            }
+                        )
+                    }
+                }
+            }
+        } else if (isSearching && searchResults.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (searchQuery.isBlank()) "Нет чатов" else "Ничего не найдено",
+                    text = if (filteredChats.isEmpty()) "Ничего не найдено" else "",
                     color = TextMuted,
                     fontSize = 16.sp
                 )
             }
+            if (filteredChats.isNotEmpty()) {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(filteredChats, key = { it.userId }) { chat ->
+                        ChatListItem(
+                            name = chat.name.ifBlank { chat.nickname },
+                            lastMessage = chat.lastMessage,
+                            timestamp = chat.lastMessageTimestamp,
+                            unreadCount = chat.unreadCount,
+                            onClick = {
+                                onChatClick(chat.userId, chat.name.ifBlank { chat.nickname })
+                            }
+                        )
+                    }
+                }
+            }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(filteredChats, key = { it.userId }) { chat ->
-                    ChatListItem(
-                        name = chat.name.ifBlank { chat.nickname },
-                        lastMessage = chat.lastMessage,
-                        timestamp = chat.lastMessageTimestamp,
-                        unreadCount = chat.unreadCount,
-                        onClick = {
-                            onChatClick(chat.userId, chat.name.ifBlank { chat.nickname })
-                        }
+            if (filteredChats.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Нет чатов",
+                        color = TextMuted,
+                        fontSize = 16.sp
                     )
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(filteredChats, key = { it.userId }) { chat ->
+                        ChatListItem(
+                            name = chat.name.ifBlank { chat.nickname },
+                            lastMessage = chat.lastMessage,
+                            timestamp = chat.lastMessageTimestamp,
+                            unreadCount = chat.unreadCount,
+                            onClick = {
+                                onChatClick(chat.userId, chat.name.ifBlank { chat.nickname })
+                            }
+                        )
+                    }
                 }
             }
         }

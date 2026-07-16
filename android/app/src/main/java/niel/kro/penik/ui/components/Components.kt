@@ -134,6 +134,44 @@ fun ChatListItem(
 }
 
 @Composable
+fun SearchUserItem(
+    name: String,
+    nickname: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        InitialsAvatar(name = name, size = 48.dp)
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = name.ifBlank { nickname },
+                color = TextPrimary,
+                fontWeight = FontWeight.Medium,
+                fontSize = 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (nickname.isNotBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "@$nickname",
+                    color = TextMuted,
+                    fontSize = 14.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun MessageBubble(
     text: String,
     isSentByMe: Boolean,
