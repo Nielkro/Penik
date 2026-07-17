@@ -2,24 +2,43 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
+	"messenger/server/internal/config"
 	"messenger/server/internal/db"
 	"messenger/server/internal/middleware"
 	"messenger/server/internal/ws"
 	"nhooyr.io/websocket"
 )
 
-// WebSocketHandler handles WS /api/v1/ws?token=...
+// WebSocketHandler handles WS /api/v1/ws
 // Auth is validated by the middleware before this handler runs.
-func WebSocketHandler(hub *ws.Hub, database *db.DB) http.HandlerFunc {
+func WebSocketHandler(hub *ws.Hub, database *db.DB, cfg *config.Config) http.HandlerFunc {
+	// Build origin pattern list for WebSocket upgrade check.
+	var originPatterns []string
+	if cfg.AllowedOrigins != "" && cfg.AllowedOrigins != "*" {
+		for _, o := range strings.Split(cfg.AllowedOrigins, ",") {
+			if s := strings.TrimSpace(o); s != "" {
+				originPatterns = append(originPatterns, s)
+			}
+		}
+	}
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
 		deviceID := middleware.DeviceIDFromCtx(r.Context())
 
-		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-			InsecureSkipVerify: true, // auth/CORS already enforced by middleware
-			Subprotocols:       []string{"access_token"},
-		})
+		opts := &websocket.AcceptOptions{
+			Subprotocols: []string{"access_token"},
+		}
+		if len(originPatterns) > 0 {
+			opts.OriginPatterns = originPatterns
+		} else {
+			// Dev mode: allow any origin (wildcard)
+			opts.InsecureSkipVerify = true
+		}
+
+		conn, err := websocket.Accept(w, r, opts)
 		if err != nil {
 			// websocket.Accept already wrote the HTTP error response.
 			return

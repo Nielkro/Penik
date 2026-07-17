@@ -58,6 +58,7 @@ func extractToken(r *http.Request) string {
 	// Check Sec-WebSocket-Protocol for WebSocket auth token. Browsers may send
 	// the subprotocol list as one comma-separated header or as multiple headers,
 	// so collect every value before scanning for the token.
+	// WebSocket auth via Sec-WebSocket-Protocol: access_token, <token>
 	var parts []string
 	for _, proto := range r.Header.Values("Sec-WebSocket-Protocol") {
 		for _, p := range strings.Split(proto, ",") {
@@ -69,8 +70,7 @@ func extractToken(r *http.Request) string {
 			return parts[i+1]
 		}
 	}
-	// Fall back to ?token= for WebSocket handshakes.
-	return r.URL.Query().Get("token")
+	return ""
 }
 
 // UserIDFromCtx retrieves the authenticated user ID from the context.
