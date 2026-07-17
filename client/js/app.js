@@ -554,10 +554,22 @@ export async function syncMessageHistory() {
 }
 
 export async function decryptMessagePayload(payload) {
-  const ciphertext = new Uint8Array(atob(payload.ciphertext).split("").map(c => c.charCodeAt(0)));
-  const salt = new Uint8Array(atob(payload.salt).split("").map(c => c.charCodeAt(0)));
-  const nonce = new Uint8Array(atob(payload.nonce).split("").map(c => c.charCodeAt(0)));
-  const fromIdentityKey = new Uint8Array(atob(payload.from_identity_key).split("").map(c => c.charCodeAt(0)));
+  const toUint8Array = (val) => {
+    if (!val) return new Uint8Array(0);
+    if (val instanceof Uint8Array) return val;
+    if (typeof val === "string") {
+      const bin = atob(val);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+    return new Uint8Array(0);
+  };
+
+  const ciphertext = toUint8Array(payload.ciphertext);
+  const salt = toUint8Array(payload.salt);
+  const nonce = toUint8Array(payload.nonce);
+  const fromIdentityKey = toUint8Array(payload.from_identity_key);
   const prekeyId = payload.prekey_id;
 
   let myPrivateIK;
