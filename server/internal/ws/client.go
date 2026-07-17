@@ -816,6 +816,11 @@ func (c *Client) handleMsgRetryReq(ctx context.Context, req *MsgRetryReq) error 
 		return fmt.Errorf("unauthorized retry request for msg %d", req.MsgID)
 	}
 
+	// Ensure requester_device_id is correct (must match the caller's device ID!)
+	if req.RequesterDeviceID != c.deviceID {
+		return fmt.Errorf("invalid requester device id")
+	}
+
 	// 3. Ensure target device is the sender's device
 	if senderDeviceID != req.SenderDeviceID {
 		return fmt.Errorf("mismatched sender device for msg %d", req.MsgID)

@@ -403,6 +403,7 @@ async function onMsgRecvGlobal(payload) {
       console.log(`onMsgRecvGlobal: decryption failed, requesting retry for msg ${payload.msg_id} from device ${payload.from_device_id}`);
       ws.send(0x16, {
         sender_device_id: Number(payload.from_device_id),
+        requester_device_id: Number(localStorage.getItem("device_id")),
         msg_id: Number(payload.msg_id)
       });
     }
@@ -478,9 +479,9 @@ async function onMsgRetryReq(payload) {
   console.log(`onMsgRetryReq: re-encrypting message ${msgId} for user ${recipientUserId}`);
   const payloads = await encryptMessagePayload(recipientUserId, text);
   
-  const targetPayload = payloads.find(p => Number(p.device_id) === Number(payload.sender_device_id));
+  const targetPayload = payloads.find(p => Number(p.device_id) === Number(payload.requester_device_id));
   if (!targetPayload) {
-    console.error(`onMsgRetryReq: target device ${payload.sender_device_id} not found in re-encrypted payloads`);
+    console.error(`onMsgRetryReq: target device ${payload.requester_device_id} not found in re-encrypted payloads`);
     return;
   }
 

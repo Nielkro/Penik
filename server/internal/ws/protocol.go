@@ -138,8 +138,9 @@ type KeyBundleReq struct {
 }
 
 type MsgRetryReq struct {
-	SenderDeviceID int64 `msgpack:"sender_device_id"`
-	MsgID          int64 `msgpack:"msg_id"`
+	SenderDeviceID    int64 `msgpack:"sender_device_id"`
+	RequesterDeviceID int64 `msgpack:"requester_device_id"`
+	MsgID             int64 `msgpack:"msg_id"`
 }
 
 type MsgRetryResp struct {
