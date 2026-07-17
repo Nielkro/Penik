@@ -650,5 +650,82 @@ func migrateMessagesE2EE(database *sql.DB) error {
 			}
 		}
 	}
+
+	var isNotNull bool
+	rows, err := database.Query("PRAGMA table_info(messages)")
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var cid int
+		var name string
+		var typeStr string
+		var notnull int
+		var dfltVal *string
+		var pk int
+		if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err == nil {
+			if name == "plaintext" && notnull == 1 {
+				isNotNull = true
+			}
+		}
+	}
+	rows.Close()
+
+	if isNotNull {
+		tx, err := database.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		_, err = tx.Exec(`CREATE TABLE messages_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
+			sender_user_id INTEGER REFERENCES users(id),
+			recipient_user_id INTEGER REFERENCES users(id),
+			client_msg_id TEXT,
+			plaintext TEXT DEFAULT NULL,
+			ciphertext BLOB DEFAULT NULL,
+			encryption_salt BLOB DEFAULT NULL,
+			encryption_nonce BLOB DEFAULT NULL,
+			sender_device_id INTEGER DEFAULT NULL,
+			recipient_device_id INTEGER DEFAULT NULL,
+			prekey_id INTEGER DEFAULT NULL,
+			timestamp INTEGER NOT NULL,
+			delivered INTEGER DEFAULT 0,
+			delivered_at INTEGER
+		)`)
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.Exec(`INSERT INTO messages_new (
+			id, chat_id, sender_user_id, recipient_user_id, client_msg_id, plaintext,
+			ciphertext, encryption_salt, encryption_nonce, sender_device_id, recipient_device_id,
+			prekey_id, timestamp, delivered, delivered_at
+		) SELECT 
+			id, chat_id, sender_user_id, recipient_user_id, client_msg_id, plaintext,
+			ciphertext, encryption_salt, encryption_nonce, sender_device_id, recipient_device_id,
+			prekey_id, timestamp, delivered, delivered_at
+		FROM messages`)
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.Exec(`DROP TABLE messages`)
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.Exec(`ALTER TABLE messages_new RENAME TO messages`)
+		if err != nil {
+			return err
+		}
+
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
