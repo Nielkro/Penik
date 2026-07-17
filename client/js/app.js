@@ -565,7 +565,28 @@ export async function syncMessageHistory() {
 export async function decryptMessagePayload(payload) {
   const toUint8Array = (val) => {
     if (!val) return new Uint8Array(0);
-    if (val instanceof Uint8Array) return val;
+    if (val instanceof Uint8Array) {
+      let isBase64Ascii = val.length > 0 && val.length % 4 === 0;
+      if (isBase64Ascii) {
+        for (let i = 0; i < val.length; i++) {
+          const b = val[i];
+          if (!((b >= 65 && b <= 90) || (b >= 97 && b <= 122) || (b >= 48 && b <= 57) || b === 43 || b === 47 || b === 61)) {
+            isBase64Ascii = false;
+            break;
+          }
+        }
+      }
+      if (isBase64Ascii) {
+        const str = String.fromCharCode(...val);
+        try {
+          const bin = atob(str);
+          const out = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+          return out;
+        } catch (_) {}
+      }
+      return val;
+    }
     if (typeof val === "string") {
       const bin = atob(val);
       const out = new Uint8Array(bin.length);
@@ -701,9 +722,9 @@ export async function encryptMessagePayload(text, recipientUserId) {
     payloads.push({
       device_id: Number(device.device_id),
       prekey_id: device.key_id ? Number(device.key_id) : null,
-      ciphertext: btoa(String.fromCharCode(...ciphertext)),
-      salt: btoa(String.fromCharCode(...salt)),
-      nonce: btoa(String.fromCharCode(...nonce))
+      ciphertext: ciphertext,
+      salt: salt,
+      nonce: nonce
     });
   }
 
