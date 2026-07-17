@@ -628,6 +628,14 @@ export async function decryptMessagePayload(payload) {
   const info = new TextEncoder().encode("PenikE2EE");
   const derivedKey = await hkdfDerive(salt, secret, info, 32);
 
+  const toHex = (arr) => Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+  console.log("[crypto] decryptMessagePayload keys:", {
+    ciphertextHex: toHex(ciphertext),
+    saltHex: toHex(salt),
+    nonceHex: toHex(nonce),
+    derivedKeyHex: toHex(derivedKey)
+  });
+
   const plaintextBytes = await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext);
   return new TextDecoder().decode(plaintextBytes);
 }
@@ -680,6 +688,15 @@ export async function encryptMessagePayload(text, recipientUserId) {
     const derivedKey = await hkdfDerive(salt, secret, info, 32);
 
     const ciphertext = await chacha20Poly1305Encrypt(derivedKey, nonce, new TextEncoder().encode(text));
+
+    const toHex = (arr) => Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+    console.log("[crypto] encryptMessagePayload keys:", {
+      deviceId: device.device_id,
+      ciphertextHex: toHex(ciphertext),
+      saltHex: toHex(salt),
+      nonceHex: toHex(nonce),
+      derivedKeyHex: toHex(derivedKey)
+    });
 
     payloads.push({
       device_id: Number(device.device_id),
