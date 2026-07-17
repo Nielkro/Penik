@@ -56,11 +56,7 @@ class MessageRepository @Inject constructor(
         }
 
         val senderBundles = try {
-            val response = if (isSelfChat) {
-                apiService.getKeyBundleSelf(myId)
-            } else {
-                apiService.getKeyBundle(myId)
-            }
+            val response = apiService.getKeyBundleSelf(myId)
             if (response.isSuccessful) response.body()?.devices ?: emptyList() else emptyList()
         } catch (e: Exception) {
             emptyList()
