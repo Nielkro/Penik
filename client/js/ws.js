@@ -18,6 +18,8 @@ export const OP = {
   KEY_BUNDLE_RESP: 0x13,
   KEY_BUNDLE_REQ:  0x14,
   REFILL_PREKEYS:  0x15,
+  MSG_RETRY_REQ:   0x16,
+  MSG_RETRY_RESP:  0x17,
 };
 
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
