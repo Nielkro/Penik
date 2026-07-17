@@ -234,16 +234,15 @@ export async function renderChat(container, userId) {
     const ts = msg.created_at || Date.now();
 
     const deliveredAt = msg.delivered_at;
-    const statusText = msg.delivered 
-      ? (deliveredAt ? `✓✓ ${formatTime(deliveredAt)}` : "✓✓")
-      : "✓";
+    const statusText = msg.delivered ? "✓✓" : "✓";
     const statusEl = isMine
       ? el("span", { class: "msg-status" }, statusText)
       : null;
     if (statusEl) statusEl.dataset.msgId = msg.msg_id;
 
+    const displayTime = (msg.delivered && deliveredAt) ? deliveredAt : ts;
     const metaEl = el("div", { class: "msg-meta" },
-      el("span", { class: "msg-time" }, formatTime(ts)),
+      el("span", { class: "msg-time" }, formatTime(displayTime)),
       statusEl
     );
 
@@ -344,8 +343,13 @@ export async function renderChat(container, userId) {
       messagesEl.scrollTop = messagesEl.scrollHeight;
     },
     (msgId) => {
-      const el = messagesEl.querySelector(`.msg-status[data-msg-id="${msgId}"]`);
-      if (el) el.textContent = `✓✓ ${formatTime(Date.now())}`;
+      const statusEl = messagesEl.querySelector(`.msg-status[data-msg-id="${msgId}"]`);
+      if (statusEl) {
+        statusEl.textContent = "✓✓";
+        // Update the time shown next to the checkmarks to delivery time
+        const timeEl = statusEl.closest(".msg-meta")?.querySelector(".msg-time");
+        if (timeEl) timeEl.textContent = formatTime(Date.now());
+      }
     }
   );
 
