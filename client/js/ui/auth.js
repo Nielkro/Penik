@@ -66,6 +66,7 @@ async function generateAndUploadKeys(password) {
     opkList: uploadOPKList,
     saveKeys: async () => {
       await saveIdentityKey(envelope);
+      localStorage.setItem("penik_ik_priv", btoa(String.fromCharCode(...ik.privateKey)));
       for (const otpk of otpkList) {
         await savePreKeyPrivate(otpk.keyId, otpk.privateKey);
       }
