@@ -498,6 +498,7 @@ async function onMsgRetryReq(payload) {
   if (ws) {
     ws.send(0x17, {
       msg_id: Number(msgId),
+      prekey_id: targetPayload.prekey_id ? Number(targetPayload.prekey_id) : 0,
       ciphertext: targetPayload.ciphertext,
       salt: targetPayload.salt,
       nonce: targetPayload.nonce

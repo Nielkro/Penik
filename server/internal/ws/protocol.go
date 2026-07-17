@@ -145,6 +145,7 @@ type MsgRetryReq struct {
 
 type MsgRetryResp struct {
 	MsgID      int64  `msgpack:"msg_id"`
+	PrekeyID   int64  `msgpack:"prekey_id"`
 	Ciphertext []byte `msgpack:"ciphertext"`
 	Salt       []byte `msgpack:"salt"`
 	Nonce      []byte `msgpack:"nonce"`
