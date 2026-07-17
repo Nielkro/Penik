@@ -15,6 +15,10 @@ const (
 	OpChatPurgeAck Opcode = 0x09 // client→server: purge applied, safe to hard-delete
 	OpKeyFetchReq  Opcode = 0x10
 	OpKeyFetchResp Opcode = 0x11
+	OpKeyPublish   Opcode = 0x12
+	OpKeyBundleResp Opcode = 0x13
+	OpKeyBundleReq Opcode = 0x14
+	OpRefillPreKeys Opcode = 0x15
 )
 
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]
@@ -85,3 +89,50 @@ type DeviceKeyBundle struct {
 type KeyFetchResp struct {
 	Devices []DeviceKeyBundle `msgpack:"devices"`
 }
+
+type E2EPayload struct {
+	DeviceID   int64  `msgpack:"device_id"`
+	PrekeyID   *int64 `msgpack:"prekey_id"`
+	Ciphertext []byte `msgpack:"ciphertext"`
+	Salt       []byte `msgpack:"salt"`
+	Nonce      []byte `msgpack:"nonce"`
+}
+
+type MsgSendEncrypted struct {
+	ToUserID int64        `msgpack:"to_user_id"`
+	MsgID    string       `msgpack:"msg_id"`
+	Devices  []E2EPayload `msgpack:"devices"`
+}
+
+type MsgRecvEncrypted struct {
+	FromUserID      int64  `msgpack:"from_user_id"`
+	FromDeviceID    int64  `msgpack:"from_device_id"`
+	FromIdentityKey []byte `msgpack:"from_identity_key"`
+	ChatUserID      int64  `msgpack:"chat_user_id"`
+	MsgID           int64  `msgpack:"msg_id"`
+	PrekeyID        *int64 `msgpack:"prekey_id"`
+	Ciphertext      []byte `msgpack:"ciphertext"`
+	Salt            []byte `msgpack:"salt"`
+	Nonce           []byte `msgpack:"nonce"`
+	TS              int64  `msgpack:"ts"`
+}
+
+type OfflineBatchEncrypted struct {
+	Msgs []MsgRecvEncrypted `msgpack:"msgs"`
+}
+
+type PrekeyPublishItem struct {
+	KeyID     int64  `msgpack:"key_id"`
+	PublicKey []byte `msgpack:"public_key"`
+}
+
+type KeyPublishReq struct {
+	X25519Pub []byte              `msgpack:"x25519_pub"`
+	Prekeys   []PrekeyPublishItem `msgpack:"prekeys"`
+}
+
+type KeyBundleReq struct {
+	UserID int64 `msgpack:"user_id"`
+}
+
+

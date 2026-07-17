@@ -14,6 +14,10 @@ export const OP = {
   CHAT_PURGE_ACK: 0x09,
   KEY_FETCH_REQ: 0x10,
   KEY_FETCH_RESP: 0x11,
+  KEY_PUBLISH:    0x12,
+  KEY_BUNDLE_RESP: 0x13,
+  KEY_BUNDLE_REQ:  0x14,
+  REFILL_PREKEYS:  0x15,
 };
 
 const WS_URL = 'ws://localhost:8143/api/v1/ws';

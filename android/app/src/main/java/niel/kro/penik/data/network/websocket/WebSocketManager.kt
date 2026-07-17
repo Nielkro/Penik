@@ -38,6 +38,19 @@ sealed class WebSocketEvent {
         val ts: Long
     ) : WebSocketEvent()
 
+    data class MsgRecvEncrypted(
+        val fromUserId: Long,
+        val fromDeviceId: Long,
+        val fromIdentityKey: ByteArray,
+        val chatUserId: Long,
+        val msgId: Long,
+        val prekeyId: Long?,
+        val ciphertext: ByteArray,
+        val salt: ByteArray,
+        val nonce: ByteArray,
+        val ts: Long
+    ) : WebSocketEvent()
+
     data class MsgAck(
         val serverMsgId: Long,
         val clientMsgId: String
@@ -51,11 +64,16 @@ sealed class WebSocketEvent {
         val msgs: List<WebSocketEvent.MsgRecv>
     ) : WebSocketEvent()
 
+    data class OfflineBatchEncrypted(
+        val msgs: List<WebSocketEvent.MsgRecvEncrypted>
+    ) : WebSocketEvent()
+
     data class ChatPurge(val peerId: Long) : WebSocketEvent()
 
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
     object Pong : WebSocketEvent()
+    object RefillPreKeys : WebSocketEvent()
 }
 
 object Opcode {
@@ -68,6 +86,7 @@ object Opcode {
     const val PONG: Byte = 0x07
     const val CHAT_PURGE: Byte = 0x08
     const val CHAT_PURGE_ACK: Byte = 0x09
+    const val REFILL_PREKEYS: Byte = 0x15
 }
 
 private fun MessageUnpacker.readMsgRecvMap(): Map<String, Any?> {
@@ -222,20 +241,14 @@ class WebSocketManager @Inject constructor() {
             Opcode.PING -> sendPong()
             Opcode.PONG -> scope.launch { _events.emit(WebSocketEvent.Pong) }
             Opcode.CHAT_PURGE -> handleChatPurge(payload)
+            Opcode.REFILL_PREKEYS -> scope.launch { _events.emit(WebSocketEvent.RefillPreKeys) }
         }
     }
 
     private fun handleMsgRecv(payload: ByteArray) {
         val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
-        val map = unpacker.readMsgRecvMap()
+        val event = unpacker.readMsgRecvEncrypted()
         unpacker.close()
-        val event = WebSocketEvent.MsgRecv(
-            fromUserId = (map["from_user_id"] as? Number)?.toLong() ?: 0,
-            chatUserId = (map["chat_user_id"] as? Number)?.toLong() ?: 0,
-            text = (map["plaintext"] as? String) ?: "",
-            msgId = (map["msg_id"] as? Number)?.toLong() ?: 0,
-            ts = ((map["ts"] as? Number)?.toLong() ?: 0) * 1000
-        )
         scope.launch { _events.emit(event) }
     }
 
@@ -274,19 +287,12 @@ class WebSocketManager @Inject constructor() {
             }
         }
 
-        val messages = mutableListOf<WebSocketEvent.MsgRecv>()
+        val messages = mutableListOf<WebSocketEvent.MsgRecvEncrypted>()
         for (i in 0 until msgsCount) {
-            val map = unpacker.readMsgRecvMap()
-            messages.add(WebSocketEvent.MsgRecv(
-                fromUserId = (map["from_user_id"] as? Number)?.toLong() ?: 0,
-                chatUserId = (map["chat_user_id"] as? Number)?.toLong() ?: 0,
-                text = (map["plaintext"] as? String) ?: "",
-                msgId = (map["msg_id"] as? Number)?.toLong() ?: 0,
-                ts = ((map["ts"] as? Number)?.toLong() ?: 0) * 1000
-            ))
+            messages.add(unpacker.readMsgRecvEncrypted())
         }
         unpacker.close()
-        scope.launch { _events.emit(WebSocketEvent.OfflineBatch(messages)) }
+        scope.launch { _events.emit(WebSocketEvent.OfflineBatchEncrypted(messages)) }
     }
 
     private fun handleChatPurge(payload: ByteArray) {
@@ -297,6 +303,112 @@ class WebSocketManager @Inject constructor() {
             peerId = (map["chat_user_id"] as? Number)?.toLong() ?: 0
         )
         scope.launch { _events.emit(event) }
+    }
+
+    private fun MessageUnpacker.readMsgRecvEncrypted(): WebSocketEvent.MsgRecvEncrypted {
+        val size = unpackMapHeader()
+        var fromUserId = 0L
+        var fromDeviceId = 0L
+        var fromIdentityKey = ByteArray(0)
+        var chatUserId = 0L
+        var msgId = 0L
+        var prekeyId: Long? = null
+        var ciphertext = ByteArray(0)
+        var salt = ByteArray(0)
+        var nonce = ByteArray(0)
+        var ts = 0L
+
+        for (i in 0 until size) {
+            val key = unpackString()
+            if (nextFormat.isNil) {
+                unpackNil()
+                continue
+            }
+            when (key) {
+                "from_user_id" -> fromUserId = unpackLong()
+                "from_device_id" -> fromDeviceId = unpackLong()
+                "from_identity_key" -> {
+                    val len = unpackBinaryHeader()
+                    fromIdentityKey = readPayload(len)
+                }
+                "chat_user_id" -> chatUserId = unpackLong()
+                "msg_id" -> msgId = unpackLong()
+                "prekey_id" -> {
+                    prekeyId = if (nextFormat.isNil) {
+                        unpackNil()
+                        null
+                    } else {
+                        unpackLong()
+                    }
+                }
+                "ciphertext" -> {
+                    val len = unpackBinaryHeader()
+                    ciphertext = readPayload(len)
+                }
+                "salt" -> {
+                    val len = unpackBinaryHeader()
+                    salt = readPayload(len)
+                }
+                "nonce" -> {
+                    val len = unpackBinaryHeader()
+                    nonce = readPayload(len)
+                }
+                "ts" -> ts = unpackLong()
+                else -> unpackValue()
+            }
+        }
+
+        return WebSocketEvent.MsgRecvEncrypted(
+            fromUserId = fromUserId,
+            fromDeviceId = fromDeviceId,
+            fromIdentityKey = fromIdentityKey,
+            chatUserId = chatUserId,
+            msgId = msgId,
+            prekeyId = prekeyId,
+            ciphertext = ciphertext,
+            salt = salt,
+            nonce = nonce,
+            ts = ts * 1000
+        )
+    }
+
+    fun sendEncryptedMessage(toUserId: Long, clientMsgId: String, devices: List<E2EDevicePayload>) {
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        packer.packMapHeader(3)
+        packer.packString("to_user_id")
+        packer.packLong(toUserId)
+        packer.packString("msg_id")
+        packer.packString(clientMsgId)
+        packer.packString("devices")
+        packer.packArrayHeader(devices.size)
+        for (dev in devices) {
+            packer.packMapHeader(5)
+            packer.packString("device_id")
+            packer.packLong(dev.deviceId)
+            packer.packString("prekey_id")
+            if (dev.prekeyId == null) {
+                packer.packNil()
+            } else {
+                packer.packLong(dev.prekeyId)
+            }
+            packer.packString("ciphertext")
+            packer.packBinaryHeader(dev.ciphertext.size)
+            packer.addPayload(dev.ciphertext)
+            packer.packString("salt")
+            packer.packBinaryHeader(dev.salt.size)
+            packer.addPayload(dev.salt)
+            packer.packString("nonce")
+            packer.packBinaryHeader(dev.nonce.size)
+            packer.addPayload(dev.nonce)
+        }
+        packer.close()
+
+        val payload = bos.toByteArray()
+        val frame = ByteArray(1 + payload.size)
+        frame[0] = Opcode.MSG_SEND
+        payload.copyInto(frame, 1)
+        webSocket?.send(frame.toByteString(0, frame.size))
     }
 
     fun sendMessage(toUserId: Long, text: String, clientMsgId: String = UUID.randomUUID().toString()) {
@@ -379,3 +491,12 @@ class WebSocketManager @Inject constructor() {
         scope.cancel()
     }
 }
+
+data class E2EDevicePayload(
+    val deviceId: Long,
+    val prekeyId: Long?,
+    val ciphertext: ByteArray,
+    val salt: ByteArray,
+    val nonce: ByteArray
+)
+
