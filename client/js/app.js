@@ -727,9 +727,7 @@ export async function encryptMessagePayload(text, recipientUserId) {
   const bundleUrl = isSelfChat
     ? `/keys/bundle/${recipientUserId}?skip_otk=true`
     : `/keys/bundle/${recipientUserId}`;
-  const senderBundleUrl = isSelfChat
-    ? `/keys/bundle/${myId}?skip_otk=true`
-    : `/keys/bundle/${myId}`;
+  const senderBundleUrl = `/keys/bundle/${myId}?skip_otk=true`;
 
   const recipientBundle = await apiGet(bundleUrl);
   const senderBundle = await apiGet(senderBundleUrl);
