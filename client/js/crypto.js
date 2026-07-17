@@ -479,6 +479,8 @@ export async function generateKeyPair() {
 }
 
 export async function deriveSharedSecret(privateKey, publicKey) {
+  const cleanPublic = publicKey.length === 33 && publicKey[0] === 5 ? publicKey.slice(1) : publicKey;
+
   const pkcs8 = new Uint8Array(48);
   pkcs8.set([0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x04, 0x22, 0x04, 0x20], 0);
   pkcs8.set(privateKey, 16);
@@ -493,7 +495,7 @@ export async function deriveSharedSecret(privateKey, publicKey) {
 
   const pubKeyObj = await subtle.importKey(
     "raw",
-    publicKey,
+    cleanPublic,
     { name: "X25519" },
     false,
     []
