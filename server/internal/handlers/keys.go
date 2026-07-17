@@ -114,6 +114,11 @@ func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
 		}
 
 		if len(req.OPKList) > 0 {
+			_, err = tx.ExecContext(r.Context(), `DELETE FROM one_time_prekeys WHERE device_id=?`, deviceID)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
 			for _, opkRaw := range req.OPKList {
 				var keyID int64
 				var pubKey []byte
