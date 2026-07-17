@@ -13,32 +13,27 @@ import (
 )
 
 type historyMessageResponse struct {
-	ID             int64  `json:"id"`
-	ChatID         int64  `json:"chat_id"`
-	SenderID       int64  `json:"sender_id"`
-	SenderDeviceID int64  `json:"sender_device_id"`
-	RecipientID    int64  `json:"recipient_id"`
-	ChatUserID     int64  `json:"chat_user_id"` // Owner of the other side of the chat
-	Plaintext      string `json:"plaintext"`
-	Timestamp      int64  `json:"timestamp"`
-	Delivered      int    `json:"delivered"`
+	ID          int64   `json:"id"`
+	ChatID      int64   `json:"chat_id"`
+	SenderID    int64   `json:"sender_id"`
+	RecipientID int64   `json:"recipient_id"`
+	ChatUserID  int64   `json:"chat_user_id"` // Owner of the other side of the chat
+	ClientMsgID *string `json:"client_msg_id,omitempty"`
+	Plaintext   string  `json:"plaintext"`
+	Timestamp   int64   `json:"timestamp"`
+	Delivered   int     `json:"delivered"`
+	DeliveredAt *int64  `json:"delivered_at,omitempty"`
 }
 
 // GetMessageHistory handles GET /api/v1/messages/history.
-// Returns only messages where the caller is either:
-// - the sender (their own device sent it), or
-// - the recipient (addressed to their current device_id).
-// This prevents returning N duplicate rows when a user has multiple historical devices.
+// Messages are user-owned, so every logical message appears exactly once.
 func GetMessageHistory(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
-		deviceID := middleware.DeviceIDFromCtx(r.Context())
 
 		limitStr := r.URL.Query().Get("limit")
-		afterIDStr := r.URL.Query().Get("after_id")
 
 		limit := 100
-		afterID := int64(0)
 
 		if limitStr != "" {
 			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
@@ -48,42 +43,29 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				}
 			}
 		}
-		if afterIDStr != "" {
-			if a, err := strconv.ParseInt(afterIDStr, 10, 64); err == nil && a >= 0 {
-				afterID = a
-			}
-		}
-
 		rows, err := database.QueryContext(r.Context(),
-			`SELECT id, chat_id, sender_id, sender_device_id, recipient_id, chat_user_id, ciphertext, timestamp, delivered
-			 FROM (
-				 -- Incoming messages from other users addressed to our current device (excluding soft-deleted ones)
-				 SELECT m.id, m.chat_id, d_sender.user_id as sender_id, m.sender_device_id, d_recv.user_id as recipient_id,
-				        CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END as chat_user_id,
-				        m.ciphertext, m.timestamp, m.delivered
-				 FROM messages m
-				 JOIN chats c ON m.chat_id = c.id
-				 JOIN devices d_sender ON m.sender_device_id = d_sender.id
-				 JOIN devices d_recv   ON m.recipient_device_id = d_recv.id
-				 WHERE m.recipient_device_id = ? AND d_sender.user_id != ? AND m.deleted_by_recipient = 0 AND m.purge_pending = 0
-
-				 UNION ALL
-
-				 -- Outgoing messages sent by us, deduplicated by client_msg_id to avoid multi-device row duplication (excluding soft-deleted ones)
-				 SELECT MAX(m.id) as id, m.chat_id, d_sender.user_id as sender_id, m.sender_device_id, d_recv.user_id as recipient_id,
-				        CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END as chat_user_id,
-				        m.ciphertext, m.timestamp, m.delivered
-				 FROM messages m
-				 JOIN chats c ON m.chat_id = c.id
-				 JOIN devices d_sender ON m.sender_device_id = d_sender.id
-				 JOIN devices d_recv   ON m.recipient_device_id = d_recv.id
-				 WHERE d_sender.user_id = ? AND m.deleted_by_sender = 0
-				 GROUP BY m.chat_id, m.sender_device_id, COALESCE(m.client_msg_id, 'legacy-' || m.id)
-			 )
-			 WHERE id > ?
-			 ORDER BY id ASC
+			`SELECT
+				m.id,
+				m.chat_id,
+				m.sender_user_id,
+				m.recipient_user_id,
+				CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END,
+				m.client_msg_id,
+				m.plaintext,
+				m.timestamp,
+				m.delivered,
+				m.delivered_at
+			 FROM messages m
+			 JOIN chats c ON c.id = m.chat_id
+			 WHERE m.purge_pending = 0
+			   AND (
+			     (m.sender_user_id = ? AND m.deleted_by_sender = 0)
+			     OR
+			     (m.recipient_user_id = ? AND m.deleted_by_recipient = 0)
+			   )
+			 ORDER BY m.id DESC
 			 LIMIT ?`,
-			userID, deviceID, userID, userID, userID, afterID, limit)
+			userID, userID, userID, limit)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -93,11 +75,20 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 		list := make([]historyMessageResponse, 0)
 		for rows.Next() {
 			var m historyMessageResponse
-			var ciphertextBytes []byte
-			if err := rows.Scan(&m.ID, &m.ChatID, &m.SenderID, &m.SenderDeviceID, &m.RecipientID, &m.ChatUserID, &ciphertextBytes, &m.Timestamp, &m.Delivered); err != nil {
+			if err := rows.Scan(
+				&m.ID,
+				&m.ChatID,
+				&m.SenderID,
+				&m.RecipientID,
+				&m.ChatUserID,
+				&m.ClientMsgID,
+				&m.Plaintext,
+				&m.Timestamp,
+				&m.Delivered,
+				&m.DeliveredAt,
+			); err != nil {
 				continue
 			}
-			m.Plaintext = string(ciphertextBytes)
 			list = append(list, m)
 		}
 
@@ -140,24 +131,13 @@ func DeleteChat(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 				return
 			}
 
-			// Tombstone every message addressed to the peer's devices so the purge
-			// survives if the peer is offline. Rows are hard-deleted later on ack.
+			// Keep a user-level tombstone until the peer confirms the local purge.
 			_, err = database.ExecContext(r.Context(),
-				`UPDATE messages SET purge_pending = 1
-				 WHERE chat_id = ? AND recipient_device_id IN (SELECT id FROM devices WHERE user_id = ?)`,
-				chatID, peerID)
-			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-
-			// Hard-delete the caller's own copies (sent + received) immediately.
-			_, err = database.ExecContext(r.Context(),
-				`DELETE FROM messages
-				 WHERE chat_id = ?
-				   AND (sender_device_id   IN (SELECT id FROM devices WHERE user_id = ?)
-				     OR recipient_device_id IN (SELECT id FROM devices WHERE user_id = ?))`,
-				chatID, userID, userID)
+				`UPDATE messages
+				 SET purge_pending = 1, purge_for_user_id = ?
+				 WHERE chat_id = ?`,
+				peerID,
+				chatID)
 			if err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
@@ -210,20 +190,21 @@ func DeleteChat(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		// Mark as deleted by recipient where recipient is the caller
+		// Soft-delete each message according to the caller's role in it.
 		_, err = tx.ExecContext(r.Context(),
-			`UPDATE messages SET deleted_by_recipient = 1
-			 WHERE chat_id = ? AND recipient_device_id IN (SELECT id FROM devices WHERE user_id = ?)`,
+			`UPDATE messages
+			 SET deleted_by_recipient = 1
+			 WHERE chat_id = ? AND recipient_user_id = ?`,
 			chatID, userID)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 
-		// Mark as deleted by sender where sender is the caller
 		_, err = tx.ExecContext(r.Context(),
-			`UPDATE messages SET deleted_by_sender = 1
-			 WHERE chat_id = ? AND sender_device_id IN (SELECT id FROM devices WHERE user_id = ?)`,
+			`UPDATE messages
+			 SET deleted_by_sender = 1
+			 WHERE chat_id = ? AND sender_user_id = ?`,
 			chatID, userID)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)

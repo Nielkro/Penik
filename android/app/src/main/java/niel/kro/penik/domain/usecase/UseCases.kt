@@ -77,12 +77,17 @@ class HandleWebSocketEventUseCase @Inject constructor(
     suspend operator fun invoke(event: WebSocketEvent) {
         when (event) {
             is WebSocketEvent.MsgRecv -> {
-                messageRepository.handleMsgRecv(event)
+                val isIncoming = messageRepository.handleMsgRecv(event)
                 chatRepository.updateLastMessage(event.chatUserId, event.text, event.ts)
-                chatRepository.incrementUnread(event.chatUserId)
+                if (isIncoming) {
+                    chatRepository.incrementUnread(event.chatUserId)
+                }
             }
             is WebSocketEvent.MsgAck -> {
                 messageRepository.handleMsgAck(event)
+            }
+            is WebSocketEvent.MsgDelivered -> {
+                messageRepository.handleMsgDelivered(event)
             }
             is WebSocketEvent.OfflineBatch -> {
                 messageRepository.handleOfflineBatch(event)

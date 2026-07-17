@@ -19,14 +19,14 @@ interface MessageDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessages(messages: List<MessageEntity>)
 
-    @Query("UPDATE messages SET serverId = :serverId, delivered = 1 WHERE localId = :clientMsgId")
-    suspend fun acknowledgeMessage(clientMsgId: String, serverId: Long)
+    @Query("UPDATE messages SET serverId = :serverId, delivered = 1, deliveredAt = :deliveredAt WHERE localId = :clientMsgId")
+    suspend fun acknowledgeMessage(clientMsgId: String, serverId: Long, deliveredAt: Long? = System.currentTimeMillis())
 
-    @Query("UPDATE messages SET delivered = 1 WHERE serverId = :serverId")
-    suspend fun markDelivered(serverId: Long)
+    @Query("UPDATE messages SET delivered = 1, deliveredAt = :deliveredAt WHERE serverId = :serverId")
+    suspend fun markDelivered(serverId: Long, deliveredAt: Long? = System.currentTimeMillis())
 
-    @Query("SELECT MAX(serverId) FROM messages WHERE serverId IS NOT NULL")
-    suspend fun getMaxServerId(): Long?
+    @Query("SELECT localId FROM messages WHERE serverId = :serverId LIMIT 1")
+    suspend fun findLocalIdByServerId(serverId: Long): String?
 
     @Query("DELETE FROM messages WHERE chatUserId = :chatUserId")
     suspend fun deleteChatMessages(chatUserId: Long)

@@ -36,6 +36,9 @@ import niel.kro.penik.ui.theme.TextMuted
 import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.theme.Warning
 import niel.kro.penik.data.network.websocket.ConnectionState
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private fun initialsColor(name: String): Color {
     val hue = name.fold(0L) { acc, ch -> acc + ch.code } % 360
@@ -171,11 +174,17 @@ fun SearchUserItem(
     }
 }
 
+private fun formatTime(timestamp: Long): String {
+    val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+    return sdf.format(Date(timestamp))
+}
+
 @Composable
 fun MessageBubble(
     text: String,
     isSentByMe: Boolean,
-    delivered: Boolean
+    delivered: Boolean,
+    deliveredAt: Long? = null
 ) {
     val bgColor = if (isSentByMe) SentMessageBg else PanelSecondary
     val textColor = if (isSentByMe) SentMessageText else TextPrimary
@@ -201,8 +210,15 @@ fun MessageBubble(
                     fontSize = 15.sp
                 )
                 if (isSentByMe) {
+                    val statusText = if (delivered && deliveredAt != null) {
+                        "✓✓ ${formatTime(deliveredAt)}"
+                    } else if (delivered) {
+                        "✓✓"
+                    } else {
+                        "✓"
+                    }
                     Text(
-                        text = if (delivered) "✓✓" else "✓",
+                        text = statusText,
                         color = if (delivered) Accent else TextMuted,
                         fontSize = 11.sp,
                         modifier = Modifier.align(Alignment.End)

@@ -163,6 +163,9 @@ export async function updateMessageDelivered(msgId, status) {
   const msg = await get(store, msgId);
   if (msg) {
     msg.delivered = status;
+    if (status) {
+      msg.delivered_at = Date.now();
+    }
     await put(store, msg);
     return true;
   }
@@ -241,6 +244,9 @@ export async function updateMsgIdAndDelivered(oldId, newId, deliveredStatus) {
     await del(store, oldId);
     msg.msg_id = newId;
     msg.delivered = deliveredStatus;
+    if (deliveredStatus) {
+      msg.delivered_at = Date.now();
+    }
     await put(store, msg);
     return true;
   }

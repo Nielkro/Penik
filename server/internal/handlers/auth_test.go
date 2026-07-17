@@ -53,15 +53,6 @@ func TestLoginPreservesOfflineMessagesForExistingDevice(t *testing.T) {
 	}
 	recipientDeviceID, _ := recipientDeviceResult.LastInsertId()
 
-	senderDeviceResult, err := database.Exec(
-		`INSERT INTO devices(user_id,device_name,created_at,last_seen) VALUES(?,?,?,?)`,
-		senderID, "Sender Device", now, now,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	senderDeviceID, _ := senderDeviceResult.LastInsertId()
-
 	chatResult, err := database.Exec(
 		`INSERT INTO chats(user1_id,user2_id,created_at) VALUES(?,?,?)`,
 		userID, senderID, now,
@@ -73,9 +64,9 @@ func TestLoginPreservesOfflineMessagesForExistingDevice(t *testing.T) {
 
 	messageResult, err := database.Exec(
 		`INSERT INTO messages(
-			chat_id, sender_device_id, recipient_device_id, ciphertext, timestamp, delivered
+			chat_id, sender_user_id, recipient_user_id, plaintext, timestamp, delivered
 		) VALUES(?,?,?,?,?,0)`,
-		chatID, senderDeviceID, recipientDeviceID, []byte("offline"), now,
+		chatID, senderID, userID, "offline", now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -107,18 +98,18 @@ func TestLoginPreservesOfflineMessagesForExistingDevice(t *testing.T) {
 		t.Fatalf("device id = %d, want existing id %d", login.DeviceID, recipientDeviceID)
 	}
 
-	var storedRecipientDeviceID int64
+	var storedRecipientUserID int64
 	if err := database.QueryRow(
-		`SELECT recipient_device_id FROM messages WHERE id=?`,
+		`SELECT recipient_user_id FROM messages WHERE id=?`,
 		messageID,
-	).Scan(&storedRecipientDeviceID); err != nil {
+	).Scan(&storedRecipientUserID); err != nil {
 		t.Fatalf("offline message was deleted during login: %v", err)
 	}
-	if storedRecipientDeviceID != recipientDeviceID {
+	if storedRecipientUserID != userID {
 		t.Fatalf(
-			"message recipient device = %d, want %d",
-			storedRecipientDeviceID,
-			recipientDeviceID,
+			"message recipient user = %d, want %d",
+			storedRecipientUserID,
+			userID,
 		)
 	}
 }

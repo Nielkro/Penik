@@ -25,7 +25,8 @@ data class Message(
     val text: String,
     val timestamp: Long,
     val isSentByMe: Boolean,
-    val delivered: Boolean = false
+    val delivered: Boolean = false,
+    val deliveredAt: Long? = null
 )
 
 data class AuthResponse(

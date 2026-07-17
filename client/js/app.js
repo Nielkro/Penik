@@ -260,7 +260,7 @@ boot().catch(err => {
 });
 
 /* ── Exports for use by UI modules ── */
-export function logout() {
+export async function logout() {
   ws.disconnect();
   setToken(null);
   localStorage.removeItem("user_id");
@@ -271,7 +271,11 @@ export function logout() {
   _chatListRendered = false;
   setActiveChatCallback(null);
   setChatListUpdateCallback(null);
-  clearIndexedDB().catch(() => {});
+  try {
+    await clearIndexedDB();
+  } catch (error) {
+    console.error("Failed to clear local data on logout:", error);
+  }
   navigate('#login');
 }
 
@@ -435,23 +439,25 @@ export async function syncMessageHistory() {
         try {
           const res = await getUserById(String(peerId));
           contact = res.user || res;
-          await saveContact({
-            ...contact,
-            user_id: peerId,
-            last_message: "",
-            last_ts: item.timestamp * 1000
-          });
         } catch (e) {
           console.error("Failed to fetch contact details for syncing:", e);
+          contact = { user_id: peerId, name: "Неизвестный", nickname: "" };
         }
       }
+      await saveContact({
+        ...contact,
+        user_id: peerId,
+        last_message: item.plaintext,
+        last_ts: item.timestamp * 1000
+      });
 
       const existingMsg = await getMessage(item.id);
       if (existingMsg) continue;
 
       if (Number(item.sender_id) === myId) {
-        // Try to match a pending tmp- message first
-        const resolved = await findAndResolvePendingSentMessage(peerId, item.timestamp, item.id);
+        const resolved = item.client_msg_id
+          ? await updateMsgIdAndDelivered(item.client_msg_id, item.id, item.delivered)
+          : await findAndResolvePendingSentMessage(peerId, item.timestamp, item.id);
         if (resolved) continue;
       }
 

@@ -46,16 +46,16 @@ CREATE TABLE IF NOT EXISTS chats (
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-  sender_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-  recipient_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  sender_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recipient_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   client_msg_id TEXT,
-  ciphertext BLOB NOT NULL,
+  plaintext TEXT NOT NULL,
   timestamp INTEGER NOT NULL,
   delivered INTEGER NOT NULL DEFAULT 0,
   deleted_by_sender INTEGER NOT NULL DEFAULT 0,
   deleted_by_recipient INTEGER NOT NULL DEFAULT 0,
   purge_pending INTEGER NOT NULL DEFAULT 0,
-  UNIQUE(sender_device_id, recipient_device_id, client_msg_id)
+  purge_for_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -66,6 +66,5 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_messages_recipient_undelivered ON messages(recipient_device_id, delivered);
 CREATE INDEX IF NOT EXISTS idx_users_nickname ON users(nickname);
 CREATE INDEX IF NOT EXISTS idx_one_time_keys_device ON one_time_keys(device_id, used);

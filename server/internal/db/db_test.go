@@ -8,7 +8,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func TestOpenMigratesLegacyMessageForeignKeys(t *testing.T) {
+func TestOpenMigratesMessagesToUserOwnership(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy.db")
 	legacy, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -76,7 +76,21 @@ INSERT INTO messages VALUES (1, 1, 1, 2, X'01', 1, 0);
 	if err := database.QueryRow(`SELECT count(*) FROM messages`).Scan(&messages); err != nil {
 		t.Fatal(err)
 	}
-	if messages != 0 {
-		t.Fatalf("messages after device deletion = %d, want 0", messages)
+	if messages != 1 {
+		t.Fatalf("messages after device deletion = %d, want 1", messages)
+	}
+
+	var senderUserID, recipientUserID int64
+	if err := database.QueryRow(
+		`SELECT sender_user_id, recipient_user_id FROM messages WHERE id=1`,
+	).Scan(&senderUserID, &recipientUserID); err != nil {
+		t.Fatal(err)
+	}
+	if senderUserID != 1 || recipientUserID != 2 {
+		t.Fatalf(
+			"message owners = (%d, %d), want (1, 2)",
+			senderUserID,
+			recipientUserID,
+		)
 	}
 }

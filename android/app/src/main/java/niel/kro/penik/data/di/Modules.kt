@@ -32,7 +32,9 @@ object DatabaseModule {
             context,
             PenikDatabase::class.java,
             "penik_database"
-        ).build()
+        )
+            .addMigrations(PenikDatabase.MIGRATION_1_2)
+            .build()
     }
 
     @Provides

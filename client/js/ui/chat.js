@@ -213,8 +213,12 @@ export async function renderChat(container, userId) {
     const isMine = String(msg.sender_id) === String(me && (me.id || me.user_id));
     const ts = msg.created_at || Date.now();
 
+    const deliveredAt = msg.delivered_at;
+    const statusText = msg.delivered 
+      ? (deliveredAt ? `✓✓ ${formatTime(deliveredAt)}` : "✓✓")
+      : "✓";
     const statusEl = isMine
-      ? el("span", { class: "msg-status" }, msg.delivered ? "✓✓" : "✓")
+      ? el("span", { class: "msg-status" }, statusText)
       : null;
     if (statusEl) statusEl.dataset.msgId = msg.msg_id;
 
@@ -317,7 +321,7 @@ export async function renderChat(container, userId) {
     },
     (msgId) => {
       const el = messagesEl.querySelector(`.msg-status[data-msg-id="${msgId}"]`);
-      if (el) el.textContent = "✓✓";
+      if (el) el.textContent = `✓✓ ${formatTime(Date.now())}`;
     }
   );
 
