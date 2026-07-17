@@ -32,4 +32,13 @@ interface ApiService {
     suspend fun getMessageHistory(
         @Query("limit") limit: Int = 100
     ): Response<List<HistoryMessageResponse>>
+
+    @GET("keys/bundle/{userId}")
+    suspend fun getKeyBundle(@Path("userId") userId: Long): Response<KeyBundleResponse>
+
+    @POST("keys/prekeys")
+    suspend fun uploadPreKeys(@Body body: PrekeysUploadRequest): Response<Unit>
+
+    @GET("keys/prekeys/status")
+    suspend fun getPreKeysStatus(): Response<PreKeysStatusResponse>
 }

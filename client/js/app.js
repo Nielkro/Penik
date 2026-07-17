@@ -3,7 +3,7 @@ import {
   openDB, saveMessage,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
-  findAndResolvePendingSentMessage, deleteChatData
+  findAndResolvePendingSentMessage, deleteChatData, savePreKeyPrivate
 } from './storage.js';
 import { ws } from './ws.js';
 import { renderAuth } from './ui/auth.js';
@@ -21,6 +21,47 @@ function read32BE(buf, offset) {
 }
 
 export const pendingAcks = new Map();
+
+async function ensurePreKeyPool() {
+  if (!getToken()) return;
+  try {
+    const status = await apiGet("/keys/prekeys/status");
+    const minPool = 5;
+    const poolSize = 20;
+    
+    if (status && status.available < minPool) {
+      const count = poolSize - status.available;
+      const prekeys = [];
+      const uploadItems = [];
+      
+      for (let i = 0; i < count; i++) {
+        const keyPair = await window.crypto.subtle.generateKey(
+          { name: "X25519" },
+          true,
+          ["deriveBits"]
+        );
+        const pub = new Uint8Array(await window.crypto.subtle.exportKey("raw", keyPair.publicKey));
+        const privFull = new Uint8Array(await window.crypto.subtle.exportKey("pkcs8", keyPair.privateKey));
+        const priv = privFull.slice(privFull.length - 32);
+        
+        const keyId = window.crypto.getRandomValues(new Uint32Array(1))[0];
+        const pubB64 = btoa(String.fromCharCode(...pub));
+        
+        prekeys.push({ keyId, privateKey: priv });
+        uploadItems.push({ key_id: keyId, public_key: pubB64 });
+      }
+      
+      await apiPost("/keys/prekeys", { prekeys: uploadItems });
+      
+      for (const otpk of prekeys) {
+        await savePreKeyPrivate(otpk.keyId, otpk.privateKey);
+      }
+      console.log(`Successfully replenished ${count} OTPKs on server.`);
+    }
+  } catch (err) {
+    console.error("Failed to check/replenish OTPKs:", err);
+  }
+}
 
 /* ── App state ── */
 export const state = {
@@ -195,6 +236,7 @@ function handleRoute() {
   // Ensure WS is connected if we are logged in
   if (!ws.connected && (!ws._ws || ws._ws.readyState === WebSocket.CLOSED || ws._ws.readyState === WebSocket.CLOSING)) {
     ws.connect();
+    ensurePreKeyPool();
   }
 
   if (screen === '#login' || screen === '#register') {
@@ -237,6 +279,7 @@ async function boot() {
         return;
       }
       ws.connect();
+      ensurePreKeyPool();
     } catch (err) {
       console.error('Failed to fetch current user on boot:', err);
       if (err.status === 401 || err.status === 400 || err.status === 404) {

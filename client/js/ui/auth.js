@@ -1,7 +1,9 @@
 import { apiPost, setToken, getUserById } from "../api.js";
-import { getPersistentDeviceName } from "../storage.js";
+import { getPersistentDeviceName, saveIdentityKey, savePreKeyPrivate } from "../storage.js";
 import { navigate, setCurrentUser } from "../app.js";
 import { el, showToast, spinner } from "./components.js";
+import { generateKeyPair, encryptIdentityEnvelope } from "../crypto.js";
+
 
 function authErr(errEl, msg) {
   errEl.textContent = msg;
@@ -24,6 +26,51 @@ function buildForm(fields, submitLabel) {
   const errEl = el("p", { class: "auth-error hidden" });
   const form = el("form", { class: "auth-form" }, ...fieldEls, errEl, btn);
   return { form, inputs, btn, errEl };
+}
+
+async function generateAndUploadKeys(password) {
+  const ik = await generateKeyPair();
+  const envelope = await encryptIdentityEnvelope({ privateKey: ik.privateKey }, password);
+  
+  const otpkList = [];
+  const uploadOPKList = [];
+  
+  for (let i = 0; i < 20; i++) {
+    const keyPair = await window.crypto.subtle.generateKey(
+      { name: "X25519" },
+      true,
+      ["deriveBits"]
+    );
+    const pub = new Uint8Array(await window.crypto.subtle.exportKey("raw", keyPair.publicKey));
+    const privFull = new Uint8Array(await window.crypto.subtle.exportKey("pkcs8", keyPair.privateKey));
+    const priv = privFull.slice(privFull.length - 32);
+    
+    const keyId = window.crypto.getRandomValues(new Uint32Array(1))[0];
+    
+    const buf = new Uint8Array(37);
+    const view = new DataView(buf.buffer);
+    view.setUint32(0, keyId, false);
+    buf[4] = 0x05;
+    buf.set(pub, 5);
+    
+    const opkB64 = btoa(String.fromCharCode(...buf));
+    
+    otpkList.push({ keyId, privateKey: priv });
+    uploadOPKList.push(opkB64);
+  }
+  
+  const ikPubB64 = btoa(String.fromCharCode(...ik.publicKey));
+  
+  return {
+    ikPub: ikPubB64,
+    opkList: uploadOPKList,
+    saveKeys: async () => {
+      await saveIdentityKey(envelope);
+      for (const otpk of otpkList) {
+        await savePreKeyPrivate(otpk.keyId, otpk.privateKey);
+      }
+    }
+  };
 }
 
 async function handleRegister(inputs, btn, errEl) {
@@ -55,16 +102,22 @@ async function handleRegister(inputs, btn, errEl) {
   errEl.classList.add("hidden");
 
   try {
+    const keysData = await generateAndUploadKeys(password);
+
     const res = await apiPost("/register", {
       name,
       nickname,
       password,
       device_name: getPersistentDeviceName(),
+      ik_pub: keysData.ikPub,
+      opk_list: keysData.opkList,
     });
 
     setToken(res.token);
     localStorage.setItem("user_id", String(res.user_id));
     localStorage.setItem("device_id", String(res.device_id));
+    
+    await keysData.saveKeys();
     setCurrentUser({ id: res.user_id, user_id: res.user_id, name, nickname, username: nickname });
 
     showToast("Регистрация успешна!", "success");
@@ -93,15 +146,21 @@ async function handleLogin(inputs, btn, errEl) {
   errEl.classList.add("hidden");
 
   try {
+    const keysData = await generateAndUploadKeys(password);
+
     const res = await apiPost("/login", {
       nickname,
       password,
       device_name: getPersistentDeviceName(),
+      ik_pub: keysData.ikPub,
+      opk_list: keysData.opkList,
     });
 
     setToken(res.token);
     localStorage.setItem("user_id", String(res.user_id));
     localStorage.setItem("device_id", String(res.device_id));
+
+    await keysData.saveKeys();
 
     const user = await getUserById(res.user_id);
     if (user) {
