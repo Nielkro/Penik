@@ -158,9 +158,9 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 
 	switch op {
 	case OpMsgSend:
-		var msg MsgSend
+		var msg MsgSendEncrypted
 		if err := msgpack.Unmarshal(payload, &msg); err != nil {
-			return fmt.Errorf("unmarshal MsgSend: %w", err)
+			return fmt.Errorf("unmarshal MsgSendEncrypted: %w", err)
 		}
 		return c.handleMsgSend(ctx, &msg)
 
@@ -185,6 +185,20 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 		}
 		return c.handleKeyFetchReq(ctx, &req)
 
+	case OpKeyPublish:
+		var req KeyPublishReq
+		if err := msgpack.Unmarshal(payload, &req); err != nil {
+			return fmt.Errorf("unmarshal KeyPublishReq: %w", err)
+		}
+		return c.handleKeyPublish(ctx, &req)
+
+	case OpKeyBundleReq:
+		var req KeyBundleReq
+		if err := msgpack.Unmarshal(payload, &req); err != nil {
+			return fmt.Errorf("unmarshal KeyBundleReq: %w", err)
+		}
+		return c.handleKeyBundleReq(ctx, &req)
+
 	case OpPong:
 		// no-op
 		return nil
@@ -198,7 +212,7 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 	}
 }
 
-func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
+func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error {
 	now := time.Now().Unix()
 
 	senderUserID := c.userID
@@ -234,13 +248,7 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 				MsgID:       existingMsgID,
 				ClientMsgID: msg.MsgID,
 			}
-			frame, err := encodeFrame(OpMsgAck, ack)
-			if err == nil {
-				select {
-				case c.send <- frame:
-				default:
-				}
-			}
+			c.pushFrame(OpMsgAck, ack)
 			return nil
 		}
 	}
@@ -263,61 +271,113 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 		return fmt.Errorf("lookup chat: %w", err)
 	}
 
-	var clientMsgID any
-	if msg.MsgID != "" {
-		clientMsgID = msg.MsgID
+	var senderIKPub []byte
+	err = tx.QueryRowContext(ctx, `SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, c.deviceID).Scan(&senderIKPub)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("lookup sender ik_pub: %w", err)
 	}
-	res, err := tx.ExecContext(ctx,
-		`INSERT INTO messages(
-			chat_id, sender_user_id, recipient_user_id, client_msg_id,
-			plaintext, timestamp, delivered
-		 ) VALUES(?, ?, ?, ?, ?, ?, 0)`,
-		chatID, senderUserID, recipientUserID, clientMsgID, msg.Plaintext, now)
-	if err != nil {
-		return fmt.Errorf("insert message: %w", err)
+
+	type pendingDelivery struct {
+		deviceID int64
+		msgRecv  MsgRecvEncrypted
 	}
-	messageID, err := res.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("get message id: %w", err)
+	var deliveries []pendingDelivery
+
+	for _, dev := range msg.Devices {
+		var ownerID int64
+		err := tx.QueryRowContext(ctx, `SELECT user_id FROM devices WHERE id=?`, dev.DeviceID).Scan(&ownerID)
+		if err == sql.ErrNoRows {
+			continue
+		} else if err != nil {
+			return fmt.Errorf("lookup device owner: %w", err)
+		}
+
+		var recipientID, chatUserID int64
+		if ownerID == senderUserID {
+			recipientID = senderUserID
+			chatUserID = recipientUserID
+		} else {
+			recipientID = recipientUserID
+			chatUserID = senderUserID
+		}
+
+		if dev.PrekeyID != nil {
+			var exists bool
+			tx.QueryRowContext(ctx, `SELECT 1 FROM one_time_prekeys WHERE device_id=? AND key_id=?`, dev.DeviceID, *dev.PrekeyID).Scan(&exists)
+			if exists {
+				_, err = tx.ExecContext(ctx, `DELETE FROM one_time_prekeys WHERE device_id=? AND key_id=?`, dev.DeviceID, *dev.PrekeyID)
+				if err != nil {
+					return fmt.Errorf("delete used prekey: %w", err)
+				}
+			}
+		}
+
+		res, err := tx.ExecContext(ctx,
+			`INSERT INTO messages(
+				chat_id, sender_user_id, recipient_user_id, client_msg_id,
+				plaintext, ciphertext, encryption_salt, encryption_nonce,
+				sender_device_id, recipient_device_id, prekey_id, timestamp, delivered
+			 ) VALUES(?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			chatID, senderUserID, recipientID, msg.MsgID,
+			dev.Ciphertext, dev.Salt, dev.Nonce,
+			c.deviceID, dev.DeviceID, dev.PrekeyID, now)
+		if err != nil {
+			return fmt.Errorf("insert message: %w", err)
+		}
+		messageID, err := res.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("get message id: %w", err)
+		}
+
+		if dev.PrekeyID != nil {
+			_, _ = tx.ExecContext(ctx,
+				`INSERT INTO used_prekeys_audit (device_id, key_id, used_by_message_id, used_at)
+				 VALUES (?, ?, ?, ?)`,
+				dev.DeviceID, *dev.PrekeyID, messageID, now)
+		}
+
+		deliveries = append(deliveries, pendingDelivery{
+			deviceID: dev.DeviceID,
+			msgRecv: MsgRecvEncrypted{
+				FromUserID:      senderUserID,
+				FromDeviceID:    c.deviceID,
+				FromIdentityKey: senderIKPub,
+				ChatUserID:      chatUserID,
+				MsgID:           messageID,
+				PrekeyID:        dev.PrekeyID,
+				Ciphertext:      dev.Ciphertext,
+				Salt:            dev.Salt,
+				Nonce:           dev.Nonce,
+				TS:              now,
+			},
+		})
 	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 
-	recipientFrame, err := encodeFrame(OpMsgRecv, MsgRecv{
-		FromUserID: senderUserID,
-		ChatUserID: senderUserID,
-		Plaintext:  msg.Plaintext,
-		MsgID:      messageID,
-		TS:         now,
-	})
-	if err == nil {
-		c.sendToUserDevices(ctx, recipientUserID, 0, recipientFrame)
-	}
-
-	senderFrame, err := encodeFrame(OpMsgRecv, MsgRecv{
-		FromUserID: senderUserID,
-		ChatUserID: recipientUserID,
-		Plaintext:  msg.Plaintext,
-		MsgID:      messageID,
-		TS:         now,
-	})
-	if err == nil {
-		c.sendToUserDevices(ctx, senderUserID, c.deviceID, senderFrame)
-	}
-
-	ack := MsgAck{
-		MsgID:       messageID,
-		ClientMsgID: msg.MsgID,
-	}
-	frame, err := encodeFrame(OpMsgAck, ack)
-	if err == nil {
-		select {
-		case c.send <- frame:
-		default:
+	for _, deliv := range deliveries {
+		frame, err := encodeFrame(OpMsgRecv, deliv.msgRecv)
+		if err == nil {
+			c.hub.SendToDevice(deliv.deviceID, frame)
 		}
 	}
+
+	for _, dev := range msg.Devices {
+		c.checkAndNotifyLowPreKeys(dev.DeviceID)
+	}
+
+	var firstMsgID int64
+	if len(deliveries) > 0 {
+		firstMsgID = deliveries[0].msgRecv.MsgID
+	}
+	ack := MsgAck{
+		MsgID:       firstMsgID,
+		ClientMsgID: msg.MsgID,
+	}
+	c.pushFrame(OpMsgAck, ack)
+
 	return nil
 }
 
@@ -434,27 +494,29 @@ func (c *Client) handleKeyFetchReq(ctx context.Context, req *KeyFetchReq) error 
 
 func (c *Client) sendOfflineBatch(ctx context.Context) error {
 	rows, err := c.db.QueryContext(ctx,
-		`SELECT m.id, m.sender_user_id,
-		        CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END as chat_user_id,
-		        m.plaintext, m.timestamp
+		`SELECT m.id, m.sender_user_id, m.sender_device_id,
+		        COALESCE(dpk.x25519_pub, ''),
+		        CASE WHEN ch.user1_id = ? THEN ch.user2_id ELSE ch.user1_id END as chat_user_id,
+		        m.prekey_id, m.ciphertext, m.encryption_salt, m.encryption_nonce, m.timestamp
 		 FROM messages m
-		 JOIN chats c ON m.chat_id = c.id
-		 WHERE m.recipient_user_id=? AND m.delivered=0 AND m.deleted_by_recipient=0 AND m.purge_pending=0
+		 JOIN chats ch ON m.chat_id = ch.id
+		 LEFT JOIN device_public_keys dpk ON m.sender_device_id = dpk.device_id
+		 WHERE m.recipient_user_id=? AND m.recipient_device_id=? AND m.delivered=0 AND m.deleted_by_recipient=0 AND m.purge_pending=0
 		 ORDER BY m.timestamp ASC`,
-		c.userID, c.userID)
+		c.userID, c.userID, c.deviceID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
-	var currentBatch []MsgRecv
+	var currentBatch []MsgRecvEncrypted
 	var currentBatchBytes int
 
-	sendBatch := func(msgs []MsgRecv) error {
+	sendBatch := func(msgs []MsgRecvEncrypted) error {
 		if len(msgs) == 0 {
 			return nil
 		}
-		batch := OfflineBatch{Msgs: msgs}
+		batch := OfflineBatchEncrypted{Msgs: msgs}
 		frame, err := encodeFrame(OpOfflineBatch, batch)
 		if err != nil {
 			return err
@@ -465,14 +527,19 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 	}
 
 	for rows.Next() {
-		var m MsgRecv
-		if err := rows.Scan(&m.MsgID, &m.FromUserID, &m.ChatUserID, &m.Plaintext, &m.TS); err != nil {
+		var m MsgRecvEncrypted
+		var senderIK []byte
+		if err := rows.Scan(
+			&m.MsgID, &m.FromUserID, &m.FromDeviceID, &senderIK,
+			&m.ChatUserID, &m.PrekeyID, &m.Ciphertext, &m.Salt, &m.Nonce, &m.TS,
+		); err != nil {
 			continue
 		}
+		m.FromIdentityKey = senderIK
 		currentBatch = append(currentBatch, m)
-		currentBatchBytes += len(m.Plaintext)
+		currentBatchBytes += len(m.Ciphertext)
 
-		if len(currentBatch) >= 100 || currentBatchBytes >= 1*1024*1024 { // 100 messages or 1 MB of text
+		if len(currentBatch) >= 100 || currentBatchBytes >= 1*1024*1024 {
 			if err := sendBatch(currentBatch); err != nil {
 				return err
 			}
@@ -597,3 +664,118 @@ func encodeFrame(op Opcode, v any) ([]byte, error) {
 func EncodeFrame(op Opcode, v any) ([]byte, error) {
 	return encodeFrame(op, v)
 }
+
+func (c *Client) handleKeyPublish(ctx context.Context, req *KeyPublishReq) error {
+	now := time.Now().Unix()
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx,
+		`INSERT OR REPLACE INTO device_public_keys(device_id, x25519_pub, created_at, updated_at)
+		 VALUES(?, ?, ?, ?)`,
+		c.deviceID, req.X25519Pub, now, now)
+	if err != nil {
+		return fmt.Errorf("insert device_public_keys: %w", err)
+	}
+
+	for _, pk := range req.Prekeys {
+		_, err = tx.ExecContext(ctx,
+			`INSERT OR REPLACE INTO one_time_prekeys(device_id, key_id, public_key, used, reserved_at, created_at)
+			 VALUES(?, ?, ?, 0, NULL, ?)`,
+			c.deviceID, pk.KeyID, pk.PublicKey, now)
+		if err != nil {
+			return fmt.Errorf("insert one_time_prekeys: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) handleKeyBundleReq(ctx context.Context, req *KeyBundleReq) error {
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM devices WHERE user_id=?`, req.UserID)
+	if err != nil {
+		return fmt.Errorf("query devices: %w", err)
+	}
+	defer rows.Close()
+
+	var devices []DeviceKeyBundle
+	for rows.Next() {
+		var deviceID int64
+		if err := rows.Scan(&deviceID); err != nil {
+			return err
+		}
+
+		var x25519Pub []byte
+		err := tx.QueryRowContext(ctx, `SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, deviceID).Scan(&x25519Pub)
+		if err == sql.ErrNoRows {
+			continue
+		} else if err != nil {
+			return err
+		}
+
+		var keyID int64
+		var opkPub []byte
+		var hasOPK bool
+
+		err = tx.QueryRowContext(ctx,
+			`SELECT key_id, public_key FROM one_time_prekeys
+			 WHERE device_id=? AND used=0
+			 ORDER BY id LIMIT 1`,
+			deviceID).Scan(&keyID, &opkPub)
+
+		if err == nil {
+			now := time.Now().Unix()
+			_, err = tx.ExecContext(ctx,
+				`UPDATE one_time_prekeys SET used=1, reserved_at=?
+				 WHERE device_id=? AND key_id=?`,
+				now, deviceID, keyID)
+			if err != nil {
+				return err
+			}
+			hasOPK = true
+		} else if err != sql.ErrNoRows {
+			return err
+		}
+
+		var bundle DeviceKeyBundle
+		bundle.DeviceID = deviceID
+		bundle.IKPub = x25519Pub
+		if hasOPK {
+			bundle.OPKPub = opkPub
+			bundle.OPKID = keyID
+		}
+		devices = append(devices, bundle)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+
+	c.pushFrame(OpKeyBundleResp, KeyFetchResp{Devices: devices})
+	return nil
+}
+
+func (c *Client) checkAndNotifyLowPreKeys(deviceID int64) {
+	var count int
+	err := c.db.QueryRow(`SELECT COUNT(*) FROM one_time_prekeys WHERE device_id=? AND used=0`, deviceID).Scan(&count)
+	if err != nil {
+		return
+	}
+	if count < 5 {
+		frame := []byte{byte(OpRefillPreKeys)}
+		c.hub.SendToDevice(deviceID, frame)
+	}
+}
+

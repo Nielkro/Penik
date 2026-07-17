@@ -3,13 +3,15 @@ import {
   openDB, saveMessage,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
-  findAndResolvePendingSentMessage, deleteChatData, savePreKeyPrivate
+  findAndResolvePendingSentMessage, deleteChatData, savePreKeyPrivate,
+  getPreKeyPrivate, deletePreKeyPrivate
 } from './storage.js';
 import { ws } from './ws.js';
 import { renderAuth } from './ui/auth.js';
 import { renderChatList, renderChat } from './ui/chat.js';
 import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
+import { deriveSharedSecret, hkdfDerive, chacha20Poly1305Encrypt, chacha20Poly1305Decrypt } from './crypto.js';
 
 function u8ToHex(arr) {
   return Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
@@ -341,7 +343,17 @@ export function triggerChatListUpdate() {
 
 async function onMsgRecvGlobal(payload) {
   const fromUserId = Number(payload.from_user_id);
-  const plaintext = payload.plaintext || "";
+  
+  let plaintext = "";
+  if (payload.plaintext) {
+    plaintext = payload.plaintext;
+  } else if (payload.ciphertext) {
+    try {
+      plaintext = await decryptMessagePayload(payload);
+    } catch (e) {
+      plaintext = `[Ошибка расшифрования сообщения: ${e.message}]`;
+    }
+  }
 
   const chatPartnerId = payload.chat_user_id || fromUserId;
   const inMsg = {
@@ -466,7 +478,6 @@ export async function syncMessageHistory() {
     if (!me) return;
     const myId = Number(me.id || me.user_id);
 
-    // Sort by timestamp ascending just to be sure
     history.sort((a, b) => a.timestamp - b.timestamp);
 
     for (const item of history) {
@@ -476,6 +487,27 @@ export async function syncMessageHistory() {
       }
 
       const peerId = Number(item.chat_user_id || (Number(item.sender_id) === myId ? item.recipient_id : item.sender_id));
+
+      let text = "";
+      if (item.plaintext) {
+        text = item.plaintext;
+      } else if (item.ciphertext) {
+        try {
+          const senderBundle = await apiGet(`/keys/bundle/${item.sender_id}`);
+          const senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
+          const fromIdentityKey = senderDevice?.identity_key;
+
+          text = await decryptMessagePayload({
+            ciphertext: item.ciphertext,
+            salt: item.encryption_salt,
+            nonce: item.encryption_nonce,
+            prekey_id: item.prekey_id,
+            from_identity_key: fromIdentityKey
+          });
+        } catch (e) {
+          text = `[Ошибка расшифрования: ${e.message}]`;
+        }
+      }
 
       let contact = await getContact(peerId);
       if (!contact) {
@@ -490,7 +522,7 @@ export async function syncMessageHistory() {
       await saveContact({
         ...contact,
         user_id: peerId,
-        last_message: item.plaintext,
+        last_message: text,
         last_ts: item.timestamp * 1000
       });
 
@@ -508,7 +540,7 @@ export async function syncMessageHistory() {
         msg_id: item.id,
         chat_id: String(peerId),
         sender_id: Number(item.sender_id),
-        plaintext: item.plaintext,
+        plaintext: text,
         created_at: item.timestamp * 1000,
         delivered: 1
       };
@@ -519,6 +551,125 @@ export async function syncMessageHistory() {
   } catch (err) {
     console.error("Failed to sync message history:", err);
   }
+}
+
+export async function decryptMessagePayload(payload) {
+  const ciphertext = new Uint8Array(atob(payload.ciphertext).split("").map(c => c.charCodeAt(0)));
+  const salt = new Uint8Array(atob(payload.salt).split("").map(c => c.charCodeAt(0)));
+  const nonce = new Uint8Array(atob(payload.nonce).split("").map(c => c.charCodeAt(0)));
+  const fromIdentityKey = new Uint8Array(atob(payload.from_identity_key).split("").map(c => c.charCodeAt(0)));
+  const prekeyId = payload.prekey_id;
+
+  let myPrivateIK;
+  if (prekeyId) {
+    myPrivateIK = await getPreKeyPrivate(prekeyId);
+    if (myPrivateIK) {
+      await deletePreKeyPrivate(prekeyId);
+    } else {
+      throw new Error(`OTPK private key not found locally for id: ${prekeyId}`);
+    }
+  } else {
+    myPrivateIK = state.privateIK;
+    if (!myPrivateIK) {
+      const stored = sessionStorage.getItem("penik_ik_priv");
+      if (stored) {
+        state.privateIK = new Uint8Array(atob(stored).split("").map(c => c.charCodeAt(0)));
+        myPrivateIK = state.privateIK;
+      }
+    }
+    if (!myPrivateIK) {
+      throw new Error("Private Identity Key not found in memory/sessionStorage");
+    }
+  }
+
+  let secret;
+  if (prekeyId) {
+    const dh1 = await deriveSharedSecret(myPrivateIK, fromIdentityKey);
+    let myIKPriv = state.privateIK;
+    if (!myIKPriv) {
+      const stored = sessionStorage.getItem("penik_ik_priv");
+      if (stored) {
+        state.privateIK = new Uint8Array(atob(stored).split("").map(c => c.charCodeAt(0)));
+        myIKPriv = state.privateIK;
+      }
+    }
+    if (!myIKPriv) {
+      throw new Error("Private Identity Key not found in memory/sessionStorage");
+    }
+    const dh2 = await deriveSharedSecret(myIKPriv, fromIdentityKey);
+    secret = new Uint8Array(dh1.length + dh2.length);
+    secret.set(dh1, 0);
+    secret.set(dh2, dh1.length);
+  } else {
+    secret = await deriveSharedSecret(myPrivateIK, fromIdentityKey);
+  }
+
+  const info = new TextEncoder().encode("PenikE2EE");
+  const derivedKey = await hkdfDerive(salt, secret, info, 32);
+
+  const plaintextBytes = await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext);
+  return new TextDecoder().decode(plaintextBytes);
+}
+
+export async function encryptMessagePayload(text, recipientUserId) {
+  const myId = Number(localStorage.getItem("user_id"));
+  const myDeviceId = Number(localStorage.getItem("device_id"));
+
+  const recipientBundle = await apiGet(`/keys/bundle/${recipientUserId}`);
+  const senderBundle = await apiGet(`/keys/bundle/${myId}`);
+
+  const recipientDevices = recipientBundle?.devices || [];
+  const senderDevices = senderBundle?.devices || [];
+
+  const allDevices = [...recipientDevices, ...senderDevices].filter(d => Number(d.device_id) !== myDeviceId);
+
+  let myPrivateIK = state.privateIK;
+  if (!myPrivateIK) {
+    const stored = sessionStorage.getItem("penik_ik_priv");
+    if (stored) {
+      state.privateIK = new Uint8Array(atob(stored).split("").map(c => c.charCodeAt(0)));
+      myPrivateIK = state.privateIK;
+    }
+  }
+  if (!myPrivateIK) {
+    throw new Error("Private Identity Key not found in memory/sessionStorage");
+  }
+
+  const payloads = [];
+  for (const device of allDevices) {
+    const recipientIKPub = new Uint8Array(atob(device.identity_key).split("").map(c => c.charCodeAt(0)));
+
+    let secret;
+    if (device.one_time_key && device.key_id) {
+      const recipientOTPKPub = new Uint8Array(atob(device.one_time_key).split("").map(c => c.charCodeAt(0)));
+      const dh1 = await deriveSharedSecret(myPrivateIK, recipientOTPKPub);
+      const dh2 = await deriveSharedSecret(myPrivateIK, recipientIKPub);
+
+      secret = new Uint8Array(dh1.length + dh2.length);
+      secret.set(dh1, 0);
+      secret.set(dh2, dh1.length);
+    } else {
+      secret = await deriveSharedSecret(myPrivateIK, recipientIKPub);
+    }
+
+    const salt = window.crypto.getRandomValues(new Uint8Array(16));
+    const nonce = window.crypto.getRandomValues(new Uint8Array(12));
+
+    const info = new TextEncoder().encode("PenikE2EE");
+    const derivedKey = await hkdfDerive(salt, secret, info, 32);
+
+    const ciphertext = await chacha20Poly1305Encrypt(derivedKey, nonce, new TextEncoder().encode(text));
+
+    payloads.push({
+      device_id: Number(device.device_id),
+      prekey_id: device.key_id ? Number(device.key_id) : null,
+      ciphertext: btoa(String.fromCharCode(...ciphertext)),
+      salt: btoa(String.fromCharCode(...salt)),
+      nonce: btoa(String.fromCharCode(...nonce))
+    });
+  }
+
+  return payloads;
 }
 
 export async function flushOutbox() {
@@ -556,6 +707,10 @@ function setupGlobalWSListeners() {
   ws.on(0x04, onMsgAckGlobal);
   ws.on(0x05, onOfflineBatchGlobal);
   ws.on(0x08, onChatPurgeGlobal);
+  ws.on(0x15, async () => {
+    console.log("Received REFILL_PREKEYS signal from server. Replenishing pool...");
+    await ensurePreKeyPool();
+  });
   ws.onConnect(async () => {
     await flushOutbox();
     await syncMessageHistory();

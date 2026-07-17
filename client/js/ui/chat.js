@@ -4,7 +4,7 @@ import {
   updateMessageDelivered, getContact, saveContact, getAllContacts,
   deleteChatData
 } from "../storage.js";
-import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks } from "../app.js";
+import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, encryptMessagePayload } from "../app.js";
 import { avatar, formatTime, formatDate, el, showToast, spinner, showDeleteChatConfirmModal } from "./components.js";
 
 
@@ -259,6 +259,9 @@ export async function renderChat(container, userId) {
 
       const msgId = crypto.randomUUID();
 
+      // Encrypt payload for all target devices
+      const ciphertexts = await encryptMessagePayload(text, userId);
+
       const storedMsg = {
         msg_id: msgId,
         client_msg_id: msgId,
@@ -266,7 +269,8 @@ export async function renderChat(container, userId) {
         sender_id: myId,
         plaintext: text,
         created_at: now,
-        delivered: 0
+        delivered: 0,
+        ciphertexts: ciphertexts
       };
       await saveMessage(storedMsg);
       await saveContact({ ...contact, last_message: text, last_ts: now });
@@ -277,7 +281,7 @@ export async function renderChat(container, userId) {
       try {
         sent = ws.send(0x01, {
           to_user_id: Number(userId),
-          plaintext: text,
+          devices: ciphertexts,
           msg_id: msgId,
         });
       } catch (sendErr) {

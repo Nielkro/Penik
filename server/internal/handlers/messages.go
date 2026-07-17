@@ -13,16 +13,22 @@ import (
 )
 
 type historyMessageResponse struct {
-	ID          int64   `json:"id"`
-	ChatID      int64   `json:"chat_id"`
-	SenderID    int64   `json:"sender_id"`
-	RecipientID int64   `json:"recipient_id"`
-	ChatUserID  int64   `json:"chat_user_id"` // Owner of the other side of the chat
-	ClientMsgID *string `json:"client_msg_id,omitempty"`
-	Plaintext   string  `json:"plaintext"`
-	Timestamp   int64   `json:"timestamp"`
-	Delivered   int     `json:"delivered"`
-	DeliveredAt *int64  `json:"delivered_at,omitempty"`
+	ID                int64   `json:"id"`
+	ChatID            int64   `json:"chat_id"`
+	SenderID          int64   `json:"sender_id"`
+	RecipientID       int64   `json:"recipient_id"`
+	ChatUserID        int64   `json:"chat_user_id"` // Owner of the other side of the chat
+	ClientMsgID       *string `json:"client_msg_id,omitempty"`
+	Plaintext         *string `json:"plaintext,omitempty"`
+	Timestamp         int64   `json:"timestamp"`
+	Delivered         int     `json:"delivered"`
+	DeliveredAt       *int64  `json:"delivered_at,omitempty"`
+	Ciphertext        []byte  `json:"ciphertext,omitempty"`
+	EncryptionSalt    []byte  `json:"encryption_salt,omitempty"`
+	EncryptionNonce   []byte  `json:"encryption_nonce,omitempty"`
+	SenderDeviceID    *int64  `json:"sender_device_id,omitempty"`
+	RecipientDeviceID *int64  `json:"recipient_device_id,omitempty"`
+	PrekeyID          *int64  `json:"prekey_id,omitempty"`
 }
 
 // GetMessageHistory handles GET /api/v1/messages/history.
@@ -30,6 +36,7 @@ type historyMessageResponse struct {
 func GetMessageHistory(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
+		deviceID := middleware.DeviceIDFromCtx(r.Context())
 
 		limitStr := r.URL.Query().Get("limit")
 
@@ -54,18 +61,24 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				m.plaintext,
 				m.timestamp,
 				m.delivered,
-				m.delivered_at
+				m.delivered_at,
+				m.ciphertext,
+				m.encryption_salt,
+				m.encryption_nonce,
+				m.sender_device_id,
+				m.recipient_device_id,
+				m.prekey_id
 			 FROM messages m
 			 JOIN chats c ON c.id = m.chat_id
 			 WHERE m.purge_pending = 0
 			   AND (
-			     (m.sender_user_id = ? AND m.deleted_by_sender = 0)
+			     (m.sender_user_id = ? AND m.sender_device_id = ? AND m.deleted_by_sender = 0)
 			     OR
-			     (m.recipient_user_id = ? AND m.deleted_by_recipient = 0)
+			     (m.recipient_user_id = ? AND m.recipient_device_id = ? AND m.deleted_by_recipient = 0)
 			   )
 			 ORDER BY m.id DESC
 			 LIMIT ?`,
-			userID, userID, userID, limit)
+			userID, userID, deviceID, userID, deviceID, limit)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -86,6 +99,12 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				&m.Timestamp,
 				&m.Delivered,
 				&m.DeliveredAt,
+				&m.Ciphertext,
+				&m.EncryptionSalt,
+				&m.EncryptionNonce,
+				&m.SenderDeviceID,
+				&m.RecipientDeviceID,
+				&m.PrekeyID,
 			); err != nil {
 				continue
 			}

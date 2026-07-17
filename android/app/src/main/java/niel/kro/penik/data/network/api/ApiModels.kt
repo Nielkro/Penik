@@ -45,10 +45,16 @@ data class HistoryMessageResponse(
     @SerialName("recipient_id") val recipientId: Long,
     @SerialName("chat_user_id") val chatUserId: Long,
     @SerialName("client_msg_id") val clientMsgId: String? = null,
-    val plaintext: String,
+    val plaintext: String? = null,
     @SerialName("timestamp") val createdAt: Long,
     val delivered: Int,
-    @SerialName("delivered_at") val deliveredAt: Long? = null
+    @SerialName("delivered_at") val deliveredAt: Long? = null,
+    val ciphertext: String? = null,
+    @SerialName("encryption_salt") val encryptionSalt: String? = null,
+    @SerialName("encryption_nonce") val encryptionNonce: String? = null,
+    @SerialName("sender_device_id") val senderDeviceId: Long? = null,
+    @SerialName("recipient_device_id") val recipientDeviceId: Long? = null,
+    @SerialName("prekey_id") val prekeyId: Long? = null
 )
 
 @Serializable

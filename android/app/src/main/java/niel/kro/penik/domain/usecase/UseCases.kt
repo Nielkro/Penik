@@ -72,13 +72,21 @@ class SyncHistoryUseCase @Inject constructor(
 
 class HandleWebSocketEventUseCase @Inject constructor(
     private val messageRepository: MessageRepository,
-    private val chatRepository: ChatRepository
+    private val chatRepository: ChatRepository,
+    private val preKeyManager: niel.kro.penik.data.crypto.PreKeyManager
 ) {
     suspend operator fun invoke(event: WebSocketEvent) {
         when (event) {
             is WebSocketEvent.MsgRecv -> {
                 val isIncoming = messageRepository.handleMsgRecv(event)
                 chatRepository.updateLastMessage(event.chatUserId, event.text, event.ts)
+                if (isIncoming) {
+                    chatRepository.incrementUnread(event.chatUserId)
+                }
+            }
+            is WebSocketEvent.MsgRecvEncrypted -> {
+                val (text, isIncoming) = messageRepository.handleMsgRecvEncrypted(event)
+                chatRepository.updateLastMessage(event.chatUserId, text, event.ts)
                 if (isIncoming) {
                     chatRepository.incrementUnread(event.chatUserId)
                 }
@@ -96,9 +104,19 @@ class HandleWebSocketEventUseCase @Inject constructor(
                     chatRepository.incrementUnread(msg.chatUserId)
                 }
             }
+            is WebSocketEvent.OfflineBatchEncrypted -> {
+                val decrypted = messageRepository.handleOfflineBatchEncrypted(event)
+                decrypted.forEach { msg ->
+                    chatRepository.updateLastMessage(msg.chatUserId, msg.text, msg.ts)
+                    chatRepository.incrementUnread(msg.chatUserId)
+                }
+            }
             is WebSocketEvent.ChatPurge -> {
                 messageRepository.deleteChatMessages(event.peerId)
                 chatRepository.deleteChat(event.peerId)
+            }
+            is WebSocketEvent.RefillPreKeys -> {
+                preKeyManager.ensurePool()
             }
             else -> {}
         }

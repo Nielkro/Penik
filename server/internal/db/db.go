@@ -90,6 +90,11 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate to e2ee: %w", err)
 	}
 
+	if err := migrateMessagesE2EE(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate messages e2ee: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
 }
 
@@ -617,5 +622,33 @@ func migrateToE2EE(database *sql.DB) error {
 		return fmt.Errorf("create key_backups table: %w", err)
 	}
 
+	return nil
+}
+
+func migrateMessagesE2EE(database *sql.DB) error {
+	cols := []struct {
+		name string
+		def  string
+	}{
+		{"ciphertext", "BLOB DEFAULT NULL"},
+		{"encryption_salt", "BLOB DEFAULT NULL"},
+		{"encryption_nonce", "BLOB DEFAULT NULL"},
+		{"sender_device_id", "INTEGER DEFAULT NULL"},
+		{"recipient_device_id", "INTEGER DEFAULT NULL"},
+		{"prekey_id", "INTEGER DEFAULT NULL"},
+	}
+
+	for _, col := range cols {
+		hasCol, err := tableHasColumn(database, "messages", col.name)
+		if err != nil {
+			return err
+		}
+		if !hasCol {
+			_, err = database.Exec(fmt.Sprintf("ALTER TABLE messages ADD COLUMN %s %s", col.name, col.def))
+			if err != nil {
+				return fmt.Errorf("add column %s: %w", col.name, err)
+			}
+		}
+	}
 	return nil
 }
