@@ -20,7 +20,8 @@ export const OP = {
   REFILL_PREKEYS:  0x15,
 };
 
-const WS_URL = 'ws://localhost:8143/api/v1/ws';
+const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const WS_URL = `${wsProtocol}//${window.location.host}/api/v1/ws`;
 const PING_INTERVAL = 25_000;
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 15000, 30000];
 
