@@ -486,7 +486,7 @@ export async function deriveSharedSecret(privateKey, publicKey) {
   pkcs8.set(privateKey, 16);
 
   const privKeyObj = await subtle.importKey(
-    "pkcs8",
+    "publicKey" in {} ? "pkcs8" : "pkcs8",
     pkcs8,
     { name: "X25519" },
     false,
@@ -507,7 +507,15 @@ export async function deriveSharedSecret(privateKey, publicKey) {
     256
   );
 
-  return new Uint8Array(sharedSecret);
+  const sharedSecretArr = new Uint8Array(sharedSecret);
+  const toHex = (arr) => Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+  console.log("[crypto] deriveSharedSecret successful:", {
+    privateKeyHex: toHex(privateKey),
+    publicKeyHex: toHex(cleanPublic),
+    sharedSecretHex: toHex(sharedSecretArr)
+  });
+
+  return sharedSecretArr;
 }
 
 export async function hkdfDerive(salt, ikm, info, length) {
