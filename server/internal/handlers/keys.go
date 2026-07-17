@@ -160,6 +160,7 @@ type KeyBundleResponse struct {
 }
 
 // GetKeyBundle handles GET /api/v1/keys/bundle/{user_id}.
+// Pass ?skip_otk=true to skip one-time pre-key reservation (used for self-chat).
 func GetKeyBundle(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userIDStr := r.PathValue("user_id")
@@ -167,6 +168,8 @@ func GetKeyBundle(database *db.DB) http.HandlerFunc {
 			http.Error(w, "user_id required", http.StatusBadRequest)
 			return
 		}
+
+		skipOTK := r.URL.Query().Get("skip_otk") == "true"
 
 		tx, err := database.BeginTx(r.Context(), nil)
 		if err != nil {
@@ -210,14 +213,16 @@ func GetKeyBundle(database *db.DB) http.HandlerFunc {
 				deviceID).Scan(&keyID, &opkPub)
 
 			if err == nil {
-				now := time.Now().Unix()
-				_, err = tx.ExecContext(r.Context(),
-					`UPDATE one_time_prekeys SET used=1, reserved_at=?
-					 WHERE device_id=? AND key_id=?`,
-					now, deviceID, keyID)
-				if err != nil {
-					http.Error(w, "internal error", http.StatusInternalServerError)
-					return
+				if !skipOTK {
+					now := time.Now().Unix()
+					_, err = tx.ExecContext(r.Context(),
+						`UPDATE one_time_prekeys SET used=1, reserved_at=?
+						 WHERE device_id=? AND key_id=?`,
+						now, deviceID, keyID)
+					if err != nil {
+						http.Error(w, "internal error", http.StatusInternalServerError)
+						return
+					}
 				}
 				reservedKeyID = &keyID
 			} else if err != sql.ErrNoRows {

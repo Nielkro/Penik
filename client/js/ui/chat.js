@@ -43,9 +43,30 @@ export async function renderChatList(container) {
     contacts = [];
   }
 
+  const me = getCurrentUser();
+  const myId = me && (me.id || me.user_id);
+  const selfChatEntry = myId ? {
+    user_id: myId,
+    name: "Избранное",
+    nickname: "",
+    last_message: "",
+    last_ts: 0
+  } : null;
+
   function renderContacts(list) {
     listEl.innerHTML = "";
-    if (!list.length) {
+    if (selfChatEntry) {
+      const selfItem = el("li", { class: "chatlist-item" },
+        el("div", { class: "chatlist-item-avatar", style: "width:48px;height:48px;border-radius:50%;background:#1a1a2e;display:flex;align-items:center;justify-content:center;font-size:22px;color:#00e676;" }, "\uD83D\uDCDD"),
+        el("div", { class: "chatlist-item-info" },
+          el("span", { class: "chatlist-item-name" }, "Избранное"),
+          el("span", { class: "chatlist-item-preview" }, "")
+        )
+      );
+      selfItem.addEventListener("click", () => navigate(`#chat/${myId}`));
+      listEl.appendChild(selfItem);
+    }
+    if (!list.length && !selfChatEntry) {
       listEl.appendChild(el("li", { class: "chatlist-empty" }, "Нет чатов. Найдите пользователя."));
       return;
     }
@@ -112,6 +133,12 @@ export async function renderChat(container, userId) {
   }
 
   const me = getCurrentUser();
+  const myId = me && (me.id || me.user_id);
+  const isSelfChat = Number(userId) === Number(myId);
+
+  if (isSelfChat) {
+    contact = { ...contact, name: "Избранное", nickname: "" };
+  }
 
   const sidebarToggle = el("button", {
     class: "icon-btn sidebar-toggle",
@@ -132,59 +159,67 @@ export async function renderChat(container, userId) {
     }
   });
 
-  const safetyBtn = el("button", {
+  const safetyBtn = isSelfChat ? null : el("button", {
     class: "icon-btn chat-safety",
     title: "Код безопасности E2EE",
     style: "margin-left: auto; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
-  }, "🛡️");
+  }, "\uD83D\uDEE1\uFE0F");
   
-  safetyBtn.addEventListener("mouseenter", () => { safetyBtn.style.opacity = "1"; });
-  safetyBtn.addEventListener("mouseleave", () => { safetyBtn.style.opacity = "0.7"; });
-  safetyBtn.addEventListener("click", () => showSafetyExplanationModal(userId));
+  if (safetyBtn) {
+    safetyBtn.addEventListener("mouseenter", () => { safetyBtn.style.opacity = "1"; });
+    safetyBtn.addEventListener("mouseleave", () => { safetyBtn.style.opacity = "0.7"; });
+    safetyBtn.addEventListener("click", () => showSafetyExplanationModal(userId));
+  }
 
-  const deleteBtn = el("button", {
+  const deleteBtn = isSelfChat ? null : el("button", {
     class: "icon-btn chat-delete",
     title: "Удалить чат",
     style: "margin-left: 12px; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
-  }, "🗑️");
+  }, "\uD83D\uDDD1\uFE0F");
   
-  deleteBtn.addEventListener("mouseenter", () => { deleteBtn.style.opacity = "1"; });
-  deleteBtn.addEventListener("mouseleave", () => { deleteBtn.style.opacity = "0.7"; });
+  if (deleteBtn) {
+    deleteBtn.addEventListener("mouseenter", () => { deleteBtn.style.opacity = "1"; });
+    deleteBtn.addEventListener("mouseleave", () => { deleteBtn.style.opacity = "0.7"; });
+  }
 
-  deleteBtn.addEventListener("click", async () => {
-    const res = await showDeleteChatConfirmModal();
-    if (!res.confirmed) {
-      return;
-    }
-    try {
-      // 1. Delete on the server
-      const url = res.deleteForEveryone ? `/chats/${userId}?everyone=true` : `/chats/${userId}`;
-      await apiDelete(url);
-      
-      // 2. Delete locally in IndexedDB
-      await deleteChatData(userId);
-      showToast(res.deleteForEveryone ? "Чат удален для всех" : "Чат удален");
-      const chatEl = document.getElementById('screen-chat');
-      if (chatEl) chatEl.innerHTML = '';
-      navigate("#chats");
-      triggerChatListUpdate();
-    } catch (err) {
-      console.error("Failed to delete chat:", err);
-      showToast("Не удалось удалить чат", "error");
-    }
-  });
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", async () => {
+      const res = await showDeleteChatConfirmModal();
+      if (!res.confirmed) {
+        return;
+      }
+      try {
+        // 1. Delete on the server
+        const url = res.deleteForEveryone ? `/chats/${userId}?everyone=true` : `/chats/${userId}`;
+        await apiDelete(url);
+        
+        // 2. Delete locally in IndexedDB
+        await deleteChatData(userId);
+        showToast(res.deleteForEveryone ? "Чат удален для всех" : "Чат удален");
+        const chatEl = document.getElementById('screen-chat');
+        if (chatEl) chatEl.innerHTML = '';
+        navigate("#chats");
+        triggerChatListUpdate();
+      } catch (err) {
+        console.error("Failed to delete chat:", err);
+        showToast("Не удалось удалить чат", "error");
+      }
+    });
+  }
 
-  const header = el("div", { class: "chat-header" },
-    el("button", { class: "icon-btn chat-back" }, "←"),
+  const headerChildren = [
+    el("button", { class: "icon-btn chat-back" }, "\u2190"),
     sidebarToggle,
     avatar(contact, 40),
     el("div", { class: "chat-header-info" },
       el("span", { class: "chat-header-name" }, contact.name || contact.nickname),
       el("span", { class: "chat-header-nick" }, contact.nickname ? `@${contact.nickname}` : "")
-    ),
-    safetyBtn,
-    deleteBtn
-  );
+    )
+  ];
+  if (safetyBtn) headerChildren.push(safetyBtn);
+  if (deleteBtn) headerChildren.push(deleteBtn);
+
+  const header = el("div", { class: "chat-header" }, ...headerChildren);
   header.querySelector(".chat-back").addEventListener("click", () => navigate("#chats"));
 
   const messagesEl = el("div", { class: "chat-messages", "data-user-id": userId });

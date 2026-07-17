@@ -722,9 +722,17 @@ export async function decryptMessagePayload(payload) {
 export async function encryptMessagePayload(text, recipientUserId) {
   const myId = Number(localStorage.getItem("user_id"));
   const myDeviceId = Number(localStorage.getItem("device_id"));
+  const isSelfChat = Number(recipientUserId) === myId;
 
-  const recipientBundle = await apiGet(`/keys/bundle/${recipientUserId}`);
-  const senderBundle = await apiGet(`/keys/bundle/${myId}`);
+  const bundleUrl = isSelfChat
+    ? `/keys/bundle/${recipientUserId}?skip_otk=true`
+    : `/keys/bundle/${recipientUserId}`;
+  const senderBundleUrl = isSelfChat
+    ? `/keys/bundle/${myId}?skip_otk=true`
+    : `/keys/bundle/${myId}`;
+
+  const recipientBundle = await apiGet(bundleUrl);
+  const senderBundle = await apiGet(senderBundleUrl);
 
   const recipientDevices = recipientBundle?.devices || [];
   const senderDevices = senderBundle?.devices || [];

@@ -21,6 +21,7 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.msgpack.core.MessagePack
+import org.msgpack.core.MessageFormat
 import org.msgpack.core.MessageUnpacker
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -320,7 +321,7 @@ class WebSocketManager @Inject constructor() {
 
         for (i in 0 until size) {
             val key = unpackString()
-            if (nextFormat.isNil) {
+            if (nextFormat == MessageFormat.NIL) {
                 unpackNil()
                 continue
             }
@@ -334,7 +335,7 @@ class WebSocketManager @Inject constructor() {
                 "chat_user_id" -> chatUserId = unpackLong()
                 "msg_id" -> msgId = unpackLong()
                 "prekey_id" -> {
-                    prekeyId = if (nextFormat.isNil) {
+                    prekeyId = if (nextFormat == MessageFormat.NIL) {
                         unpackNil()
                         null
                     } else {
