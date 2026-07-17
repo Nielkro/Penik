@@ -477,7 +477,7 @@ async function onMsgRetryReq(payload) {
   }
 
   console.log(`onMsgRetryReq: re-encrypting message ${msgId} for user ${recipientUserId}`);
-  const payloads = await encryptMessagePayload(recipientUserId, text);
+  const payloads = await encryptMessagePayload(text, recipientUserId);
   
   const targetPayload = payloads.find(p => Number(p.device_id) === Number(payload.requester_device_id));
   if (!targetPayload) {
