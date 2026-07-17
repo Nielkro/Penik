@@ -34,6 +34,7 @@ func UploadOTK(database *db.DB) http.HandlerFunc {
 			return
 		}
 
+		now := time.Now().Unix()
 		for _, opkRaw := range req.OPKList {
 			var keyID int64
 			var pubKey []byte
@@ -44,8 +45,9 @@ func UploadOTK(database *db.DB) http.HandlerFunc {
 				pubKey = opkRaw
 			}
 			_, err := database.ExecContext(r.Context(),
-				`INSERT OR IGNORE INTO one_time_keys(device_id,key_id,opk_pub,used) VALUES(?,?,?,0)`,
-				deviceID, keyID, pubKey)
+				`INSERT OR IGNORE INTO one_time_prekeys(device_id, key_id, public_key, used, reserved_at, created_at)
+				 VALUES(?, ?, ?, 0, NULL, ?)`,
+				deviceID, keyID, pubKey, now)
 			if err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
@@ -122,8 +124,9 @@ func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
 					pubKey = opkRaw
 				}
 				_, err = tx.ExecContext(r.Context(),
-					`INSERT OR IGNORE INTO one_time_keys(device_id,key_id,opk_pub,used) VALUES(?,?,?,0)`,
-					deviceID, keyID, pubKey)
+					`INSERT OR IGNORE INTO one_time_prekeys(device_id, key_id, public_key, used, reserved_at, created_at)
+					 VALUES(?, ?, ?, 0, NULL, ?)`,
+					deviceID, keyID, pubKey, now)
 				if err != nil {
 					http.Error(w, "internal error", http.StatusInternalServerError)
 					return

@@ -636,6 +636,10 @@ func migrateMessagesE2EE(database *sql.DB) error {
 		{"sender_device_id", "INTEGER DEFAULT NULL"},
 		{"recipient_device_id", "INTEGER DEFAULT NULL"},
 		{"prekey_id", "INTEGER DEFAULT NULL"},
+		{"deleted_by_sender", "INTEGER NOT NULL DEFAULT 0"},
+		{"deleted_by_recipient", "INTEGER NOT NULL DEFAULT 0"},
+		{"purge_pending", "INTEGER NOT NULL DEFAULT 0"},
+		{"purge_for_user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"},
 	}
 
 	for _, col := range cols {
@@ -680,20 +684,24 @@ func migrateMessagesE2EE(database *sql.DB) error {
 
 		_, err = tx.Exec(`CREATE TABLE messages_new (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
-			sender_user_id INTEGER REFERENCES users(id),
-			recipient_user_id INTEGER REFERENCES users(id),
+			chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+			sender_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			recipient_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 			client_msg_id TEXT,
 			plaintext TEXT DEFAULT NULL,
 			ciphertext BLOB DEFAULT NULL,
 			encryption_salt BLOB DEFAULT NULL,
 			encryption_nonce BLOB DEFAULT NULL,
-			sender_device_id INTEGER DEFAULT NULL,
-			recipient_device_id INTEGER DEFAULT NULL,
+			sender_device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
+			recipient_device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
 			prekey_id INTEGER DEFAULT NULL,
 			timestamp INTEGER NOT NULL,
-			delivered INTEGER DEFAULT 0,
-			delivered_at INTEGER
+			delivered INTEGER NOT NULL DEFAULT 0,
+			delivered_at INTEGER,
+			deleted_by_sender INTEGER NOT NULL DEFAULT 0,
+			deleted_by_recipient INTEGER NOT NULL DEFAULT 0,
+			purge_pending INTEGER NOT NULL DEFAULT 0,
+			purge_for_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE
 		)`)
 		if err != nil {
 			return err
@@ -702,11 +710,13 @@ func migrateMessagesE2EE(database *sql.DB) error {
 		_, err = tx.Exec(`INSERT INTO messages_new (
 			id, chat_id, sender_user_id, recipient_user_id, client_msg_id, plaintext,
 			ciphertext, encryption_salt, encryption_nonce, sender_device_id, recipient_device_id,
-			prekey_id, timestamp, delivered, delivered_at
+			prekey_id, timestamp, delivered, delivered_at, deleted_by_sender, deleted_by_recipient,
+			purge_pending, purge_for_user_id
 		) SELECT 
 			id, chat_id, sender_user_id, recipient_user_id, client_msg_id, plaintext,
 			ciphertext, encryption_salt, encryption_nonce, sender_device_id, recipient_device_id,
-			prekey_id, timestamp, delivered, delivered_at
+			prekey_id, timestamp, delivered, delivered_at, deleted_by_sender, deleted_by_recipient,
+			purge_pending, purge_for_user_id
 		FROM messages`)
 		if err != nil {
 			return err

@@ -135,6 +135,7 @@ class MessageRepository @Inject constructor(
 
     suspend fun handleMsgRecvEncrypted(event: WebSocketEvent.MsgRecvEncrypted): Pair<String, Boolean> {
         val sentByMe = event.fromUserId == tokenStorage.getUserId()
+        var decryptSuccess = true
         val decryptedText = try {
             decryptMessagePayload(
                 myDeviceId = tokenStorage.getDeviceId(),
@@ -145,11 +146,12 @@ class MessageRepository @Inject constructor(
                 nonce = event.nonce
             )
         } catch (e: Exception) {
+            decryptSuccess = false
             "[Ошибка расшифрования сообщения: ${e.message}]"
         }
 
         if (messageDao.findLocalIdByServerId(event.msgId) != null) {
-            if (!sentByMe) {
+            if (!sentByMe && decryptSuccess) {
                 webSocketManager.sendDelivered(event.msgId)
             }
             return Pair(decryptedText, !sentByMe)
@@ -166,7 +168,7 @@ class MessageRepository @Inject constructor(
             delivered = true
         )
         messageDao.insertMessage(entity)
-        if (!sentByMe) {
+        if (!sentByMe && decryptSuccess) {
             webSocketManager.sendDelivered(event.msgId)
         }
         return Pair(decryptedText, !sentByMe)
@@ -197,9 +199,11 @@ class MessageRepository @Inject constructor(
     suspend fun handleOfflineBatchEncrypted(event: WebSocketEvent.OfflineBatchEncrypted): List<DecryptedOfflineMsg> {
         val myId = tokenStorage.getUserId()
         val decryptedList = mutableListOf<DecryptedOfflineMsg>()
+        val successMsgIds = mutableListOf<Long>()
         val entities = buildList {
             event.msgs.forEach { msg ->
                 if (messageDao.findLocalIdByServerId(msg.msgId) == null) {
+                    var decryptSuccess = true
                     val decryptedText = try {
                         decryptMessagePayload(
                             myDeviceId = tokenStorage.getDeviceId(),
@@ -210,7 +214,11 @@ class MessageRepository @Inject constructor(
                             nonce = msg.nonce
                         )
                     } catch (e: Exception) {
+                        decryptSuccess = false
                         "[Ошибка расшифрования сообщения: ${e.message}]"
+                    }
+                    if (decryptSuccess) {
+                        successMsgIds.add(msg.msgId)
                     }
                     decryptedList.add(DecryptedOfflineMsg(msg.chatUserId, decryptedText, msg.ts))
                     add(MessageEntity(
@@ -227,7 +235,7 @@ class MessageRepository @Inject constructor(
             }
         }
         messageDao.insertMessages(entities)
-        event.msgs.forEach { webSocketManager.sendDelivered(it.msgId) }
+        successMsgIds.forEach { webSocketManager.sendDelivered(it) }
         return decryptedList
     }
 

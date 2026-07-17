@@ -344,6 +344,7 @@ export function triggerChatListUpdate() {
 async function onMsgRecvGlobal(payload) {
   const fromUserId = Number(payload.from_user_id);
   
+  let decryptSuccess = true;
   let plaintext = "";
   if (payload.plaintext) {
     plaintext = payload.plaintext;
@@ -352,6 +353,7 @@ async function onMsgRecvGlobal(payload) {
       plaintext = await decryptMessagePayload(payload);
     } catch (e) {
       plaintext = `[Ошибка расшифрования сообщения: ${e.message}]`;
+      decryptSuccess = false;
     }
   }
 
@@ -384,7 +386,7 @@ async function onMsgRecvGlobal(payload) {
     last_ts: inMsg.created_at,
   });
 
-  if (ws) {
+  if (ws && decryptSuccess) {
     ws.send(0x04, { msg_id: payload.msg_id });
   }
 
