@@ -30,6 +30,8 @@ class SecureTokenStorage @Inject constructor(
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_NAME = "user_name"
         private const val KEY_NICKNAME = "user_nickname"
+        private const val KEY_IDENTITY_PRIVATE_KEY = "identity_private_key"
+        private const val KEY_PREKEY_PREFIX = "prekey_"
     }
 
     fun saveAuth(token: String, userId: Long, deviceId: Long) {
@@ -45,6 +47,36 @@ class SecureTokenStorage @Inject constructor(
             .putString(KEY_NAME, name)
             .putString(KEY_NICKNAME, nickname)
             .apply()
+    }
+
+    fun savePrivateKey(privateKey: ByteArray) {
+        val b64 = java.util.Base64.getEncoder().encodeToString(privateKey)
+        prefs.edit().putString(KEY_IDENTITY_PRIVATE_KEY, b64).apply()
+    }
+
+    fun getPrivateKey(): ByteArray? {
+        val b64 = prefs.getString(KEY_IDENTITY_PRIVATE_KEY, null) ?: return null
+        return java.util.Base64.getDecoder().decode(b64)
+    }
+
+    fun savePreKeyPrivate(keyId: Long, privateKey: ByteArray) {
+        val b64 = java.util.Base64.getEncoder().encodeToString(privateKey)
+        prefs.edit().putString(KEY_PREKEY_PREFIX + keyId, b64).apply()
+    }
+
+    fun getPreKeyPrivate(keyId: Long): ByteArray? {
+        val b64 = prefs.getString(KEY_PREKEY_PREFIX + keyId, null) ?: return null
+        return java.util.Base64.getDecoder().decode(b64)
+    }
+
+    fun deletePreKeyPrivate(keyId: Long) {
+        prefs.edit().remove(KEY_PREKEY_PREFIX + keyId).apply()
+    }
+
+    fun getAllPreKeyIds(): List<Long> {
+        return prefs.all.keys
+            .filter { it.startsWith(KEY_PREKEY_PREFIX) }
+            .mapNotNull { it.substring(KEY_PREKEY_PREFIX.length).toLongOrNull() }
     }
 
     fun getToken(): String? = prefs.getString(KEY_TOKEN, null)

@@ -1,7 +1,7 @@
 import { ws } from "./ws.js";
 
 const DB_NAME = "penik-messenger";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 let _db = null;
 
@@ -17,6 +17,9 @@ export function openDB() {
       }
       if (!db.objectStoreNames.contains("contacts")) {
         db.createObjectStore("contacts", { keyPath: "user_id" });
+      }
+      if (!db.objectStoreNames.contains("e2ee_keys")) {
+        db.createObjectStore("e2ee_keys", { keyPath: "id" });
       }
       // Clean up legacy object stores if they exist
       const legacyStores = ["identity", "pre_keys", "signed_pre_keys", "sessions_v2", "identities", "sessions", "opk_pool", "skipped_keys"];
@@ -299,7 +302,7 @@ export async function findAndResolvePendingSentMessage(chatId, timestamp, server
 export async function clearIndexedDB() {
   await openDB();
   return new Promise((resolve, reject) => {
-    const list = ["contacts", "messages"];
+    const list = ["contacts", "messages", "e2ee_keys"];
     const transaction = _db.transaction(list, "readwrite");
     for (const s of list) {
       transaction.objectStore(s).clear();
@@ -307,6 +310,44 @@ export async function clearIndexedDB() {
     transaction.oncomplete = () => resolve();
     transaction.onerror = (e) => reject(e.target.error);
   });
+}
+
+export async function saveIdentityKey(envelope) {
+  await openDB();
+  return put(tx("e2ee_keys", "readwrite"), { id: "identity_key", envelope });
+}
+
+export async function getIdentityKey() {
+  await openDB();
+  const record = await get(tx("e2ee_keys"), "identity_key");
+  return record ? record.envelope : null;
+}
+
+export async function savePreKeyPrivate(keyId, privateKey) {
+  await openDB();
+  const id = `prekey_${keyId.toString()}`;
+  return put(tx("e2ee_keys", "readwrite"), { id, keyId: keyId.toString(), privateKey });
+}
+
+export async function getPreKeyPrivate(keyId) {
+  await openDB();
+  const id = `prekey_${keyId.toString()}`;
+  const record = await get(tx("e2ee_keys"), id);
+  return record ? record.privateKey : null;
+}
+
+export async function deletePreKeyPrivate(keyId) {
+  await openDB();
+  const id = `prekey_${keyId.toString()}`;
+  return del(tx("e2ee_keys", "readwrite"), id);
+}
+
+export async function getAllPreKeyIds() {
+  await openDB();
+  const records = await getAll(tx("e2ee_keys"));
+  return records
+    .filter(r => r.id.startsWith("prekey_"))
+    .map(r => r.keyId);
 }
 
 export function getPersistentDeviceName() {

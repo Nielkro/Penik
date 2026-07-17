@@ -85,6 +85,11 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate delivered_at: %w", err)
 	}
 
+	if err := migrateToE2EE(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate to e2ee: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
 }
 
@@ -557,5 +562,60 @@ func migrateDeliveredAt(database *sql.DB) error {
 			return err
 		}
 	}
+	return nil
+}
+
+func migrateToE2EE(database *sql.DB) error {
+	_, err := database.Exec(`CREATE TABLE IF NOT EXISTS device_public_keys (
+		device_id INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+		x25519_pub BLOB NOT NULL,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL
+	)`)
+	if err != nil {
+		return fmt.Errorf("create device_public_keys table: %w", err)
+	}
+
+	_, err = database.Exec(`CREATE TABLE IF NOT EXISTS one_time_prekeys (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+		key_id INTEGER NOT NULL,
+		public_key BLOB NOT NULL,
+		used INTEGER NOT NULL DEFAULT 0,
+		reserved_at INTEGER DEFAULT NULL,
+		created_at INTEGER NOT NULL,
+		UNIQUE(device_id, key_id)
+	)`)
+	if err != nil {
+		return fmt.Errorf("create one_time_prekeys table: %w", err)
+	}
+
+	_, err = database.Exec(`CREATE INDEX IF NOT EXISTS idx_prekeys_device_used ON one_time_prekeys(device_id, used)`)
+	if err != nil {
+		return fmt.Errorf("create idx_prekeys_device_used index: %w", err)
+	}
+
+	_, err = database.Exec(`CREATE TABLE IF NOT EXISTS used_prekeys_audit (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		device_id INTEGER NOT NULL,
+		key_id INTEGER NOT NULL,
+		used_by_message_id INTEGER,
+		used_at INTEGER NOT NULL
+	)`)
+	if err != nil {
+		return fmt.Errorf("create used_prekeys_audit table: %w", err)
+	}
+
+	_, err = database.Exec(`CREATE TABLE IF NOT EXISTS key_backups (
+		user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+		encrypted_blob BLOB NOT NULL,
+		salt BLOB NOT NULL,
+		iv BLOB NOT NULL,
+		created_at INTEGER NOT NULL
+	)`)
+	if err != nil {
+		return fmt.Errorf("create key_backups table: %w", err)
+	}
+
 	return nil
 }

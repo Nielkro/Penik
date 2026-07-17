@@ -68,3 +68,39 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_users_nickname ON users(nickname);
 CREATE INDEX IF NOT EXISTS idx_one_time_keys_device ON one_time_keys(device_id, used);
+
+CREATE TABLE IF NOT EXISTS device_public_keys (
+    device_id INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+    x25519_pub BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS one_time_prekeys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    key_id INTEGER NOT NULL,
+    public_key BLOB NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    reserved_at INTEGER DEFAULT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(device_id, key_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_prekeys_device_used ON one_time_prekeys(device_id, used);
+
+CREATE TABLE IF NOT EXISTS used_prekeys_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL,
+    key_id INTEGER NOT NULL,
+    used_by_message_id INTEGER,
+    used_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS key_backups (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    encrypted_blob BLOB NOT NULL,
+    salt BLOB NOT NULL,
+    iv BLOB NOT NULL,
+    created_at INTEGER NOT NULL
+);
