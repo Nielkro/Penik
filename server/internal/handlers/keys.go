@@ -341,3 +341,82 @@ func GetPreKeysStatus(database *db.DB) http.HandlerFunc {
 		})
 	}
 }
+
+type KeyBackupRequest struct {
+	EncryptedBlob []byte `json:"encrypted_blob"`
+	Salt          []byte `json:"salt"`
+	IV            []byte `json:"iv"`
+}
+
+type KeyBackupResponse struct {
+	EncryptedBlob []byte `json:"encrypted_blob"`
+	Salt          []byte `json:"salt"`
+	IV            []byte `json:"iv"`
+	CreatedAt     int64  `json:"created_at"`
+}
+
+// UploadKeyBackup handles POST /api/v1/keys/backup.
+func UploadKeyBackup(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		if userID == 0 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		var req KeyBackupRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		if len(req.EncryptedBlob) == 0 || len(req.Salt) == 0 || len(req.IV) == 0 {
+			http.Error(w, "missing backup parameters", http.StatusBadRequest)
+			return
+		}
+
+		now := time.Now().Unix()
+		_, err := database.ExecContext(r.Context(),
+			`INSERT INTO key_backups(user_id, encrypted_blob, salt, iv, created_at)
+			 VALUES(?, ?, ?, ?, ?)
+			 ON CONFLICT(user_id) DO UPDATE SET
+				encrypted_blob=excluded.encrypted_blob,
+				salt=excluded.salt,
+				iv=excluded.iv,
+				created_at=excluded.created_at`,
+			userID, req.EncryptedBlob, req.Salt, req.IV, now)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// DownloadKeyBackup handles GET /api/v1/keys/backup.
+func DownloadKeyBackup(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		if userID == 0 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		var resp KeyBackupResponse
+		err := database.QueryRowContext(r.Context(),
+			`SELECT encrypted_blob, salt, iv, created_at FROM key_backups WHERE user_id=?`, userID).
+			Scan(&resp.EncryptedBlob, &resp.Salt, &resp.IV, &resp.CreatedAt)
+		if err == sql.ErrNoRows {
+			http.Error(w, "backup not found", http.StatusNotFound)
+			return
+		} else if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}
+}
+

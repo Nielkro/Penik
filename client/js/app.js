@@ -11,7 +11,10 @@ import { renderAuth } from './ui/auth.js';
 import { renderChatList, renderChat } from './ui/chat.js';
 import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
-import { deriveSharedSecret, hkdfDerive, chacha20Poly1305Encrypt, chacha20Poly1305Decrypt } from './crypto.js';
+import {
+  deriveSharedSecret, hkdfDerive, chacha20Poly1305Encrypt, chacha20Poly1305Decrypt,
+  encryptKeyBackup, decryptKeyBackup
+} from './crypto.js';
 
 function u8ToHex(arr) {
   return Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
@@ -819,3 +822,44 @@ function setupGlobalWSListeners() {
     await syncMessageHistory();
   });
 }
+
+export async function backupE2EEKeys(passphrase) {
+  const stored = localStorage.getItem("penik_ik_priv");
+  if (!stored) {
+    throw new Error("Локальный приватный ключ не найден. Нечего резервировать.");
+  }
+  const privBytes = new Uint8Array(atob(stored).split("").map(c => c.charCodeAt(0)));
+  const backup = await encryptKeyBackup(privBytes, passphrase);
+
+  await apiPost("/keys/backup", {
+    encrypted_blob: btoa(String.fromCharCode(...backup.encryptedBlob)),
+    salt: btoa(String.fromCharCode(...backup.salt)),
+    iv: btoa(String.fromCharCode(...backup.iv))
+  });
+}
+
+export async function restoreE2EEKeys(passphrase) {
+  const backup = await apiGet("/keys/backup");
+  if (!backup || !backup.encrypted_blob) {
+    throw new Error("Резервная копия ключей не найдена на сервере.");
+  }
+
+  const toUint8Array = (val) => {
+    const bin = atob(val);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  };
+
+  const encryptedBlob = toUint8Array(backup.encrypted_blob);
+  const salt = toUint8Array(backup.salt);
+  const iv = toUint8Array(backup.iv);
+
+  const decrypted = await decryptKeyBackup(encryptedBlob, salt, iv, passphrase);
+  
+  localStorage.setItem("penik_ik_priv", btoa(String.fromCharCode(...decrypted)));
+  state.privateIK = decrypted;
+  
+  console.log("E2EE keys successfully restored from server backup!");
+}
+
