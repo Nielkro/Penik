@@ -511,8 +511,11 @@ func ensureUserMessageIndexes(database *sql.DB) error {
 		ON messages(recipient_user_id, delivered)`); err != nil {
 		return err
 	}
+	// Drop old index to update its unique constraint columns
+	_, _ = database.Exec(`DROP INDEX IF EXISTS idx_messages_client_msg_id`)
+
 	if _, err := database.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_msg_id
-		ON messages(sender_user_id, client_msg_id)
+		ON messages(sender_user_id, recipient_device_id, client_msg_id)
 		WHERE client_msg_id IS NOT NULL`); err != nil {
 		return err
 	}
