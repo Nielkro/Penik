@@ -858,12 +858,16 @@ func (c *Client) handleMsgRetryResp(ctx context.Context, req *MsgRetryResp) erro
 		return fmt.Errorf("unauthorized retry response for msg %d", req.MsgID)
 	}
 
-	// 3. Update the message ciphertext, salt, and nonce, and reset delivered to 0
+	// 3. Update the message ciphertext, salt, nonce, prekey_id, and reset delivered to 0
+	var prekeyIDVal interface{}
+	if req.PrekeyID != 0 {
+		prekeyIDVal = req.PrekeyID
+	}
 	_, err = tx.ExecContext(ctx,
 		`UPDATE messages
-		 SET ciphertext=?, encryption_salt=?, encryption_nonce=?, delivered=0, delivered_at=NULL
+		 SET ciphertext=?, encryption_salt=?, encryption_nonce=?, prekey_id=?, delivered=0, delivered_at=NULL
 		 WHERE id=?`,
-		req.Ciphertext, req.Salt, req.Nonce, req.MsgID)
+		req.Ciphertext, req.Salt, req.Nonce, prekeyIDVal, req.MsgID)
 	if err != nil {
 		return err
 	}
