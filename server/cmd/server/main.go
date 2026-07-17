@@ -96,7 +96,7 @@ func main() {
 	mux.Handle("DELETE /api/v1/chats/{peer_id}",
 		authMW(http.HandlerFunc(handlers.DeleteChat(database, hub))))
 	mux.Handle("GET /api/v1/ws",
-		authMW(http.HandlerFunc(handlers.WebSocketHandler(hub, database))))
+		authMW(http.HandlerFunc(handlers.WebSocketHandler(hub, database, cfg))))
 
 	// Serve static files from embedded FS.
 	distFS, err := fs.Sub(frontendFS, "dist")
