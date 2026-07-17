@@ -1,9 +1,7 @@
 package middleware
 
 import (
-	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
@@ -17,26 +15,6 @@ func NewIPRateLimiter() *IPRateLimiter {
 	return &IPRateLimiter{
 		ips: make(map[string][]time.Time),
 	}
-}
-
-func getClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		ips := strings.Split(xff, ",")
-		if len(ips) > 0 {
-			ip := strings.TrimSpace(ips[0])
-			if ip != "" {
-				return ip
-			}
-		}
-	}
-	if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
-		return strings.TrimSpace(xrip)
-	}
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
 }
 
 func (l *IPRateLimiter) Limit(next http.Handler) http.Handler {

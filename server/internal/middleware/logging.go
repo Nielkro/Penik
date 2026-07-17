@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"time"
 )
 
 type responseRecorder struct {
@@ -74,7 +73,6 @@ func getClientIP(r *http.Request) string {
 // RequestLogger logs request metadata without query parameters or bodies.
 func RequestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
 		recorder := &responseRecorder{ResponseWriter: w}
 
 		next.ServeHTTP(recorder, r)
@@ -84,12 +82,10 @@ func RequestLogger(next http.Handler) http.Handler {
 			status = http.StatusOK
 		}
 		log.Printf(
-			"http request method=%s path=%q status=%d bytes=%d duration=%s remote=%q",
+			"%s %s, %d, %s",
 			r.Method,
 			r.URL.Path,
 			status,
-			recorder.bytes,
-			time.Since(start).Round(time.Millisecond),
 			getClientIP(r),
 		)
 	})
