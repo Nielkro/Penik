@@ -80,10 +80,16 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			http.Error(w, "nickname must be 3-32 chars: a-z A-Z 0-9 _", http.StatusBadRequest)
 			return
 		}
-		if len(req.IKPub) > 0 || len(req.SPKPub) > 0 || len(req.SPKSig) > 0 {
-			if !validCurveKey(req.IKPub) || !validCurveKey(req.SPKPub) || len(req.SPKSig) != 64 {
+		if req.IKPub != nil {
+			if !validCurveKey(req.IKPub) {
 				http.Error(w, "malformed identity key material", http.StatusBadRequest)
 				return
+			}
+			if req.SPKPub != nil {
+				if !validCurveKey(req.SPKPub) || len(req.SPKSig) != 64 {
+					http.Error(w, "malformed identity key material", http.StatusBadRequest)
+					return
+				}
 			}
 		}
 		if len(req.OPKList) > maxOPKUpload {
