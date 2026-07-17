@@ -199,6 +199,20 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 		}
 		return c.handleKeyBundleReq(ctx, &req)
 
+	case OpMsgRetryReq:
+		var req MsgRetryReq
+		if err := msgpack.Unmarshal(payload, &req); err != nil {
+			return fmt.Errorf("unmarshal MsgRetryReq: %w", err)
+		}
+		return c.handleMsgRetryReq(ctx, &req)
+
+	case OpMsgRetryResp:
+		var req MsgRetryResp
+		if err := msgpack.Unmarshal(payload, &req); err != nil {
+			return fmt.Errorf("unmarshal MsgRetryResp: %w", err)
+		}
+		return c.handleMsgRetryResp(ctx, &req)
+
 	case OpPong:
 		// no-op
 		return nil
@@ -778,4 +792,117 @@ func (c *Client) checkAndNotifyLowPreKeys(deviceID int64) {
 		c.hub.SendToDevice(deviceID, frame)
 	}
 }
+
+func (c *Client) handleMsgRetryReq(ctx context.Context, req *MsgRetryReq) error {
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Verify message in database
+	var senderUserID, recipientUserID, senderDeviceID int64
+	err = tx.QueryRowContext(ctx,
+		`SELECT sender_user_id, recipient_user_id, sender_device_id
+		 FROM messages WHERE id=?`, req.MsgID).Scan(&senderUserID, &recipientUserID, &senderDeviceID)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("retry request: message %d not found", req.MsgID)
+	} else if err != nil {
+		return err
+	}
+
+	// 2. Ensure the caller (c.userID) is indeed the recipient of this message
+	if recipientUserID != c.userID {
+		return fmt.Errorf("unauthorized retry request for msg %d", req.MsgID)
+	}
+
+	// 3. Ensure target device is the sender's device
+	if senderDeviceID != req.SenderDeviceID {
+		return fmt.Errorf("mismatched sender device for msg %d", req.MsgID)
+	}
+
+	// 4. Forward the retry request to the sender's device Y
+	payload, err := msgpack.Marshal(req)
+	if err != nil {
+		return err
+	}
+	c.hub.SendToDevice(senderDeviceID, append([]byte{byte(OpMsgRetryReq)}, payload...))
+	return nil
+}
+
+func (c *Client) handleMsgRetryResp(ctx context.Context, req *MsgRetryResp) error {
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Verify message in database
+	var senderUserID, recipientUserID, senderDeviceID, recipientDeviceID int64
+	var timestamp int64
+	err = tx.QueryRowContext(ctx,
+		`SELECT sender_user_id, recipient_user_id, sender_device_id, recipient_device_id, timestamp
+		 FROM messages WHERE id=?`, req.MsgID).Scan(&senderUserID, &recipientUserID, &senderDeviceID, &recipientDeviceID, &timestamp)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("retry response: message %d not found", req.MsgID)
+	} else if err != nil {
+		return err
+	}
+
+	// 2. Ensure the caller (c.userID) is indeed the sender of this message
+	if senderUserID != c.userID {
+		return fmt.Errorf("unauthorized retry response for msg %d", req.MsgID)
+	}
+
+	// 3. Update the message ciphertext, salt, and nonce, and reset delivered to 0
+	_, err = tx.ExecContext(ctx,
+		`UPDATE messages
+		 SET ciphertext=?, encryption_salt=?, encryption_nonce=?, delivered=0, delivered_at=NULL
+		 WHERE id=?`,
+		req.Ciphertext, req.Salt, req.Nonce, req.MsgID)
+	if err != nil {
+		return err
+	}
+
+	// 4. Retrieve sender public identity key
+	var senderIKPub []byte
+	err = tx.QueryRowContext(ctx, `SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, senderDeviceID).Scan(&senderIKPub)
+	if err != nil {
+		return fmt.Errorf("lookup sender ik: %w", err)
+	}
+
+	// 5. Retrieve prekey_id from messages (if any)
+	var prekeyID *int64
+	err = tx.QueryRowContext(ctx, `SELECT prekey_id FROM messages WHERE id=?`, req.MsgID).Scan(&prekeyID)
+	if err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	// 6. Deliver the newly encrypted message to the recipient's device
+	inMsg := MsgRecvEncrypted{
+		FromUserID:      senderUserID,
+		FromDeviceID:    senderDeviceID,
+		FromIdentityKey: senderIKPub,
+		ChatUserID:      senderUserID,
+		MsgID:           req.MsgID,
+		PrekeyID:        prekeyID,
+		Ciphertext:      req.Ciphertext,
+		Salt:            req.Salt,
+		Nonce:           req.Nonce,
+		TS:              timestamp,
+	}
+
+	payload, err := msgpack.Marshal(inMsg)
+	if err != nil {
+		return err
+	}
+	frame := append([]byte{byte(OpMsgRecv)}, payload...)
+	c.hub.SendToDevice(recipientDeviceID, frame)
+	return nil
+}
+
 

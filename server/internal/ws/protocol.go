@@ -19,6 +19,8 @@ const (
 	OpKeyBundleResp Opcode = 0x13
 	OpKeyBundleReq Opcode = 0x14
 	OpRefillPreKeys Opcode = 0x15
+	OpMsgRetryReq   Opcode = 0x16
+	OpMsgRetryResp  Opcode = 0x17
 )
 
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]
@@ -133,6 +135,18 @@ type KeyPublishReq struct {
 
 type KeyBundleReq struct {
 	UserID int64 `msgpack:"user_id"`
+}
+
+type MsgRetryReq struct {
+	SenderDeviceID int64 `msgpack:"sender_device_id"`
+	MsgID          int64 `msgpack:"msg_id"`
+}
+
+type MsgRetryResp struct {
+	MsgID      int64  `msgpack:"msg_id"`
+	Ciphertext []byte `msgpack:"ciphertext"`
+	Salt       []byte `msgpack:"salt"`
+	Nonce      []byte `msgpack:"nonce"`
 }
 
 

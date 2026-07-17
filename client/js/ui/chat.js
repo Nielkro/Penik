@@ -191,6 +191,15 @@ export async function renderChat(container, userId) {
   loadEl.remove();
 
   function appendMessage(msg, prepend = false) {
+    if (msg.msg_id) {
+      const existing = messagesEl.querySelector(`[data-msg-id="${msg.msg_id}"]`);
+      if (existing) {
+        const txt = existing.querySelector(".msg-text");
+        if (txt) txt.textContent = msg.plaintext || "";
+        return;
+      }
+    }
+
     const isSystem = msg.sender_id === 0;
     if (isSystem) {
       const isKeyChange = (msg.plaintext === "⚠️ Код безопасности изменился!");

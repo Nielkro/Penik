@@ -393,8 +393,16 @@ async function onMsgRecvGlobal(payload) {
     last_ts: inMsg.created_at,
   });
 
-  if (ws && decryptSuccess) {
-    ws.send(0x04, { msg_id: payload.msg_id });
+  if (ws) {
+    if (decryptSuccess) {
+      ws.send(0x04, { msg_id: payload.msg_id });
+    } else if (payload.from_device_id && payload.msg_id) {
+      console.log(`onMsgRecvGlobal: decryption failed, requesting retry for msg ${payload.msg_id} from device ${payload.from_device_id}`);
+      ws.send(0x16, {
+        sender_device_id: Number(payload.from_device_id),
+        msg_id: Number(payload.msg_id)
+      });
+    }
   }
 
   if (_activeChatCallback && String(_activeChatCallback.userId) === String(chatPartnerId)) {
@@ -445,6 +453,41 @@ async function onChatPurgeGlobal(payload) {
     triggerChatListUpdate();
   } catch (err) {
     console.error("Failed to apply chat purge:", err);
+  }
+}
+
+async function onMsgRetryReq(payload) {
+  const msgId = payload.msg_id;
+  const msg = await getMessage(msgId);
+  if (!msg) {
+    console.error(`onMsgRetryReq: message ${msgId} not found locally`);
+    return;
+  }
+
+  const recipientUserId = Number(msg.chat_id);
+  const text = msg.plaintext;
+  
+  if (!text) {
+    console.error(`onMsgRetryReq: message ${msgId} has no plaintext locally`);
+    return;
+  }
+
+  console.log(`onMsgRetryReq: re-encrypting message ${msgId} for user ${recipientUserId}`);
+  const payloads = await encryptMessagePayload(recipientUserId, text);
+  
+  const targetPayload = payloads.find(p => Number(p.device_id) === Number(payload.sender_device_id));
+  if (!targetPayload) {
+    console.error(`onMsgRetryReq: target device ${payload.sender_device_id} not found in re-encrypted payloads`);
+    return;
+  }
+
+  if (ws) {
+    ws.send(0x17, {
+      msg_id: Number(msgId),
+      ciphertext: targetPayload.ciphertext,
+      salt: targetPayload.salt,
+      nonce: targetPayload.nonce
+    });
   }
 }
 
@@ -762,6 +805,7 @@ export async function flushOutbox() {
 
 function setupGlobalWSListeners() {
   ws.on(0x02, onMsgRecvGlobal);
+  ws.on(0x16, onMsgRetryReq);
   ws.on(0x03, onMsgAckReceivedGlobal);
   ws.on(0x04, onMsgAckGlobal);
   ws.on(0x05, onOfflineBatchGlobal);
