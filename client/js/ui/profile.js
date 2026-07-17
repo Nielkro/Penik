@@ -166,6 +166,95 @@ export function renderProfile(container) {
     el("div", { style: "display:flex;margin-top:8px;" }, submitPwBtn, cancelPwBtn)
   );
 
+  // --- E2EE Key Backup Section ---
+  const backupSectionBtn = el("button", { class: "btn-secondary", style: "width:100%;margin-top:8px;cursor:pointer;" }, "Резервная копия ключей E2EE");
+  
+  const backupPassInput = el("input", {
+    type: "password",
+    placeholder: "Пароль резервной копии",
+    class: "profile-input hidden",
+    style: "width:100%;margin-bottom:8px;padding:8px;border-radius:6px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;"
+  });
+
+  const doBackupBtn = el("button", { class: "btn-primary hidden", style: "margin-right:8px;padding:8px 12px;font-size:12px;cursor:pointer;" }, "Создать копию");
+  const doRestoreBtn = el("button", { class: "btn-secondary hidden", style: "margin-right:8px;padding:8px 12px;font-size:12px;cursor:pointer;" }, "Восстановить");
+  const cancelBackupBtn = el("button", { class: "btn-ghost hidden", style: "padding:8px 12px;font-size:12px;cursor:pointer;" }, "Отмена");
+
+  backupSectionBtn.addEventListener("click", () => {
+    backupPassInput.classList.remove("hidden");
+    doBackupBtn.classList.remove("hidden");
+    doRestoreBtn.classList.remove("hidden");
+    cancelBackupBtn.classList.remove("hidden");
+    backupSectionBtn.classList.add("hidden");
+    backupPassInput.focus();
+  });
+
+  cancelBackupBtn.addEventListener("click", () => {
+    backupPassInput.value = "";
+    backupPassInput.classList.add("hidden");
+    doBackupBtn.classList.add("hidden");
+    doRestoreBtn.classList.add("hidden");
+    cancelBackupBtn.classList.add("hidden");
+    backupSectionBtn.classList.remove("hidden");
+  });
+
+  doBackupBtn.addEventListener("click", async () => {
+    const password = backupPassInput.value;
+    if (!password || password.length < 6) {
+      showToast("Пароль резервной копии должен быть не менее 6 символов", "error");
+      return;
+    }
+
+    doBackupBtn.disabled = true;
+    const origText = doBackupBtn.textContent;
+    doBackupBtn.textContent = "";
+    doBackupBtn.appendChild(spinner());
+
+    try {
+      const { backupE2EEKeys } = await import("../app.js");
+      await backupE2EEKeys(password);
+      showToast("Резервная копия ключей успешно создана на сервере!", "success");
+      cancelBackupBtn.click();
+    } catch (err) {
+      showToast("Ошибка создания копии: " + err.message, "error");
+    } finally {
+      doBackupBtn.disabled = false;
+      doBackupBtn.textContent = origText;
+    }
+  });
+
+  doRestoreBtn.addEventListener("click", async () => {
+    const password = backupPassInput.value;
+    if (!password) {
+      showToast("Введите пароль резервной копии", "error");
+      return;
+    }
+
+    doRestoreBtn.disabled = true;
+    const origText = doRestoreBtn.textContent;
+    doRestoreBtn.textContent = "";
+    doRestoreBtn.appendChild(spinner());
+
+    try {
+      const { restoreE2EEKeys } = await import("../app.js");
+      await restoreE2EEKeys(password);
+      showToast("Ключи шифрования успешно восстановлены!", "success");
+      cancelBackupBtn.click();
+    } catch (err) {
+      showToast("Ошибка восстановления: " + err.message, "error");
+    } finally {
+      doRestoreBtn.disabled = false;
+      doRestoreBtn.textContent = origText;
+    }
+  });
+
+  const backupSection = el("div", { class: "profile-backup-section", style: "margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px; width: 100%;" },
+    el("h3", { style: "font-size: 14px; margin-bottom: 8px; color: #aaa;" }, "Резервное копирование (E2EE)"),
+    backupSectionBtn,
+    backupPassInput,
+    el("div", { style: "display:flex;margin-top:8px;" }, doBackupBtn, doRestoreBtn, cancelBackupBtn)
+  );
+
   const infoSection = el("div", { class: "profile-info" },
     el("div", { class: "profile-name-row" }, nameDisplay, nameInput),
     usernameEl,
@@ -176,7 +265,8 @@ export function renderProfile(container) {
   const card = el("div", { class: "profile-card", style: "display: flex; flex-direction: column; align-items: center;" },
     avatarEl,
     infoSection,
-    pwSection
+    pwSection,
+    backupSection
   );
 
   const wrap = el("div", { class: "profile-wrap" },

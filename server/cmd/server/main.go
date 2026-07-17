@@ -85,6 +85,10 @@ func main() {
 		authMW(http.HandlerFunc(handlers.UploadPreKeys(database))))
 	mux.Handle("GET /api/v1/keys/prekeys/status",
 		authMW(http.HandlerFunc(handlers.GetPreKeysStatus(database))))
+	mux.Handle("POST /api/v1/keys/backup",
+		authMW(http.HandlerFunc(handlers.UploadKeyBackup(database))))
+	mux.Handle("GET /api/v1/keys/backup",
+		authMW(http.HandlerFunc(handlers.DownloadKeyBackup(database))))
 	mux.Handle("GET /api/v1/messages/history",
 		authMW(http.HandlerFunc(handlers.GetMessageHistory(database))))
 	mux.Handle("DELETE /api/v1/chats/{peer_id}",

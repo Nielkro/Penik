@@ -558,4 +558,60 @@ export async function e2eeDecrypt(ciphertext, sharedSecret, salt, nonce) {
   return chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext);
 }
 
+export async function deriveKeyFromPassphrase(passphrase, salt) {
+  const enc = new TextEncoder();
+  const baseKey = await subtle.importKey(
+    "raw",
+    enc.encode(passphrase),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+
+  return subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: salt,
+      iterations: 100000,
+      hash: "SHA-256"
+    },
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+export async function encryptKeyBackup(privateKeyBytes, passphrase) {
+  const salt = window.crypto.getRandomValues(new Uint8Array(16));
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  
+  const aesKey = await deriveKeyFromPassphrase(passphrase, salt);
+  
+  const encrypted = await subtle.encrypt(
+    { name: "AES-GCM", iv: iv },
+    aesKey,
+    privateKeyBytes
+  );
+
+  return {
+    encryptedBlob: new Uint8Array(encrypted),
+    salt: salt,
+    iv: iv
+  };
+}
+
+export async function decryptKeyBackup(encryptedBlob, salt, iv, passphrase) {
+  const aesKey = await deriveKeyFromPassphrase(passphrase, salt);
+  
+  const decrypted = await subtle.decrypt(
+    { name: "AES-GCM", iv: iv },
+    aesKey,
+    encryptedBlob
+  );
+
+  return new Uint8Array(decrypted);
+}
+
+
 
