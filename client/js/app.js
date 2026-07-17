@@ -53,10 +53,17 @@ async function ensurePreKeyPool() {
         uploadItems.push({ key_id: keyId, public_key: pubB64 });
       }
       
-      await apiPost("/keys/prekeys", { prekeys: uploadItems });
-      
       for (const otpk of prekeys) {
         await savePreKeyPrivate(otpk.keyId, otpk.privateKey);
+      }
+
+      try {
+        await apiPost("/keys/prekeys", { prekeys: uploadItems });
+      } catch (err) {
+        for (const otpk of prekeys) {
+          await deletePreKeyPrivate(otpk.keyId);
+        }
+        throw err;
       }
       console.log(`Successfully replenished ${count} OTPKs on server.`);
     }
