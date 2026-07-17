@@ -1,4 +1,4 @@
-const BASE = 'http://localhost:8143/api/v1';
+const BASE = `${window.location.protocol}//${window.location.host}/api/v1`;
 
 let _token = null;
 
