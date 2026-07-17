@@ -78,6 +78,8 @@ async function ensurePreKeyPool() {
 /* ── App state ── */
 export const state = {
   currentUser: null,
+  privateIK: null,
+  retryCounters: new Map(), // msg_id -> retry attempt count
 };
 
 export function getCurrentUser() { return state.currentUser; }
@@ -399,13 +401,21 @@ async function onMsgRecvGlobal(payload) {
   if (ws) {
     if (decryptSuccess) {
       ws.send(0x04, { msg_id: payload.msg_id });
+      state.retryCounters.delete(payload.msg_id);
     } else if (payload.from_device_id && payload.msg_id) {
-      console.log(`onMsgRecvGlobal: decryption failed, requesting retry for msg ${payload.msg_id} from device ${payload.from_device_id}`);
-      ws.send(0x16, {
-        sender_device_id: Number(payload.from_device_id),
-        requester_device_id: Number(localStorage.getItem("device_id")),
-        msg_id: Number(payload.msg_id)
-      });
+      const msgKey = String(payload.msg_id);
+      const attempts = state.retryCounters.get(msgKey) || 0;
+      if (attempts < 2) {
+        state.retryCounters.set(msgKey, attempts + 1);
+        console.log(`onMsgRecvGlobal: decryption failed, requesting retry for msg ${payload.msg_id} from device ${payload.from_device_id} (attempt ${attempts + 1}/2)`);
+        ws.send(0x16, {
+          sender_device_id: Number(payload.from_device_id),
+          requester_device_id: Number(localStorage.getItem("device_id")),
+          msg_id: Number(payload.msg_id)
+        });
+      } else {
+        console.warn(`onMsgRecvGlobal: giving up on msg ${payload.msg_id} after 2 retry attempts`);
+      }
     }
   }
 
