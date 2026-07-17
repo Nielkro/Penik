@@ -31,6 +31,7 @@ import niel.kro.penik.ui.viewmodel.ProfileViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
+    onLogout: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val displayName = viewModel.name.ifBlank { viewModel.nickname }
@@ -78,7 +79,7 @@ fun ProfileScreen(
         Spacer(modifier = Modifier.weight(1f))
 
         Button(
-            onClick = { viewModel.logout {} },
+            onClick = { viewModel.logout(onLogout) },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),

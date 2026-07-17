@@ -75,7 +75,7 @@ fun MainScreen(
         ) {
             when (selectedTab) {
                 0 -> ChatsListContent(onChatClick = onChatClick)
-                1 -> ProfileScreen()
+                1 -> ProfileScreen(onLogout = onLogout)
             }
         }
     }
