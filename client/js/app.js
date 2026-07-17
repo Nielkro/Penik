@@ -571,14 +571,14 @@ export async function decryptMessagePayload(payload) {
   } else {
     myPrivateIK = state.privateIK;
     if (!myPrivateIK) {
-      const stored = sessionStorage.getItem("penik_ik_priv");
+      const stored = localStorage.getItem("penik_ik_priv");
       if (stored) {
         state.privateIK = new Uint8Array(atob(stored).split("").map(c => c.charCodeAt(0)));
         myPrivateIK = state.privateIK;
       }
     }
     if (!myPrivateIK) {
-      throw new Error("Private Identity Key not found in memory/sessionStorage");
+      throw new Error("Private Identity Key not found in memory/localStorage");
     }
   }
 
@@ -587,14 +587,14 @@ export async function decryptMessagePayload(payload) {
     const dh1 = await deriveSharedSecret(myPrivateIK, fromIdentityKey);
     let myIKPriv = state.privateIK;
     if (!myIKPriv) {
-      const stored = sessionStorage.getItem("penik_ik_priv");
+      const stored = localStorage.getItem("penik_ik_priv");
       if (stored) {
         state.privateIK = new Uint8Array(atob(stored).split("").map(c => c.charCodeAt(0)));
         myIKPriv = state.privateIK;
       }
     }
     if (!myIKPriv) {
-      throw new Error("Private Identity Key not found in memory/sessionStorage");
+      throw new Error("Private Identity Key not found in memory/localStorage");
     }
     const dh2 = await deriveSharedSecret(myIKPriv, fromIdentityKey);
     secret = new Uint8Array(dh1.length + dh2.length);
@@ -625,14 +625,14 @@ export async function encryptMessagePayload(text, recipientUserId) {
 
   let myPrivateIK = state.privateIK;
   if (!myPrivateIK) {
-    const stored = sessionStorage.getItem("penik_ik_priv");
+    const stored = localStorage.getItem("penik_ik_priv");
     if (stored) {
       state.privateIK = new Uint8Array(atob(stored).split("").map(c => c.charCodeAt(0)));
       myPrivateIK = state.privateIK;
     }
   }
   if (!myPrivateIK) {
-    throw new Error("Private Identity Key not found in memory/sessionStorage");
+    throw new Error("Private Identity Key not found in memory/localStorage");
   }
 
   const payloads = [];
