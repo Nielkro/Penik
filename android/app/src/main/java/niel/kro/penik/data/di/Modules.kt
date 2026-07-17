@@ -20,6 +20,9 @@ import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
+import niel.kro.penik.data.crypto.E2EECrypto
+import niel.kro.penik.data.crypto.PreKeyManager
+
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -86,5 +89,26 @@ object NetworkModule {
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
             .create(ApiService::class.java)
+    }
+}
+
+@Module
+@InstallIn(SingletonComponent::class)
+object CryptoModule {
+
+    @Provides
+    @Singleton
+    fun provideE2EECrypto(): E2EECrypto {
+        return E2EECrypto()
+    }
+
+    @Provides
+    @Singleton
+    fun providePreKeyManager(
+        apiService: ApiService,
+        tokenStorage: SecureTokenStorage,
+        e2eeCrypto: E2EECrypto
+    ): PreKeyManager {
+        return PreKeyManager(apiService, tokenStorage, e2eeCrypto)
     }
 }

@@ -33,6 +33,21 @@ func main() {
 	}
 	defer database.Close()
 
+	// Start background worker to clean up reserved prekeys after 5 minutes (300 seconds)
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			_, err := database.Exec(`UPDATE one_time_prekeys
+				SET used=0, reserved_at=NULL
+				WHERE used=1 AND reserved_at IS NOT NULL
+				  AND reserved_at < ?`, time.Now().Unix()-300)
+			if err != nil {
+				log.Printf("db: error releasing reserved prekeys: %v", err)
+			}
+		}
+	}()
+
 	hub := ws.NewHub()
 
 	mux := http.NewServeMux()
@@ -64,6 +79,12 @@ func main() {
 		authMW(http.HandlerFunc(handlers.UploadIdentityKeys(database))))
 	mux.Handle("POST /api/v1/keys/otk",
 		authMW(http.HandlerFunc(handlers.UploadOTK(database))))
+	mux.Handle("GET /api/v1/keys/bundle/{user_id}",
+		authMW(http.HandlerFunc(handlers.GetKeyBundle(database))))
+	mux.Handle("POST /api/v1/keys/prekeys",
+		authMW(http.HandlerFunc(handlers.UploadPreKeys(database))))
+	mux.Handle("GET /api/v1/keys/prekeys/status",
+		authMW(http.HandlerFunc(handlers.GetPreKeysStatus(database))))
 	mux.Handle("GET /api/v1/messages/history",
 		authMW(http.HandlerFunc(handlers.GetMessageHistory(database))))
 	mux.Handle("DELETE /api/v1/chats/{peer_id}",

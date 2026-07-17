@@ -68,13 +68,19 @@ class E2EECrypto {
     fun deriveSharedSecret(myPrivateKey: ByteArray, theirPublicKey: ByteArray): ByteArray {
         val keyFactory = KeyFactory.getInstance("X25519")
         
+        val cleanPublicKey = if (theirPublicKey.size == 33 && theirPublicKey[0] == 0x05.toByte()) {
+            theirPublicKey.copyOfRange(1, 33)
+        } else {
+            theirPublicKey
+        }
+
         val fullPrivate = ByteArray(16 + myPrivateKey.size)
         System.arraycopy(pkcs8Header, 0, fullPrivate, 0, 16)
         System.arraycopy(myPrivateKey, 0, fullPrivate, 16, myPrivateKey.size)
 
-        val fullPublic = ByteArray(12 + theirPublicKey.size)
+        val fullPublic = ByteArray(12 + cleanPublicKey.size)
         System.arraycopy(x509Header, 0, fullPublic, 0, 12)
-        System.arraycopy(theirPublicKey, 0, fullPublic, 12, theirPublicKey.size)
+        System.arraycopy(cleanPublicKey, 0, fullPublic, 12, cleanPublicKey.size)
 
         val privKey = keyFactory.generatePrivate(PKCS8EncodedKeySpec(fullPrivate))
         val pubKey = keyFactory.generatePublic(X509EncodedKeySpec(fullPublic))

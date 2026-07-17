@@ -6,6 +6,11 @@ import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.LoginRequestBody
 import niel.kro.penik.data.network.api.RegisterRequestBody
 import niel.kro.penik.domain.model.AuthResponse
+import niel.kro.penik.data.crypto.E2EECrypto
+import niel.kro.penik.data.crypto.PreKeyManager
+import java.nio.ByteBuffer
+import java.util.Base64
+
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -18,19 +23,46 @@ private data class ErrorBody(val message: String? = null, val error: String? = n
 @Singleton
 class AuthRepository @Inject constructor(
     private val apiService: ApiService,
-    private val tokenStorage: SecureTokenStorage
+    private val tokenStorage: SecureTokenStorage,
+    private val e2eeCrypto: E2EECrypto,
+    private val preKeyManager: PreKeyManager
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun login(nickname: String, password: String, deviceName: String): Result<AuthResponse> {
         return try {
+            val (privateKey, publicKey) = e2eeCrypto.generateX25519KeyPair()
+            val ikPubBase64 = Base64.getEncoder().encodeToString(publicKey)
+
+            val prekeys = preKeyManager.generateInitialPreKeys(20)
+            val opkListBase64 = prekeys.map { key ->
+                val buffer = ByteBuffer.allocate(37)
+                buffer.putInt(key.keyId.toInt())
+                buffer.put(0x05.toByte())
+                buffer.put(key.publicKey)
+                Base64.getEncoder().encodeToString(buffer.array())
+            }
+
             val response = apiService.login(
-                LoginRequestBody(nickname, password, deviceName)
+                LoginRequestBody(
+                    nickname = nickname,
+                    password = password,
+                    deviceName = deviceName,
+                    ikPub = ikPubBase64,
+                    opkList = opkListBase64
+                )
             )
             if (response.isSuccessful) {
                 val body = response.body()!!
                 tokenStorage.saveAuth(body.token, body.userId, body.deviceId)
                 fetchAndSaveUserProfile(body.userId)
+                
+                // Save keys locally
+                tokenStorage.savePrivateKey(privateKey)
+                prekeys.forEach { key ->
+                    tokenStorage.savePreKeyPrivate(key.keyId, key.privateKey)
+                }
+
                 Result.success(AuthResponse(body.token, body.userId, body.deviceId))
             } else {
                 val msg = parseServerError(response.code(), response.errorBody()?.string())
@@ -43,13 +75,39 @@ class AuthRepository @Inject constructor(
 
     suspend fun register(name: String, nickname: String, password: String, deviceName: String): Result<AuthResponse> {
         return try {
+            val (privateKey, publicKey) = e2eeCrypto.generateX25519KeyPair()
+            val ikPubBase64 = Base64.getEncoder().encodeToString(publicKey)
+
+            val prekeys = preKeyManager.generateInitialPreKeys(20)
+            val opkListBase64 = prekeys.map { key ->
+                val buffer = ByteBuffer.allocate(37)
+                buffer.putInt(key.keyId.toInt())
+                buffer.put(0x05.toByte())
+                buffer.put(key.publicKey)
+                Base64.getEncoder().encodeToString(buffer.array())
+            }
+
             val response = apiService.register(
-                RegisterRequestBody(name, nickname, password, deviceName)
+                RegisterRequestBody(
+                    name = name,
+                    nickname = nickname,
+                    password = password,
+                    deviceName = deviceName,
+                    ikPub = ikPubBase64,
+                    opkList = opkListBase64
+                )
             )
             if (response.isSuccessful) {
                 val body = response.body()!!
                 tokenStorage.saveAuth(body.token, body.userId, body.deviceId)
                 tokenStorage.saveUserProfile(name, nickname)
+                
+                // Save keys locally
+                tokenStorage.savePrivateKey(privateKey)
+                prekeys.forEach { key ->
+                    tokenStorage.savePreKeyPrivate(key.keyId, key.privateKey)
+                }
+
                 Result.success(AuthResponse(body.token, body.userId, body.deviceId))
             } else {
                 val msg = parseServerError(response.code(), response.errorBody()?.string())
