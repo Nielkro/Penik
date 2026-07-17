@@ -60,7 +60,7 @@ class PreKeyManager @Inject constructor(
         val secureRandom = SecureRandom()
         return (1..count).map {
             val (privateKey, publicKey) = e2eeCrypto.generateX25519KeyPair()
-            val keyId = secureRandom.nextLong() and Long.MAX_VALUE
+            val keyId = secureRandom.nextLong() and 0xFFFFFFFFL
             PreKey(keyId, publicKey, privateKey)
         }
     }
