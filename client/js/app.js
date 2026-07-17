@@ -718,7 +718,8 @@ export async function encryptMessagePayload(text, recipientUserId) {
   const recipientDevices = recipientBundle?.devices || [];
   const senderDevices = senderBundle?.devices || [];
 
-  const allDevices = [...recipientDevices, ...senderDevices].filter(d => Number(d.device_id) !== myDeviceId);
+  const filteredSenderDevices = senderDevices.filter(d => Number(d.device_id) !== myDeviceId);
+  const allDevices = [...recipientDevices, ...filteredSenderDevices];
 
   let myPrivateIK = state.privateIK;
   if (!myPrivateIK) {

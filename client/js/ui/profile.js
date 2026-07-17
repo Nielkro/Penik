@@ -1,5 +1,5 @@
 import { apiPatch, apiPost } from "../api.js";
-import { navigate, getCurrentUser, setCurrentUser, logout } from "../app.js";
+import { navigate, getCurrentUser, setCurrentUser, logout, backupE2EEKeys, restoreE2EEKeys } from "../app.js";
 import { avatar, el, showToast, spinner } from "./components.js";
 
 export function renderProfile(container) {
@@ -211,7 +211,6 @@ export function renderProfile(container) {
     doBackupBtn.appendChild(spinner());
 
     try {
-      const { backupE2EEKeys } = await import("../app.js");
       await backupE2EEKeys(password);
       showToast("Резервная копия ключей успешно создана на сервере!", "success");
       cancelBackupBtn.click();
@@ -236,7 +235,6 @@ export function renderProfile(container) {
     doRestoreBtn.appendChild(spinner());
 
     try {
-      const { restoreE2EEKeys } = await import("../app.js");
       await restoreE2EEKeys(password);
       showToast("Ключи шифрования успешно восстановлены!", "success");
       cancelBackupBtn.click();
