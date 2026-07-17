@@ -132,10 +132,20 @@ export async function renderChat(container, userId) {
     }
   });
 
+  const safetyBtn = el("button", {
+    class: "icon-btn chat-safety",
+    title: "Код безопасности E2EE",
+    style: "margin-left: auto; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
+  }, "🛡️");
+  
+  safetyBtn.addEventListener("mouseenter", () => { safetyBtn.style.opacity = "1"; });
+  safetyBtn.addEventListener("mouseleave", () => { safetyBtn.style.opacity = "0.7"; });
+  safetyBtn.addEventListener("click", () => showSafetyExplanationModal(userId));
+
   const deleteBtn = el("button", {
     class: "icon-btn chat-delete",
     title: "Удалить чат",
-    style: "margin-left: auto; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
+    style: "margin-left: 12px; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
   }, "🗑️");
   
   deleteBtn.addEventListener("mouseenter", () => { deleteBtn.style.opacity = "1"; });
@@ -172,6 +182,7 @@ export async function renderChat(container, userId) {
       el("span", { class: "chat-header-name" }, contact.name || contact.nickname),
       el("span", { class: "chat-header-nick" }, contact.nickname ? `@${contact.nickname}` : "")
     ),
+    safetyBtn,
     deleteBtn
   );
   header.querySelector(".chat-back").addEventListener("click", () => navigate("#chats"));
@@ -211,7 +222,7 @@ export async function renderChat(container, userId) {
       );
       if (isKeyChange) {
         bubble.addEventListener("click", () => {
-          showSafetyExplanationModal();
+          showSafetyExplanationModal(msg.chat_id);
         });
       }
       bubble.dataset.msgId = msg.msg_id;
@@ -346,4 +357,90 @@ export async function renderChat(container, userId) {
     }
   });
   obs.observe(document.body, { childList: true, subtree: true });
+}
+
+export async function calculateSafetyNumber(userId1, userId2) {
+  const bundle1 = await apiGet(`/keys/bundle/${userId1}`);
+  const bundle2 = await apiGet(`/keys/bundle/${userId2}`);
+
+  if (!bundle1 || !bundle1.devices || bundle1.devices.length === 0) {
+    throw new Error("Не удалось получить ключи пользователя 1");
+  }
+  if (!bundle2 || !bundle2.devices || bundle2.devices.length === 0) {
+    throw new Error("Не удалось получить ключи пользователя 2");
+  }
+
+  const ik1 = bundle1.devices[0].identity_key;
+  const ik2 = bundle2.devices[0].identity_key;
+
+  const bytes1 = new Uint8Array(atob(ik1).split("").map(c => c.charCodeAt(0)));
+  const bytes2 = new Uint8Array(atob(ik2).split("").map(c => c.charCodeAt(0)));
+
+  const sorted = [bytes1, bytes2].sort((a, b) => {
+    for (let i = 0; i < 32; i++) {
+      if (a[i] !== b[i]) return a[i] - b[i];
+    }
+    return 0;
+  });
+
+  const concat = new Uint8Array(64);
+  concat.set(sorted[0], 0);
+  concat.set(sorted[1], 32);
+
+  const hashBuffer = await window.crypto.subtle.digest("SHA-256", concat);
+  const hashArray = new Uint8Array(hashBuffer);
+
+  let numStr = "";
+  for (let i = 0; i < hashArray.length; i += 2) {
+    const val = (hashArray[i] << 8) | hashArray[i+1];
+    numStr += String(val).padStart(5, "0").substring(0, 5);
+  }
+
+  const blocks = [];
+  for (let i = 0; i < numStr.length && blocks.length < 5; i += 5) {
+    blocks.push(numStr.substring(i, i + 5));
+  }
+  return blocks.join(" ");
+}
+
+export async function showSafetyExplanationModal(peerId) {
+  const me = getCurrentUser();
+  const myId = me.id || me.user_id;
+
+  const modal = el("div", {
+    style: "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;box-sizing:border-box;"
+  });
+
+  const content = el("div", {
+    style: "background:#1e1e1e;border:1px solid rgba(255,255,255,0.1);padding:24px;border-radius:12px;max-width:400px;width:100%;color:#fff;text-align:center;box-shadow: 0 8px 32px rgba(0,0,0,0.5);"
+  },
+    el("h3", { style: "margin-top:0;font-size:18px;margin-bottom:12px;" }, "Код безопасности E2EE"),
+    el("p", { style: "font-size:13px;color:#aaa;line-height:1.4;margin-bottom:20px;" },
+      "Сравните эти числа с числами на устройстве вашего собеседника. Если они совпадают, ваше сквозное шифрование на 100% защищено от перехвата."
+    )
+  );
+
+  const numberEl = el("div", {
+    style: "font-size:24px;font-weight:bold;letter-spacing:2px;background:rgba(255,255,255,0.05);padding:16px;border-radius:8px;border:1px dashed rgba(255,255,255,0.2);margin-bottom:20px;color:#00e676;font-family:monospace;"
+  }, "Загрузка...");
+
+  content.appendChild(numberEl);
+
+  const closeBtn = el("button", {
+    class: "btn-primary",
+    style: "width:100%;padding:10px;cursor:pointer;",
+    onclick: () => modal.remove()
+  }, "Закрыть");
+
+  content.appendChild(closeBtn);
+  modal.appendChild(content);
+  document.body.appendChild(modal);
+
+  try {
+    const safetyNumber = await calculateSafetyNumber(myId, peerId);
+    numberEl.textContent = safetyNumber;
+  } catch (err) {
+    numberEl.textContent = "Ошибка загрузки";
+    console.error("Error calculating safety number:", err);
+  }
 }
