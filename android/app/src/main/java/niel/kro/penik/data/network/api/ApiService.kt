@@ -36,6 +36,9 @@ interface ApiService {
     @GET("keys/bundle/{userId}")
     suspend fun getKeyBundle(@Path("userId") userId: Long): Response<KeyBundleResponse>
 
+    @GET("keys/bundle/{userId}")
+    suspend fun getKeyBundleSelf(@Path("userId") userId: Long, @Query("skip_otk") skipOtk: Boolean = true): Response<KeyBundleResponse>
+
     @POST("keys/prekeys")
     suspend fun uploadPreKeys(@Body body: PrekeysUploadRequest): Response<Unit>
 

@@ -41,6 +41,12 @@ class ChatsListViewModel @Inject constructor(
 
     private var searchJob: Job? = null
 
+    val selfChatEntry: UserSearchResult?
+        get() {
+            val myId = authRepository.getUserId() ?: return null
+            return UserSearchResult(id = myId, name = "Избранное", nickname = "")
+        }
+
     init {
         viewModelScope.launch {
             syncHistoryUseCase()
@@ -59,8 +65,7 @@ class ChatsListViewModel @Inject constructor(
             try {
                 val response = apiService.searchUsers(query)
                 if (response.isSuccessful) {
-                    val myId = authRepository.getUserId()
-                    _searchResults.value = response.body()?.filter { it.id != myId } ?: emptyList()
+                    _searchResults.value = response.body() ?: emptyList()
                 }
             } catch (_: Exception) {}
         }

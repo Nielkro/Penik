@@ -30,10 +30,13 @@ class MessageRepository @Inject constructor(
 
     suspend fun sendMessage(toUserId: Long, text: String): String {
         val clientMsgId = UUID.randomUUID().toString()
+        val myId = tokenStorage.getUserId()
+        val isSelfChat = toUserId == myId
+
         val entity = MessageEntity(
             localId = clientMsgId,
             chatUserId = toUserId,
-            senderId = tokenStorage.getUserId(),
+            senderId = myId,
             text = text,
             timestamp = System.currentTimeMillis(),
             sentByMe = true,
@@ -42,14 +45,22 @@ class MessageRepository @Inject constructor(
         messageDao.insertMessage(entity)
 
         val recipientBundles = try {
-            val response = apiService.getKeyBundle(toUserId)
+            val response = if (isSelfChat) {
+                apiService.getKeyBundleSelf(toUserId)
+            } else {
+                apiService.getKeyBundle(toUserId)
+            }
             if (response.isSuccessful) response.body()?.devices ?: emptyList() else emptyList()
         } catch (e: Exception) {
             emptyList()
         }
 
         val senderBundles = try {
-            val response = apiService.getKeyBundle(tokenStorage.getUserId())
+            val response = if (isSelfChat) {
+                apiService.getKeyBundleSelf(myId)
+            } else {
+                apiService.getKeyBundle(myId)
+            }
             if (response.isSuccessful) response.body()?.devices ?: emptyList() else emptyList()
         } catch (e: Exception) {
             emptyList()
@@ -77,22 +88,14 @@ class MessageRepository @Inject constructor(
                 e2eeCrypto.deriveSharedSecret(myPrivateIK, recipientIKPub)
             }
 
-            val salt = ByteArray(16)
-            java.security.SecureRandom().nextBytes(salt)
-            val nonce = ByteArray(12)
-            java.security.SecureRandom().nextBytes(nonce)
-            
-            val info = "PenikE2EE".toByteArray(Charsets.UTF_8)
-            val derivedKey = e2eeCrypto.hkdf(secret, salt, info, 32)
-
-            val ciphertext = e2eeCrypto.encrypt(text.toByteArray(Charsets.UTF_8), derivedKey, nonce)
+            val encrypted = e2eeCrypto.encrypt(text.toByteArray(Charsets.UTF_8), secret)
 
             E2EDevicePayload(
                 deviceId = device.deviceId,
                 prekeyId = device.keyId,
-                ciphertext = ciphertext,
-                salt = salt,
-                nonce = nonce
+                ciphertext = encrypted.ciphertext,
+                salt = encrypted.salt,
+                nonce = encrypted.nonce
             )
         }
 
@@ -349,10 +352,7 @@ class MessageRepository @Inject constructor(
             e2eeCrypto.deriveSharedSecret(myPrivateIK, fromIdentityKey)
         }
 
-        val info = "PenikE2EE".toByteArray(Charsets.UTF_8)
-        val derivedKey = e2eeCrypto.hkdf(secret, salt, info, 32)
-
-        val plaintextBytes = e2eeCrypto.decrypt(ciphertext, derivedKey, nonce)
+        val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce)
         return String(plaintextBytes, Charsets.UTF_8)
     }
 

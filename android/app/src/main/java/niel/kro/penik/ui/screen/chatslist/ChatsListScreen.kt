@@ -44,6 +44,9 @@ import niel.kro.penik.ui.theme.TextMuted
 import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.ChatsListViewModel
 
+private const val SELF_CHAT_NAME = "Избранное"
+private const val SELF_CHAT_ICON = "\uD83D\uDCDD"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatsListContent(
@@ -223,6 +226,17 @@ fun ChatsListContent(
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    item(key = "self_chat") {
+                        SearchUserItem(
+                            name = "$SELF_CHAT_ICON $SELF_CHAT_NAME",
+                            nickname = "",
+                            onClick = {
+                                val myId = viewModel.selfChatEntry?.id ?: return@SearchUserItem
+                                onChatClick(myId, SELF_CHAT_NAME)
+                            }
+                        )
+                        HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
+                    }
                     items(filteredChats, key = { it.userId }) { chat ->
                         ChatListItem(
                             name = chat.name.ifBlank { chat.nickname },
