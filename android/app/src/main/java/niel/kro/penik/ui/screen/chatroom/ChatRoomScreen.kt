@@ -110,7 +110,8 @@ fun ChatRoomScreen(
                     MessageBubble(
                         text = message.text,
                         isSentByMe = message.sentByMe,
-                        delivered = message.delivered
+                        delivered = message.delivered,
+                        deliveredAt = message.deliveredAt
                     )
                 }
             }

@@ -204,54 +204,27 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 	senderUserID := c.userID
 	recipientUserID := msg.ToUserID
 
-	// 1. Fetch all devices of the recipient
-	rows, err := c.db.QueryContext(ctx, "SELECT id FROM devices WHERE user_id=?", recipientUserID)
-	if err != nil {
-		return fmt.Errorf("lookup recipient devices: %w", err)
-	}
-	defer rows.Close()
-
-	var targetDeviceIDs []int64
-	for rows.Next() {
-		var devID int64
-		if err := rows.Scan(&devID); err != nil {
-			return err
+	var recipientExists int
+	if err := c.db.QueryRowContext(ctx,
+		`SELECT 1 FROM users WHERE id=?`,
+		recipientUserID).Scan(&recipientExists); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("recipient user not found")
 		}
-		targetDeviceIDs = append(targetDeviceIDs, devID)
+		return fmt.Errorf("lookup recipient: %w", err)
 	}
 
-	// 2. Fetch other devices of the sender (for multi-device sync)
-	sRows, err := c.db.QueryContext(ctx, "SELECT id FROM devices WHERE user_id=? AND id!=?", senderUserID, c.deviceID)
-	if err != nil {
-		return fmt.Errorf("lookup sender other devices: %w", err)
-	}
-	defer sRows.Close()
-
-	for sRows.Next() {
-		var devID int64
-		if err := sRows.Scan(&devID); err != nil {
-			return err
-		}
-		targetDeviceIDs = append(targetDeviceIDs, devID)
-	}
-
-	if len(targetDeviceIDs) == 0 {
-		return fmt.Errorf("no target devices found for recipient")
-	}
-
-	// 3. Begin database transaction
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	// 4. Atomic duplicate check
 	if msg.MsgID != "" {
 		var existingMsgID int64
 		err := tx.QueryRowContext(ctx,
-			`SELECT id FROM messages WHERE sender_device_id=? AND client_msg_id=? LIMIT 1`,
-			c.deviceID, msg.MsgID).Scan(&existingMsgID)
+			`SELECT id FROM messages WHERE sender_user_id=? AND client_msg_id=? LIMIT 1`,
+			senderUserID, msg.MsgID).Scan(&existingMsgID)
 		if err != nil && err != sql.ErrNoRows {
 			return fmt.Errorf("lookup existing client_msg_id inside tx: %w", err)
 		}
@@ -272,7 +245,6 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 		}
 	}
 
-	// 5. Lookup or create chat
 	var chatID int64
 	u1, u2 := senderUserID, recipientUserID
 	if u1 > u2 {
@@ -291,97 +263,69 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 		return fmt.Errorf("lookup chat: %w", err)
 	}
 
-	// 6. Insert messages for all target devices
-	var lastInsertedID int64
-	type mInfo struct {
-		deviceID   int64
-		chatUserID int64
-		msgID      int64
+	var clientMsgID any
+	if msg.MsgID != "" {
+		clientMsgID = msg.MsgID
 	}
-	var insertedMessages []mInfo
-
-	for _, devID := range targetDeviceIDs {
-		var cMsgId interface{} = nil
-		if msg.MsgID != "" {
-			cMsgId = msg.MsgID
-		}
-		res, err := tx.ExecContext(ctx,
-			`INSERT INTO messages(chat_id, sender_device_id, recipient_device_id, client_msg_id, ciphertext, timestamp, delivered)
-			 VALUES(?, ?, ?, ?, ?, ?, 0)`,
-			chatID, c.deviceID, devID, cMsgId, []byte(msg.Plaintext), now)
-		if err != nil {
-			return fmt.Errorf("insert message for device %d: %w", devID, err)
-		}
-		id, err := res.LastInsertId()
-		if err != nil {
-			return fmt.Errorf("get last insert id: %w", err)
-		}
-		if lastInsertedID == 0 {
-			lastInsertedID = id
-		}
-
-		var devOwnerID int64
-		errOwner := tx.QueryRowContext(ctx, "SELECT user_id FROM devices WHERE id=?", devID).Scan(&devOwnerID)
-		if errOwner != nil {
-			return errOwner
-		}
-
-		var chatUserID int64
-		if devOwnerID == senderUserID {
-			chatUserID = recipientUserID
-		} else {
-			chatUserID = senderUserID
-		}
-
-		insertedMessages = append(insertedMessages, mInfo{
-			deviceID:   devID,
-			chatUserID: chatUserID,
-			msgID:      id,
-		})
+	res, err := tx.ExecContext(ctx,
+		`INSERT INTO messages(
+			chat_id, sender_user_id, recipient_user_id, client_msg_id,
+			plaintext, timestamp, delivered
+		 ) VALUES(?, ?, ?, ?, ?, ?, 0)`,
+		chatID, senderUserID, recipientUserID, clientMsgID, msg.Plaintext, now)
+	if err != nil {
+		return fmt.Errorf("insert message: %w", err)
+	}
+	messageID, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("get message id: %w", err)
 	}
 
-	// Commit transaction
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 
-	// 7. Send real-time ws notifications to online devices
-	for _, m := range insertedMessages {
-		recv := MsgRecv{
-			FromUserID: senderUserID,
-			ChatUserID: m.chatUserID,
-			Plaintext:  msg.Plaintext,
-			MsgID:      m.msgID,
-			TS:         now,
-		}
-		frame, err := encodeFrame(OpMsgRecv, recv)
-		if err != nil {
-			continue
-		}
-		c.hub.SendToDevice(m.deviceID, frame)
+	recipientFrame, err := encodeFrame(OpMsgRecv, MsgRecv{
+		FromUserID: senderUserID,
+		ChatUserID: senderUserID,
+		Plaintext:  msg.Plaintext,
+		MsgID:      messageID,
+		TS:         now,
+	})
+	if err == nil {
+		c.sendToUserDevices(ctx, recipientUserID, 0, recipientFrame)
 	}
 
-	// Ack back to sender
-	if lastInsertedID > 0 {
-		ack := MsgAck{
-			MsgID:       lastInsertedID,
-			ClientMsgID: msg.MsgID,
-		}
-		frame, err := encodeFrame(OpMsgAck, ack)
-		if err == nil {
-			select {
-			case c.send <- frame:
-			default:
-			}
+	senderFrame, err := encodeFrame(OpMsgRecv, MsgRecv{
+		FromUserID: senderUserID,
+		ChatUserID: recipientUserID,
+		Plaintext:  msg.Plaintext,
+		MsgID:      messageID,
+		TS:         now,
+	})
+	if err == nil {
+		c.sendToUserDevices(ctx, senderUserID, c.deviceID, senderFrame)
+	}
+
+	ack := MsgAck{
+		MsgID:       messageID,
+		ClientMsgID: msg.MsgID,
+	}
+	frame, err := encodeFrame(OpMsgAck, ack)
+	if err == nil {
+		select {
+		case c.send <- frame:
+		default:
 		}
 	}
 	return nil
 }
 
 func (c *Client) handleMsgDelivered(ctx context.Context, msg *MsgDelivered) error {
+	now := time.Now().Unix()
 	res, err := c.db.ExecContext(ctx,
-		`UPDATE messages SET delivered=1 WHERE id=? AND recipient_device_id=?`,
-		msg.MsgID, c.deviceID)
+		`UPDATE messages SET delivered=1, delivered_at=? WHERE id=? AND recipient_user_id=?`,
+		now, msg.MsgID, c.userID)
 	if err != nil {
 		return err
 	}
@@ -389,12 +333,10 @@ func (c *Client) handleMsgDelivered(ctx context.Context, msg *MsgDelivered) erro
 		return nil
 	}
 
-	// Notify the sender's device (if online) so its UI can show the
-	// second "delivered" checkmark in real time.
-	var senderDeviceID int64
+	var senderUserID int64
 	err = c.db.QueryRowContext(ctx,
-		`SELECT sender_device_id FROM messages WHERE id=?`, msg.MsgID).
-		Scan(&senderDeviceID)
+		`SELECT sender_user_id FROM messages WHERE id=?`, msg.MsgID).
+		Scan(&senderUserID)
 	if err != nil {
 		return nil
 	}
@@ -402,7 +344,7 @@ func (c *Client) handleMsgDelivered(ctx context.Context, msg *MsgDelivered) erro
 	if err != nil {
 		return nil
 	}
-	c.hub.SendToDevice(senderDeviceID, frame)
+	c.sendToUserDevices(ctx, senderUserID, 0, frame)
 	return nil
 }
 
@@ -492,16 +434,14 @@ func (c *Client) handleKeyFetchReq(ctx context.Context, req *KeyFetchReq) error 
 
 func (c *Client) sendOfflineBatch(ctx context.Context) error {
 	rows, err := c.db.QueryContext(ctx,
-		`SELECT m.id, d_sender.user_id, m.sender_device_id,
+		`SELECT m.id, m.sender_user_id,
 		        CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END as chat_user_id,
-		        m.ciphertext, m.timestamp
+		        m.plaintext, m.timestamp
 		 FROM messages m
 		 JOIN chats c ON m.chat_id = c.id
-		 JOIN devices d_sender ON d_sender.id = m.sender_device_id
-		 JOIN devices d_recv   ON d_recv.id = m.recipient_device_id
-		 WHERE m.recipient_device_id=? AND m.delivered=0 AND m.deleted_by_recipient=0 AND m.purge_pending=0
+		 WHERE m.recipient_user_id=? AND m.delivered=0 AND m.deleted_by_recipient=0 AND m.purge_pending=0
 		 ORDER BY m.timestamp ASC`,
-		c.userID, c.deviceID)
+		c.userID, c.userID)
 	if err != nil {
 		return err
 	}
@@ -526,16 +466,13 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 
 	for rows.Next() {
 		var m MsgRecv
-		var tempSenderDeviceID int64
-		var ciphertextBytes []byte
-		if err := rows.Scan(&m.MsgID, &m.FromUserID, &tempSenderDeviceID, &m.ChatUserID, &ciphertextBytes, &m.TS); err != nil {
+		if err := rows.Scan(&m.MsgID, &m.FromUserID, &m.ChatUserID, &m.Plaintext, &m.TS); err != nil {
 			continue
 		}
-		m.Plaintext = string(ciphertextBytes)
 		currentBatch = append(currentBatch, m)
-		currentBatchBytes += len(ciphertextBytes)
+		currentBatchBytes += len(m.Plaintext)
 
-		if len(currentBatch) >= 100 || currentBatchBytes >= 1*1024*1024 { // 100 messages or 1 MB of ciphertext
+		if len(currentBatch) >= 100 || currentBatchBytes >= 1*1024*1024 { // 100 messages or 1 MB of text
 			if err := sendBatch(currentBatch); err != nil {
 				return err
 			}
@@ -562,8 +499,8 @@ func (c *Client) sendPendingPurges(ctx context.Context) error {
 		        CASE WHEN ch.user1_id = ? THEN ch.user2_id ELSE ch.user1_id END as chat_user_id
 		 FROM messages m
 		 JOIN chats ch ON m.chat_id = ch.id
-		 WHERE m.recipient_device_id = ? AND m.purge_pending = 1`,
-		c.userID, c.deviceID)
+		 WHERE m.purge_for_user_id = ? AND m.purge_pending = 1`,
+		c.userID, c.userID)
 	if err != nil {
 		return err
 	}
@@ -604,10 +541,26 @@ func (c *Client) handleChatPurgeAck(ctx context.Context, msg *ChatPurgeAck) erro
 	_, err := c.db.ExecContext(ctx,
 		`DELETE FROM messages
 		 WHERE purge_pending = 1
-		   AND recipient_device_id = ?
+		   AND purge_for_user_id = ?
 		   AND chat_id IN (SELECT id FROM chats WHERE user1_id = ? AND user2_id = ?)`,
-		c.deviceID, u1, u2)
+		c.userID, u1, u2)
 	return err
+}
+
+func (c *Client) sendToUserDevices(ctx context.Context, userID, excludeDeviceID int64, frame []byte) {
+	rows, err := c.db.QueryContext(ctx, `SELECT id FROM devices WHERE user_id=?`, userID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var deviceID int64
+		if err := rows.Scan(&deviceID); err != nil || deviceID == excludeDeviceID {
+			continue
+		}
+		c.hub.SendToDevice(deviceID, frame)
+	}
 }
 
 func (c *Client) pushFrame(op Opcode, v any) {

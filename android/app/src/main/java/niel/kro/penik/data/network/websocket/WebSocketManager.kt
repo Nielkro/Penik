@@ -43,6 +43,10 @@ sealed class WebSocketEvent {
         val clientMsgId: String
     ) : WebSocketEvent()
 
+    data class MsgDelivered(
+        val msgId: Long
+    ) : WebSocketEvent()
+
     data class OfflineBatch(
         val msgs: List<WebSocketEvent.MsgRecv>
     ) : WebSocketEvent()
@@ -213,6 +217,7 @@ class WebSocketManager @Inject constructor() {
         when (opcode) {
             Opcode.MSG_RECV -> handleMsgRecv(payload)
             Opcode.MSG_ACK -> handleMsgAck(payload)
+            Opcode.MSG_DELIVERED -> handleMsgDelivered(payload)
             Opcode.OFFLINE_BATCH -> handleOfflineBatch(payload)
             Opcode.PING -> sendPong()
             Opcode.PONG -> scope.launch { _events.emit(WebSocketEvent.Pong) }
@@ -241,6 +246,16 @@ class WebSocketManager @Inject constructor() {
         val event = WebSocketEvent.MsgAck(
             serverMsgId = (map["msg_id"] as? Number)?.toLong() ?: 0,
             clientMsgId = (map["client_msg_id"] as? String) ?: ""
+        )
+        scope.launch { _events.emit(event) }
+    }
+
+    private fun handleMsgDelivered(payload: ByteArray) {
+        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+        val map = unpacker.readMsgRecvMap()
+        unpacker.close()
+        val event = WebSocketEvent.MsgDelivered(
+            msgId = (map["msg_id"] as? Number)?.toLong() ?: 0
         )
         scope.launch { _events.emit(event) }
     }

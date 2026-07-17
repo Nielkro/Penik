@@ -75,10 +75,28 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate messages client msg id: %w", err)
 	}
 
+	if err := migrateMessagesUserOwnership(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate messages user ownership: %w", err)
+	}
+
+	if err := migrateDeliveredAt(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate delivered_at: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
 }
 
 func migrateLegacySchema(database *sql.DB) error {
+	userOwned, err := tableHasColumn(database, "messages", "sender_user_id")
+	if err != nil {
+		return err
+	}
+	if userOwned {
+		return nil
+	}
+
 	current, err := hasCascadeForeignKeys(database)
 	if err != nil {
 		return err
@@ -346,6 +364,11 @@ func migrateOneTimeKeysKeyId(database *sql.DB) error {
 
 
 func migrateMessagesClientMsgId(database *sql.DB) error {
+	userOwned, err := tableHasColumn(database, "messages", "sender_user_id")
+	if err != nil {
+		return err
+	}
+
 	rows, err := database.Query("PRAGMA table_info(messages)")
 	if err != nil {
 		return err
@@ -372,9 +395,167 @@ func migrateMessagesClientMsgId(database *sql.DB) error {
 		}
 	}
 
-	// Create unique index for idempotency
-	if _, err := database.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_msg_id ON messages(sender_device_id, recipient_device_id, client_msg_id)"); err != nil {
+	indexSQL := "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_msg_id ON messages(sender_device_id, recipient_device_id, client_msg_id)"
+	if userOwned {
+		indexSQL = `CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_msg_id
+			ON messages(sender_user_id, client_msg_id)
+			WHERE client_msg_id IS NOT NULL`
+	}
+	if _, err := database.Exec(indexSQL); err != nil {
 		return err
+	}
+	return nil
+}
+
+func migrateMessagesUserOwnership(database *sql.DB) error {
+	userOwned, err := tableHasColumn(database, "messages", "sender_user_id")
+	if err != nil {
+		return err
+	}
+	if userOwned {
+		return ensureUserMessageIndexes(database)
+	}
+
+	ctx := context.Background()
+	if _, err := database.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("disable foreign keys: %w", err)
+	}
+	defer database.ExecContext(ctx, `PRAGMA foreign_keys = ON`)
+
+	tx, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	const migration = `
+DROP INDEX IF EXISTS idx_messages_recipient_undelivered;
+DROP INDEX IF EXISTS idx_messages_client_msg_id;
+
+CREATE TABLE messages_user_owned (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  sender_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recipient_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client_msg_id TEXT,
+  plaintext TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  delivered INTEGER NOT NULL DEFAULT 0,
+  deleted_by_sender INTEGER NOT NULL DEFAULT 0,
+  deleted_by_recipient INTEGER NOT NULL DEFAULT 0,
+  purge_pending INTEGER NOT NULL DEFAULT 0,
+  purge_for_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE
+);
+
+INSERT INTO messages_user_owned (
+  id, chat_id, sender_user_id, recipient_user_id, client_msg_id,
+  plaintext, timestamp, delivered, deleted_by_sender,
+  deleted_by_recipient, purge_pending, purge_for_user_id
+)
+SELECT
+  MIN(m.id),
+  m.chat_id,
+  sender.user_id,
+  recipient.user_id,
+  m.client_msg_id,
+  CAST(MAX(m.ciphertext) AS TEXT),
+  MIN(m.timestamp),
+  MAX(m.delivered),
+  MAX(m.deleted_by_sender),
+  MAX(m.deleted_by_recipient),
+  MAX(m.purge_pending),
+  CASE WHEN MAX(m.purge_pending) = 1 THEN recipient.user_id ELSE NULL END
+FROM messages m
+JOIN devices sender ON sender.id = m.sender_device_id
+JOIN devices recipient ON recipient.id = m.recipient_device_id
+WHERE sender.user_id != recipient.user_id
+GROUP BY
+  m.chat_id,
+  sender.user_id,
+  recipient.user_id,
+  COALESCE(m.client_msg_id, 'legacy-' || m.id);
+
+DROP TABLE messages;
+ALTER TABLE messages_user_owned RENAME TO messages;
+
+CREATE INDEX idx_messages_recipient_undelivered
+  ON messages(recipient_user_id, delivered);
+CREATE UNIQUE INDEX idx_messages_client_msg_id
+  ON messages(sender_user_id, client_msg_id)
+  WHERE client_msg_id IS NOT NULL;
+`
+	if _, err := tx.ExecContext(ctx, migration); err != nil {
+		return fmt.Errorf("rebuild messages: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	if _, err := database.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		return fmt.Errorf("enable foreign keys: %w", err)
+	}
+	return nil
+}
+
+func ensureUserMessageIndexes(database *sql.DB) error {
+	if _, err := database.Exec(`CREATE INDEX IF NOT EXISTS idx_messages_recipient_undelivered
+		ON messages(recipient_user_id, delivered)`); err != nil {
+		return err
+	}
+	if _, err := database.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_msg_id
+		ON messages(sender_user_id, client_msg_id)
+		WHERE client_msg_id IS NOT NULL`); err != nil {
+		return err
+	}
+	return nil
+}
+
+func tableHasColumn(database *sql.DB, table, column string) (bool, error) {
+	rows, err := database.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, typeStr string
+		var notnull, pk int
+		var dfltVal sql.NullString
+		if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+func migrateDeliveredAt(database *sql.DB) error {
+	rows, err := database.Query("PRAGMA table_info(messages)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasDeliveredAt := false
+	for rows.Next() {
+		var cid int
+		var name, typeStr string
+		var notnull, pk int
+		var dfltVal sql.NullString
+		if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err != nil {
+			return err
+		}
+		if name == "delivered_at" {
+			hasDeliveredAt = true
+		}
+	}
+
+	if !hasDeliveredAt {
+		if _, err := database.Exec("ALTER TABLE messages ADD COLUMN delivered_at INTEGER DEFAULT NULL"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
