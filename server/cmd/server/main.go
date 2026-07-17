@@ -52,9 +52,11 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Public routes (no auth).
-	mux.HandleFunc("POST /api/v1/register", handlers.Register(database, cfg))
-	mux.HandleFunc("POST /api/v1/login", handlers.Login(database, cfg))
+	authRateLimiter := middleware.NewIPRateLimiter()
+
+	// Public routes (no auth, but rate limited).
+	mux.Handle("POST /api/v1/register", authRateLimiter.Limit(http.HandlerFunc(handlers.Register(database, cfg))))
+	mux.Handle("POST /api/v1/login", authRateLimiter.Limit(http.HandlerFunc(handlers.Login(database, cfg))))
 
 	// Avatar (GET is public, PUT requires auth).
 	mux.HandleFunc("GET /api/v1/avatar/{user_id}", handlers.GetAvatar(database))
