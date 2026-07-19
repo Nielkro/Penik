@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -22,7 +23,11 @@ type pairingCreateRequest struct {
 	EphemeralPublicKey string `json:"ephemeral_public_key"`
 	EncryptedHistory   string `json:"encrypted_history,omitempty"`
 }
-type pairingClaimRequest struct{ SessionID, Token, PublicKey string }
+type pairingClaimRequest struct {
+	SessionID string `json:"session_id"`
+	Token     string `json:"token"`
+	PublicKey string `json:"public_key"`
+}
 
 func randomPairingValue(n int) ([]byte, error) {
 	b := make([]byte, n)
@@ -35,6 +40,7 @@ func hashPairingToken(v string) []byte { h := sha256.Sum256([]byte(v)); return h
 // carries the opaque token and public key; it never carries keys or plaintext.
 func CreatePairingSession(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		var req pairingCreateRequest
 		if json.NewDecoder(r.Body).Decode(&req) != nil || req.EphemeralPublicKey == "" {
 			http.Error(w, "ephemeral_public_key required", 400)
@@ -82,6 +88,7 @@ func CreatePairingSession(database *db.DB) http.HandlerFunc {
 
 func ClaimPairingSession(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		var req pairingClaimRequest
 		if json.NewDecoder(r.Body).Decode(&req) != nil || req.SessionID == "" || req.Token == "" {
 			http.Error(w, "session_id and token required", 400)
@@ -97,12 +104,35 @@ func ClaimPairingSession(database *db.DB) http.HandlerFunc {
 		var owner, ownerDevice, exp, claimed int64
 		var pub, history []byte
 		err = tx.QueryRowContext(r.Context(), `SELECT owner_user_id,owner_device_id,ephemeral_public_key,encrypted_history,expires_at,COALESCE(claimed_at,0) FROM pairing_sessions WHERE id=?`, req.SessionID).Scan(&owner, &ownerDevice, &pub, &history, &exp, &claimed)
-		if err == sql.ErrNoRows || claimed != 0 || exp <= now {
-			http.Error(w, "pairing session expired or already claimed", 410)
+		if err == sql.ErrNoRows {
+			http.Error(w, "pairing session not found", 404)
 			return
 		}
 		if err != nil {
 			http.Error(w, "internal error", 500)
+			return
+		}
+		if exp <= now {
+			http.Error(w, "pairing session expired or already claimed", 410)
+			return
+		}
+		// Claim is idempotent for the same authenticated device and public key.
+		// Mobile clients may retry the request after a network timeout.
+		if claimed != 0 {
+			var claimedByDevice int64
+			var claimedByPub []byte
+			err = tx.QueryRowContext(r.Context(), `SELECT COALESCE(claimed_by_device_id,0),COALESCE(claimed_by_public_key,X'') FROM pairing_sessions WHERE id=?`, req.SessionID).Scan(&claimedByDevice, &claimedByPub)
+			if err != nil {
+				log.Printf("pairing claim state failed: session=%q err=%v", req.SessionID, err)
+				http.Error(w, "internal error", 500)
+				return
+			}
+			claimPub, decErr := base64.RawURLEncoding.DecodeString(req.PublicKey)
+			if claimedByDevice != middleware.DeviceIDFromCtx(r.Context()) || decErr != nil || subtle.ConstantTimeCompare(claimedByPub, claimPub) != 1 {
+				http.Error(w, "pairing session expired or already claimed", 410)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"session_id": req.SessionID, "ephemeral_public_key": base64.RawURLEncoding.EncodeToString(pub), "encrypted_history": base64.RawURLEncoding.EncodeToString(history), "owner_user_id": owner, "expires_at": exp})
 			return
 		}
 		// Compare the hash in constant time through SQLite blob equality; token is never stored.
@@ -122,6 +152,7 @@ func ClaimPairingSession(database *db.DB) http.HandlerFunc {
 		}
 		_, err = tx.ExecContext(r.Context(), `UPDATE pairing_sessions SET claimed_at=?,claimed_by_device_id=?,claimed_by_public_key=? WHERE id=? AND claimed_at IS NULL AND expires_at>?`, now, middleware.DeviceIDFromCtx(r.Context()), claimPub, req.SessionID, now)
 		if err != nil {
+			log.Printf("pairing claim update failed: session=%q err=%v", req.SessionID, err)
 			http.Error(w, "internal error", 500)
 			return
 		}
@@ -136,6 +167,7 @@ func ClaimPairingSession(database *db.DB) http.HandlerFunc {
 // GetPairingClaim exposes only the newly paired device public key to the web owner.
 func GetPairingClaim(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		id := r.PathValue("id")
 		var pub []byte
 		var claimed, exp int64
@@ -155,6 +187,7 @@ func GetPairingClaim(database *db.DB) http.HandlerFunc {
 
 func UploadPairingHistory(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		var req struct {
 			EncryptedHistory string `json:"encrypted_history"`
 		}

@@ -97,7 +97,37 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate messages e2ee: %w", err)
 	}
 
+	if err := migratePairingSchema(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate pairing schema: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
+}
+
+// migratePairingSchema upgrades databases created before the pairing columns
+// were added to schema.sql. CREATE TABLE IF NOT EXISTS does not alter an
+// already existing SQLite table.
+func migratePairingSchema(database *sql.DB) error {
+	columns := []struct {
+		name string
+		def  string
+	}{
+		{"claimed_by_device_id", "INTEGER REFERENCES devices(id) ON DELETE SET NULL"},
+		{"claimed_by_public_key", "BLOB"},
+	}
+	for _, column := range columns {
+		has, err := tableHasColumn(database, "pairing_sessions", column.name)
+		if err != nil {
+			return err
+		}
+		if !has {
+			if _, err := database.Exec("ALTER TABLE pairing_sessions ADD COLUMN " + column.name + " " + column.def); err != nil {
+				return fmt.Errorf("add %s: %w", column.name, err)
+			}
+		}
+	}
+	return nil
 }
 
 func migrateLegacySchema(database *sql.DB) error {
