@@ -7,7 +7,6 @@ import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.websocket.WebSocketEvent
 import niel.kro.penik.data.network.websocket.WebSocketManager
 import niel.kro.penik.data.crypto.E2EECrypto
-import niel.kro.penik.data.crypto.PreKeyManager
 import niel.kro.penik.data.network.websocket.E2EDevicePayload
 import java.util.UUID
 import javax.inject.Inject
@@ -21,7 +20,6 @@ class MessageRepository @Inject constructor(
     private val tokenStorage: SecureTokenStorage,
     private val chatRepository: ChatRepository,
     private val e2eeCrypto: E2EECrypto,
-    private val preKeyManager: PreKeyManager
 ) {
 
     fun getMessagesForChat(chatUserId: Long): Flow<List<MessageEntity>> {
@@ -75,24 +73,13 @@ class MessageRepository @Inject constructor(
         val payloads = allDevices.map { device ->
             val recipientIKPub = java.util.Base64.getDecoder().decode(device.identityKey)
             
-            val secret = if (device.oneTimeKey != null && device.keyId != null) {
-                val recipientOTPKPub = java.util.Base64.getDecoder().decode(device.oneTimeKey)
-                val dh1 = e2eeCrypto.deriveSharedSecret(myPrivateIK, recipientOTPKPub)
-                val dh2 = e2eeCrypto.deriveSharedSecret(myPrivateIK, recipientIKPub)
-                
-                val combined = ByteArray(dh1.size + dh2.size)
-                System.arraycopy(dh1, 0, combined, 0, dh1.size)
-                System.arraycopy(dh2, 0, combined, dh1.size, dh2.size)
-                combined
-            } else {
-                e2eeCrypto.deriveSharedSecret(myPrivateIK, recipientIKPub)
-            }
+            val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, recipientIKPub)
 
             val encrypted = e2eeCrypto.encrypt(text.toByteArray(Charsets.UTF_8), secret)
 
             E2EDevicePayload(
                 deviceId = device.deviceId,
-                prekeyId = device.keyId,
+                prekeyId = null,
                 ciphertext = encrypted.ciphertext,
                 salt = encrypted.salt,
                 nonce = encrypted.nonce
@@ -348,35 +335,11 @@ class MessageRepository @Inject constructor(
         salt: ByteArray,
         nonce: ByteArray
     ): String {
-        val myPrivateIK = if (prekeyId != null) {
-            val otpkPriv = tokenStorage.getPreKeyPrivate(prekeyId)
-                ?: throw Exception("OTPK private key not found locally (id: $prekeyId)")
-            otpkPriv
-        } else {
-            tokenStorage.getPrivateKey()
-                ?: throw Exception("Identity Key private key not found locally")
-        }
-
-        val secret = if (prekeyId != null) {
-            val dh1 = e2eeCrypto.deriveSharedSecret(myPrivateIK, fromIdentityKey)
-            
-            val myIKPriv = tokenStorage.getPrivateKey()
-                ?: throw Exception("Identity Key private key not found locally")
-            val dh2 = e2eeCrypto.deriveSharedSecret(myIKPriv, fromIdentityKey)
-
-            val combined = ByteArray(dh1.size + dh2.size)
-            System.arraycopy(dh1, 0, combined, 0, dh1.size)
-            System.arraycopy(dh2, 0, combined, dh1.size, dh2.size)
-            combined
-        } else {
-            e2eeCrypto.deriveSharedSecret(myPrivateIK, fromIdentityKey)
-        }
+        val myPrivateIK = tokenStorage.getPrivateKey()
+            ?: throw Exception("Identity Key private key not found locally")
+        val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, fromIdentityKey)
 
         val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce)
-
-        if (prekeyId != null) {
-            tokenStorage.deletePreKeyPrivate(prekeyId)
-        }
 
         return String(plaintextBytes, Charsets.UTF_8)
     }

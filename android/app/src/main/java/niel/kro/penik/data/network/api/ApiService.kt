@@ -37,7 +37,7 @@ interface ApiService {
     suspend fun getMessageStatuses(@Path("userId") userId: Long): Response<List<MessageStatusResponse>>
 
     @GET("keys/bundle/{userId}")
-    suspend fun getKeyBundle(@Path("userId") userId: Long): Response<KeyBundleResponse>
+    suspend fun getKeyBundle(@Path("userId") userId: Long, @Query("skip_otk") skipOtk: Boolean = true): Response<KeyBundleResponse>
 
     @GET("keys/bundle/{userId}")
     suspend fun getKeyBundleSelf(@Path("userId") userId: Long, @Query("skip_otk") skipOtk: Boolean = true): Response<KeyBundleResponse>
