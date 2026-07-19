@@ -33,6 +33,9 @@ interface ApiService {
         @Query("limit") limit: Int = 100
     ): Response<List<HistoryMessageResponse>>
 
+    @GET("messages/{userId}/status")
+    suspend fun getMessageStatuses(@Path("userId") userId: Long): Response<List<MessageStatusResponse>>
+
     @GET("keys/bundle/{userId}")
     suspend fun getKeyBundle(@Path("userId") userId: Long): Response<KeyBundleResponse>
 

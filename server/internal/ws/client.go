@@ -170,6 +170,12 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 			return fmt.Errorf("unmarshal MsgDelivered: %w", err)
 		}
 		return c.handleMsgDelivered(ctx, &msg)
+	case OpMsgRead:
+		var msg MsgRead
+		if err := msgpack.Unmarshal(payload, &msg); err != nil {
+			return fmt.Errorf("unmarshal MsgRead: %w", err)
+		}
+		return c.handleMsgRead(ctx, &msg)
 
 	case OpChatPurgeAck:
 		var msg ChatPurgeAck
@@ -353,16 +359,17 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 		deliveries = append(deliveries, pendingDelivery{
 			deviceID: dev.DeviceID,
 			msgRecv: MsgRecvEncrypted{
-				FromUserID:      senderUserID,
-				FromDeviceID:    c.deviceID,
-				FromIdentityKey: senderIKPub,
-				ChatUserID:      chatUserID,
-				MsgID:           messageID,
-				PrekeyID:        dev.PrekeyID,
-				Ciphertext:      dev.Ciphertext,
-				Salt:            dev.Salt,
-				Nonce:           dev.Nonce,
-				TS:              now,
+				FromUserID:        senderUserID,
+				FromDeviceID:      c.deviceID,
+				RecipientDeviceID: dev.DeviceID,
+				FromIdentityKey:   senderIKPub,
+				ChatUserID:        chatUserID,
+				MsgID:             messageID,
+				PrekeyID:          dev.PrekeyID,
+				Ciphertext:        dev.Ciphertext,
+				Salt:              dev.Salt,
+				Nonce:             dev.Nonce,
+				TS:                now,
 			},
 		})
 	}
@@ -397,6 +404,11 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 
 func (c *Client) handleMsgDelivered(ctx context.Context, msg *MsgDelivered) error {
 	now := time.Now().Unix()
+	var senderUserID, recipientUserID int64
+	var clientMsgID sql.NullString
+	if err := c.db.QueryRowContext(ctx, `SELECT sender_user_id, recipient_user_id, client_msg_id FROM messages WHERE id=?`, msg.MsgID).Scan(&senderUserID, &recipientUserID, &clientMsgID); err != nil {
+		return nil
+	}
 	res, err := c.db.ExecContext(ctx,
 		`UPDATE messages SET delivered=1, delivered_at=? WHERE id=? AND recipient_user_id=?`,
 		now, msg.MsgID, c.userID)
@@ -407,18 +419,41 @@ func (c *Client) handleMsgDelivered(ctx context.Context, msg *MsgDelivered) erro
 		return nil
 	}
 
-	var senderUserID int64
-	err = c.db.QueryRowContext(ctx,
-		`SELECT sender_user_id FROM messages WHERE id=?`, msg.MsgID).
-		Scan(&senderUserID)
-	if err != nil {
-		return nil
+	// Fan-out creates a separate row per device. Notify the sender using the
+	// sender's own row id, not the recipient-device row id.
+	senderMsgID := msg.MsgID
+	if clientMsgID.Valid {
+		_ = c.db.QueryRowContext(ctx, `SELECT id FROM messages WHERE sender_user_id=? AND client_msg_id=? ORDER BY id ASC LIMIT 1`, senderUserID, clientMsgID.String).Scan(&senderMsgID)
 	}
-	frame, err := encodeFrame(OpMsgDelivered, MsgDelivered{MsgID: msg.MsgID})
+	frame, err := encodeFrame(OpMsgDelivered, MsgDelivered{MsgID: senderMsgID, ClientMsgID: clientMsgID.String})
 	if err != nil {
 		return nil
 	}
 	c.sendToUserDevices(ctx, senderUserID, 0, frame)
+	return nil
+}
+
+func (c *Client) handleMsgRead(ctx context.Context, msg *MsgRead) error {
+	var senderUserID int64
+	var clientMsgID sql.NullString
+	if err := c.db.QueryRowContext(ctx, `SELECT sender_user_id, client_msg_id FROM messages WHERE id=? AND recipient_user_id=?`, msg.MsgID, c.userID).Scan(&senderUserID, &clientMsgID); err != nil {
+		return nil
+	}
+	res, err := c.db.ExecContext(ctx, `UPDATE messages SET read=1 WHERE id=? AND recipient_user_id=? AND delivered=1`, msg.MsgID, c.userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil
+	}
+	senderMsgID := msg.MsgID
+	if clientMsgID.Valid {
+		_ = c.db.QueryRowContext(ctx, `SELECT id FROM messages WHERE sender_user_id=? AND client_msg_id=? ORDER BY id ASC LIMIT 1`, senderUserID, clientMsgID.String).Scan(&senderMsgID)
+	}
+	frame, err := encodeFrame(OpMsgRead, MsgRead{MsgID: senderMsgID, ClientMsgID: clientMsgID.String})
+	if err == nil {
+		c.sendToUserDevices(ctx, senderUserID, 0, frame)
+	}
 	return nil
 }
 
@@ -508,7 +543,7 @@ func (c *Client) handleKeyFetchReq(ctx context.Context, req *KeyFetchReq) error 
 
 func (c *Client) sendOfflineBatch(ctx context.Context) error {
 	rows, err := c.db.QueryContext(ctx,
-		`SELECT m.id, m.sender_user_id, m.sender_device_id,
+		`SELECT m.id, m.sender_user_id, m.sender_device_id, m.recipient_device_id,
 		        COALESCE(dpk.x25519_pub, ''),
 		        CASE WHEN ch.user1_id = ? THEN ch.user2_id ELSE ch.user1_id END as chat_user_id,
 		        m.prekey_id, m.ciphertext, m.encryption_salt, m.encryption_nonce, m.timestamp
@@ -544,7 +579,7 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 		var m MsgRecvEncrypted
 		var senderIK []byte
 		if err := rows.Scan(
-			&m.MsgID, &m.FromUserID, &m.FromDeviceID, &senderIK,
+			&m.MsgID, &m.FromUserID, &m.FromDeviceID, &m.RecipientDeviceID, &senderIK,
 			&m.ChatUserID, &m.PrekeyID, &m.Ciphertext, &m.Salt, &m.Nonce, &m.TS,
 		); err != nil {
 			continue
@@ -892,16 +927,17 @@ func (c *Client) handleMsgRetryResp(ctx context.Context, req *MsgRetryResp) erro
 
 	// 6. Deliver the newly encrypted message to the recipient's device
 	inMsg := MsgRecvEncrypted{
-		FromUserID:      senderUserID,
-		FromDeviceID:    senderDeviceID,
-		FromIdentityKey: senderIKPub,
-		ChatUserID:      senderUserID,
-		MsgID:           req.MsgID,
-		PrekeyID:        prekeyID,
-		Ciphertext:      req.Ciphertext,
-		Salt:            req.Salt,
-		Nonce:           req.Nonce,
-		TS:              timestamp,
+		FromUserID:        senderUserID,
+		FromDeviceID:      senderDeviceID,
+		RecipientDeviceID: recipientDeviceID,
+		FromIdentityKey:   senderIKPub,
+		ChatUserID:        senderUserID,
+		MsgID:             req.MsgID,
+		PrekeyID:          prekeyID,
+		Ciphertext:        req.Ciphertext,
+		Salt:              req.Salt,
+		Nonce:             req.Nonce,
+		TS:                timestamp,
 	}
 
 	payload, err := msgpack.Marshal(inMsg)
@@ -912,5 +948,3 @@ func (c *Client) handleMsgRetryResp(ctx context.Context, req *MsgRetryResp) erro
 	c.hub.SendToDevice(recipientDeviceID, frame)
 	return nil
 }
-
-

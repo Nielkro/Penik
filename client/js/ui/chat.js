@@ -269,13 +269,17 @@ export async function renderChat(container, userId) {
     const ts = msg.created_at || Date.now();
 
     const deliveredAt = msg.delivered_at;
-    const statusText = msg.delivered ? "✓✓" : "✓";
+    const statusText = msg.read ? "✓✓" : (msg.delivered ? "✓✓" : "✓");
     const statusEl = isMine
       ? el("span", { class: "msg-status" }, statusText)
       : null;
     if (statusEl) statusEl.dataset.msgId = msg.msg_id;
 
-    const displayTime = (msg.delivered && deliveredAt) ? deliveredAt : ts;
+    // `delivered_at` is the server acknowledgement time, not the message
+    // creation time. Using it here makes an old message jump to the time it
+    // was delivered/replayed (and can look like it appeared hours later).
+    // Chat bubbles must always show when the message was sent/created.
+    const displayTime = ts;
     const metaEl = el("div", { class: "msg-meta" },
       el("span", { class: "msg-time" }, formatTime(displayTime)),
       statusEl
@@ -288,6 +292,10 @@ export async function renderChat(container, userId) {
     bubble.dataset.msgId = msg.msg_id;
 
     prepend ? messagesEl.prepend(bubble) : messagesEl.appendChild(bubble);
+    if (!isMine && msg.msg_id) {
+      const socket = getWS();
+      if (socket?.isConnected()) socket.send(0x18, { msg_id: Number(msg.msg_id) });
+    }
   }
 
   messages.forEach(m => appendMessage(m));

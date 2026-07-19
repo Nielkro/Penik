@@ -1,6 +1,6 @@
 import { getToken, setToken, getUserById, apiGet, apiPost } from './api.js';
 import {
-  openDB, saveMessage,
+  openDB, saveMessage, updateMessageRead,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
   findAndResolvePendingSentMessage, deleteChatData, savePreKeyPrivate,
@@ -355,6 +355,16 @@ export function triggerChatListUpdate() {
 }
 
 async function onMsgRecvGlobal(payload) {
+  const currentDeviceId = Number(localStorage.getItem("device_id"));
+  if (payload.recipient_device_id != null &&
+      Number(payload.recipient_device_id) !== currentDeviceId) {
+    console.warn("Ignoring message addressed to another device", {
+      msgId: payload.msg_id,
+      recipientDeviceId: payload.recipient_device_id,
+      currentDeviceId
+    });
+    return;
+  }
   const fromUserId = Number(payload.from_user_id);
   
   let decryptSuccess = true;
@@ -364,9 +374,18 @@ async function onMsgRecvGlobal(payload) {
     plaintext = payload.plaintext;
   } else if (payload.ciphertext) {
     try {
-      const result = await decryptMessagePayload(payload);
-      plaintext = result.text;
-      usedPrekeyId = result.prekeyId;
+      // The server may replay a message after reconnect/reload.  OTPKs are
+      // one-time keys, so never decrypt the same message twice: the plaintext
+      // saved during the first delivery is the authoritative copy.
+      const existing = payload.msg_id ? await getMessage(payload.msg_id) : null;
+      if (existing?.plaintext &&
+          !existing.plaintext.startsWith('[Ошибка расшифрования')) {
+        plaintext = existing.plaintext;
+      } else {
+        const result = await decryptMessagePayload(payload);
+        plaintext = result.text;
+        usedPrekeyId = result.prekeyId;
+      }
     } catch (e) {
       plaintext = `[Ошибка расшифрования сообщения: ${e.message}]`;
       decryptSuccess = false;
@@ -450,6 +469,12 @@ async function onMsgAckGlobal(payload) {
   if (_activeChatCallback) {
     _activeChatCallback.onAck(payload.msg_id);
   }
+}
+
+async function onMsgDeliveredGlobal(payload) {
+  if (!payload?.msg_id) return;
+  await updateMessageDelivered(payload.msg_id, 1);
+  if (_activeChatCallback) _activeChatCallback.onAck?.(payload.msg_id);
 }
 
 async function onOfflineBatchGlobal(payload) {
@@ -549,6 +574,12 @@ async function onMsgAckReceivedGlobal(payload) {
   }
 }
 
+async function onMsgReadGlobal(payload) {
+  if (!payload?.msg_id) return;
+  await updateMessageRead(payload.msg_id);
+  if (_activeChatCallback) _activeChatCallback.onStatus?.(payload.msg_id, "read");
+}
+
 export async function syncMessageHistory() {
   try {
     const limit = 100;
@@ -562,8 +593,26 @@ export async function syncMessageHistory() {
     history.sort((a, b) => a.timestamp - b.timestamp);
 
     for (const item of history) {
+      // History is device-scoped.  Never try to decrypt a fan-out copy that
+      // belongs to another device of the same account (for example, the
+      // phone copy while this browser is the web device).  Such a copy uses
+      // that device's OTPK and can never be decrypted here.
+      const currentDeviceId = Number(localStorage.getItem("device_id"));
+      // A fan-out row addressed to the phone must never be processed by the
+      // web client, even when the message was sent from this web client.
+      // The sender's copy is encrypted with the recipient device's OTPK.
+      const myId = Number(state.currentUser?.id || state.currentUser?.user_id);
+      const isSelfChat = Number(item.sender_id) === myId &&
+        Number(item.recipient_id) === myId;
+      const belongsToThisDevice = isSelfChat || Number(item.sender_id) !== myId
+        ? Number(item.recipient_device_id) === currentDeviceId
+        : Number(item.sender_device_id) === currentDeviceId;
+      if (!belongsToThisDevice) {
+        continue;
+      }
       const existing = await getMessage(item.id);
-      if (existing) {
+      if (existing && existing.plaintext &&
+          !existing.plaintext.startsWith('[Ошибка расшифрования')) {
         continue;
       }
 
@@ -574,18 +623,30 @@ export async function syncMessageHistory() {
         text = item.plaintext;
       } else if (item.ciphertext) {
         try {
+          // History can contain a message that was already received live and
+          // decrypted.  In that case the OTPK may have been consumed already;
+          // use the locally persisted plaintext instead of trying to decrypt
+          // the ciphertext a second time after a reload.
+          const locallyStored = await getMessage(item.id);
+          if (locallyStored && locallyStored.plaintext &&
+              !locallyStored.plaintext.startsWith('[Ошибка расшифрования')) {
+            text = locallyStored.plaintext;
+            throw { __alreadyDecrypted: true };
+          }
           const senderBundle = await apiGet(`/keys/bundle/${item.sender_id}`);
           const senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
           const fromIdentityKey = senderDevice?.identity_key;
 
-          text = await decryptMessagePayload({
+          const decrypted = await decryptMessagePayload({
             ciphertext: item.ciphertext,
             salt: item.encryption_salt,
             nonce: item.encryption_nonce,
             prekey_id: item.prekey_id,
             from_identity_key: fromIdentityKey
           });
+          text = decrypted.text;
         } catch (e) {
+          if (e?.__alreadyDecrypted) continue;
           text = `[Ошибка расшифрования: ${e.message}]`;
         }
       }
@@ -832,7 +893,8 @@ function setupGlobalWSListeners() {
   ws.on(0x02, onMsgRecvGlobal);
   ws.on(0x16, onMsgRetryReq);
   ws.on(0x03, onMsgAckReceivedGlobal);
-  ws.on(0x04, onMsgAckGlobal);
+  ws.on(0x04, onMsgDeliveredGlobal);
+  ws.on(0x18, onMsgReadGlobal);
   ws.on(0x05, onOfflineBatchGlobal);
   ws.on(0x08, onChatPurgeGlobal);
   ws.on(0x15, async () => {
@@ -884,4 +946,3 @@ export async function restoreE2EEKeys(passphrase) {
   
   console.log("E2EE keys successfully restored from server backup!");
 }
-

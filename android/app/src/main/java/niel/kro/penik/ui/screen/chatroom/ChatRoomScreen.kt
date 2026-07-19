@@ -115,7 +115,7 @@ fun ChatRoomScreen(
                     )
                     Text(
                         text = "• Каждое устройство генерирует пару ключей (Identity Key)\n" +
-                                "• При отправке сообщения создаётся одноразовый.shared secret\n" +
+                                "• При отправке сообщения создаётся одноразовый общий секрет\n" +
                                 "• Сообщение шифруется алгоритмом ChaCha20-Poly1305\n" +
                                 "• Расшифровать может только получатель",
                         fontSize = 12.sp,
@@ -253,9 +253,11 @@ fun ChatRoomScreen(
                 items(messages, key = { it.localId }) { message ->
                     MessageBubble(
                         text = message.text,
+                        timestamp = message.timestamp,
                         isSentByMe = message.sentByMe,
                         delivered = message.delivered,
-                        deliveredAt = message.deliveredAt
+                        deliveredAt = message.deliveredAt,
+                        read = message.read
                     )
                 }
             }

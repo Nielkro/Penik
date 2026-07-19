@@ -11,7 +11,7 @@ import niel.kro.penik.data.local.entity.MessageEntity
 
 @Database(
     entities = [MessageEntity::class, ChatEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class PenikDatabase : RoomDatabase() {
@@ -22,6 +22,11 @@ abstract class PenikDatabase : RoomDatabase() {
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE messages ADD COLUMN deliveredAt INTEGER DEFAULT NULL")
+            }
+        }
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN read INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

@@ -175,6 +175,16 @@ export async function updateMessageDelivered(msgId, status) {
   return false;
 }
 
+export async function updateMessageRead(msgId) {
+  await openDB();
+  const store = tx("messages", "readwrite");
+  const msg = await get(store, msgId);
+  if (!msg) return false;
+  msg.read = 1;
+  await put(store, msg);
+  return true;
+}
+
 // Contacts
 
 export async function getContact(userId) {

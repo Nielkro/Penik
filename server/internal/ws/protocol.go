@@ -4,23 +4,24 @@ package ws
 type Opcode byte
 
 const (
-	OpMsgSend      Opcode = 0x01
-	OpMsgRecv      Opcode = 0x02
-	OpMsgAck       Opcode = 0x03
-	OpMsgDelivered Opcode = 0x04
-	OpOfflineBatch Opcode = 0x05
-	OpPing         Opcode = 0x06
-	OpPong         Opcode = 0x07
-	OpChatPurge    Opcode = 0x08 // server→client: wipe a chat (delete-for-everyone)
-	OpChatPurgeAck Opcode = 0x09 // client→server: purge applied, safe to hard-delete
-	OpKeyFetchReq  Opcode = 0x10
-	OpKeyFetchResp Opcode = 0x11
-	OpKeyPublish   Opcode = 0x12
+	OpMsgSend       Opcode = 0x01
+	OpMsgRecv       Opcode = 0x02
+	OpMsgAck        Opcode = 0x03
+	OpMsgDelivered  Opcode = 0x04
+	OpOfflineBatch  Opcode = 0x05
+	OpPing          Opcode = 0x06
+	OpPong          Opcode = 0x07
+	OpChatPurge     Opcode = 0x08 // server→client: wipe a chat (delete-for-everyone)
+	OpChatPurgeAck  Opcode = 0x09 // client→server: purge applied, safe to hard-delete
+	OpKeyFetchReq   Opcode = 0x10
+	OpKeyFetchResp  Opcode = 0x11
+	OpKeyPublish    Opcode = 0x12
 	OpKeyBundleResp Opcode = 0x13
-	OpKeyBundleReq Opcode = 0x14
+	OpKeyBundleReq  Opcode = 0x14
 	OpRefillPreKeys Opcode = 0x15
 	OpMsgRetryReq   Opcode = 0x16
 	OpMsgRetryResp  Opcode = 0x17
+	OpMsgRead       Opcode = 0x18
 )
 
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]
@@ -49,7 +50,13 @@ type MsgAck struct {
 
 // MsgDelivered is sent client→server when the recipient has received a message.
 type MsgDelivered struct {
-	MsgID int64 `msgpack:"msg_id"`
+	MsgID       int64  `msgpack:"msg_id"`
+	ClientMsgID string `msgpack:"client_msg_id,omitempty"`
+}
+
+type MsgRead struct {
+	MsgID       int64  `msgpack:"msg_id"`
+	ClientMsgID string `msgpack:"client_msg_id,omitempty"`
 }
 
 // OfflineBatch is pushed on connect with all undelivered messages.
@@ -107,16 +114,17 @@ type MsgSendEncrypted struct {
 }
 
 type MsgRecvEncrypted struct {
-	FromUserID      int64  `msgpack:"from_user_id"`
-	FromDeviceID    int64  `msgpack:"from_device_id"`
-	FromIdentityKey []byte `msgpack:"from_identity_key"`
-	ChatUserID      int64  `msgpack:"chat_user_id"`
-	MsgID           int64  `msgpack:"msg_id"`
-	PrekeyID        *int64 `msgpack:"prekey_id"`
-	Ciphertext      []byte `msgpack:"ciphertext"`
-	Salt            []byte `msgpack:"salt"`
-	Nonce           []byte `msgpack:"nonce"`
-	TS              int64  `msgpack:"ts"`
+	FromUserID        int64  `msgpack:"from_user_id"`
+	FromDeviceID      int64  `msgpack:"from_device_id"`
+	RecipientDeviceID int64  `msgpack:"recipient_device_id"`
+	FromIdentityKey   []byte `msgpack:"from_identity_key"`
+	ChatUserID        int64  `msgpack:"chat_user_id"`
+	MsgID             int64  `msgpack:"msg_id"`
+	PrekeyID          *int64 `msgpack:"prekey_id"`
+	Ciphertext        []byte `msgpack:"ciphertext"`
+	Salt              []byte `msgpack:"salt"`
+	Nonce             []byte `msgpack:"nonce"`
+	TS                int64  `msgpack:"ts"`
 }
 
 type OfflineBatchEncrypted struct {
@@ -150,5 +158,3 @@ type MsgRetryResp struct {
 	Salt       []byte `msgpack:"salt"`
 	Nonce      []byte `msgpack:"nonce"`
 }
-
-

@@ -108,7 +108,13 @@ class MessageRepository @Inject constructor(
     }
 
     suspend fun handleMsgDelivered(event: WebSocketEvent.MsgDelivered) {
-        messageDao.markDelivered(event.msgId)
+        if (event.clientMsgId.isNotBlank()) messageDao.markDeliveredByClientId(event.clientMsgId)
+        else messageDao.markDelivered(event.msgId)
+    }
+
+    suspend fun handleMsgRead(event: WebSocketEvent.MsgRead) {
+        if (event.clientMsgId.isNotBlank()) messageDao.markReadByClientId(event.clientMsgId)
+        else messageDao.markRead(event.msgId)
     }
 
     suspend fun handleMsgRecv(event: WebSocketEvent.MsgRecv): Boolean {
@@ -251,7 +257,7 @@ class MessageRepository @Inject constructor(
             val entities = buildList {
                 messages.forEach { msg ->
                     if (msg.senderId == myId && msg.clientMsgId != null) {
-                        messageDao.acknowledgeMessage(msg.clientMsgId, msg.msgId, msg.deliveredAt)
+                        messageDao.acknowledgeMessage(msg.clientMsgId, msg.msgId)
                     }
                     if (messageDao.findLocalIdByServerId(msg.msgId) == null) {
                         val text = if (msg.plaintext != null) {
@@ -291,12 +297,27 @@ class MessageRepository @Inject constructor(
                             timestamp = msg.createdAt * 1000,
                             sentByMe = msg.senderId == myId,
                             delivered = msg.delivered == 1,
-                            deliveredAt = msg.deliveredAt
+                            deliveredAt = msg.deliveredAt,
+                            read = msg.read == 1
                         ))
                     }
                 }
             }
             messageDao.insertMessages(entities)
+
+            // WebSocket delivery notifications can be missed while Android is
+            // offline. Reconcile sent-message state from the REST endpoint.
+            messages.filter { it.senderId == myId }
+                .map { it.chatUserId }
+                .distinct()
+                .forEach { peerId ->
+                    val statusResponse = apiService.getMessageStatuses(peerId)
+                    if (statusResponse.isSuccessful) {
+                        statusResponse.body().orEmpty().forEach { status ->
+                            messageDao.updateStatus(status.msgId, status.delivered, status.read)
+                        }
+                    }
+                }
 
             newMessages.groupBy { it.chatUserId }.forEach { (chatUserId, chatMessages) ->
                 val latest = chatMessages.maxBy { it.createdAt }

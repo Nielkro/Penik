@@ -13,7 +13,8 @@ data class MessageEntity(
     val timestamp: Long,
     val sentByMe: Boolean,
     val delivered: Boolean = false,
-    val deliveredAt: Long? = null
+    val deliveredAt: Long? = null,
+    val read: Boolean = false
 )
 
 @Entity(tableName = "chats")

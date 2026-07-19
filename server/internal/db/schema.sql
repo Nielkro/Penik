@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS messages (
   prekey_id INTEGER DEFAULT NULL,
   timestamp INTEGER NOT NULL,
   delivered INTEGER NOT NULL DEFAULT 0,
+  read INTEGER NOT NULL DEFAULT 0,
   deleted_by_sender INTEGER NOT NULL DEFAULT 0,
   deleted_by_recipient INTEGER NOT NULL DEFAULT 0,
   purge_pending INTEGER NOT NULL DEFAULT 0,

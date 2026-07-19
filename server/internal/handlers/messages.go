@@ -23,6 +23,7 @@ type historyMessageResponse struct {
 	Timestamp         int64   `json:"timestamp"`
 	Delivered         int     `json:"delivered"`
 	DeliveredAt       *int64  `json:"delivered_at,omitempty"`
+	Read              int     `json:"read"`
 	Ciphertext        []byte  `json:"ciphertext,omitempty"`
 	EncryptionSalt    []byte  `json:"encryption_salt,omitempty"`
 	EncryptionNonce   []byte  `json:"encryption_nonce,omitempty"`
@@ -32,7 +33,10 @@ type historyMessageResponse struct {
 }
 
 // GetMessageHistory handles GET /api/v1/messages/history.
-// Messages are user-owned, so every logical message appears exactly once.
+// History is scoped to the authenticated device.  A user can have several
+// devices, and each fan-out copy is encrypted for a different device OTPK.
+// Returning another device's copy makes the client attempt decryption with a
+// private OTPK it does not possess.
 func GetMessageHistory(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
@@ -62,6 +66,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				m.timestamp,
 				m.delivered,
 				m.delivered_at,
+				m.read,
 				m.ciphertext,
 				m.encryption_salt,
 				m.encryption_nonce,
@@ -72,10 +77,10 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 			 JOIN chats c ON c.id = m.chat_id
 			 WHERE m.purge_pending = 0
 			   AND (
-			     (m.sender_user_id = ? AND m.sender_device_id = ? AND m.deleted_by_sender = 0
-			      AND (m.sender_user_id != m.recipient_user_id OR m.recipient_device_id = ?))
-			     OR
-			     (m.recipient_user_id = ? AND m.recipient_device_id = ? AND m.deleted_by_recipient = 0)
+             (m.sender_user_id = ? AND m.sender_device_id = ? AND m.deleted_by_sender = 0
+              AND (m.sender_user_id != m.recipient_user_id OR m.recipient_device_id = ?))
+             OR
+             (m.recipient_user_id = ? AND m.recipient_device_id = ? AND m.deleted_by_recipient = 0)
 			   )
 			 ORDER BY m.id DESC
 			 LIMIT ?`,
@@ -100,6 +105,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				&m.Timestamp,
 				&m.Delivered,
 				&m.DeliveredAt,
+				&m.Read,
 				&m.Ciphertext,
 				&m.EncryptionSalt,
 				&m.EncryptionNonce,
@@ -114,6 +120,33 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(list)
+	}
+}
+
+func GetMessageStatuses(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		peerID, err := strconv.ParseInt(r.PathValue("user_id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid user id", http.StatusBadRequest)
+			return
+		}
+		rows, err := database.QueryContext(r.Context(), `SELECT id, delivered, read FROM messages WHERE sender_user_id=? AND recipient_user_id=? ORDER BY id ASC`, userID, peerID)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		statuses := make([]map[string]interface{}, 0)
+		for rows.Next() {
+			var id int64
+			var delivered, read int
+			if rows.Scan(&id, &delivered, &read) == nil {
+				statuses = append(statuses, map[string]interface{}{"msg_id": id, "delivered": delivered == 1, "read": read == 1})
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(statuses)
 	}
 }
 

@@ -19,11 +19,23 @@ interface MessageDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessages(messages: List<MessageEntity>)
 
-    @Query("UPDATE messages SET serverId = :serverId, delivered = 1, deliveredAt = :deliveredAt WHERE localId = :clientMsgId")
-    suspend fun acknowledgeMessage(clientMsgId: String, serverId: Long, deliveredAt: Long? = System.currentTimeMillis())
+    @Query("UPDATE messages SET serverId = :serverId WHERE localId = :clientMsgId")
+    suspend fun acknowledgeMessage(clientMsgId: String, serverId: Long)
 
     @Query("UPDATE messages SET delivered = 1, deliveredAt = :deliveredAt WHERE serverId = :serverId")
     suspend fun markDelivered(serverId: Long, deliveredAt: Long? = System.currentTimeMillis())
+
+    @Query("UPDATE messages SET delivered = 1, deliveredAt = :deliveredAt WHERE localId = :clientMsgId")
+    suspend fun markDeliveredByClientId(clientMsgId: String, deliveredAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE messages SET read = 1 WHERE serverId = :serverId")
+    suspend fun markRead(serverId: Long)
+
+    @Query("UPDATE messages SET read = 1 WHERE localId = :clientMsgId")
+    suspend fun markReadByClientId(clientMsgId: String)
+
+    @Query("UPDATE messages SET delivered = :delivered, read = :read, deliveredAt = CASE WHEN :delivered = 1 THEN COALESCE(deliveredAt, :deliveredAt) ELSE deliveredAt END WHERE serverId = :serverId")
+    suspend fun updateStatus(serverId: Long, delivered: Boolean, read: Boolean, deliveredAt: Long = System.currentTimeMillis())
 
     @Query("SELECT localId FROM messages WHERE serverId = :serverId LIMIT 1")
     suspend fun findLocalIdByServerId(serverId: Long): String?

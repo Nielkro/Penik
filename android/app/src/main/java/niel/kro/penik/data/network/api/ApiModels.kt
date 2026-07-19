@@ -49,6 +49,7 @@ data class HistoryMessageResponse(
     @SerialName("timestamp") val createdAt: Long,
     val delivered: Int,
     @SerialName("delivered_at") val deliveredAt: Long? = null,
+    val read: Int = 0,
     val ciphertext: String? = null,
     @SerialName("encryption_salt") val encryptionSalt: String? = null,
     @SerialName("encryption_nonce") val encryptionNonce: String? = null,
@@ -92,4 +93,9 @@ data class PreKeysStatusResponse(
     val available: Int,
     val total: Int
 )
-
+@Serializable
+data class MessageStatusResponse(
+    @SerialName("msg_id") val msgId: Long,
+    val delivered: Boolean,
+    val read: Boolean
+)

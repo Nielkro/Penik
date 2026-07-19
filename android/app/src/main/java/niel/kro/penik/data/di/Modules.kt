@@ -36,7 +36,7 @@ object DatabaseModule {
             PenikDatabase::class.java,
             "penik_database"
         )
-            .addMigrations(PenikDatabase.MIGRATION_1_2)
+            .addMigrations(PenikDatabase.MIGRATION_1_2, PenikDatabase.MIGRATION_2_3)
             .build()
     }
 

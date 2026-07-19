@@ -68,8 +68,6 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate otk key id: %w", err)
 	}
 
-
-
 	if err := migrateMessagesClientMsgId(sqlDB); err != nil {
 		sqlDB.Close()
 		return nil, fmt.Errorf("db: migrate messages client msg id: %w", err)
@@ -83,6 +81,10 @@ func Open(path string) (*DB, error) {
 	if err := migrateDeliveredAt(sqlDB); err != nil {
 		sqlDB.Close()
 		return nil, fmt.Errorf("db: migrate delivered_at: %w", err)
+	}
+	if err := migrateMessageRead(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate read: %w", err)
 	}
 
 	if err := migrateToE2EE(sqlDB); err != nil {
@@ -371,8 +373,6 @@ func migrateOneTimeKeysKeyId(database *sql.DB) error {
 	return nil
 }
 
-
-
 func migrateMessagesClientMsgId(database *sql.DB) error {
 	userOwned, err := tableHasColumn(database, "messages", "sender_user_id")
 	if err != nil {
@@ -571,6 +571,17 @@ func migrateDeliveredAt(database *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+func migrateMessageRead(database *sql.DB) error {
+	hasRead, err := tableHasColumn(database, "messages", "read")
+	if err != nil {
+		return err
+	}
+	if !hasRead {
+		_, err = database.Exec("ALTER TABLE messages ADD COLUMN read INTEGER NOT NULL DEFAULT 0")
+	}
+	return err
 }
 
 func migrateToE2EE(database *sql.DB) error {
