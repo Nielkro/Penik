@@ -1,6 +1,7 @@
 package niel.kro.penik.ui.screen.chatroom
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -15,6 +17,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -22,6 +26,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -34,7 +39,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -44,6 +51,8 @@ import niel.kro.penik.ui.theme.Background
 import niel.kro.penik.ui.theme.Border
 import niel.kro.penik.ui.theme.InputBg
 import niel.kro.penik.ui.theme.Panel
+import niel.kro.penik.ui.theme.PanelSecondary
+import niel.kro.penik.ui.theme.Success
 import niel.kro.penik.ui.theme.TextMuted
 import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.ChatRoomViewModel
@@ -59,11 +68,130 @@ fun ChatRoomScreen(
     val messages by viewModel.messages.collectAsState()
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val safetyNumber by viewModel.safetyNumber.collectAsState()
+    val showDialog by viewModel.showSafetyDialog.collectAsState()
+    val showE2eeDialog by viewModel.showE2eeDialog.collectAsState()
+    val isSelfChat = viewModel.isSelfChat
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.lastIndex)
         }
+    }
+
+    if (showE2eeDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissE2eeDialog() },
+            containerColor = Panel,
+            titleContentColor = TextPrimary,
+            title = {
+                Text(
+                    text = "Что такое E2EE?",
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "E2EE (End-to-End Encryption) — сквозное шифрование.",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        color = TextPrimary,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    Text(
+                        text = "Ваши сообщения шифруются на вашем устройстве и расшифровываются только на устройстве получателя. Никто — даже сервер Penik — не может прочитать ваши сообщения.",
+                        fontSize = 13.sp,
+                        color = TextMuted,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    Text(
+                        text = "Как это работает:",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = TextPrimary,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Text(
+                        text = "• Каждое устройство генерирует пару ключей (Identity Key)\n" +
+                                "• При отправке сообщения создаётся одноразовый.shared secret\n" +
+                                "• Сообщение шифруется алгоритмом ChaCha20-Poly1305\n" +
+                                "• Расшифровать может только получатель",
+                        fontSize = 12.sp,
+                        color = TextMuted,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    Text(
+                        text = "Код безопасности (Safety Number) — это отпечаток ключей шифрования обоих собеседников. Сравнив его на устройствах, вы убедитесь, что между вами нет третьей стороны (защита от MitM-атак).",
+                        fontSize = 12.sp,
+                        color = TextMuted,
+                        lineHeight = 18.sp
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissE2eeDialog() }) {
+                    Text("Понятно", color = Accent)
+                }
+            }
+        )
+    }
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissSafetyDialog() },
+            containerColor = Panel,
+            titleContentColor = TextPrimary,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Код безопасности ",
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "E2EE",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Accent,
+                        modifier = Modifier.clickable { viewModel.onE2eeClick() }
+                    )
+                }
+            },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "Сравните эти числа с числами на устройстве вашего собеседника. Если они совпадают, ваше сквозное шифрование на 100% защищено от перехвата.",
+                        fontSize = 13.sp,
+                        color = TextMuted,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                    Text(
+                        text = safetyNumber ?: "Загрузка...",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = Success,
+                        textAlign = TextAlign.Center,
+                        letterSpacing = 2.sp,
+                        lineHeight = 28.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(PanelSecondary, RoundedCornerShape(8.dp))
+                            .padding(16.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissSafetyDialog() }) {
+                    Text("Закрыть", color = Accent)
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -72,10 +200,26 @@ fun ChatRoomScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = chatName,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = chatName,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (!isSelfChat) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Код безопасности E2EE",
+                                tint = Success,
+                                modifier = Modifier
+                                    .padding(start = 8.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Success.copy(alpha = 0.15f))
+                                    .clickable { viewModel.onSafetyClick() }
+                                    .padding(4.dp)
+                                    .size(16.dp)
+                            )
+                        }
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

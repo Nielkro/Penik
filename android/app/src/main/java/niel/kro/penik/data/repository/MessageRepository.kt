@@ -63,7 +63,11 @@ class MessageRepository @Inject constructor(
         }
 
         val myDeviceId = tokenStorage.getDeviceId()
-        val allDevices = (recipientBundles + senderBundles).filter { it.deviceId != myDeviceId }
+        val allDevices = if (isSelfChat) {
+            recipientBundles.filter { it.deviceId != myDeviceId }
+        } else {
+            (recipientBundles + senderBundles).filter { it.deviceId != myDeviceId }
+        }
 
         val myPrivateIK = tokenStorage.getPrivateKey()
             ?: throw Exception("Private Identity Key not found. Please log in again.")
@@ -326,7 +330,6 @@ class MessageRepository @Inject constructor(
         val myPrivateIK = if (prekeyId != null) {
             val otpkPriv = tokenStorage.getPreKeyPrivate(prekeyId)
                 ?: throw Exception("OTPK private key not found locally (id: $prekeyId)")
-            tokenStorage.deletePreKeyPrivate(prekeyId)
             otpkPriv
         } else {
             tokenStorage.getPrivateKey()
@@ -349,6 +352,11 @@ class MessageRepository @Inject constructor(
         }
 
         val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce)
+
+        if (prekeyId != null) {
+            tokenStorage.deletePreKeyPrivate(prekeyId)
+        }
+
         return String(plaintextBytes, Charsets.UTF_8)
     }
 

@@ -350,6 +350,21 @@ export async function getAllPreKeyIds() {
     .map(r => r.keyId);
 }
 
+export async function clearPreKeyPrivates() {
+  const ids = await getAllPreKeyIds();
+  if (ids.length === 0) return;
+  await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = _db.transaction("e2ee_keys", "readwrite");
+    const store = transaction.objectStore("e2ee_keys");
+    for (const keyId of ids) {
+      store.delete(`prekey_${keyId}`);
+    }
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = (e) => reject(e.target.error);
+  });
+}
+
 export function getPersistentDeviceName() {
   let name = localStorage.getItem("device_name");
   if (!name) {
