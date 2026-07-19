@@ -4,24 +4,25 @@ package ws
 type Opcode byte
 
 const (
-	OpMsgSend       Opcode = 0x01
-	OpMsgRecv       Opcode = 0x02
-	OpMsgAck        Opcode = 0x03
-	OpMsgDelivered  Opcode = 0x04
-	OpOfflineBatch  Opcode = 0x05
-	OpPing          Opcode = 0x06
-	OpPong          Opcode = 0x07
-	OpChatPurge     Opcode = 0x08 // server→client: wipe a chat (delete-for-everyone)
-	OpChatPurgeAck  Opcode = 0x09 // client→server: purge applied, safe to hard-delete
-	OpKeyFetchReq   Opcode = 0x10
-	OpKeyFetchResp  Opcode = 0x11
-	OpKeyPublish    Opcode = 0x12
-	OpKeyBundleResp Opcode = 0x13
-	OpKeyBundleReq  Opcode = 0x14
-	OpRefillPreKeys Opcode = 0x15
-	OpMsgRetryReq   Opcode = 0x16
-	OpMsgRetryResp  Opcode = 0x17
-	OpMsgRead       Opcode = 0x18
+	OpMsgSend             Opcode = 0x01
+	OpMsgRecv             Opcode = 0x02
+	OpMsgAck              Opcode = 0x03
+	OpMsgDelivered        Opcode = 0x04
+	OpOfflineBatch        Opcode = 0x05
+	OpPing                Opcode = 0x06
+	OpPong                Opcode = 0x07
+	OpChatPurge           Opcode = 0x08 // server→client: wipe a chat (delete-for-everyone)
+	OpChatPurgeAck        Opcode = 0x09 // client→server: purge applied, safe to hard-delete
+	OpKeyFetchReq         Opcode = 0x10
+	OpKeyFetchResp        Opcode = 0x11
+	OpKeyPublish          Opcode = 0x12
+	OpKeyBundleResp       Opcode = 0x13
+	OpKeyBundleReq        Opcode = 0x14
+	OpRefillPreKeys       Opcode = 0x15
+	OpMsgRetryReq         Opcode = 0x16
+	OpMsgRetryResp        Opcode = 0x17
+	OpMsgRead             Opcode = 0x18
+	OpPairingHistoryReady Opcode = 0x19
 )
 
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]
@@ -157,4 +158,8 @@ type MsgRetryResp struct {
 	Ciphertext []byte `msgpack:"ciphertext"`
 	Salt       []byte `msgpack:"salt"`
 	Nonce      []byte `msgpack:"nonce"`
+}
+
+type PairingHistoryReady struct {
+	SessionID string `msgpack:"session_id"`
 }

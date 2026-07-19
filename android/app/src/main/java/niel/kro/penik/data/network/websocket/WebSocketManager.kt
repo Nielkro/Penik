@@ -72,6 +72,7 @@ sealed class WebSocketEvent {
     ) : WebSocketEvent()
 
     data class ChatPurge(val peerId: Long) : WebSocketEvent()
+    data class PairingHistoryReady(val sessionId: String) : WebSocketEvent()
 
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
@@ -91,6 +92,7 @@ object Opcode {
     const val CHAT_PURGE: Byte = 0x08
     const val CHAT_PURGE_ACK: Byte = 0x09
     const val REFILL_PREKEYS: Byte = 0x15
+    const val PAIRING_HISTORY_READY: Byte = 0x19
 }
 
 private fun MessageUnpacker.readMsgRecvMap(): Map<String, Any?> {
@@ -247,7 +249,15 @@ class WebSocketManager @Inject constructor() {
             Opcode.PONG -> scope.launch { _events.emit(WebSocketEvent.Pong) }
             Opcode.CHAT_PURGE -> handleChatPurge(payload)
             Opcode.REFILL_PREKEYS -> scope.launch { _events.emit(WebSocketEvent.RefillPreKeys) }
+            Opcode.PAIRING_HISTORY_READY -> handlePairingHistoryReady(payload)
         }
+    }
+
+    private fun handlePairingHistoryReady(payload: ByteArray) {
+        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+        val size = unpacker.unpackMapHeader(); var session = ""
+        repeat(size) { if (unpacker.unpackString() == "session_id") session = unpacker.unpackString() else unpacker.unpackValue() }
+        unpacker.close(); scope.launch { _events.emit(WebSocketEvent.PairingHistoryReady(session)) }
     }
 
     private fun handleMsgRecv(payload: ByteArray) {
