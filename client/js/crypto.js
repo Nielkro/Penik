@@ -356,6 +356,10 @@ export async function e2eeDecrypt(ciphertext, sharedSecret, salt, nonce) {
   return await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext);
 }
 
+export async function encryptPairingHistory(messages, sharedSecret) {
+  return e2eeEncrypt(JSON.stringify({ version: 1, messages }), sharedSecret);
+}
+
 export async function deriveKeyFromPassphrase(passphrase, salt) {
   const enc = new TextEncoder();
   const baseKey = await subtle.importKey(
@@ -410,6 +414,5 @@ export async function decryptKeyBackup(encryptedBlob, salt, iv, passphrase) {
 
   return new Uint8Array(decrypted);
 }
-
 
 

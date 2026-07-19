@@ -50,4 +50,5 @@ interface ApiService {
 
     @POST("pairing/sessions/claim")
     suspend fun claimPairingSession(@Body body: PairingClaimRequest): Response<PairingClaimResponse>
+    @GET("pairing/sessions/{id}") suspend fun getPairingSession(@Path("id") id: String): Response<PairingStateResponse>
 }
