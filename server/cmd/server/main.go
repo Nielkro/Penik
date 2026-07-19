@@ -94,7 +94,7 @@ func main() {
 	mux.Handle("POST /api/v1/pairing/sessions",
 		authMW(http.HandlerFunc(handlers.CreatePairingSession(database))))
 	mux.Handle("POST /api/v1/pairing/sessions/claim",
-		authMW(http.HandlerFunc(handlers.ClaimPairingSession(database))))
+		authMW(http.HandlerFunc(handlers.ClaimPairingSession(database, hub))))
 	mux.Handle("GET /api/v1/pairing/sessions/{id}", authMW(http.HandlerFunc(handlers.GetPairingClaim(database))))
 	mux.Handle("PUT /api/v1/pairing/sessions/{id}/history", authMW(http.HandlerFunc(handlers.UploadPairingHistory(database, hub))))
 	mux.Handle("GET /api/v1/messages/history",

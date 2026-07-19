@@ -29,6 +29,11 @@ type pairingClaimRequest struct {
 	PublicKey string `json:"public_key"`
 }
 
+type pairingClaimedNotification struct {
+	SessionID string `msgpack:"session_id"`
+	PublicKey string `msgpack:"public_key"`
+}
+
 func randomPairingValue(n int) ([]byte, error) {
 	b := make([]byte, n)
 	_, err := rand.Read(b)
@@ -86,7 +91,7 @@ func CreatePairingSession(database *db.DB) http.HandlerFunc {
 	}
 }
 
-func ClaimPairingSession(database *db.DB) http.HandlerFunc {
+func ClaimPairingSession(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var req pairingClaimRequest
@@ -159,6 +164,11 @@ func ClaimPairingSession(database *db.DB) http.HandlerFunc {
 		if tx.Commit() != nil {
 			http.Error(w, "internal error", 500)
 			return
+		}
+		if payload, marshalErr := msgpack.Marshal(pairingClaimedNotification{SessionID: req.SessionID, PublicKey: req.PublicKey}); marshalErr == nil {
+			if hub != nil {
+				hub.SendToDeviceFrame(ownerDevice, ws.OpPairingClaimed, payload)
+			}
 		}
 		json.NewEncoder(w).Encode(map[string]any{"session_id": req.SessionID, "ephemeral_public_key": base64.RawURLEncoding.EncodeToString(pub), "encrypted_history": base64.RawURLEncoding.EncodeToString(history), "owner_user_id": owner, "expires_at": exp})
 	}

@@ -23,6 +23,7 @@ const (
 	OpMsgRetryResp        Opcode = 0x17
 	OpMsgRead             Opcode = 0x18
 	OpPairingHistoryReady Opcode = 0x19
+	OpPairingClaimed      Opcode = 0x1a
 )
 
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]
@@ -162,4 +163,9 @@ type MsgRetryResp struct {
 
 type PairingHistoryReady struct {
 	SessionID string `msgpack:"session_id"`
+}
+
+type PairingClaimed struct {
+	SessionID string `msgpack:"session_id"`
+	PublicKey string `msgpack:"public_key"`
 }
