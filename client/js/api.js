@@ -42,7 +42,14 @@ async function request(method, path, body, opts = {}) {
   if (ct.includes('application/json')) {
     data = await res.json();
   } else {
-    data = await res.text();
+    const text = await res.text();
+    // Some reverse proxies strip Content-Type from JSON responses. Parse
+    // JSON-looking bodies anyway so callers still receive an object.
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
   }
 
   if (!res.ok) {

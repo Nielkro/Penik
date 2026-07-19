@@ -74,7 +74,12 @@ class PairingScannerViewModel @Inject constructor(private val api: ApiService, p
                     if (transfer.isNotBlank()) messageRepository.importPairingHistory(transfer, crypto.deriveSharedSecret(kp.first, java.util.Base64.getUrlDecoder().decode(payload.ephemeralKey)))
                     success = true
                     message = "Устройство успешно подключено"
-                } else message = "Не удалось подключить устройство (${response.code()})"
+                } else {
+                    message = "Не удалось подключить устройство (${response.code()})"
+                    // A pairing session is one-use/expired. Keep the scanner
+                    // locked so the same QR is not submitted on every frame.
+                    if (response.code() == 410) return@launch
+                }
             } catch (e: Exception) {
                 message = e.message ?: "Ошибка подключения устройства"
             } finally { claiming = false }
