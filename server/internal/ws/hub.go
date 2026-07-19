@@ -58,6 +58,10 @@ func (h *Hub) SendToDevice(deviceID int64, frame []byte) {
 	}
 }
 
+func (h *Hub) SendToDeviceFrame(deviceID int64, opcode Opcode, payload []byte) {
+	h.SendToDevice(deviceID, append([]byte{byte(opcode)}, payload...))
+}
+
 // IsOnline reports whether a device has an active connection.
 func (h *Hub) IsOnline(deviceID int64) bool {
 	h.mu.RLock()

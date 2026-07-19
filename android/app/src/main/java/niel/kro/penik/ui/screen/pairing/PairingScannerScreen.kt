@@ -25,11 +25,16 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.PairingClaimRequest
 import niel.kro.penik.data.crypto.E2EECrypto
 import niel.kro.penik.data.repository.MessageRepository
 import niel.kro.penik.data.repository.SecureTokenStorage
+import niel.kro.penik.data.network.websocket.WebSocketEvent
+import niel.kro.penik.data.network.websocket.WebSocketManager
 import javax.inject.Inject
 import kotlinx.serialization.json.*
 
@@ -42,7 +47,7 @@ private fun parsePairingPayload(value: String): PairPayload? {
 }
 
 @HiltViewModel
-class PairingScannerViewModel @Inject constructor(private val api: ApiService, private val crypto: E2EECrypto, private val tokenStorage: SecureTokenStorage, private val messageRepository: MessageRepository) : androidx.lifecycle.ViewModel() {
+class PairingScannerViewModel @Inject constructor(private val api: ApiService, private val crypto: E2EECrypto, private val tokenStorage: SecureTokenStorage, private val messageRepository: MessageRepository, private val webSocketManager: WebSocketManager) : androidx.lifecycle.ViewModel() {
     var message by mutableStateOf<String?>(null)
         private set
     var success by mutableStateOf(false)
@@ -60,7 +65,12 @@ class PairingScannerViewModel @Inject constructor(private val api: ApiService, p
                 val response = api.claimPairingSession(PairingClaimRequest(payload.session, payload.token, java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(kp.second)))
                 if (response.isSuccessful) {
                     var transfer = response.body()?.encryptedHistory.orEmpty()
-                    repeat(12) { if (transfer.isBlank()) { kotlinx.coroutines.delay(5000); transfer = api.getPairingSession(payload.session).body()?.encryptedHistory.orEmpty() } }
+                    if (transfer.isBlank()) {
+                        transfer = kotlinx.coroutines.withTimeoutOrNull(300_000) {
+                            webSocketManager.events.filterIsInstance<WebSocketEvent.PairingHistoryReady>().first { it.sessionId == payload.session }
+                            api.getPairingSession(payload.session).body()?.encryptedHistory.orEmpty()
+                        }.orEmpty()
+                    }
                     if (transfer.isNotBlank()) messageRepository.importPairingHistory(transfer, crypto.deriveSharedSecret(kp.first, java.util.Base64.getUrlDecoder().decode(payload.ephemeralKey)))
                     success = true
                     message = "Устройство успешно подключено"

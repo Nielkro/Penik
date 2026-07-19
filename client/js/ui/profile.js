@@ -280,7 +280,8 @@ export function renderProfile(container) {
         el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;", onclick: close }, "Закрыть")
       ));
        document.body.appendChild(modal);
-       for (let i = 0; i < 60; i++) { await new Promise(r => setTimeout(r, 5000)); const state = await getPairingSession(session.session_id); if (state.claimed && state.public_key) { const secret = await deriveSharedSecret(key, decodeB64Url(state.public_key)); const blob = await encryptPairingHistory(await getAllMessages(), secret); await uploadPairingHistory(session.session_id, { encrypted_history: encodeB64Url(pack(blob)) }); showToast("История передана устройству", "success"); break; } }
+       await new Promise(r => setTimeout(r, 30000));
+       const state = await getPairingSession(session.session_id); if (state.claimed && state.public_key) { const secret = await deriveSharedSecret(key, decodeB64Url(state.public_key)); const blob = await encryptPairingHistory(await getAllMessages(), secret); await uploadPairingHistory(session.session_id, { encrypted_history: encodeB64Url(pack(blob)) }); showToast("История передана устройству", "success"); }
     } catch (err) { showToast(err.message || "Не удалось создать сессию", "error"); }
     finally { pairingBtn.disabled = false; }
   });

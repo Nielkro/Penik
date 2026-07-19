@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/shamaton/msgpack/v2"
 	"messenger/server/internal/db"
 	"messenger/server/internal/middleware"
+	"messenger/server/internal/ws"
 )
 
 const pairingLifetime = 5 * time.Minute
@@ -151,7 +153,7 @@ func GetPairingClaim(database *db.DB) http.HandlerFunc {
 	}
 }
 
-func UploadPairingHistory(database *db.DB) http.HandlerFunc {
+func UploadPairingHistory(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			EncryptedHistory string `json:"encrypted_history"`
@@ -165,7 +167,8 @@ func UploadPairingHistory(database *db.DB) http.HandlerFunc {
 			http.Error(w, "invalid encrypted history", 400)
 			return
 		}
-		res, err := database.ExecContext(r.Context(), `UPDATE pairing_sessions SET encrypted_history=? WHERE id=? AND owner_user_id=? AND claimed_at IS NOT NULL AND expires_at>?`, b, r.PathValue("id"), middleware.UserIDFromCtx(r.Context()), time.Now().Unix())
+		id := r.PathValue("id")
+		res, err := database.ExecContext(r.Context(), `UPDATE pairing_sessions SET encrypted_history=? WHERE id=? AND owner_user_id=? AND claimed_at IS NOT NULL AND expires_at>?`, b, id, middleware.UserIDFromCtx(r.Context()), time.Now().Unix())
 		if err != nil {
 			http.Error(w, "internal error", 500)
 			return
@@ -174,6 +177,12 @@ func UploadPairingHistory(database *db.DB) http.HandlerFunc {
 		if n != 1 {
 			http.Error(w, "not available", 409)
 			return
+		}
+		var deviceID int64
+		if err := database.QueryRowContext(r.Context(), `SELECT claimed_by_device_id FROM pairing_sessions WHERE id=?`, id).Scan(&deviceID); err == nil {
+			if payload, err := msgpack.Marshal(ws.PairingHistoryReady{SessionID: id}); err == nil {
+				hub.SendToDeviceFrame(deviceID, ws.OpPairingHistoryReady, payload)
+			}
 		}
 		w.WriteHeader(204)
 	}
