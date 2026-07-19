@@ -47,4 +47,7 @@ interface ApiService {
 
     @GET("keys/prekeys/status")
     suspend fun getPreKeysStatus(): Response<PreKeysStatusResponse>
+
+    @POST("pairing/sessions/claim")
+    suspend fun claimPairingSession(@Body body: PairingClaimRequest): Response<PairingClaimResponse>
 }

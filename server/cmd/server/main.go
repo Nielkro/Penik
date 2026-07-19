@@ -91,6 +91,10 @@ func main() {
 		authMW(http.HandlerFunc(handlers.UploadKeyBackup(database))))
 	mux.Handle("GET /api/v1/keys/backup",
 		authMW(http.HandlerFunc(handlers.DownloadKeyBackup(database))))
+	mux.Handle("POST /api/v1/pairing/sessions",
+		authMW(http.HandlerFunc(handlers.CreatePairingSession(database))))
+	mux.Handle("POST /api/v1/pairing/sessions/claim",
+		authMW(http.HandlerFunc(handlers.ClaimPairingSession(database))))
 	mux.Handle("GET /api/v1/messages/history",
 		authMW(http.HandlerFunc(handlers.GetMessageHistory(database))))
 	mux.Handle("GET /api/v1/messages/{user_id}/status",
