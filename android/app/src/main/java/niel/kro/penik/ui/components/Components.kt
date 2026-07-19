@@ -182,9 +182,11 @@ private fun formatTime(timestamp: Long): String {
 @Composable
 fun MessageBubble(
     text: String,
+    timestamp: Long,
     isSentByMe: Boolean,
     delivered: Boolean,
-    deliveredAt: Long? = null
+    deliveredAt: Long? = null,
+    read: Boolean = false
 ) {
     val bgColor = if (isSentByMe) SentMessageBg else PanelSecondary
     val textColor = if (isSentByMe) SentMessageText else TextPrimary
@@ -210,20 +212,20 @@ fun MessageBubble(
                     fontSize = 15.sp
                 )
                 if (isSentByMe) {
-                    val statusText = if (delivered && deliveredAt != null) {
-                        "✓✓ ${formatTime(deliveredAt)}"
-                    } else if (delivered) {
-                        "✓✓"
-                    } else {
-                        "✓"
-                    }
+                    val statusText = if (delivered || read) "✓✓" else "✓"
                     Text(
                         text = statusText,
-                        color = if (delivered) Accent else TextMuted,
+                        color = if (read || delivered) Accent else TextMuted,
                         fontSize = 11.sp,
                         modifier = Modifier.align(Alignment.End)
                     )
                 }
+                Text(
+                    text = formatTime(timestamp),
+                    color = TextMuted,
+                    fontSize = 10.sp,
+                    modifier = Modifier.align(Alignment.End)
+                )
             }
         }
     }

@@ -93,6 +93,8 @@ func main() {
 		authMW(http.HandlerFunc(handlers.DownloadKeyBackup(database))))
 	mux.Handle("GET /api/v1/messages/history",
 		authMW(http.HandlerFunc(handlers.GetMessageHistory(database))))
+	mux.Handle("GET /api/v1/messages/{user_id}/status",
+		authMW(http.HandlerFunc(handlers.GetMessageStatuses(database))))
 	mux.Handle("DELETE /api/v1/chats/{peer_id}",
 		authMW(http.HandlerFunc(handlers.DeleteChat(database, hub))))
 	mux.Handle("GET /api/v1/ws",

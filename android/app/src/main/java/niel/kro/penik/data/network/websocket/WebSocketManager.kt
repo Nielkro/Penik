@@ -58,8 +58,10 @@ sealed class WebSocketEvent {
     ) : WebSocketEvent()
 
     data class MsgDelivered(
-        val msgId: Long
+        val msgId: Long,
+        val clientMsgId: String = ""
     ) : WebSocketEvent()
+    data class MsgRead(val msgId: Long, val clientMsgId: String = "") : WebSocketEvent()
 
     data class OfflineBatch(
         val msgs: List<WebSocketEvent.MsgRecv>
@@ -82,6 +84,7 @@ object Opcode {
     const val MSG_RECV: Byte = 0x02
     const val MSG_ACK: Byte = 0x03
     const val MSG_DELIVERED: Byte = 0x04
+    const val MSG_READ: Byte = 0x18
     const val OFFLINE_BATCH: Byte = 0x05
     const val PING: Byte = 0x06
     const val PONG: Byte = 0x07
@@ -238,6 +241,7 @@ class WebSocketManager @Inject constructor() {
             Opcode.MSG_RECV -> handleMsgRecv(payload)
             Opcode.MSG_ACK -> handleMsgAck(payload)
             Opcode.MSG_DELIVERED -> handleMsgDelivered(payload)
+            Opcode.MSG_READ -> handleMsgRead(payload)
             Opcode.OFFLINE_BATCH -> handleOfflineBatch(payload)
             Opcode.PING -> sendPong()
             Opcode.PONG -> scope.launch { _events.emit(WebSocketEvent.Pong) }
@@ -269,9 +273,16 @@ class WebSocketManager @Inject constructor() {
         val map = unpacker.readMsgRecvMap()
         unpacker.close()
         val event = WebSocketEvent.MsgDelivered(
-            msgId = (map["msg_id"] as? Number)?.toLong() ?: 0
+            msgId = (map["msg_id"] as? Number)?.toLong() ?: 0,
+            clientMsgId = map["client_msg_id"] as? String ?: ""
         )
         scope.launch { _events.emit(event) }
+    }
+
+    private fun handleMsgRead(payload: ByteArray) {
+        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+        val map = unpacker.readMsgRecvMap(); unpacker.close()
+        scope.launch { _events.emit(WebSocketEvent.MsgRead((map["msg_id"] as? Number)?.toLong() ?: 0, map["client_msg_id"] as? String ?: "")) }
     }
 
     private fun handleOfflineBatch(payload: ByteArray) {
@@ -446,6 +457,13 @@ class WebSocketManager @Inject constructor() {
         webSocket?.send(frame.toByteString(0, frame.size))
     }
 
+    fun sendRead(msgId: Long) {
+        val bos = ByteArrayOutputStream(); val packer = MessagePack.newDefaultPacker(bos)
+        packer.packMapHeader(1); packer.packString("msg_id"); packer.packLong(msgId); packer.close()
+        val payload = bos.toByteArray(); val frame = ByteArray(1 + payload.size); frame[0] = Opcode.MSG_READ
+        payload.copyInto(frame, 1); webSocket?.send(frame.toByteString(0, frame.size))
+    }
+
     fun sendChatPurgeAck(peerId: Long) {
         val bos = ByteArrayOutputStream()
         val packer = MessagePack.newDefaultPacker(bos)
@@ -500,4 +518,3 @@ data class E2EDevicePayload(
     val salt: ByteArray,
     val nonce: ByteArray
 )
-

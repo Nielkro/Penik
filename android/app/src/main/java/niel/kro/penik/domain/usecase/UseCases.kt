@@ -97,6 +97,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
             is WebSocketEvent.MsgDelivered -> {
                 messageRepository.handleMsgDelivered(event)
             }
+            is WebSocketEvent.MsgRead -> {
+                messageRepository.handleMsgRead(event)
+            }
             is WebSocketEvent.OfflineBatch -> {
                 messageRepository.handleOfflineBatch(event)
                 event.msgs.forEach { msg ->

@@ -320,16 +320,11 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		}
 
 		if len(req.OPKList) > 0 {
-			_, err = tx.ExecContext(r.Context(), `DELETE FROM one_time_keys WHERE device_id=?`, deviceID)
-			if err != nil {
-				loginInternalError(w, "delete old one_time_keys", err)
-				return
-			}
-			_, err = tx.ExecContext(r.Context(), `DELETE FROM one_time_prekeys WHERE device_id=?`, deviceID)
-			if err != nil {
-				loginInternalError(w, "delete old one_time_prekeys", err)
-				return
-			}
+			// Do not delete the existing pool on login. The client may still have
+			// ciphertexts addressed to those OTPKs (for example messages sent to
+			// this device while it was offline). Login currently publishes a new
+			// pool, but deleting the old rows would make their local private keys
+			// unusable and cause OTPK-not-found errors after reconnect/reload.
 		}
 
 		for _, opkRaw := range req.OPKList {
