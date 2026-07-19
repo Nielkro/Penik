@@ -11,6 +11,7 @@ import androidx.navigation.navArgument
 import niel.kro.penik.ui.screen.auth.AuthScreen
 import niel.kro.penik.ui.screen.chatroom.ChatRoomScreen
 import niel.kro.penik.ui.viewmodel.StartupViewModel
+import niel.kro.penik.ui.screen.pairing.PairingScannerScreen
 
 @Composable
 fun NavGraph(
@@ -45,8 +46,13 @@ fun NavGraph(
                     navController.navigate(Screen.Auth.route) {
                         popUpTo(0) { inclusive = true }
                     }
-                }
+                },
+                onPairingScanner = { navController.navigate(Screen.PairingScanner.route) }
             )
+        }
+
+        composable(Screen.PairingScanner.route) {
+            PairingScannerScreen(onBack = { navController.popBackStack() })
         }
 
         composable(

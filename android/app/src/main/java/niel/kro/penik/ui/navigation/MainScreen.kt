@@ -28,7 +28,8 @@ import niel.kro.penik.ui.theme.TextPrimary
 @Composable
 fun MainScreen(
     onChatClick: (Long, String) -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onPairingScanner: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -75,7 +76,7 @@ fun MainScreen(
         ) {
             when (selectedTab) {
                 0 -> ChatsListContent(onChatClick = onChatClick)
-                1 -> ProfileScreen(onLogout = onLogout)
+                1 -> ProfileScreen(onLogout = onLogout, onPairingScanner = onPairingScanner)
             }
         }
     }

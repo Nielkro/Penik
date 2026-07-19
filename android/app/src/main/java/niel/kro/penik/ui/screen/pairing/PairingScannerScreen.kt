@@ -1,0 +1,122 @@
+package niel.kro.penik.ui.screen.pairing
+
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.launch
+import niel.kro.penik.data.network.api.ApiService
+import niel.kro.penik.data.network.api.PairingClaimRequest
+import javax.inject.Inject
+
+data class PairPayload(val session: String, val token: String, val ephemeralKey: String)
+
+private fun parsePairingPayload(value: String): PairPayload? {
+    val parts = value.split(":", limit = 4)
+    if (parts.size != 4 || parts[0] != "penik-pair-v1" || parts.any { it.isBlank() }) return null
+    return PairPayload(parts[1], parts[2], parts[3])
+}
+
+@HiltViewModel
+class PairingScannerViewModel @Inject constructor(private val api: ApiService) : androidx.lifecycle.ViewModel() {
+    var message by mutableStateOf<String?>(null)
+        private set
+    var success by mutableStateOf(false)
+        private set
+    var claiming by mutableStateOf(false)
+        private set
+
+    fun claim(payload: PairPayload) {
+        if (claiming || success) return
+        claiming = true
+        message = null
+        viewModelScope.launch {
+            try {
+                val response = api.claimPairingSession(PairingClaimRequest(payload.session, payload.token))
+                if (response.isSuccessful) {
+                    success = true
+                    message = "Устройство успешно подключено"
+                } else message = "Не удалось подключить устройство (${response.code()})"
+            } catch (e: Exception) {
+                message = e.message ?: "Ошибка подключения устройства"
+            } finally { claiming = false }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PairingScannerScreen(
+    onBack: () -> Unit,
+    viewModel: PairingScannerViewModel = hiltViewModel()
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var granted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted = it }
+    LaunchedEffect(Unit) { if (!granted) permissionLauncher.launch(Manifest.permission.CAMERA) }
+
+    Scaffold(topBar = { TopAppBar(title = { Text("Подключить устройство") }, navigationIcon = {
+        TextButton(onClick = onBack) { Text("Назад") }
+    }) }) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally) {
+            when {
+                viewModel.success -> ResultPanel(viewModel.message ?: "Устройство успешно подключено", onBack)
+                !granted -> ResultPanel("Требуется доступ к камере для сканирования QR-кода", onBack)
+                else -> {
+                    Text("Наведите камеру на QR-код устройства", Modifier.padding(16.dp))
+                    AndroidView(
+                        factory = { ctx -> PreviewView(ctx).also { previewView ->
+                            val providerFuture = ProcessCameraProvider.getInstance(ctx)
+                            providerFuture.addListener({
+                                val provider = providerFuture.get()
+                                val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                                val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
+                                val scanner = BarcodeScanning.getClient()
+                                analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { proxy ->
+                                    val image = proxy.image
+                                    if (image != null) scanner.process(InputImage.fromMediaImage(image, proxy.imageInfo.rotationDegrees))
+                                        .addOnSuccessListener { codes -> codes.firstNotNullOfOrNull { parsePairingPayload(it.rawValue.orEmpty()) }?.let(viewModel::claim) }
+                                        .addOnCompleteListener { proxy.close() }
+                                    else proxy.close()
+                                }
+                                provider.unbindAll(); provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                            }, ContextCompat.getMainExecutor(ctx))
+                        } }, Modifier.fillMaxWidth().weight(1f))
+                    viewModel.message?.let { Text(it, Modifier.padding(16.dp)) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResultPanel(text: String, onBack: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Text(text)
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onBack) { Text("Готово") }
+    }
+}
