@@ -33,10 +33,10 @@ type historyMessageResponse struct {
 }
 
 // GetMessageHistory handles GET /api/v1/messages/history.
-// History is scoped to the authenticated device.  A user can have several
-// devices, and each fan-out copy is encrypted for a different device OTPK.
+// History is scoped to the authenticated device. A user can have several
+// devices, and each fan-out copy is encrypted for that device identity key.
 // Returning another device's copy makes the client attempt decryption with a
-// private OTPK it does not possess.
+// private identity key it does not possess.
 func GetMessageHistory(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())

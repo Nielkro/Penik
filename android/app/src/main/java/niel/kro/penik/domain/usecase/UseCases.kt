@@ -73,7 +73,6 @@ class SyncHistoryUseCase @Inject constructor(
 class HandleWebSocketEventUseCase @Inject constructor(
     private val messageRepository: MessageRepository,
     private val chatRepository: ChatRepository,
-    private val preKeyManager: niel.kro.penik.data.crypto.PreKeyManager
 ) {
     suspend operator fun invoke(event: WebSocketEvent) {
         when (event) {
@@ -118,9 +117,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 messageRepository.deleteChatMessages(event.peerId)
                 chatRepository.deleteChat(event.peerId)
             }
-            is WebSocketEvent.RefillPreKeys -> {
-                preKeyManager.ensurePool()
-            }
+            is WebSocketEvent.RefillPreKeys -> Unit
             else -> {}
         }
     }

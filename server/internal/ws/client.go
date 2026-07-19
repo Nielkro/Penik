@@ -321,17 +321,6 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 			chatUserID = senderUserID
 		}
 
-		if dev.PrekeyID != nil {
-			var exists bool
-			tx.QueryRowContext(ctx, `SELECT 1 FROM one_time_prekeys WHERE device_id=? AND key_id=?`, dev.DeviceID, *dev.PrekeyID).Scan(&exists)
-			if exists {
-				_, err = tx.ExecContext(ctx, `DELETE FROM one_time_prekeys WHERE device_id=? AND key_id=?`, dev.DeviceID, *dev.PrekeyID)
-				if err != nil {
-					return fmt.Errorf("delete used prekey: %w", err)
-				}
-			}
-		}
-
 		res, err := tx.ExecContext(ctx,
 			`INSERT INTO messages(
 				chat_id, sender_user_id, recipient_user_id, client_msg_id,
@@ -347,13 +336,6 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 		messageID, err := res.LastInsertId()
 		if err != nil {
 			return fmt.Errorf("get message id: %w", err)
-		}
-
-		if dev.PrekeyID != nil {
-			_, _ = tx.ExecContext(ctx,
-				`INSERT INTO used_prekeys_audit (device_id, key_id, used_by_message_id, used_at)
-				 VALUES (?, ?, ?, ?)`,
-				dev.DeviceID, *dev.PrekeyID, messageID, now)
 		}
 
 		deliveries = append(deliveries, pendingDelivery{
