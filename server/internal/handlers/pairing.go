@@ -20,7 +20,7 @@ type pairingCreateRequest struct {
 	EphemeralPublicKey string `json:"ephemeral_public_key"`
 	EncryptedHistory   string `json:"encrypted_history,omitempty"`
 }
-type pairingClaimRequest struct{ SessionID, Token string }
+type pairingClaimRequest struct{ SessionID, Token, PublicKey string }
 
 func randomPairingValue(n int) ([]byte, error) {
 	b := make([]byte, n)
@@ -44,9 +44,15 @@ func CreatePairingSession(database *db.DB) http.HandlerFunc {
 			return
 		}
 		rawID, err := randomPairingValue(16)
-		if err != nil { http.Error(w, "internal error", 500); return }
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
 		rawToken, err := randomPairingValue(32)
-		if err != nil { http.Error(w, "internal error", 500); return }
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
 		id := base64.RawURLEncoding.EncodeToString(rawID)
 		token := base64.RawURLEncoding.EncodeToString(rawToken)
 		now, exp := time.Now().Unix(), time.Now().Add(pairingLifetime).Unix()
@@ -107,7 +113,12 @@ func ClaimPairingSession(database *db.DB) http.HandlerFunc {
 			http.Error(w, "invalid pairing token", 403)
 			return
 		}
-		_, err = tx.ExecContext(r.Context(), `UPDATE pairing_sessions SET claimed_at=?,claimed_by_device_id=? WHERE id=? AND claimed_at IS NULL AND expires_at>?`, now, middleware.DeviceIDFromCtx(r.Context()), req.SessionID, now)
+		claimPub, decErr := base64.RawURLEncoding.DecodeString(req.PublicKey)
+		if decErr != nil || len(claimPub) != 32 {
+			http.Error(w, "public_key required", 400)
+			return
+		}
+		_, err = tx.ExecContext(r.Context(), `UPDATE pairing_sessions SET claimed_at=?,claimed_by_device_id=?,claimed_by_public_key=? WHERE id=? AND claimed_at IS NULL AND expires_at>?`, now, middleware.DeviceIDFromCtx(r.Context()), claimPub, req.SessionID, now)
 		if err != nil {
 			http.Error(w, "internal error", 500)
 			return
@@ -117,5 +128,53 @@ func ClaimPairingSession(database *db.DB) http.HandlerFunc {
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]any{"session_id": req.SessionID, "ephemeral_public_key": base64.RawURLEncoding.EncodeToString(pub), "encrypted_history": base64.RawURLEncoding.EncodeToString(history), "owner_user_id": owner, "expires_at": exp})
+	}
+}
+
+// GetPairingClaim exposes only the newly paired device public key to the web owner.
+func GetPairingClaim(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		var pub []byte
+		var claimed, exp int64
+		var history []byte
+		err := database.QueryRowContext(r.Context(), `SELECT claimed_at,expires_at,claimed_by_public_key,encrypted_history FROM pairing_sessions WHERE id=? AND owner_user_id=?`, id, middleware.UserIDFromCtx(r.Context())).Scan(&claimed, &exp, &pub, &history)
+		if err == sql.ErrNoRows {
+			http.Error(w, "not found", 404)
+			return
+		}
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"claimed": claimed != 0, "expires_at": exp, "public_key": base64.RawURLEncoding.EncodeToString(pub), "encrypted_history": base64.RawURLEncoding.EncodeToString(history)})
+	}
+}
+
+func UploadPairingHistory(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			EncryptedHistory string `json:"encrypted_history"`
+		}
+		if json.NewDecoder(r.Body).Decode(&req) != nil {
+			http.Error(w, "invalid body", 400)
+			return
+		}
+		b, err := base64.RawURLEncoding.DecodeString(req.EncryptedHistory)
+		if err != nil || len(b) > 2<<20 {
+			http.Error(w, "invalid encrypted history", 400)
+			return
+		}
+		res, err := database.ExecContext(r.Context(), `UPDATE pairing_sessions SET encrypted_history=? WHERE id=? AND owner_user_id=? AND claimed_at IS NOT NULL AND expires_at>?`, b, r.PathValue("id"), middleware.UserIDFromCtx(r.Context()), time.Now().Unix())
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
+		n, _ := res.RowsAffected()
+		if n != 1 {
+			http.Error(w, "not available", 409)
+			return
+		}
+		w.WriteHeader(204)
 	}
 }

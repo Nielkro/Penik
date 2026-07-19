@@ -103,7 +103,8 @@ data class MessageStatusResponse(
 @Serializable
 data class PairingClaimRequest(
     @SerialName("session_id") val sessionId: String,
-    val token: String
+    val token: String,
+    @SerialName("public_key") val publicKey: String
 )
 
 @Serializable
@@ -114,3 +115,4 @@ data class PairingClaimResponse(
     @SerialName("owner_user_id") val ownerUserId: Long,
     @SerialName("expires_at") val expiresAt: Long
 )
+@Serializable data class PairingStateResponse(@SerialName("claimed") val claimed: Boolean, @SerialName("public_key") val publicKey: String = "", @SerialName("encrypted_history") val encryptedHistory: String = "")

@@ -1,6 +1,11 @@
 package niel.kro.penik.data.repository
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
+import kotlinx.serialization.json.boolean
 import niel.kro.penik.data.local.dao.MessageDao
 import niel.kro.penik.data.local.entity.MessageEntity
 import niel.kro.penik.data.network.api.ApiService
@@ -21,6 +26,17 @@ class MessageRepository @Inject constructor(
     private val chatRepository: ChatRepository,
     private val e2eeCrypto: E2EECrypto,
 ) {
+    suspend fun importPairingHistory(encoded: String, secret: ByteArray) {
+        val raw = java.util.Base64.getUrlDecoder().decode(encoded)
+        val envelope = kotlinx.serialization.json.Json.parseToJsonElement(String(raw)).jsonObject
+        val decoded = e2eeCrypto.decrypt(
+            java.util.Base64.getUrlDecoder().decode(envelope["ciphertext"]!!.jsonPrimitive.content), secret,
+            java.util.Base64.getUrlDecoder().decode(envelope["salt"]!!.jsonPrimitive.content),
+            java.util.Base64.getUrlDecoder().decode(envelope["nonce"]!!.jsonPrimitive.content)
+        )
+        val messages = kotlinx.serialization.json.Json.parseToJsonElement(String(decoded)).jsonObject["messages"]!!.jsonArray
+        messageDao.insertMessages(messages.map { val o=it.jsonObject; MessageEntity(o["msg_id"]!!.jsonPrimitive.content, o["server_id"]?.jsonPrimitive?.content?.toLongOrNull(), o["chat_id"]!!.jsonPrimitive.content.toLong(), o["sender_id"]!!.jsonPrimitive.content.toLong(), o["text"]!!.jsonPrimitive.content, o["created_at"]!!.jsonPrimitive.content.toLong(), false, o["delivered"]?.jsonPrimitive?.boolean ?: false, null, o["read"]?.jsonPrimitive?.boolean ?: false) })
+    }
 
     fun getMessagesForChat(chatUserId: Long): Flow<List<MessageEntity>> {
         return messageDao.getMessagesForChat(chatUserId)

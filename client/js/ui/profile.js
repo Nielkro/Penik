@@ -1,4 +1,9 @@
-import { apiPatch, createPairingSession } from "../api.js";
+import { apiPatch, createPairingSession, getPairingSession, uploadPairingHistory } from "../api.js";
+import { getAllMessages } from "../storage.js";
+import { deriveSharedSecret, encryptPairingHistory } from "../crypto.js";
+const decodeB64Url = s => Uint8Array.from(atob(s.replaceAll("-","+").replaceAll("_","/") + "=="), c => c.charCodeAt(0));
+const encodeB64Url = b => btoa(String.fromCharCode(...b)).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
+const pack = ({ ciphertext, salt, nonce }) => new TextEncoder().encode(JSON.stringify({ ciphertext: encodeB64Url(ciphertext), salt: encodeB64Url(salt), nonce: encodeB64Url(nonce) }));
 import { navigate, getCurrentUser, setCurrentUser, logout, backupE2EEKeys, restoreE2EEKeys } from "../app.js";
 import { avatar, el, showToast, spinner } from "./components.js";
 import QRCode from "qrcode";
@@ -258,8 +263,8 @@ export function renderProfile(container) {
   pairingBtn.addEventListener("click", async () => {
     pairingBtn.disabled = true;
     try {
-      const key = crypto.getRandomValues(new Uint8Array(32));
-      const keyText = btoa(String.fromCharCode(...key)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+       const key = crypto.getRandomValues(new Uint8Array(32));
+       const keyText = btoa(String.fromCharCode(...key)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
       const session = await createPairingSession({ ephemeral_public_key: keyText });
       const payload = `penik-pair-v1:${session.session_id}:${session.token}:${session.ephemeral_public_key}`;
       const canvas = document.createElement("canvas");
@@ -274,7 +279,8 @@ export function renderProfile(container) {
         el("p", { style: "margin:14px 0;color:#777;font-size:11px;word-break:break-all;" }, `Сессия: ${session.session_id}`),
         el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;", onclick: close }, "Закрыть")
       ));
-      document.body.appendChild(modal);
+       document.body.appendChild(modal);
+       for (let i = 0; i < 60; i++) { await new Promise(r => setTimeout(r, 5000)); const state = await getPairingSession(session.session_id); if (state.claimed && state.public_key) { const secret = await deriveSharedSecret(key, decodeB64Url(state.public_key)); const blob = await encryptPairingHistory(await getAllMessages(), secret); await uploadPairingHistory(session.session_id, { encrypted_history: encodeB64Url(pack(blob)) }); showToast("История передана устройству", "success"); break; } }
     } catch (err) { showToast(err.message || "Не удалось создать сессию", "error"); }
     finally { pairingBtn.disabled = false; }
   });

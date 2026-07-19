@@ -110,3 +110,5 @@ export async function getMessageHistory(userId, before, limit = 40) {
 }
 
 export function createPairingSession(body) { return post('/pairing/sessions', body); }
+export function getPairingSession(id) { return request('GET', `/pairing/sessions/${id}`); }
+export function uploadPairingHistory(id, body) { return request('PUT', `/pairing/sessions/${id}/history`, body); }

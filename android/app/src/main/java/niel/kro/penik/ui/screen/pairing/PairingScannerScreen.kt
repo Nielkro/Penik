@@ -27,7 +27,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.PairingClaimRequest
+import niel.kro.penik.data.crypto.E2EECrypto
+import niel.kro.penik.data.repository.MessageRepository
+import niel.kro.penik.data.repository.SecureTokenStorage
 import javax.inject.Inject
+import kotlinx.serialization.json.*
 
 data class PairPayload(val session: String, val token: String, val ephemeralKey: String)
 
@@ -38,7 +42,7 @@ private fun parsePairingPayload(value: String): PairPayload? {
 }
 
 @HiltViewModel
-class PairingScannerViewModel @Inject constructor(private val api: ApiService) : androidx.lifecycle.ViewModel() {
+class PairingScannerViewModel @Inject constructor(private val api: ApiService, private val crypto: E2EECrypto, private val tokenStorage: SecureTokenStorage, private val messageRepository: MessageRepository) : androidx.lifecycle.ViewModel() {
     var message by mutableStateOf<String?>(null)
         private set
     var success by mutableStateOf(false)
@@ -52,8 +56,12 @@ class PairingScannerViewModel @Inject constructor(private val api: ApiService) :
         message = null
         viewModelScope.launch {
             try {
-                val response = api.claimPairingSession(PairingClaimRequest(payload.session, payload.token))
+                val kp = crypto.generateX25519KeyPair()
+                val response = api.claimPairingSession(PairingClaimRequest(payload.session, payload.token, java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(kp.second)))
                 if (response.isSuccessful) {
+                    var transfer = response.body()?.encryptedHistory.orEmpty()
+                    repeat(12) { if (transfer.isBlank()) { kotlinx.coroutines.delay(5000); transfer = api.getPairingSession(payload.session).body()?.encryptedHistory.orEmpty() } }
+                    if (transfer.isNotBlank()) messageRepository.importPairingHistory(transfer, crypto.deriveSharedSecret(kp.first, java.util.Base64.getUrlDecoder().decode(payload.ephemeralKey)))
                     success = true
                     message = "Устройство успешно подключено"
                 } else message = "Не удалось подключить устройство (${response.code()})"

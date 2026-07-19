@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS pairing_sessions (
   expires_at INTEGER NOT NULL,
   claimed_at INTEGER,
   claimed_by_device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
+  claimed_by_public_key BLOB,
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS pairing_tokens (
