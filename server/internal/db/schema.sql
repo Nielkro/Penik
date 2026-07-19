@@ -111,3 +111,20 @@ CREATE TABLE IF NOT EXISTS key_backups (
     iv BLOB NOT NULL,
     created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS pairing_sessions (
+  id TEXT PRIMARY KEY,
+  owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  owner_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  ephemeral_public_key BLOB NOT NULL,
+  encrypted_history BLOB,
+  expires_at INTEGER NOT NULL,
+  claimed_at INTEGER,
+  claimed_by_device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS pairing_tokens (
+  session_id TEXT PRIMARY KEY REFERENCES pairing_sessions(id) ON DELETE CASCADE,
+  token_hash BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pairing_sessions_expiry ON pairing_sessions(expires_at);

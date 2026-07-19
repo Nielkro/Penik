@@ -108,3 +108,5 @@ export async function getMessageHistory(userId, before, limit = 40) {
   if (before) path += `&before=${before}`;
   return get(path);
 }
+
+export function createPairingSession(body) { return post('/pairing/sessions', body); }

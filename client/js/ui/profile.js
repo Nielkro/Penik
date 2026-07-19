@@ -1,6 +1,7 @@
-import { apiPatch, apiPost } from "../api.js";
+import { apiPatch, createPairingSession } from "../api.js";
 import { navigate, getCurrentUser, setCurrentUser, logout, backupE2EEKeys, restoreE2EEKeys } from "../app.js";
 import { avatar, el, showToast, spinner } from "./components.js";
+import QRCode from "qrcode";
 
 export function renderProfile(container) {
   container.innerHTML = "";
@@ -253,6 +254,32 @@ export function renderProfile(container) {
     el("div", { style: "display:flex;margin-top:8px;" }, doBackupBtn, doRestoreBtn, cancelBackupBtn)
   );
 
+  const pairingBtn = el("button", { class: "btn-secondary", style: "width:100%;margin-top:8px;cursor:pointer;" }, "Подключить устройство");
+  pairingBtn.addEventListener("click", async () => {
+    pairingBtn.disabled = true;
+    try {
+      const key = crypto.getRandomValues(new Uint8Array(32));
+      const keyText = btoa(String.fromCharCode(...key)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+      const session = await createPairingSession({ ephemeral_public_key: keyText });
+      const payload = `penik-pair-v1:${session.session_id}:${session.token}:${session.ephemeral_public_key}`;
+      const canvas = document.createElement("canvas");
+      await QRCode.toCanvas(canvas, payload, { width: 280, margin: 2 });
+      const modal = el("div", { style: "position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;" });
+      const close = () => modal.remove();
+      modal.addEventListener("click", event => { if (event.target === modal) close(); });
+      modal.appendChild(el("div", { style: "width:min(360px,100%);background:#202024;border-radius:16px;padding:24px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.45);" },
+        el("h3", { style: "margin:0 0 10px;color:#fff;" }, "Подключение устройства"),
+        el("p", { style: "margin:0 0 16px;color:#aaa;font-size:13px;line-height:1.4;" }, "Отсканируйте этот QR-код телефоном. Код действует 5 минут."),
+        canvas,
+        el("p", { style: "margin:14px 0;color:#777;font-size:11px;word-break:break-all;" }, `Сессия: ${session.session_id}`),
+        el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;", onclick: close }, "Закрыть")
+      ));
+      document.body.appendChild(modal);
+    } catch (err) { showToast(err.message || "Не удалось создать сессию", "error"); }
+    finally { pairingBtn.disabled = false; }
+  });
+  const pairingSection = el("div", { style: "margin-top:16px;border-top:1px solid rgba(255,255,255,.1);padding-top:16px;width:100%;" }, el("h3", { style: "font-size:14px;color:#aaa;" }, "Устройства"), pairingBtn);
+
   const infoSection = el("div", { class: "profile-info" },
     el("div", { class: "profile-name-row" }, nameDisplay, nameInput),
     usernameEl,
@@ -265,6 +292,7 @@ export function renderProfile(container) {
     infoSection,
     pwSection,
     backupSection
+    , pairingSection
   );
 
   const wrap = el("div", { class: "profile-wrap" },
