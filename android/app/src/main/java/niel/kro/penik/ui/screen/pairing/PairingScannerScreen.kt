@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.PairingClaimRequest
 import niel.kro.penik.data.crypto.E2EECrypto
@@ -41,8 +42,15 @@ import kotlinx.serialization.json.*
 data class PairPayload(val session: String, val token: String, val ephemeralKey: String)
 
 private fun parsePairingPayload(value: String): PairPayload? {
-    val parts = value.split(":", limit = 4)
+    // QR readers may include a leading/trailing whitespace or a line break.
+    // Normalize it before splitting; otherwise Base64 decoding later reports
+    // the misleading "String contains an invalid character" error.
+    val normalized = value.trim().replace("\n", "").replace("\r", "")
+    val parts = normalized.split(":", limit = 4)
     if (parts.size != 4 || parts[0] != "penik-pair-v1" || parts.any { it.isBlank() }) return null
+    if (!parts[1].matches(Regex("[A-Za-z0-9_-]+")) ||
+        !parts[2].matches(Regex("[A-Za-z0-9_-]+")) ||
+        !parts[3].matches(Regex("[A-Za-z0-9_-]+"))) return null
     return PairPayload(parts[1], parts[2], parts[3])
 }
 
@@ -54,9 +62,11 @@ class PairingScannerViewModel @Inject constructor(private val api: ApiService, p
         private set
     var claiming by mutableStateOf(false)
         private set
+    private var lastSession: String? = null
 
     fun claim(payload: PairPayload) {
-        if (claiming || success) return
+        if (claiming || success || lastSession == payload.session) return
+        lastSession = payload.session
         claiming = true
         message = null
         viewModelScope.launch {
@@ -67,11 +77,18 @@ class PairingScannerViewModel @Inject constructor(private val api: ApiService, p
                     var transfer = response.body()?.encryptedHistory.orEmpty()
                     if (transfer.isBlank()) {
                         transfer = kotlinx.coroutines.withTimeoutOrNull(300_000) {
-                            webSocketManager.events.filterIsInstance<WebSocketEvent.PairingHistoryReady>().first { it.sessionId == payload.session }
-                            api.getPairingSession(payload.session).body()?.encryptedHistory.orEmpty()
+                            while (true) {
+                                val current = api.getPairingSession(payload.session).body()?.encryptedHistory.orEmpty()
+                                if (current.isNotBlank()) return@withTimeoutOrNull current
+                                delay(1000)
+                            }
+                            ""
                         }.orEmpty()
                     }
-                    if (transfer.isNotBlank()) messageRepository.importPairingHistory(transfer, crypto.deriveSharedSecret(kp.first, java.util.Base64.getUrlDecoder().decode(payload.ephemeralKey)))
+                    if (transfer.isBlank()) {
+                        throw IllegalStateException("Веб не передал историю")
+                    }
+                    messageRepository.importPairingHistory(transfer, crypto.deriveSharedSecret(kp.first, decodeUrlBase64(payload.ephemeralKey)))
                     success = true
                     message = "Устройство успешно подключено"
                 } else {
@@ -85,6 +102,11 @@ class PairingScannerViewModel @Inject constructor(private val api: ApiService, p
             } finally { claiming = false }
         }
     }
+}
+
+private fun decodeUrlBase64(value: String): ByteArray {
+    val normalized = value.trim().replace('+', '-').replace('/', '_')
+    return java.util.Base64.getUrlDecoder().decode(normalized)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

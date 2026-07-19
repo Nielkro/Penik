@@ -21,6 +21,7 @@ export const OP = {
   MSG_RETRY_RESP:  0x17,
   MSG_READ:        0x18,
   PAIRING_HISTORY_READY: 0x19,
+  PAIRING_CLAIMED: 0x1a,
 };
 
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

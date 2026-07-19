@@ -19,6 +19,9 @@ interface MessageDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessages(messages: List<MessageEntity>)
 
+    @Query("SELECT * FROM messages WHERE chatUserId = :chatUserId AND senderId = :senderId AND timestamp = :timestamp AND text = :text LIMIT 1")
+    suspend fun findMatchingMessage(chatUserId: Long, senderId: Long, timestamp: Long, text: String): MessageEntity?
+
     @Query("UPDATE messages SET serverId = :serverId WHERE localId = :clientMsgId")
     suspend fun acknowledgeMessage(clientMsgId: String, serverId: Long)
 

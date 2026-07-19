@@ -27,15 +27,37 @@ class MessageRepository @Inject constructor(
     private val e2eeCrypto: E2EECrypto,
 ) {
     suspend fun importPairingHistory(encoded: String, secret: ByteArray) {
-        val raw = java.util.Base64.getUrlDecoder().decode(encoded)
+        val raw = decodeUrlBase64(encoded)
         val envelope = kotlinx.serialization.json.Json.parseToJsonElement(String(raw)).jsonObject
         val decoded = e2eeCrypto.decrypt(
-            java.util.Base64.getUrlDecoder().decode(envelope["ciphertext"]!!.jsonPrimitive.content), secret,
-            java.util.Base64.getUrlDecoder().decode(envelope["salt"]!!.jsonPrimitive.content),
-            java.util.Base64.getUrlDecoder().decode(envelope["nonce"]!!.jsonPrimitive.content)
+            decodeUrlBase64(envelope["ciphertext"]!!.jsonPrimitive.content), secret,
+            decodeUrlBase64(envelope["salt"]!!.jsonPrimitive.content),
+            decodeUrlBase64(envelope["nonce"]!!.jsonPrimitive.content)
         )
         val messages = kotlinx.serialization.json.Json.parseToJsonElement(String(decoded)).jsonObject["messages"]!!.jsonArray
-        messageDao.insertMessages(messages.map { val o=it.jsonObject; MessageEntity(o["msg_id"]!!.jsonPrimitive.content, o["server_id"]?.jsonPrimitive?.content?.toLongOrNull(), o["chat_id"]!!.jsonPrimitive.content.toLong(), o["sender_id"]!!.jsonPrimitive.content.toLong(), o["text"]!!.jsonPrimitive.content, o["created_at"]!!.jsonPrimitive.content.toLong(), false, o["delivered"]?.jsonPrimitive?.boolean ?: false, null, o["read"]?.jsonPrimitive?.boolean ?: false) })
+        val imported = messages.mapNotNull { val o = it.jsonObject; val chatId = o["chat_id"]!!.jsonPrimitive.content.toLong(); val senderId = o["sender_id"]!!.jsonPrimitive.content.toLong(); val timestamp = o["created_at"]!!.jsonPrimitive.content.toLong(); val text = (o["text"] ?: o["plaintext"])!!.jsonPrimitive.content
+            if (messageDao.findMatchingMessage(chatId, senderId, timestamp, text) != null) return@mapNotNull null
+            MessageEntity(
+            localId = o["msg_id"]!!.jsonPrimitive.content,
+            serverId = (o["server_id"] ?: o["msg_id"])?.jsonPrimitive?.content?.toLongOrNull(),
+            chatUserId = chatId,
+            senderId = senderId,
+            text = text,
+            timestamp = timestamp,
+            sentByMe = o["sender_id"]!!.jsonPrimitive.content.toLong() == tokenStorage.getUserId(),
+            delivered = o["delivered"]?.asBoolean() ?: false,
+            read = o["read"]?.asBoolean() ?: false
+        ) }
+        messageDao.insertMessages(imported)
+    }
+
+    private fun decodeUrlBase64(value: String): ByteArray = java.util.Base64.getUrlDecoder().decode(
+        value.trim().replace('+', '-').replace('/', '_').let { it + "=".repeat((4 - it.length % 4) % 4) }
+    )
+
+    private fun kotlinx.serialization.json.JsonElement.asBoolean(): Boolean = when {
+        jsonPrimitive.isString -> jsonPrimitive.content.toBooleanStrictOrNull() ?: false
+        else -> jsonPrimitive.content == "1" || jsonPrimitive.content.equals("true", ignoreCase = true)
     }
 
     fun getMessagesForChat(chatUserId: Long): Flow<List<MessageEntity>> {

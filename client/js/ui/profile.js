@@ -1,12 +1,18 @@
 import { apiPatch, createPairingSession, getPairingSession, uploadPairingHistory } from "../api.js";
 import { getAllMessages } from "../storage.js";
-import { deriveSharedSecret, encryptPairingHistory } from "../crypto.js";
-const decodeB64Url = s => Uint8Array.from(atob(s.replaceAll("-","+").replaceAll("_","/") + "=="), c => c.charCodeAt(0));
+import { deriveSharedSecret, encryptPairingHistory, generateKeyPair } from "../crypto.js";
+const decodeB64Url = s => {
+  const normalized = String(s).trim().replaceAll("-", "+").replaceAll("_", "/");
+  const padded = normalized + "=".repeat((4 - normalized.length % 4) % 4);
+  const binary = atob(padded);
+  return Uint8Array.from(binary, c => c.charCodeAt(0));
+};
 const encodeB64Url = b => btoa(String.fromCharCode(...b)).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
 const pack = ({ ciphertext, salt, nonce }) => new TextEncoder().encode(JSON.stringify({ ciphertext: encodeB64Url(ciphertext), salt: encodeB64Url(salt), nonce: encodeB64Url(nonce) }));
 import { navigate, getCurrentUser, setCurrentUser, logout, backupE2EEKeys, restoreE2EEKeys } from "../app.js";
 import { avatar, el, showToast, spinner } from "./components.js";
 import QRCode from "qrcode";
+import { ws, OP } from "../ws.js";
 
 export function renderProfile(container) {
   container.innerHTML = "";
@@ -263,8 +269,8 @@ export function renderProfile(container) {
   pairingBtn.addEventListener("click", async () => {
     pairingBtn.disabled = true;
     try {
-       const key = crypto.getRandomValues(new Uint8Array(32));
-       const keyText = btoa(String.fromCharCode(...key)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+       const kp = await generateKeyPair();
+       const keyText = encodeB64Url(kp.publicKey);
       const session = await createPairingSession({ ephemeral_public_key: keyText });
       const payload = `penik-pair-v1:${session.session_id}:${session.token}:${session.ephemeral_public_key}`;
       const canvas = document.createElement("canvas");
@@ -280,8 +286,26 @@ export function renderProfile(container) {
         el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;", onclick: close }, "Закрыть")
       ));
        document.body.appendChild(modal);
-       await new Promise(r => setTimeout(r, 30000));
-       const state = await getPairingSession(session.session_id); if (state.claimed && state.public_key) { const secret = await deriveSharedSecret(key, decodeB64Url(state.public_key)); const blob = await encryptPairingHistory(await getAllMessages(), secret); await uploadPairingHistory(session.session_id, { encrypted_history: encodeB64Url(pack(blob)) }); showToast("История передана устройству", "success"); }
+         const state = await new Promise((resolve, reject) => {
+           let finished = false;
+           const finish = value => { if (finished) return; finished = true; clearTimeout(timer); clearInterval(poller); unsubscribe(); resolve(value); };
+           const timer = setTimeout(() => { if (!finished) { finished = true; clearInterval(poller); unsubscribe(); reject(new Error("Телефон не подтвердил подключение")); } }, 5 * 60 * 1000);
+           const unsubscribe = ws.on(OP.PAIRING_CLAIMED, event => {
+             if (event.session_id === session.session_id) finish(event);
+           });
+           const poller = setInterval(async () => {
+             try {
+               const current = await getPairingSession(session.session_id);
+               if (current.claimed && current.public_key) finish(current);
+             } catch (_) { /* websocket remains the primary fast path */ }
+           }, 1000);
+         });
+        if (state.public_key) {
+          const secret = await deriveSharedSecret(kp.privateKey, decodeB64Url(state.public_key));
+          const blob = await encryptPairingHistory(await getAllMessages(), secret);
+          await uploadPairingHistory(session.session_id, { encrypted_history: encodeB64Url(pack(blob)) });
+          showToast("История передана устройству", "success");
+        }
     } catch (err) { showToast(err.message || "Не удалось создать сессию", "error"); }
     finally { pairingBtn.disabled = false; }
   });
