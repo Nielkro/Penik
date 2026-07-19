@@ -251,7 +251,7 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 	if msg.MsgID != "" {
 		var existingMsgID int64
 		err := tx.QueryRowContext(ctx,
-			`SELECT id FROM messages WHERE sender_user_id=? AND client_msg_id=? LIMIT 1`,
+			`SELECT id FROM messages WHERE sender_user_id=? AND client_msg_id=? AND recipient_device_id IS NOT NULL LIMIT 1`,
 			senderUserID, msg.MsgID).Scan(&existingMsgID)
 		if err != nil && err != sql.ErrNoRows {
 			return fmt.Errorf("lookup existing client_msg_id inside tx: %w", err)

@@ -80,6 +80,7 @@ export const state = {
   currentUser: null,
   privateIK: null,
   retryCounters: new Map(), // msg_id -> retry attempt count
+  pendingPrekeyDeletes: new Map(), // msg_id -> prekeyId, delete OTPK only after server ack
 };
 
 export function getCurrentUser() { return state.currentUser; }
@@ -358,11 +359,14 @@ async function onMsgRecvGlobal(payload) {
   
   let decryptSuccess = true;
   let plaintext = "";
+  let usedPrekeyId = null;
   if (payload.plaintext) {
     plaintext = payload.plaintext;
   } else if (payload.ciphertext) {
     try {
-      plaintext = await decryptMessagePayload(payload);
+      const result = await decryptMessagePayload(payload);
+      plaintext = result.text;
+      usedPrekeyId = result.prekeyId;
     } catch (e) {
       plaintext = `[Ошибка расшифрования сообщения: ${e.message}]`;
       decryptSuccess = false;
@@ -400,6 +404,9 @@ async function onMsgRecvGlobal(payload) {
 
   if (ws) {
     if (decryptSuccess) {
+      if (usedPrekeyId) {
+        state.pendingPrekeyDeletes.set(String(payload.msg_id), usedPrekeyId);
+      }
       ws.send(0x04, { msg_id: payload.msg_id });
       state.retryCounters.delete(payload.msg_id);
     } else if (payload.from_device_id && payload.msg_id) {
@@ -432,6 +439,13 @@ async function onMsgAckGlobal(payload) {
   try {
     await updateMessageDelivered(payload.msg_id, 1);
   } catch (e) {}
+
+  const msgId = String(payload.msg_id);
+  const prekeyId = state.pendingPrekeyDeletes.get(msgId);
+  if (prekeyId) {
+    state.pendingPrekeyDeletes.delete(msgId);
+    try { await deletePreKeyPrivate(prekeyId); } catch (e) {}
+  }
 
   if (_activeChatCallback) {
     _activeChatCallback.onAck(payload.msg_id);
@@ -663,9 +677,7 @@ export async function decryptMessagePayload(payload) {
   let myPrivateIK;
   if (prekeyId) {
     myPrivateIK = await getPreKeyPrivate(prekeyId);
-    if (myPrivateIK) {
-      await deletePreKeyPrivate(prekeyId);
-    } else {
+    if (!myPrivateIK) {
       throw new Error(`OTPK private key not found locally for id: ${prekeyId}`);
     }
   } else {
@@ -707,16 +719,9 @@ export async function decryptMessagePayload(payload) {
   const info = new TextEncoder().encode("PenikE2EE");
   const derivedKey = await hkdfDerive(salt, secret, info, 32);
 
-  const toHex = (arr) => Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
-  console.log("[crypto] decryptMessagePayload keys:", {
-    ciphertextHex: toHex(ciphertext),
-    saltHex: toHex(salt),
-    nonceHex: toHex(nonce),
-    derivedKeyHex: toHex(derivedKey)
-  });
-
   const plaintextBytes = await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext);
-  return new TextDecoder().decode(plaintextBytes);
+
+  return { text: new TextDecoder().decode(plaintextBytes), prekeyId };
 }
 
 export async function encryptMessagePayload(text, recipientUserId) {
@@ -735,8 +740,8 @@ export async function encryptMessagePayload(text, recipientUserId) {
   const recipientDevices = recipientBundle?.devices || [];
   const senderDevices = senderBundle?.devices || [];
 
-  const filteredSenderDevices = senderDevices.filter(d => Number(d.device_id) !== myDeviceId);
-  const allDevices = [...recipientDevices, ...filteredSenderDevices];
+    const filteredSenderDevices = isSelfChat ? [] : senderDevices.filter(d => Number(d.device_id) !== myDeviceId);
+    const allDevices = [...recipientDevices, ...filteredSenderDevices];
 
   let myPrivateIK = state.privateIK;
   if (!myPrivateIK) {
@@ -767,22 +772,13 @@ export async function encryptMessagePayload(text, recipientUserId) {
       secret = await deriveSharedSecret(myPrivateIK, recipientIKPub);
     }
 
-    const salt = window.crypto.getRandomValues(new Uint8Array(16));
+    const salt = window.crypto.getRandomValues(new Uint8Array(32));
     const nonce = window.crypto.getRandomValues(new Uint8Array(12));
 
     const info = new TextEncoder().encode("PenikE2EE");
     const derivedKey = await hkdfDerive(salt, secret, info, 32);
 
     const ciphertext = await chacha20Poly1305Encrypt(derivedKey, nonce, new TextEncoder().encode(text));
-
-    const toHex = (arr) => Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
-    console.log("[crypto] encryptMessagePayload keys:", {
-      deviceId: device.device_id,
-      ciphertextHex: toHex(ciphertext),
-      saltHex: toHex(salt),
-      nonceHex: toHex(nonce),
-      derivedKeyHex: toHex(derivedKey)
-    });
 
     payloads.push({
       device_id: Number(device.device_id),
@@ -808,9 +804,16 @@ export async function flushOutbox() {
       if (!pendingAcks.has(clientMsgId)) {
         pendingAcks.set(clientMsgId, { tempId: msg.msg_id, userId: msg.chat_id });
       }
+      const seen = new Set();
+      const uniqueDevices = (msg.ciphertexts || []).filter(d => {
+        const id = Number(d.device_id);
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
       const sent = ws.send(0x01, {
         to_user_id: Number(msg.chat_id),
-        devices: msg.ciphertexts,
+        devices: uniqueDevices,
         msg_id: clientMsgId,
       });
       if (!sent) {

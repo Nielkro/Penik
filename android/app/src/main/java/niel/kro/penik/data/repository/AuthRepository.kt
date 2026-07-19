@@ -81,7 +81,7 @@ class AuthRepository @Inject constructor(
             val prekeys = preKeyManager.generateInitialPreKeys(20)
             val opkListBase64 = prekeys.map { key ->
                 val buffer = ByteBuffer.allocate(37)
-                buffer.putInt(key.keyId.toInt())
+                buffer.putInt((key.keyId and 0xFFFFFFFFL).toInt())
                 buffer.put(0x05.toByte())
                 buffer.put(key.publicKey)
                 Base64.getEncoder().encodeToString(buffer.array())

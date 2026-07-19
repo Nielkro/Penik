@@ -161,6 +161,7 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}
+
 			for _, opkRaw := range req.OPKList {
 				var keyID int64
 				var pubKey []byte
@@ -315,6 +316,19 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 					loginInternalError(w, "insert identity keys", err)
 					return
 				}
+			}
+		}
+
+		if len(req.OPKList) > 0 {
+			_, err = tx.ExecContext(r.Context(), `DELETE FROM one_time_keys WHERE device_id=?`, deviceID)
+			if err != nil {
+				loginInternalError(w, "delete old one_time_keys", err)
+				return
+			}
+			_, err = tx.ExecContext(r.Context(), `DELETE FROM one_time_prekeys WHERE device_id=?`, deviceID)
+			if err != nil {
+				loginInternalError(w, "delete old one_time_prekeys", err)
+				return
 			}
 		}
 
