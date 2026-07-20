@@ -4,7 +4,7 @@ import {
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
   findAndResolvePendingSentMessage, deleteChatData,
-  getPreKeyPrivate, deletePreKeyPrivate
+  getPreKeyPrivate, deletePreKeyPrivate, getMessageByClientId
 } from './storage.js';
 import { ws } from './ws.js';
 import { renderAuth } from './ui/auth.js';
@@ -404,6 +404,13 @@ async function onMsgRecvGlobal(payload) {
   const chatPartnerId = payload.chat_user_id || fromUserId;
 
   if (plaintext.startsWith('[Сообщение не расшифровано')) {
+    const clientMsgId = payload.client_msg_id;
+    if (clientMsgId) {
+      const existing = await getMessageByClientId(clientMsgId);
+      if (existing?.plaintext && !existing.plaintext.startsWith('[Сообщение не расшифровано')) {
+        return;
+      }
+    }
     return;
   }
 
@@ -414,6 +421,7 @@ async function onMsgRecvGlobal(payload) {
     plaintext,
     created_at: payload.ts ? payload.ts * 1000 : Date.now(),
     delivered: 1,
+    client_msg_id: payload.client_msg_id,
   };
 
   await saveMessage(inMsg);
