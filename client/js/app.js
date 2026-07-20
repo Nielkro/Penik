@@ -402,6 +402,11 @@ async function onMsgRecvGlobal(payload) {
   }
 
   const chatPartnerId = payload.chat_user_id || fromUserId;
+
+  if (plaintext.startsWith('[Сообщение не расшифровано')) {
+    return;
+  }
+
   const inMsg = {
     msg_id: payload.msg_id,
     chat_id: String(chatPartnerId),
