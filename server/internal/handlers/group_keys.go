@@ -149,15 +149,32 @@ func UploadEnvelopes(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 			return
 		}
 
-		// Set of devices allowed to receive this version (active members' devices).
+		// Set of devices allowed to receive this version: devices of both active
+		// and pending members. Pending invitees are included so the inviter can
+		// pre-stage an envelope; the fetch endpoints still gate delivery behind
+		// active membership until the invitee accepts.
 		allowed := map[int64]bool{}
-		devices, err := activeDevices(database, r, groupID)
+		arows, err := database.QueryContext(r.Context(),
+			`SELECT d.id FROM devices d
+			 JOIN group_members gm ON gm.user_id = d.user_id
+			 WHERE gm.group_id=? AND gm.status IN (?,?)`, groupID, statusActive, statusPending)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		for _, d := range devices {
-			allowed[d["device_id"]] = true
+		for arows.Next() {
+			var did int64
+			if err := arows.Scan(&did); err != nil {
+				arows.Close()
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			allowed[did] = true
+		}
+		arows.Close()
+		if err := arows.Err(); err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
 		}
 
 		now := time.Now().Unix()

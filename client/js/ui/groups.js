@@ -1,19 +1,17 @@
 import {
   createGroup, syncGroups, refreshMembers, acceptInvitation, declineInvitation,
-  inviteMember, removeMember, sendGroupMessage,
+  inviteMember, removeMember, changeMemberRole, sendGroupMessage,
   getAllGroups, getGroupMessages, onGroupUpdate,
 } from "../groups.js";
-import { getGroupMembers } from "../storage.js";
-import { searchUsers } from "../api.js";
+import { getGroupMembers, getAllContacts } from "../storage.js";
 import { navigate, getCurrentUser } from "../app.js";
-import { el, formatTime, showToast, spinner, showConfirmModal } from "./components.js";
+import { el, avatar, formatTime, showToast, spinner, showConfirmModal } from "./components.js";
 
-// Role/status labels in Russian for the members UI.
+// Role labels in Russian for the members UI.
 const ROLE_LABEL = { owner: "владелец", admin: "админ", member: "участник" };
-const STATUS_LABEL = { active: "активен", pending: "приглашён", removed: "удалён" };
 const roleLabel = (r) => ROLE_LABEL[r] || r;
-const statusLabel = (s) => STATUS_LABEL[s] || s;
-const memberName = (m) => m.name || m.nickname || `#${m.user_id}`;
+const memberName = (m) => m.name || m.nickname || m.username || `#${m.user_id}`;
+const isPrivileged = (role) => role === "owner" || role === "admin";
 
 const OVERLAY_STYLE = "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;";
 const BOX_STYLE = "background:#1e1e24;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;width:100%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.5);display:flex;flex-direction:column;";
@@ -272,18 +270,65 @@ function cssEscape(s) {
 
 // ── Members modal ────────────────────────────────────────────────────────────
 
+// A single member row: avatar, name, and role on the right (per the reference).
+// Long-press (or right-click) on a manageable member opens an action menu with
+// promote/demote and remove. Removed members are never rendered by the caller.
+function buildMemberRow(m, { myRole, myId, onAction }) {
+  const isMe = Number(m.user_id) === Number(myId);
+  const name = memberName(m) + (isMe ? " (вы)" : "");
+
+  const roleTag = el("span", {
+    style: "font-size:12px;color:#8a8a94;white-space:nowrap;",
+  }, roleLabel(m.role) + (m.status === "pending" ? " · приглашён" : ""));
+
+  const row = el("li", {
+    style: "display:flex;align-items:center;gap:12px;padding:10px 4px;border-radius:10px;user-select:none;-webkit-user-select:none;",
+  },
+    avatar(m, 44),
+    el("div", { style: "flex:1;min-width:0;" },
+      el("div", { style: "color:#fff;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" }, name),
+    ),
+    roleTag,
+  );
+
+  // Owner can manage roles; owner/admin can remove. Never act on the owner or
+  // on yourself.
+  const canManage = myRole === "owner" && m.role !== "owner" && !isMe;
+  const canRemove = isPrivileged(myRole) && m.role !== "owner" && !isMe;
+  if (!canManage && !canRemove) return row;
+
+  row.style.cursor = "pointer";
+  const openMenu = (e) => {
+    e.preventDefault();
+    onAction(m, { canManage, canRemove });
+  };
+  // Long-press for touch, right-click for desktop.
+  let pressTimer = null;
+  row.addEventListener("touchstart", () => { pressTimer = setTimeout(() => openMenu(new Event("longpress")), 500); }, { passive: true });
+  row.addEventListener("touchend", () => clearTimeout(pressTimer));
+  row.addEventListener("touchmove", () => clearTimeout(pressTimer));
+  row.addEventListener("contextmenu", openMenu);
+  return row;
+}
+
 async function showMembersModal(groupId, myId) {
-  const listEl = el("ul", { style: "list-style:none;padding:0;margin:8px 0;max-height:200px;overflow:auto;" });
-  const searchInput = el("input", { type: "text", class: "chatlist-search", placeholder: "Добавить участника по нику…" });
-  const results = el("ul", { style: "list-style:none;padding:0;margin:4px 0;max-height:120px;overflow:auto;" });
+  const listEl = el("ul", { style: "list-style:none;padding:0;margin:4px 0;max-height:340px;overflow:auto;" });
   const closeBtn = el("button", { class: "btn-secondary", style: "font-size:14px;" }, "Закрыть");
+
+  // "+ Добавить участника" row lives below a divider, styled after the sketch.
+  const addRow = el("button", {
+    style: "display:flex;align-items:center;gap:12px;width:100%;background:none;border:none;padding:12px 4px;cursor:pointer;color:#00e676;font-size:16px;text-align:left;",
+  },
+    el("span", { style: "width:44px;height:44px;border-radius:50%;background:rgba(0,230,118,0.12);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;" }, "＋"),
+    el("span", {}, "Добавить участника"),
+  );
 
   const overlay = el("div", { style: OVERLAY_STYLE },
     el("div", { style: BOX_STYLE },
       el("h3", { style: "font-size:18px;margin-bottom:12px;color:#fff;text-align:center;" }, "Участники"),
       listEl,
-      el("hr", { style: "border-color:rgba(255,255,255,0.1);width:100%;" }),
-      searchInput, results,
+      el("hr", { style: "border:none;border-top:1px solid rgba(255,255,255,0.1);width:100%;margin:4px 0;" }),
+      addRow,
       el("div", { style: "display:flex;justify-content:flex-end;margin-top:12px;" }, closeBtn),
     ),
   );
@@ -294,53 +339,183 @@ async function showMembersModal(groupId, myId) {
 
   let myRole = "member";
 
+  function onAction(m, { canManage, canRemove }) {
+    const actions = [];
+    if (canManage) {
+      actions.push(m.role === "admin"
+        ? { label: "Снять роль админа", run: () => changeMemberRole(groupId, m.user_id, "member") }
+        : { label: "Сделать админом", run: () => changeMemberRole(groupId, m.user_id, "admin") });
+    }
+    if (canRemove) {
+      actions.push({ label: "Удалить из группы", danger: true, run: async () => {
+        const ok = await showConfirmModal("Удалить участника?", `${memberName(m)} потеряет доступ к новым сообщениям.`);
+        if (!ok) return "skip";
+        await removeMember(groupId, m.user_id);
+      } });
+    }
+    showActionSheet(memberName(m), actions, renderMembers);
+  }
+
   async function renderMembers() {
     listEl.innerHTML = "";
     let members = [];
     try { members = await refreshMembers(groupId); } catch { members = await getGroupMembers(groupId); }
+    // Never show removed members.
+    members = members.filter(m => m.status !== "removed");
     const meRow = members.find(m => Number(m.user_id) === Number(myId));
     myRole = meRow ? meRow.role : "member";
+
+    // Owner first, then admins, then members; stable within each group.
+    const order = { owner: 0, admin: 1, member: 2 };
+    members.sort((a, b) => (order[a.role] ?? 3) - (order[b.role] ?? 3));
+
     for (const m of members) {
-      const canRemove = (myRole === "owner" || myRole === "admin") && m.role !== "owner" && Number(m.user_id) !== Number(myId);
-      const row = el("li", { style: "display:flex;align-items:center;gap:8px;padding:4px 0;" },
-        el("span", { style: "flex:1;" }, `${memberName(m)} · ${roleLabel(m.role)} · ${statusLabel(m.status)}`),
-        canRemove ? el("button", { class: "icon-btn", title: "Удалить", style: "color:#ff5252;" }, "✕") : null,
+      listEl.appendChild(buildMemberRow(m, { myRole, myId, onAction }));
+    }
+    // Only owner/admin may add members: hide the add row otherwise.
+    addRow.style.display = isPrivileged(myRole) ? "flex" : "none";
+  }
+  await renderMembers();
+
+  addRow.addEventListener("click", async () => {
+    let members = [];
+    try { members = await getGroupMembers(groupId); } catch { members = []; }
+    showAddMemberModal(groupId, members, renderMembers);
+  });
+}
+
+// showActionSheet renders a small bottom-anchored menu of actions. Each action's
+// run() may return "skip" to leave the sheet's onDone uncalled (e.g. cancelled
+// confirm). Errors surface as a toast.
+function showActionSheet(title, actions, onDone) {
+  if (!actions.length) return;
+  const sheet = el("div", { style: "background:#1e1e24;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:8px;width:100%;max-width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.5);" },
+    el("div", { style: "padding:10px 12px;color:#8a8a94;font-size:13px;text-align:center;" }, title),
+  );
+  const overlay = el("div", { style: OVERLAY_STYLE }, sheet);
+  const close = () => overlay.remove();
+  for (const a of actions) {
+    const btn = el("button", {
+      style: `display:block;width:100%;background:none;border:none;padding:14px 12px;font-size:15px;text-align:left;cursor:pointer;border-radius:10px;color:${a.danger ? "#ff5252" : "#fff"};`,
+    }, a.label);
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        const r = await a.run();
+        close();
+        if (r !== "skip" && typeof onDone === "function") await onDone();
+      } catch (e) {
+        close();
+        showToast(e.message || "Ошибка", "error");
+      }
+    });
+    sheet.appendChild(btn);
+  }
+  const cancel = el("button", { class: "btn-secondary", style: "width:100%;margin-top:6px;font-size:15px;" }, "Отмена");
+  cancel.addEventListener("click", close);
+  sheet.appendChild(cancel);
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+}
+
+// ── Add member dialog ────────────────────────────────────────────────────────
+
+// Separate dialog for adding members. Lists only contacts the user already has
+// a conversation with, excludes people already in the group, and shows all such
+// contacts by default with an optional filter box. A checkbox controls whether
+// the pre-join chat history is shared with the invitee.
+async function showAddMemberModal(groupId, currentMembers, onDone) {
+  const existing = new Set((currentMembers || [])
+    .filter(m => m.status !== "removed")
+    .map(m => Number(m.user_id)));
+
+  let contacts = [];
+  try { contacts = await getAllContacts(); } catch { contacts = []; }
+  // Only people we actually have correspondence with, and not already members.
+  contacts = contacts
+    .filter(c => c.last_ts || c.last_message)
+    .filter(c => !existing.has(Number(c.user_id)))
+    .sort((a, b) => (b.last_ts || 0) - (a.last_ts || 0));
+
+  const filterInput = el("input", { type: "text", class: "chatlist-search", placeholder: "Поиск по контактам…" });
+  const listEl = el("ul", { style: "list-style:none;padding:0;margin:8px 0;max-height:280px;overflow:auto;" });
+
+  const shareChk = el("input", { type: "checkbox", style: "width:18px;height:18px;accent-color:#00e676;cursor:pointer;" });
+  const shareLabel = el("label", { style: "display:flex;align-items:center;gap:10px;padding:8px 4px;cursor:pointer;color:#ccc;font-size:14px;" },
+    shareChk,
+    el("span", {}, "Передать историю чата до вступления"),
+  );
+
+  const closeBtn = el("button", { class: "btn-secondary", style: "font-size:14px;" }, "Закрыть");
+
+  const overlay = el("div", { style: OVERLAY_STYLE },
+    el("div", { style: BOX_STYLE },
+      el("h3", { style: "font-size:18px;margin-bottom:12px;color:#fff;text-align:center;" }, "Добавить участника"),
+      filterInput,
+      listEl,
+      shareLabel,
+      el("div", { style: "display:flex;justify-content:flex-end;margin-top:12px;" }, closeBtn),
+    ),
+  );
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+
+  let changed = false;
+
+  function render(filter = "") {
+    listEl.innerHTML = "";
+    const q = filter.trim().toLowerCase();
+    const shown = contacts.filter(c => {
+      if (!q) return true;
+      return (memberName(c).toLowerCase().includes(q)) ||
+        (c.username || c.nickname || "").toLowerCase().includes(q);
+    });
+    if (!shown.length) {
+      listEl.appendChild(el("li", { style: "padding:16px 4px;color:#8a8a94;text-align:center;font-size:14px;" },
+        contacts.length ? "Никого не найдено" : "Нет контактов для добавления"));
+      return;
+    }
+    for (const c of shown) {
+      const nick = c.username || c.nickname;
+      const addBtn = el("button", { class: "btn-primary", style: "padding:6px 14px;font-size:13px;" }, "Добавить");
+      const row = el("li", { style: "display:flex;align-items:center;gap:12px;padding:8px 4px;" },
+        avatar(c, 44),
+        el("div", { style: "flex:1;min-width:0;" },
+          el("div", { style: "color:#fff;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" }, memberName(c)),
+          nick ? el("div", { style: "color:#8a8a94;font-size:13px;" }, `@${nick}`) : null,
+        ),
+        addBtn,
       );
-      const rm = row.querySelector("button");
-      if (rm) rm.addEventListener("click", async () => {
-        const res = await showConfirmModal("Удалить участника?", `Пользователь #${m.user_id} потеряет доступ к новым сообщениям.`);
-        if (!res) return;
-        try { await removeMember(groupId, m.user_id); showToast("Участник удалён"); await renderMembers(); }
-        catch (e) { showToast(e.message || "Ошибка", "error"); }
+      addBtn.addEventListener("click", async () => {
+        addBtn.disabled = true;
+        try {
+          await inviteMember(groupId, Number(c.user_id), { shareHistory: shareChk.checked });
+          changed = true;
+          showToast("Приглашение отправлено");
+          // Drop from the local list so it can't be added twice.
+          contacts = contacts.filter(x => Number(x.user_id) !== Number(c.user_id));
+          render(filterInput.value);
+        } catch (e) {
+          addBtn.disabled = false;
+          showToast(e.message || "Ошибка", "error");
+        }
       });
       listEl.appendChild(row);
     }
   }
-  await renderMembers();
+  render();
 
-  let searchTimer = null;
-  searchInput.addEventListener("input", () => {
-    clearTimeout(searchTimer);
-    const q = searchInput.value.trim();
-    results.innerHTML = "";
-    if (!q || (myRole !== "owner" && myRole !== "admin")) return;
-    searchTimer = setTimeout(async () => {
-      let found = [];
-      try { const res = await searchUsers(q); found = res.users || res || []; } catch { found = []; }
-      results.innerHTML = "";
-      for (const u of found) {
-        const row = el("li", { style: "display:flex;align-items:center;gap:8px;padding:4px 0;" },
-          el("span", { style: "flex:1;" }, `${u.name || u.nickname} · @${u.nickname}`),
-          el("button", { class: "icon-btn", style: "color:#00e676;" }, "＋"),
-        );
-        row.querySelector("button").addEventListener("click", async () => {
-          try { await inviteMember(groupId, Number(u.id || u.user_id)); showToast("Приглашение отправлено"); await renderMembers(); }
-          catch (e) { showToast(e.message || "Ошибка", "error"); }
-        });
-        results.appendChild(row);
-      }
-    }, 300);
+  let t = null;
+  filterInput.addEventListener("input", () => {
+    clearTimeout(t);
+    t = setTimeout(() => render(filterInput.value), 150);
   });
+
+  // When the dialog closes, refresh the members list behind us if anything was
+  // added. Both the button and backdrop dismiss route through here.
+  const finish = () => { close(); if (changed && onDone) onDone(); };
+  closeBtn.addEventListener("click", finish);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) finish(); });
 }
 
 export { acceptInvitation };

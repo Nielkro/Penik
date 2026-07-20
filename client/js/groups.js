@@ -13,6 +13,7 @@ import {
   listGroupMembers,
   inviteGroupMember,
   removeGroupMember,
+  changeGroupMemberRole,
   acceptGroupInvitation,
   declineGroupInvitation,
   listGroupKeyVersions,
@@ -184,8 +185,16 @@ export async function refreshMembers(groupId) {
 export async function acceptInvitation(groupId) {
   await acceptGroupInvitation(groupId);
   await refreshMembers(groupId);
-  // A newly active member triggers a rotation by whoever owns/admins the group;
-  // our own device will receive the new envelope via GROUP_KEY_AVAILABLE.
+  // The inviter already staged our key envelope at invite time (variant A), and
+  // the fetch gate opens once we are active. Pull the current key, then decrypt
+  // whatever history that key covers.
+  try {
+    const version = await currentVersion(groupId);
+    await ensureGroupKey(groupId, version);
+    await syncHistory(groupId);
+  } catch (e) {
+    console.warn('[groups] key fetch on accept failed', e.message);
+  }
 }
 
 // declineInvitation rejects a pending invitation and drops the local copy so the
@@ -195,12 +204,51 @@ export async function declineInvitation(groupId) {
   await deleteGroupData(groupId);
 }
 
-// inviteMember adds a user then rotates the key so the new epoch covers them
-// once they accept. Rotation is performed here by the inviting owner/admin.
-export async function inviteMember(groupId, userId) {
+// inviteMember adds a user then pre-stages group key(s) for their devices
+// (variant A): we wrap the existing key on the current version and upload
+// envelopes, rather than rotating. The invitee fetches it on accept.
+//
+// When shareHistory is set, we also wrap every earlier key version we hold and
+// upload those envelopes, so the invitee's device can decrypt messages sent
+// before it joined. Versions we have no local key for are skipped (we cannot
+// share what we cannot read).
+export async function inviteMember(groupId, userId, { shareHistory = false } = {}) {
   await inviteGroupMember(groupId, userId);
   await refreshMembers(groupId);
-  await rotateAndDistribute(groupId);
+
+  const devices = await fetchDeviceKeys([userId]);
+  if (!devices.length) return;
+
+  const g = await dbGetGroup(groupId);
+  const current = g ? Number(g.current_key_version) : await currentVersion(groupId);
+
+  // Always stage the current version.
+  const versions = new Set([current]);
+  if (shareHistory) {
+    // Every version referenced by locally cached history, plus everything down
+    // to v1, so the whole readable backlog is covered.
+    for (let v = 1; v < current; v++) versions.add(v);
+  }
+
+  for (const version of [...versions].sort((a, b) => a - b)) {
+    let groupKey;
+    try {
+      groupKey = await ensureGroupKey(groupId, version);
+    } catch {
+      // We hold no key for this version (e.g. an epoch predating our own join):
+      // it stays unreadable for the invitee too.
+      continue;
+    }
+    const envelopes = await wrapKeyForDevices(groupKey, devices);
+    await uploadGroupEnvelopes(groupId, version, envelopes);
+  }
+}
+
+// changeMemberRole promotes/demotes a member (owner only, server-enforced) and
+// refreshes the local member cache so the UI reflects the new role.
+export async function changeMemberRole(groupId, userId, role) {
+  await changeGroupMemberRole(groupId, userId, role);
+  await refreshMembers(groupId);
 }
 
 export async function removeMember(groupId, userId) {
@@ -323,6 +371,18 @@ function toU8(v) {
 /* ── Offline history sync (ciphertext) ── */
 
 export async function syncHistory(groupId) {
+  // Which key versions this device actually has an envelope for. Under variant A
+  // a member only receives the version current at invite time, so older epochs
+  // are unreadable. Resolve the set once and skip messages on other versions —
+  // otherwise every such message triggers a doomed envelope fetch (404 storm).
+  const available = new Set();
+  try {
+    const { versions } = await listGroupKeyVersions(groupId);
+    for (const v of versions || []) available.add(Number(v));
+  } catch (e) {
+    console.warn('[groups] key-version list failed, syncing all', e.message);
+  }
+
   let cursor;
   // Walk pages newest→oldest; decrypt what we have keys for. A missing key for
   // one page must not block the rest.
@@ -331,6 +391,9 @@ export async function syncHistory(groupId) {
     for (const m of page.messages) {
       const existing = await getGroupMessage(groupId, String(m.message_id));
       if (existing && existing.id) continue;
+      // Skip versions we can never decrypt so we don't hammer the envelope
+      // endpoint. If the version list was unavailable, fall through and try.
+      if (available.size && !available.has(Number(m.key_version))) continue;
       await decryptIncoming({
         group_id: groupId, id: m.id, message_id: m.message_id,
         sender_user_id: m.sender_user_id, sender_device_id: m.sender_device_id,
@@ -395,6 +458,10 @@ export function registerGroupWSListeners() {
       await syncHistory(groupId);
       emit({ type: 'key', groupId, version });
     } catch (e) {
+      // 403 here is expected: the envelope was staged while we were still a
+      // pending invitee, and the fetch gate opens only once we accept. We pull
+      // the key again in acceptInvitation, so this notification can be ignored.
+      if (e.status === 403) return;
       console.warn('[groups] key fetch on notify failed', e.message);
     }
   });
@@ -407,19 +474,6 @@ export function registerGroupWSListeners() {
     try { await syncGroups(); } catch (e) { console.warn('[groups] sync on member change failed', e.message); }
     try { await refreshMembers(groupId); } catch { /* pending invitee: not yet allowed */ }
     emit({ type: 'members', groupId });
-
-    // The server sends this to active owner/admins when someone accepts an
-    // invitation. Whoever is owner/admin rotates the key so the newly active
-    // device gets a fresh envelope (it has no key for the current version yet).
-    try {
-      const g = await dbGetGroup(groupId);
-      if (g && g.status === 'active' && (g.role === 'owner' || g.role === 'admin')) {
-        await rotateAndDistribute(groupId);
-        emit({ type: 'key', groupId, version: Number(g.current_key_version || 0) + 1 });
-      }
-    } catch (e) {
-      console.warn('[groups] rotation on member change failed', e.message);
-    }
   });
 }
 

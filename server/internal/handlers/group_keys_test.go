@@ -48,7 +48,7 @@ func TestRotateAndEnvelopeFlow(t *testing.T) {
 	wa := httptest.NewRecorder()
 	ra := as("POST", "/a", bobID, bobDev, nil)
 	ra.SetPathValue("group_id", itoa(groupID))
-	AcceptInvitation(database, nil)(wa, ra)
+	AcceptInvitation(database)(wa, ra)
 
 	// Owner rotates: both devices should be in the recipient set.
 	version, devices := rotate(t, database, groupID, ownerID, ownerDev)
@@ -110,6 +110,85 @@ func TestRotateAndEnvelopeFlow(t *testing.T) {
 	UploadEnvelopes(database, nil)(w, r)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("envelope for removed device: expected 403 got %d", w.Code)
+	}
+}
+
+// TestInviteStagesEnvelopeBeforeAccept covers variant A: the inviter uploads an
+// envelope for a pending invitee's device on the current key version (200), the
+// pending invitee cannot fetch it yet (403), and after accepting they can (200).
+func TestInviteStagesEnvelopeBeforeAccept(t *testing.T) {
+	database, err := db.Open(filepath.Join(t.TempDir(), "invitestage.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	ownerID, ownerDev := newUser(t, database, "owner")
+	bobID, bobDev := newUser(t, database, "bob")
+
+	// Group with only the owner active; bob is invited (pending) afterwards.
+	w := httptest.NewRecorder()
+	CreateGroup(database)(w, as("POST", "/g", ownerID, ownerDev, groupCreateRequest{Name: "T"}))
+	var created map[string]any
+	json.Unmarshal(w.Body.Bytes(), &created)
+	groupID := int64(created["id"].(float64))
+	version := int64(created["current_key_version"].(float64))
+
+	// Owner invites bob: bob's device becomes a pending member's device.
+	w = httptest.NewRecorder()
+	ri := as("POST", "/m", ownerID, ownerDev, memberInviteRequest{UserID: bobID})
+	ri.SetPathValue("group_id", itoa(groupID))
+	InviteMember(database, nil)(w, ri)
+	if w.Code != http.StatusOK {
+		t.Fatalf("invite: expected 200 got %d body=%s", w.Code, w.Body.String())
+	}
+
+	// Owner pre-stages an envelope for bob's pending device on the current version.
+	env := envelopeUploadRequest{Envelopes: []envelopeItem{
+		{DeviceID: bobDev, EncryptedKey: b64("bob-key"), Salt: b64("s"), Nonce: b64("n")},
+	}}
+	w = httptest.NewRecorder()
+	r := as("POST", "/e", ownerID, ownerDev, env)
+	r.SetPathValue("group_id", itoa(groupID))
+	r.SetPathValue("version", itoa(version))
+	UploadEnvelopes(database, nil)(w, r)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("stage envelope for pending device: expected 204 got %d body=%s", w.Code, w.Body.String())
+	}
+
+	// Bob is still pending: fetching his own envelope is gated behind active
+	// membership, so he gets 403.
+	w = httptest.NewRecorder()
+	r = as("GET", "/e", bobID, bobDev, nil)
+	r.SetPathValue("group_id", itoa(groupID))
+	r.SetPathValue("version", itoa(version))
+	GetEnvelope(database)(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("pending fetch: expected 403 got %d body=%s", w.Code, w.Body.String())
+	}
+
+	// Bob accepts: no rotation happens, the gate opens.
+	wa := httptest.NewRecorder()
+	ra := as("POST", "/a", bobID, bobDev, nil)
+	ra.SetPathValue("group_id", itoa(groupID))
+	AcceptInvitation(database)(wa, ra)
+	if wa.Code != http.StatusNoContent {
+		t.Fatalf("accept: expected 204 got %d body=%s", wa.Code, wa.Body.String())
+	}
+
+	// Now active, bob fetches the staged envelope and gets bob-key.
+	w = httptest.NewRecorder()
+	r = as("GET", "/e", bobID, bobDev, nil)
+	r.SetPathValue("group_id", itoa(groupID))
+	r.SetPathValue("version", itoa(version))
+	GetEnvelope(database)(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("active fetch: expected 200 got %d body=%s", w.Code, w.Body.String())
+	}
+	var got map[string]any
+	json.Unmarshal(w.Body.Bytes(), &got)
+	if dec, _ := base64.RawURLEncoding.DecodeString(got["encrypted_key"].(string)); string(dec) != "bob-key" {
+		t.Fatalf("bob got wrong key: %q", dec)
 	}
 }
 
@@ -248,7 +327,7 @@ func TestRotatePermissionsAndErrors(t *testing.T) {
 	wa := httptest.NewRecorder()
 	ra := as("POST", "/a", bobID, bobDev, nil)
 	ra.SetPathValue("group_id", itoa(groupID))
-	AcceptInvitation(database, nil)(wa, ra)
+	AcceptInvitation(database)(wa, ra)
 
 	w := httptest.NewRecorder()
 	r := as("POST", "/r", bobID, bobDev, nil)
@@ -319,7 +398,7 @@ func TestUploadEnvelopesErrors(t *testing.T) {
 	wa := httptest.NewRecorder()
 	ra := as("POST", "/a", bobID, bobDev, nil)
 	ra.SetPathValue("group_id", itoa(groupID))
-	AcceptInvitation(database, nil)(wa, ra)
+	AcceptInvitation(database)(wa, ra)
 	w = httptest.NewRecorder()
 	r = as("POST", "/e", bobID, bobDev, envelopeUploadRequest{Envelopes: []envelopeItem{{DeviceID: bobDev, EncryptedKey: b64("k"), Salt: b64("s"), Nonce: b64("n")}}})
 	r.SetPathValue("group_id", itoa(groupID))
