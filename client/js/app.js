@@ -396,7 +396,7 @@ async function onMsgRecvGlobal(payload) {
         usedPrekeyId = result.prekeyId;
       }
     } catch (e) {
-      plaintext = `[Ошибка расшифрования сообщения: ${e.message}]`;
+      plaintext = `[Сообщение не расшифровано]`;
       decryptSuccess = false;
     }
   }
@@ -705,10 +705,6 @@ export async function syncMessageHistory() {
 }
 
 export async function decryptMessagePayload(payload) {
-  // Strict binary handling: MsgPack WS frames deliver raw Uint8Array bytes, while
-  // REST/history responses deliver Base64 strings. We never guess between the two
-  // by inspecting byte values — a binary ciphertext that happens to be ASCII and
-  // 4-byte aligned would be silently mis-decoded, corrupting decryption.
   const toUint8Array = (val) => {
     if (!val) return new Uint8Array(0);
     if (val instanceof Uint8Array) return val;
@@ -727,56 +723,26 @@ export async function decryptMessagePayload(payload) {
   const salt = toUint8Array(payload.salt);
   const nonce = toUint8Array(payload.nonce);
   const fromIdentityKey = toUint8Array(payload.from_identity_key);
-  const prekeyId = payload.prekey_id;
 
-  let myPrivateIK;
-  if (prekeyId) {
-    myPrivateIK = await getPreKeyPrivate(prekeyId);
-    if (!myPrivateIK) {
-      throw new Error(`OTPK private key not found locally for id: ${prekeyId}`);
-    }
-  } else {
-    myPrivateIK = state.privateIK;
-    if (!myPrivateIK) {
-      const stored = localStorage.getItem("penik_ik_priv");
-      if (stored) {
-        state.privateIK = new Uint8Array(atob(stored).split("").map(c => c.charCodeAt(0)));
-        myPrivateIK = state.privateIK;
-      }
-    }
-    if (!myPrivateIK) {
-      throw new Error("Private Identity Key not found in memory/localStorage");
+  let myPrivateIK = state.privateIK;
+  if (!myPrivateIK) {
+    const stored = localStorage.getItem("penik_ik_priv");
+    if (stored) {
+      state.privateIK = new Uint8Array(atob(stored).split("").map(c => c.charCodeAt(0)));
+      myPrivateIK = state.privateIK;
     }
   }
-
-  let secret;
-  if (prekeyId) {
-    const dh1 = await deriveSharedSecret(myPrivateIK, fromIdentityKey);
-    let myIKPriv = state.privateIK;
-    if (!myIKPriv) {
-      const stored = localStorage.getItem("penik_ik_priv");
-      if (stored) {
-        state.privateIK = new Uint8Array(atob(stored).split("").map(c => c.charCodeAt(0)));
-        myIKPriv = state.privateIK;
-      }
-    }
-    if (!myIKPriv) {
-      throw new Error("Private Identity Key not found in memory/localStorage");
-    }
-    const dh2 = await deriveSharedSecret(myIKPriv, fromIdentityKey);
-    secret = new Uint8Array(dh1.length + dh2.length);
-    secret.set(dh1, 0);
-    secret.set(dh2, dh1.length);
-  } else {
-    secret = await deriveSharedSecret(myPrivateIK, fromIdentityKey);
+  if (!myPrivateIK) {
+    throw new Error("Приватный ключ не найден");
   }
 
+  const secret = await deriveSharedSecret(myPrivateIK, fromIdentityKey);
   const info = new TextEncoder().encode("PenikE2EE");
   const derivedKey = await hkdfDerive(salt, secret, info, 32);
 
   const plaintextBytes = await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext);
 
-  return { text: new TextDecoder().decode(plaintextBytes), prekeyId };
+  return { text: new TextDecoder().decode(plaintextBytes), prekeyId: null };
 }
 
 export async function encryptMessagePayload(text, recipientUserId) {
