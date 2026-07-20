@@ -45,6 +45,11 @@ func main() {
 			if err != nil {
 				log.Printf("db: error releasing reserved prekeys: %v", err)
 			}
+			if _, err := database.Exec(
+				`DELETE FROM group_history_packets WHERE expires_at < ?`,
+				time.Now().Unix()); err != nil {
+				log.Printf("db: error sweeping expired history packets: %v", err)
+			}
 		}
 	}()
 
@@ -135,6 +140,10 @@ func main() {
 		authMW(groupRotateLimiter.Limit(http.HandlerFunc(handlers.RotateGroupKey(database)))))
 	mux.Handle("GET /api/v1/groups/{group_id}/messages/history",
 		authMW(http.HandlerFunc(handlers.GetGroupHistory(database))))
+	mux.Handle("POST /api/v1/groups/{group_id}/history-packets",
+		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.UploadGroupHistoryPackets(database, hub)))))
+	mux.Handle("GET /api/v1/groups/{group_id}/history-packets",
+		authMW(http.HandlerFunc(handlers.GetGroupHistoryPacket(database))))
 	mux.Handle("GET /api/v1/messages/history",
 		authMW(http.HandlerFunc(handlers.GetMessageHistory(database))))
 	mux.Handle("GET /api/v1/messages/{user_id}/status",

@@ -32,6 +32,7 @@ const (
 	OpGroupMemberChanged    Opcode = 0x24
 	OpGroupMessageDelivered Opcode = 0x25
 	OpGroupMessageRead      Opcode = 0x26
+	OpGroupHistoryReady     Opcode = 0x27
 )
 
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]
@@ -183,6 +184,12 @@ type PairingClaimed struct {
 type GroupKeyAvailable struct {
 	GroupID    int64 `msgpack:"group_id"`
 	KeyVersion int64 `msgpack:"key_version"`
+}
+
+// GroupHistoryReady notifies a device that a one-shot pre-join history packet
+// is staged for it. The device fetches (and thereby deletes) it over REST.
+type GroupHistoryReady struct {
+	GroupID int64 `msgpack:"group_id"`
 }
 
 // GroupMemberChanged notifies active devices that a group's membership changed

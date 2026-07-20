@@ -145,3 +145,6 @@ export function getGroupHistory(groupId, { limit = 100, before_id } = {}) {
   if (before_id) path += `&before_id=${before_id}`;
   return get(path);
 }
+
+export function uploadGroupHistoryPackets(groupId, packets) { return post(`/groups/${groupId}/history-packets`, { packets }); }
+export function getGroupHistoryPacket(groupId) { return get(`/groups/${groupId}/history-packets`); }

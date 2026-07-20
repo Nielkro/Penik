@@ -21,6 +21,8 @@ import {
   uploadGroupEnvelopes,
   rotateGroupKey as apiRotateGroupKey,
   getGroupHistory,
+  uploadGroupHistoryPackets,
+  getGroupHistoryPacket,
 } from './api.js';
 import {
   deriveSharedSecret,
@@ -29,6 +31,8 @@ import {
   groupDecrypt,
   wrapGroupKeyForDevice,
   unwrapGroupKey,
+  e2eeEncrypt,
+  e2eeDecrypt,
 } from './crypto.js';
 import {
   saveGroup, getGroup as dbGetGroup, getAllGroups, deleteGroupData,
@@ -195,6 +199,12 @@ export async function acceptInvitation(groupId) {
   } catch (e) {
     console.warn('[groups] key fetch on accept failed', e.message);
   }
+  // Variant B: pull the pre-join backlog the inviter staged for this device.
+  try {
+    await pullHistoryPacket(groupId);
+  } catch (e) {
+    console.warn('[groups] history packet pull on accept failed', e.message);
+  }
 }
 
 // declineInvitation rejects a pending invitation and drops the local copy so the
@@ -204,14 +214,15 @@ export async function declineInvitation(groupId) {
   await deleteGroupData(groupId);
 }
 
-// inviteMember adds a user then pre-stages group key(s) for their devices
-// (variant A): we wrap the existing key on the current version and upload
-// envelopes, rather than rotating. The invitee fetches it on accept.
+// inviteMember adds a user then pre-stages the current group key for their
+// devices: we wrap the existing key on the current version and upload envelopes,
+// rather than rotating. The invitee fetches it on accept and uses it for new
+// messages sent after they join.
 //
-// When shareHistory is set, we also wrap every earlier key version we hold and
-// upload those envelopes, so the invitee's device can decrypt messages sent
-// before it joined. Versions we have no local key for are skipped (we cannot
-// share what we cannot read).
+// When shareHistory is set, we deliver the pre-join backlog via variant B: our
+// locally held plaintext is re-encrypted per invitee device under the pairwise
+// secret and uploaded as a one-shot history packet, instead of sharing old
+// group keys. See shareHistoryWithInvitee.
 export async function inviteMember(groupId, userId, { shareHistory = false } = {}) {
   await inviteGroupMember(groupId, userId);
   await refreshMembers(groupId);
@@ -222,26 +233,90 @@ export async function inviteMember(groupId, userId, { shareHistory = false } = {
   const g = await dbGetGroup(groupId);
   const current = g ? Number(g.current_key_version) : await currentVersion(groupId);
 
-  // Always stage the current version.
-  const versions = new Set([current]);
-  if (shareHistory) {
-    // Every version referenced by locally cached history, plus everything down
-    // to v1, so the whole readable backlog is covered.
-    for (let v = 1; v < current; v++) versions.add(v);
-  }
+  // Stage the current version so the invitee can read messages sent after join.
+  const groupKey = await ensureGroupKey(groupId, current);
+  const envelopes = await wrapKeyForDevices(groupKey, devices);
+  await uploadGroupEnvelopes(groupId, current, envelopes);
 
-  for (const version of [...versions].sort((a, b) => a - b)) {
-    let groupKey;
-    try {
-      groupKey = await ensureGroupKey(groupId, version);
-    } catch {
-      // We hold no key for this version (e.g. an epoch predating our own join):
-      // it stays unreadable for the invitee too.
-      continue;
-    }
-    const envelopes = await wrapKeyForDevices(groupKey, devices);
-    await uploadGroupEnvelopes(groupId, version, envelopes);
+  if (shareHistory) {
+    await shareHistoryWithInvitee(groupId, userId, devices);
   }
+}
+
+// shareHistoryWithInvitee packs the locally held plaintext backlog and uploads a
+// per-device history packet (variant B). Each packet is encrypted under the
+// pairwise secret between our device and the invitee device, so the server only
+// stores opaque ciphertext. We can only share what we hold locally; gaps in our
+// own history simply do not reach the invitee.
+export async function shareHistoryWithInvitee(groupId, userId, devices) {
+  const messages = await getGroupMessages(groupId).catch(() => []);
+  if (!messages.length || !devices.length) return;
+
+  const blob = packHistoryBlob(messages);
+  const myPriv = resolvePrivateIK();
+  const packets = [];
+  for (const dev of devices) {
+    const secret = await deriveSharedSecret(myPriv, dev.ik_pub);
+    const { ciphertext, salt, nonce } = await e2eeEncrypt(blob, secret);
+    packets.push({
+      device_id: dev.device_id,
+      encrypted_history: b64uEncode(ciphertext),
+      salt: b64uEncode(salt),
+      nonce: b64uEncode(nonce),
+    });
+  }
+  await uploadGroupHistoryPackets(groupId, packets);
+}
+
+// pullHistoryPacket fetches this device's one-shot history packet (delete-on-
+// fetch), derives the pairwise secret from the sender device's IK, decrypts, and
+// stores the messages locally. A 404 means nothing was staged for us.
+export async function pullHistoryPacket(groupId) {
+  let packet;
+  try {
+    packet = await getGroupHistoryPacket(groupId);
+  } catch (e) {
+    if (e.status === 404) return;
+    throw e;
+  }
+  const senderDeviceId = Number(packet.sender_device_id);
+  const senderIK = await fetchDeviceIK(groupId, senderDeviceId);
+  if (!senderIK) throw new Error(`sender device ${senderDeviceId} identity key not found`);
+
+  const myPriv = resolvePrivateIK();
+  const secret = await deriveSharedSecret(myPriv, senderIK);
+  const pt = await e2eeDecrypt(
+    b64uDecode(packet.encrypted_history), secret, b64uDecode(packet.salt), b64uDecode(packet.nonce),
+  );
+  const { messages } = unpackHistoryBlob(pt);
+  for (const m of messages) {
+    const existing = await getGroupMessage(groupId, String(m.message_id));
+    if (existing && existing.id) continue;
+    await saveGroupMessage({
+      group_id: groupId, message_id: String(m.message_id), id: Number(m.id) || 0,
+      sender_user_id: Number(m.sender_user_id), sender_device_id: Number(m.sender_device_id) || 0,
+      key_version: Number(m.key_version), plaintext: m.plaintext,
+      created_at: Number(m.created_at), delivered: 1,
+    });
+  }
+}
+
+// packHistoryBlob serializes locally readable messages into the versioned
+// envelope the invitee's pullHistoryPacket expects.
+function packHistoryBlob(messages) {
+  return JSON.stringify({
+    version: 1,
+    messages: messages.map(m => ({
+      id: m.id, message_id: m.message_id, sender_user_id: m.sender_user_id,
+      sender_device_id: m.sender_device_id, key_version: m.key_version,
+      plaintext: m.plaintext, created_at: m.created_at,
+    })),
+  });
+}
+
+function unpackHistoryBlob(bytes) {
+  const parsed = JSON.parse(new TextDecoder().decode(bytes));
+  return { messages: Array.isArray(parsed?.messages) ? parsed.messages : [] };
 }
 
 // changeMemberRole promotes/demotes a member (owner only, server-enforced) and
@@ -463,6 +538,16 @@ export function registerGroupWSListeners() {
       // the key again in acceptInvitation, so this notification can be ignored.
       if (e.status === 403) return;
       console.warn('[groups] key fetch on notify failed', e.message);
+    }
+  });
+
+  ws.on(OP.GROUP_HISTORY_READY, async (frame) => {
+    const groupId = Number(frame.group_id);
+    try {
+      await pullHistoryPacket(groupId);
+      emit({ type: 'history', groupId });
+    } catch (e) {
+      console.warn('[groups] history packet pull on notify failed', e.message);
     }
   });
 

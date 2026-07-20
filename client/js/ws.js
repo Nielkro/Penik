@@ -29,6 +29,7 @@ export const OP = {
   GROUP_MEMBER_CHANGED:    0x24,
   GROUP_MESSAGE_DELIVERED: 0x25,
   GROUP_MESSAGE_READ:      0x26,
+  GROUP_HISTORY_READY:     0x27,
 };
 
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

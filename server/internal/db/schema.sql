@@ -211,3 +211,24 @@ CREATE TABLE IF NOT EXISTS group_message_devices (
 
 CREATE INDEX IF NOT EXISTS idx_group_message_devices_undelivered
     ON group_message_devices(device_id, delivered_at);
+
+-- One-shot delivery of pre-join chat history to a newly invited device. The
+-- inviter re-encrypts their locally held plaintext under the pairwise secret
+-- shared with each invitee device (variant B); the server only stores opaque
+-- ciphertext. A packet is deleted the moment its device fetches it, and a TTL
+-- sweep drops any that were never claimed (invite declined, device offline).
+CREATE TABLE IF NOT EXISTS group_history_packets (
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    for_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    encrypted_history BLOB NOT NULL,
+    encryption_salt BLOB NOT NULL,
+    encryption_nonce BLOB NOT NULL,
+    sender_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    PRIMARY KEY(group_id, device_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_history_packets_expiry
+    ON group_history_packets(expires_at);
