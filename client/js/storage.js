@@ -104,6 +104,12 @@ export async function getMessage(msgId) {
   return res;
 }
 
+export async function getMessageByClientId(clientMsgId) {
+  await openDB();
+  const all = await getAllMessages();
+  return all.find(m => m.client_msg_id === clientMsgId);
+}
+
 export async function saveMessage(message) {
   await openDB();
   return put(tx("messages", "readwrite"), message);
