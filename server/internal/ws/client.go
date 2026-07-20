@@ -67,6 +67,11 @@ func (c *Client) Run(ctx context.Context) {
 		log.Printf("ws client %d/%d pending purges: %v", c.userID, c.deviceID, err)
 	}
 
+	// Send undelivered group messages accumulated while offline.
+	if err := c.sendGroupOfflineBatch(ctx); err != nil {
+		log.Printf("ws client %d/%d group offline batch: %v", c.userID, c.deviceID, err)
+	}
+
 	// Update last_seen on connect.
 	_, _ = c.db.ExecContext(ctx,
 		`UPDATE devices SET last_seen=? WHERE id=?`,
@@ -218,6 +223,27 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 			return fmt.Errorf("unmarshal MsgRetryResp: %w", err)
 		}
 		return c.handleMsgRetryResp(ctx, &req)
+
+	case OpGroupMessageSend:
+		var msg GroupMessageSend
+		if err := msgpack.Unmarshal(payload, &msg); err != nil {
+			return fmt.Errorf("unmarshal GroupMessageSend: %w", err)
+		}
+		return c.handleGroupMessageSend(ctx, &msg)
+
+	case OpGroupMessageDelivered:
+		var msg GroupMessageDelivered
+		if err := msgpack.Unmarshal(payload, &msg); err != nil {
+			return fmt.Errorf("unmarshal GroupMessageDelivered: %w", err)
+		}
+		return c.handleGroupMessageReceipt(ctx, msg.ID, false)
+
+	case OpGroupMessageRead:
+		var msg GroupMessageRead
+		if err := msgpack.Unmarshal(payload, &msg); err != nil {
+			return fmt.Errorf("unmarshal GroupMessageRead: %w", err)
+		}
+		return c.handleGroupMessageReceipt(ctx, msg.ID, true)
 
 	case OpPong:
 		// no-op

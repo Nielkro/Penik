@@ -116,3 +116,103 @@ data class PairingClaimResponse(
     @SerialName("expires_at") val expiresAt: Long
 )
 @Serializable data class PairingStateResponse(@SerialName("claimed") val claimed: Boolean, @SerialName("public_key") val publicKey: String = "", @SerialName("encrypted_history") val encryptedHistory: String = "")
+
+/* ── Groups ── */
+
+@Serializable
+data class CreateGroupRequest(
+    val name: String,
+    @SerialName("member_user_ids") val memberUserIds: List<Long> = emptyList()
+)
+
+@Serializable
+data class GroupResponse(
+    val id: Long,
+    val name: String,
+    @SerialName("owner_user_id") val ownerUserId: Long,
+    val role: String? = null,
+    val status: String = "active",
+    @SerialName("membership_version") val membershipVersion: Long = 1,
+    @SerialName("current_key_version") val currentKeyVersion: Long = 1,
+    @SerialName("created_at") val createdAt: Long = 0
+)
+
+@Serializable
+data class GroupListResponse(val groups: List<GroupResponse>)
+
+@Serializable
+data class GroupMemberResponse(
+    @SerialName("user_id") val userId: Long,
+    val role: String,
+    val status: String,
+    @SerialName("joined_at") val joinedAt: Long = 0,
+    val name: String = "",
+    val nickname: String = ""
+)
+
+@Serializable
+data class GroupMembersResponse(val members: List<GroupMemberResponse>)
+
+@Serializable
+data class InviteMemberRequest(@SerialName("user_id") val userId: Long)
+
+@Serializable
+data class ChangeRoleRequest(val role: String)
+
+@Serializable
+data class RenameGroupRequest(val name: String)
+
+@Serializable
+data class RotateKeyResponse(
+    @SerialName("key_version") val keyVersion: Long,
+    @SerialName("membership_version") val membershipVersion: Long,
+    val devices: List<RotateDevice> = emptyList()
+)
+
+@Serializable
+data class RotateDevice(
+    @SerialName("device_id") val deviceId: Long,
+    @SerialName("user_id") val userId: Long
+)
+
+@Serializable
+data class EnvelopeItem(
+    @SerialName("device_id") val deviceId: Long,
+    @SerialName("encrypted_key") val encryptedKey: String,
+    val salt: String,
+    val nonce: String
+)
+
+@Serializable
+data class UploadEnvelopesRequest(val envelopes: List<EnvelopeItem>)
+
+@Serializable
+data class GroupEnvelopeResponse(
+    @SerialName("key_version") val keyVersion: Long,
+    @SerialName("encrypted_key") val encryptedKey: String,
+    val salt: String,
+    val nonce: String,
+    @SerialName("sender_device_id") val senderDeviceId: Long
+)
+
+@Serializable
+data class GroupKeyVersionsResponse(val versions: List<Long> = emptyList())
+
+@Serializable
+data class GroupHistoryMessage(
+    val id: Long,
+    @SerialName("message_id") val messageId: String,
+    @SerialName("sender_user_id") val senderUserId: Long,
+    @SerialName("sender_device_id") val senderDeviceId: Long,
+    @SerialName("key_version") val keyVersion: Long,
+    val ciphertext: String,
+    val salt: String,
+    val nonce: String,
+    @SerialName("created_at") val createdAt: Long
+)
+
+@Serializable
+data class GroupHistoryResponse(
+    val messages: List<GroupHistoryMessage> = emptyList(),
+    @SerialName("next_cursor") val nextCursor: String? = null
+)

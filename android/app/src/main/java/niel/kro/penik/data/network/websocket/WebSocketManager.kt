@@ -74,6 +74,28 @@ sealed class WebSocketEvent {
     data class ChatPurge(val peerId: Long) : WebSocketEvent()
     data class PairingHistoryReady(val sessionId: String) : WebSocketEvent()
 
+    data class GroupMessageRecv(
+        val groupId: Long,
+        val id: Long,
+        val messageId: String,
+        val senderUserId: Long,
+        val senderDeviceId: Long,
+        val keyVersion: Long,
+        val ciphertext: ByteArray,
+        val salt: ByteArray,
+        val nonce: ByteArray,
+        val createdAt: Long
+    ) : WebSocketEvent()
+
+    data class GroupMessageAck(
+        val groupId: Long,
+        val messageId: String,
+        val id: Long
+    ) : WebSocketEvent()
+
+    data class GroupKeyAvailable(val groupId: Long, val keyVersion: Long) : WebSocketEvent()
+    data class GroupMemberChanged(val groupId: Long, val membershipVersion: Long) : WebSocketEvent()
+
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
     object Pong : WebSocketEvent()
@@ -93,6 +115,13 @@ object Opcode {
     const val CHAT_PURGE_ACK: Byte = 0x09
     const val REFILL_PREKEYS: Byte = 0x15
     const val PAIRING_HISTORY_READY: Byte = 0x19
+    const val GROUP_MESSAGE_SEND: Byte = 0x20
+    const val GROUP_MESSAGE_RECV: Byte = 0x21
+    const val GROUP_MESSAGE_ACK: Byte = 0x22
+    const val GROUP_KEY_AVAILABLE: Byte = 0x23
+    const val GROUP_MEMBER_CHANGED: Byte = 0x24
+    const val GROUP_MESSAGE_DELIVERED: Byte = 0x25
+    const val GROUP_MESSAGE_READ: Byte = 0x26
 }
 
 private fun MessageUnpacker.readMsgRecvMap(): Map<String, Any?> {
@@ -250,6 +279,10 @@ class WebSocketManager @Inject constructor() {
             Opcode.CHAT_PURGE -> handleChatPurge(payload)
             Opcode.REFILL_PREKEYS -> scope.launch { _events.emit(WebSocketEvent.RefillPreKeys) }
             Opcode.PAIRING_HISTORY_READY -> handlePairingHistoryReady(payload)
+            Opcode.GROUP_MESSAGE_RECV -> handleGroupMessageRecv(payload)
+            Opcode.GROUP_MESSAGE_ACK -> handleGroupMessageAck(payload)
+            Opcode.GROUP_KEY_AVAILABLE -> handleGroupKeyAvailable(payload)
+            Opcode.GROUP_MEMBER_CHANGED -> handleGroupMemberChanged(payload)
         }
     }
 
@@ -325,6 +358,125 @@ class WebSocketManager @Inject constructor() {
             peerId = (map["chat_user_id"] as? Number)?.toLong() ?: 0
         )
         scope.launch { _events.emit(event) }
+    }
+
+    private fun handleGroupMessageRecv(payload: ByteArray) {
+        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+        val size = unpacker.unpackMapHeader()
+        var groupId = 0L; var id = 0L; var messageId = ""; var senderUserId = 0L
+        var senderDeviceId = 0L; var keyVersion = 0L
+        var ciphertext = ByteArray(0); var salt = ByteArray(0); var nonce = ByteArray(0); var createdAt = 0L
+        for (i in 0 until size) {
+            val key = unpacker.unpackString()
+            if (unpacker.nextFormat == MessageFormat.NIL) { unpacker.unpackNil(); continue }
+            when (key) {
+                "group_id" -> groupId = unpacker.unpackLong()
+                "id" -> id = unpacker.unpackLong()
+                "message_id" -> messageId = unpacker.unpackString()
+                "sender_user_id" -> senderUserId = unpacker.unpackLong()
+                "sender_device_id" -> senderDeviceId = unpacker.unpackLong()
+                "key_version" -> keyVersion = unpacker.unpackLong()
+                "ciphertext" -> { val len = unpacker.unpackBinaryHeader(); ciphertext = unpacker.readPayload(len) }
+                "salt" -> { val len = unpacker.unpackBinaryHeader(); salt = unpacker.readPayload(len) }
+                "nonce" -> { val len = unpacker.unpackBinaryHeader(); nonce = unpacker.readPayload(len) }
+                "created_at" -> createdAt = unpacker.unpackLong()
+                else -> unpacker.unpackValue()
+            }
+        }
+        unpacker.close()
+        scope.launch {
+            _events.emit(
+                WebSocketEvent.GroupMessageRecv(
+                    groupId, id, messageId, senderUserId, senderDeviceId,
+                    keyVersion, ciphertext, salt, nonce, createdAt
+                )
+            )
+        }
+    }
+
+    private fun handleGroupMessageAck(payload: ByteArray) {
+        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+        val size = unpacker.unpackMapHeader()
+        var groupId = 0L; var messageId = ""; var id = 0L
+        for (i in 0 until size) {
+            val key = unpacker.unpackString()
+            if (unpacker.nextFormat == MessageFormat.NIL) { unpacker.unpackNil(); continue }
+            when (key) {
+                "group_id" -> groupId = unpacker.unpackLong()
+                "message_id" -> messageId = unpacker.unpackString()
+                "id" -> id = unpacker.unpackLong()
+                else -> unpacker.unpackValue()
+            }
+        }
+        unpacker.close()
+        scope.launch { _events.emit(WebSocketEvent.GroupMessageAck(groupId, messageId, id)) }
+    }
+
+    private fun handleGroupKeyAvailable(payload: ByteArray) {
+        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+        val map = unpacker.readMsgRecvMap(); unpacker.close()
+        scope.launch {
+            _events.emit(
+                WebSocketEvent.GroupKeyAvailable(
+                    (map["group_id"] as? Number)?.toLong() ?: 0,
+                    (map["key_version"] as? Number)?.toLong() ?: 0
+                )
+            )
+        }
+    }
+
+    private fun handleGroupMemberChanged(payload: ByteArray) {
+        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+        val map = unpacker.readMsgRecvMap(); unpacker.close()
+        scope.launch {
+            _events.emit(
+                WebSocketEvent.GroupMemberChanged(
+                    (map["group_id"] as? Number)?.toLong() ?: 0,
+                    (map["membership_version"] as? Number)?.toLong() ?: 0
+                )
+            )
+        }
+    }
+
+    /** Send an encrypted group message. Sender identity is assigned by the server. */
+    fun sendGroupMessage(
+        groupId: Long,
+        messageId: String,
+        keyVersion: Long,
+        ciphertext: ByteArray,
+        salt: ByteArray,
+        nonce: ByteArray,
+        createdAt: Long
+    ) {
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        packer.packMapHeader(7)
+        packer.packString("group_id"); packer.packLong(groupId)
+        packer.packString("message_id"); packer.packString(messageId)
+        packer.packString("key_version"); packer.packLong(keyVersion)
+        packer.packString("ciphertext"); packer.packBinaryHeader(ciphertext.size); packer.addPayload(ciphertext)
+        packer.packString("salt"); packer.packBinaryHeader(salt.size); packer.addPayload(salt)
+        packer.packString("nonce"); packer.packBinaryHeader(nonce.size); packer.addPayload(nonce)
+        packer.packString("created_at"); packer.packLong(createdAt)
+        packer.close()
+        sendFrame(Opcode.GROUP_MESSAGE_SEND, bos.toByteArray())
+    }
+
+    fun sendGroupDelivered(id: Long) = sendGroupReceipt(Opcode.GROUP_MESSAGE_DELIVERED, id)
+    fun sendGroupRead(id: Long) = sendGroupReceipt(Opcode.GROUP_MESSAGE_READ, id)
+
+    private fun sendGroupReceipt(opcode: Byte, id: Long) {
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        packer.packMapHeader(1); packer.packString("id"); packer.packLong(id); packer.close()
+        sendFrame(opcode, bos.toByteArray())
+    }
+
+    private fun sendFrame(opcode: Byte, payload: ByteArray) {
+        val frame = ByteArray(1 + payload.size)
+        frame[0] = opcode
+        payload.copyInto(frame, 1)
+        webSocket?.send(frame.toByteString(0, frame.size))
     }
 
     private fun MessageUnpacker.readMsgRecvEncrypted(): WebSocketEvent.MsgRecvEncrypted {

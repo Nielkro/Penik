@@ -54,6 +54,12 @@ func main() {
 
 	authRateLimiter := middleware.NewIPRateLimiter()
 
+	// Per-user throttles for group mutations (plan §10). Rotation triggers a
+	// per-device envelope fan-out, so it is bounded more tightly than ordinary
+	// group writes. Both run inside authMW so they key on the authenticated user.
+	groupWriteLimiter := middleware.NewUserRateLimiter(30, time.Minute)
+	groupRotateLimiter := middleware.NewUserRateLimiter(10, time.Minute)
+
 	// Public routes (no auth, but rate limited).
 	mux.Handle("POST /api/v1/register", authRateLimiter.Limit(http.HandlerFunc(handlers.Register(database, cfg))))
 	mux.Handle("POST /api/v1/login", authRateLimiter.Limit(http.HandlerFunc(handlers.Login(database, cfg))))
@@ -97,6 +103,38 @@ func main() {
 		authMW(http.HandlerFunc(handlers.ClaimPairingSession(database, hub))))
 	mux.Handle("GET /api/v1/pairing/sessions/{id}", authMW(http.HandlerFunc(handlers.GetPairingClaim(database))))
 	mux.Handle("PUT /api/v1/pairing/sessions/{id}/history", authMW(http.HandlerFunc(handlers.UploadPairingHistory(database, hub))))
+	mux.Handle("POST /api/v1/groups",
+		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.CreateGroup(database)))))
+	mux.Handle("GET /api/v1/groups",
+		authMW(http.HandlerFunc(handlers.ListGroups(database))))
+	mux.Handle("GET /api/v1/groups/{group_id}",
+		authMW(http.HandlerFunc(handlers.GetGroup(database))))
+	mux.Handle("PATCH /api/v1/groups/{group_id}",
+		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.PatchGroup(database)))))
+	mux.Handle("DELETE /api/v1/groups/{group_id}",
+		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.DeleteGroup(database)))))
+	mux.Handle("GET /api/v1/groups/{group_id}/members",
+		authMW(http.HandlerFunc(handlers.ListMembers(database))))
+	mux.Handle("POST /api/v1/groups/{group_id}/members",
+		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.InviteMember(database, hub)))))
+	mux.Handle("DELETE /api/v1/groups/{group_id}/members/{user_id}",
+		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.RemoveMember(database)))))
+	mux.Handle("PATCH /api/v1/groups/{group_id}/members/{user_id}",
+		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.ChangeMemberRole(database)))))
+	mux.Handle("POST /api/v1/groups/{group_id}/accept",
+		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.AcceptInvitation(database, hub)))))
+	mux.Handle("POST /api/v1/groups/{group_id}/decline",
+		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.DeclineInvitation(database)))))
+	mux.Handle("GET /api/v1/groups/{group_id}/keys",
+		authMW(http.HandlerFunc(handlers.ListKeyVersions(database))))
+	mux.Handle("GET /api/v1/groups/{group_id}/keys/{version}",
+		authMW(http.HandlerFunc(handlers.GetEnvelope(database))))
+	mux.Handle("POST /api/v1/groups/{group_id}/keys/{version}/envelopes",
+		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.UploadEnvelopes(database, hub)))))
+	mux.Handle("POST /api/v1/groups/{group_id}/keys/rotate",
+		authMW(groupRotateLimiter.Limit(http.HandlerFunc(handlers.RotateGroupKey(database)))))
+	mux.Handle("GET /api/v1/groups/{group_id}/messages/history",
+		authMW(http.HandlerFunc(handlers.GetGroupHistory(database))))
 	mux.Handle("GET /api/v1/messages/history",
 		authMW(http.HandlerFunc(handlers.GetMessageHistory(database))))
 	mux.Handle("GET /api/v1/messages/{user_id}/status",

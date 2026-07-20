@@ -129,3 +129,85 @@ CREATE TABLE IF NOT EXISTS pairing_tokens (
   token_hash BLOB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pairing_sessions_expiry ON pairing_sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    membership_version INTEGER NOT NULL DEFAULT 1,
+    current_key_version INTEGER NOT NULL DEFAULT 1,
+    deleted_at INTEGER DEFAULT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_members (
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'member',
+    status TEXT NOT NULL DEFAULT 'active',
+    joined_at INTEGER NOT NULL,
+    removed_at INTEGER DEFAULT NULL,
+    membership_version INTEGER NOT NULL,
+    PRIMARY KEY(group_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id, status);
+
+CREATE TABLE IF NOT EXISTS group_key_versions (
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    key_version INTEGER NOT NULL,
+    created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    membership_version INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    revoked_at INTEGER DEFAULT NULL,
+    PRIMARY KEY(group_id, key_version)
+);
+
+CREATE TABLE IF NOT EXISTS group_key_envelopes (
+    group_id INTEGER NOT NULL,
+    key_version INTEGER NOT NULL,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    encrypted_key BLOB NOT NULL,
+    encryption_salt BLOB NOT NULL,
+    encryption_nonce BLOB NOT NULL,
+    sender_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    delivered_at INTEGER DEFAULT NULL,
+    PRIMARY KEY(group_id, key_version, device_id),
+    FOREIGN KEY(group_id, key_version)
+        REFERENCES group_key_versions(group_id, key_version)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_key_envelopes_device
+    ON group_key_envelopes(device_id, delivered_at);
+
+CREATE TABLE IF NOT EXISTS group_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    message_id TEXT NOT NULL,
+    sender_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    sender_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    key_version INTEGER NOT NULL,
+    ciphertext BLOB NOT NULL,
+    encryption_salt BLOB NOT NULL,
+    encryption_nonce BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(group_id, key_version)
+        REFERENCES group_key_versions(group_id, key_version),
+    UNIQUE(group_id, sender_user_id, message_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_messages_group ON group_messages(group_id, id);
+
+CREATE TABLE IF NOT EXISTS group_message_devices (
+    message_id INTEGER NOT NULL REFERENCES group_messages(id) ON DELETE CASCADE,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    delivered_at INTEGER DEFAULT NULL,
+    read_at INTEGER DEFAULT NULL,
+    PRIMARY KEY(message_id, device_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_message_devices_undelivered
+    ON group_message_devices(device_id, delivered_at);

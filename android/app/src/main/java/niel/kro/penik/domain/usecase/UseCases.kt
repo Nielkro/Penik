@@ -4,6 +4,7 @@ import niel.kro.penik.data.network.websocket.WebSocketEvent
 import niel.kro.penik.data.network.websocket.WebSocketManager
 import niel.kro.penik.data.repository.AuthRepository
 import niel.kro.penik.data.repository.ChatRepository
+import niel.kro.penik.data.repository.GroupRepository
 import niel.kro.penik.data.repository.MessageRepository
 import javax.inject.Inject
 
@@ -73,6 +74,7 @@ class SyncHistoryUseCase @Inject constructor(
 class HandleWebSocketEventUseCase @Inject constructor(
     private val messageRepository: MessageRepository,
     private val chatRepository: ChatRepository,
+    private val groupRepository: GroupRepository,
 ) {
     suspend operator fun invoke(event: WebSocketEvent) {
         when (event) {
@@ -119,6 +121,26 @@ class HandleWebSocketEventUseCase @Inject constructor(
             }
             is WebSocketEvent.RefillPreKeys -> Unit
             is WebSocketEvent.PairingHistoryReady -> Unit
+            is WebSocketEvent.GroupMessageRecv -> {
+                groupRepository.handleIncoming(
+                    event.groupId, event.id, event.messageId, event.senderUserId, event.senderDeviceId,
+                    event.keyVersion, event.ciphertext, event.salt, event.nonce, event.createdAt,
+                )
+            }
+            is WebSocketEvent.GroupMessageAck -> {
+                groupRepository.onAck(event.groupId, event.messageId, event.id)
+            }
+            is WebSocketEvent.GroupKeyAvailable -> {
+                groupRepository.ensureGroupKey(event.groupId, event.keyVersion)
+                groupRepository.syncHistory(event.groupId)
+            }
+            is WebSocketEvent.GroupMemberChanged -> {
+                // Sync the group list first: a fresh invitation surfaces here as a
+                // pending group that doesn't exist locally yet. Member refresh is
+                // best-effort since a pending invitee can't list the roster.
+                runCatching { groupRepository.syncGroups() }
+                runCatching { groupRepository.refreshMembers(event.groupId) }
+            }
             else -> {}
         }
     }

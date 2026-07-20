@@ -9,12 +9,14 @@ import {
 import { ws } from './ws.js';
 import { renderAuth } from './ui/auth.js';
 import { renderChatList, renderChat } from './ui/chat.js';
+import { renderGroup } from './ui/groups.js';
 import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
 import {
   deriveSharedSecret, hkdfDerive, chacha20Poly1305Encrypt, chacha20Poly1305Decrypt,
   encryptKeyBackup, decryptKeyBackup
 } from './crypto.js';
+import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
 
 function u8ToHex(arr) {
   return Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
@@ -26,6 +28,43 @@ function read32BE(buf, offset) {
 }
 
 export const pendingAcks = new Map();
+
+// pendingAcks maps client_msg_id -> { tempId, userId, ts }. Entries are removed
+// the instant their ACK arrives (onMsgAckReceivedGlobal). This TTL sweep is a
+// safety net for ACKs that never come (dropped frame, server restart) so the map
+// cannot grow without bound. ts is the enqueue time in ms.
+export const PENDING_ACK_TTL_MS = 5 * 60 * 1000;
+
+let _pendingAckSweepTimer = null;
+
+// addPendingAck records a pending ACK with an enqueue timestamp. Idempotent:
+// re-adding an existing key keeps the original timestamp so a retry does not
+// reset its TTL.
+export function addPendingAck(clientMsgId, entry, now = Date.now()) {
+  const key = String(clientMsgId);
+  if (pendingAcks.has(key)) return;
+  pendingAcks.set(key, { ...entry, ts: now });
+}
+
+// sweepPendingAcks removes entries older than PENDING_ACK_TTL_MS. Idempotent and
+// side-effect free beyond the map, so it is safe to call on a timer or on
+// disconnect. Returns the number of entries dropped.
+export function sweepPendingAcks(now = Date.now()) {
+  let dropped = 0;
+  for (const [key, entry] of pendingAcks) {
+    if (now - (entry.ts || 0) >= PENDING_ACK_TTL_MS) {
+      pendingAcks.delete(key);
+      dropped++;
+    }
+  }
+  return dropped;
+}
+
+// clearPendingAcks drops every pending ACK. Called on disconnect: the outbox is
+// re-flushed on reconnect, which re-registers whatever is still undelivered.
+export function clearPendingAcks() {
+  pendingAcks.clear();
+}
 
 /* ── App state ── */
 export const state = {
@@ -44,6 +83,7 @@ const routes = {
   '#login':    () => showAuth('login'),
   '#register': () => showAuth('register'),
   '#chats':    () => showMain('chats'),
+  '#groups':   () => showMain('chats'),
   '#search':   () => showMain('search'),
   '#profile':  () => showMain('profile'),
 };
@@ -51,6 +91,7 @@ const routes = {
 function parseHash() {
   const hash = location.hash || '';
   if (hash.startsWith('#chat/')) return { screen: 'chat', userId: hash.slice(6) };
+  if (hash.startsWith('#group/')) return { screen: 'group', userId: hash.slice(7) };
   return { screen: hash || '#chats' };
 }
 
@@ -126,11 +167,15 @@ function buildMainLayout() {
   profileScreen.className = 'screen profile-screen';
   profileScreen.id = 'screen-profile';
 
-  screensWrap.append(chatListScreen, chatScreen, searchScreen, profileScreen);
+  const groupScreen = document.createElement('div');
+  groupScreen.className = 'screen chat-screen';
+  groupScreen.id = 'screen-group';
+
+  screensWrap.append(chatListScreen, chatScreen, searchScreen, profileScreen, groupScreen);
   wrap.append(screensWrap, nav);
   app.appendChild(wrap);
 
-  _mainLayout = { chatListScreen, chatScreen, searchScreen, profileScreen, nav };
+  _mainLayout = { chatListScreen, chatScreen, searchScreen, profileScreen, groupScreen, nav };
   return _mainLayout;
 }
 
@@ -151,7 +196,7 @@ function showMain(screen, userId) {
   });
 
   /* Hide all screens */
-  ['chats', 'chat', 'search', 'profile'].forEach(s => {
+  ['chats', 'chat', 'search', 'profile', 'group'].forEach(s => {
     const el = document.getElementById(`screen-${s}`);
     if (el) el.classList.remove('active');
   });
@@ -187,6 +232,18 @@ function showMain(screen, userId) {
     layout.profileScreen.classList.add('active');
     layout.profileScreen.innerHTML = '';
     renderProfile(layout.profileScreen);
+  } else if (screen === 'group' && userId) {
+    layout.groupScreen.classList.add('active');
+    layout.groupScreen.innerHTML = '';
+    renderGroup(layout.groupScreen, userId);
+    /* Keep the unified chat list visible as a sidebar on wide screens. */
+    if (window.innerWidth >= 700) {
+      layout.chatListScreen.classList.add('active');
+      if (!_chatListRendered) {
+        _chatListRendered = true;
+        renderChatList(layout.chatListScreen);
+      }
+    }
   }
 }
 
@@ -212,6 +269,8 @@ function handleRoute() {
 
   if (screen === 'chat') {
     showMain('chat', userId);
+  } else if (screen === 'group') {
+    showMain('group', userId);
   } else {
     const key = screen.startsWith('#') ? screen : '#' + screen;
     const cleanKey = key.replace('#', '');
@@ -646,37 +705,22 @@ export async function syncMessageHistory() {
 }
 
 export async function decryptMessagePayload(payload) {
+  // Strict binary handling: MsgPack WS frames deliver raw Uint8Array bytes, while
+  // REST/history responses deliver Base64 strings. We never guess between the two
+  // by inspecting byte values — a binary ciphertext that happens to be ASCII and
+  // 4-byte aligned would be silently mis-decoded, corrupting decryption.
   const toUint8Array = (val) => {
     if (!val) return new Uint8Array(0);
-    if (val instanceof Uint8Array) {
-      let isBase64Ascii = val.length > 0 && val.length % 4 === 0;
-      if (isBase64Ascii) {
-        for (let i = 0; i < val.length; i++) {
-          const b = val[i];
-          if (!((b >= 65 && b <= 90) || (b >= 97 && b <= 122) || (b >= 48 && b <= 57) || b === 43 || b === 47 || b === 61)) {
-            isBase64Ascii = false;
-            break;
-          }
-        }
-      }
-      if (isBase64Ascii) {
-        const str = String.fromCharCode(...val);
-        try {
-          const bin = atob(str);
-          const out = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-          return out;
-        } catch (_) {}
-      }
-      return val;
-    }
+    if (val instanceof Uint8Array) return val;
+    if (val instanceof ArrayBuffer) return new Uint8Array(val);
+    if (Array.isArray(val)) return new Uint8Array(val);
     if (typeof val === "string") {
       const bin = atob(val);
       const out = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
       return out;
     }
-    return new Uint8Array(0);
+    throw new Error(`decryptMessagePayload: unsupported binary field type ${typeof val}`);
   };
 
   const ciphertext = toUint8Array(payload.ciphertext);
@@ -799,9 +843,7 @@ export async function flushOutbox() {
     const unsent = allMsgs.filter(m => String(m.sender_id) === String(myId) && m.delivered === 0 && m.ciphertexts);
     for (const msg of unsent) {
       const clientMsgId = msg.client_msg_id || String(msg.msg_id);
-      if (!pendingAcks.has(clientMsgId)) {
-        pendingAcks.set(clientMsgId, { tempId: msg.msg_id, userId: msg.chat_id });
-      }
+      addPendingAck(clientMsgId, { tempId: msg.msg_id, userId: msg.chat_id });
       const seen = new Set();
       const uniqueDevices = (msg.ciphertexts || []).filter(d => {
         const id = Number(d.device_id);
@@ -834,9 +876,34 @@ function setupGlobalWSListeners() {
   ws.on(0x18, onMsgReadGlobal);
   ws.on(0x05, onOfflineBatchGlobal);
   ws.on(0x08, onChatPurgeGlobal);
+  registerGroupWSListeners();
+
+  // Periodically drop pending ACKs that never resolved, and clear them on
+  // disconnect (the outbox re-flush on reconnect re-registers live ones).
+  if (!_pendingAckSweepTimer) {
+    _pendingAckSweepTimer = setInterval(() => sweepPendingAcks(), PENDING_ACK_TTL_MS);
+    if (_pendingAckSweepTimer.unref) _pendingAckSweepTimer.unref();
+  }
+  ws.onDisconnect(() => clearPendingAcks());
+
   ws.onConnect(async () => {
     await flushOutbox();
     await syncMessageHistory();
+    try {
+      const groups = await syncGroups();
+      for (const g of groups) {
+        // Skip pending invites: we're not a member yet, so history/key
+        // requests 403. Isolate per-group so one failure doesn't abort the rest.
+        if (g.status === 'pending') continue;
+        try {
+          await syncHistory(g.id);
+        } catch (e) {
+          console.warn(`[groups] history sync for ${g.id} failed`, e.message);
+        }
+      }
+    } catch (e) {
+      console.warn('[groups] sync on connect failed', e.message);
+    }
   });
 }
 
