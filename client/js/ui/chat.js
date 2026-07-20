@@ -209,24 +209,18 @@ function showCreateMenu(anchor, onGroupCreated) {
 export async function renderChat(container, userId) {
   container.innerHTML = "";
 
-  let contact = await getContact(Number(userId));
-  if (!contact) {
-    try {
-      const res = await apiGet(`/users/${userId}`);
-      contact = res.user || res;
-      await saveContact({ ...contact, user_id: Number(userId) });
-    } catch {
-      contact = { user_id: Number(userId), name: "Неизвестный", nickname: "" };
-    }
-  }
-
   const me = getCurrentUser();
   const myId = me && (me.id || me.user_id);
   const isSelfChat = Number(userId) === Number(myId);
 
-  if (isSelfChat) {
-    contact = { ...contact, name: "Избранное", nickname: "" };
-  }
+  // Placeholder contact so the shell can mount synchronously. On a fresh boot
+  // the WS onConnect handler concurrently runs history/group sync, which
+  // contends IndexedDB and the network; blocking the shell on getContact/
+  // apiGet here leaves the active pane blank (just the main screen). Resolve
+  // the real contact after mount and patch the header in place.
+  let contact = isSelfChat
+    ? { user_id: Number(userId), name: "Избранное", nickname: "" }
+    : { user_id: Number(userId), name: "…", nickname: "" };
 
   const sidebarToggle = el("button", {
     class: "icon-btn sidebar-toggle",
@@ -295,14 +289,14 @@ export async function renderChat(container, userId) {
     });
   }
 
+  let avatarEl = avatar(contact, 40);
+  const nameEl = el("span", { class: "chat-header-name" }, contact.name || contact.nickname);
+  const nickEl = el("span", { class: "chat-header-nick" }, contact.nickname ? `@${contact.nickname}` : "");
   const headerChildren = [
     el("button", { class: "icon-btn chat-back" }, "\u2190"),
     sidebarToggle,
-    avatar(contact, 40),
-    el("div", { class: "chat-header-info" },
-      el("span", { class: "chat-header-name" }, contact.name || contact.nickname),
-      el("span", { class: "chat-header-nick" }, contact.nickname ? `@${contact.nickname}` : "")
-    )
+    avatarEl,
+    el("div", { class: "chat-header-info" }, nameEl, nickEl)
   ];
   if (safetyBtn) headerChildren.push(safetyBtn);
   if (deleteBtn) headerChildren.push(deleteBtn);
@@ -316,6 +310,28 @@ export async function renderChat(container, userId) {
   const inputRow   = el("div", { class: "chat-input-row" }, inputEl, sendBtn);
   const chatWrap   = el("div", { class: "chat-wrap" }, header, messagesEl, inputRow);
   container.appendChild(chatWrap);
+
+  // Resolve the real contact after the shell is mounted, then patch the header.
+  if (!isSelfChat) {
+    (async () => {
+      let resolved = await getContact(Number(userId));
+      if (!resolved) {
+        try {
+          const res = await apiGet(`/users/${userId}`);
+          resolved = res.user || res;
+          await saveContact({ ...resolved, user_id: Number(userId) });
+        } catch {
+          resolved = { user_id: Number(userId), name: "Неизвестный", nickname: "" };
+        }
+      }
+      contact = resolved;
+      nameEl.textContent = resolved.name || resolved.nickname || "";
+      nickEl.textContent = resolved.nickname ? `@${resolved.nickname}` : "";
+      const newAvatar = avatar(resolved, 40);
+      avatarEl.replaceWith(newAvatar);
+      avatarEl = newAvatar;
+    })();
+  }
 
   // Load history
   const loadEl = el("div", { class: "chat-loading" }, spinner());
