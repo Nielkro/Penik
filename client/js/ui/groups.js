@@ -166,17 +166,16 @@ export async function renderGroup(container, groupId) {
   const me = getCurrentUser();
   const myId = me && (me.id || me.user_id);
 
-  let group = null;
-  try {
-    const groups = await getAllGroups();
-    group = groups.find(g => Number(g.id) === groupId);
-  } catch { /* ignore */ }
-  const title = group ? group.name : `Группа ${groupId}`;
-
+  // Build and mount the shell synchronously so the active pane never sits
+  // blank while data loads. On a fresh boot the WS onConnect handler is
+  // concurrently running history/group sync, which contends IndexedDB and can
+  // stall these reads; deferring them until after the shell is attached keeps
+  // the chat visible instead of leaving just the (sidebar) main screen.
+  const nameEl = el("span", { class: "chat-header-name" }, `Группа ${groupId}`);
   const header = el("div", { class: "chat-header" },
     el("button", { class: "icon-btn chat-back" }, "←"),
     el("div", { class: "chat-header-info" },
-      el("span", { class: "chat-header-name" }, title),
+      nameEl,
       el("span", { class: "chat-header-nick" }, ""),
     ),
     el("button", { class: "icon-btn group-members-btn", title: "Участники", style: "margin-left:auto;font-size:18px;" }, "👥"),
@@ -186,10 +185,6 @@ export async function renderGroup(container, groupId) {
 
   // Cache sender_user_id → display name so bubbles show names, not "#3".
   const nameById = new Map();
-  try {
-    const members = await getGroupMembers(groupId);
-    for (const m of members) nameById.set(Number(m.user_id), memberName(m));
-  } catch { /* names fall back to #id */ }
 
   const messagesEl = el("div", { class: "chat-messages", "data-group-id": groupId });
   const inputEl = el("textarea", { class: "chat-input", placeholder: "Сообщение…", rows: "1" });
@@ -197,6 +192,19 @@ export async function renderGroup(container, groupId) {
   const inputRow = el("div", { class: "chat-input-row" }, inputEl, sendBtn);
   const chatWrap = el("div", { class: "chat-wrap" }, header, messagesEl, inputRow);
   container.appendChild(chatWrap);
+
+  // Resolve the real title and member names after the shell is mounted.
+  (async () => {
+    try {
+      const groups = await getAllGroups();
+      const group = groups.find(g => Number(g.id) === groupId);
+      if (group) nameEl.textContent = group.name;
+    } catch { /* keep fallback title */ }
+    try {
+      const members = await getGroupMembers(groupId);
+      for (const m of members) nameById.set(Number(m.user_id), memberName(m));
+    } catch { /* names fall back to #id */ }
+  })();
 
   const seen = new Set();
   function appendMessage(msg) {
