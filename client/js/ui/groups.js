@@ -271,9 +271,10 @@ function cssEscape(s) {
 // ── Members modal ────────────────────────────────────────────────────────────
 
 // A single member row: avatar, name, and role on the right (per the reference).
-// Long-press (or right-click) on a manageable member opens an action menu with
-// promote/demote and remove. Removed members are never rendered by the caller.
-function buildMemberRow(m, { myRole, myId, onAction }) {
+// Two tap targets: the avatar opens the member's profile; the rest of the row
+// opens the action menu (promote/demote, remove) when the viewer may manage the
+// member. Removed members are never rendered by the caller.
+function buildMemberRow(m, { myRole, myId, onAction, onProfile }) {
   const isMe = Number(m.user_id) === Number(myId);
   const name = memberName(m) + (isMe ? " (вы)" : "");
 
@@ -281,33 +282,29 @@ function buildMemberRow(m, { myRole, myId, onAction }) {
     style: "font-size:12px;color:#8a8a94;white-space:nowrap;",
   }, roleLabel(m.role) + (m.status === "pending" ? " · приглашён" : ""));
 
-  const row = el("li", {
-    style: "display:flex;align-items:center;gap:12px;padding:10px 4px;border-radius:10px;user-select:none;-webkit-user-select:none;",
-  },
-    avatar(m, 44),
-    el("div", { style: "flex:1;min-width:0;" },
-      el("div", { style: "color:#fff;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" }, name),
-    ),
-    roleTag,
+  // Avatar is its own tap target → profile.
+  const avatarBtn = el("div", {
+    style: "cursor:pointer;flex-shrink:0;border-radius:50%;",
+    title: "Открыть профиль",
+  }, avatar(m, 44));
+  avatarBtn.addEventListener("click", (e) => { e.stopPropagation(); onProfile(m); });
+
+  const body = el("div", { style: "flex:1;min-width:0;" },
+    el("div", { style: "color:#fff;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" }, name),
   );
 
+  const row = el("li", {
+    style: "display:flex;align-items:center;gap:12px;padding:10px 4px;border-radius:10px;",
+  }, avatarBtn, body, roleTag);
+
   // Owner can manage roles; owner/admin can remove. Never act on the owner or
-  // on yourself.
+  // on yourself. Tapping the row (outside the avatar) opens the action menu.
   const canManage = myRole === "owner" && m.role !== "owner" && !isMe;
   const canRemove = isPrivileged(myRole) && m.role !== "owner" && !isMe;
-  if (!canManage && !canRemove) return row;
-
-  row.style.cursor = "pointer";
-  const openMenu = (e) => {
-    e.preventDefault();
-    onAction(m, { canManage, canRemove });
-  };
-  // Long-press for touch, right-click for desktop.
-  let pressTimer = null;
-  row.addEventListener("touchstart", () => { pressTimer = setTimeout(() => openMenu(new Event("longpress")), 500); }, { passive: true });
-  row.addEventListener("touchend", () => clearTimeout(pressTimer));
-  row.addEventListener("touchmove", () => clearTimeout(pressTimer));
-  row.addEventListener("contextmenu", openMenu);
+  if (canManage || canRemove) {
+    row.style.cursor = "pointer";
+    row.addEventListener("click", () => onAction(m, { canManage, canRemove }));
+  }
   return row;
 }
 
@@ -370,7 +367,7 @@ async function showMembersModal(groupId, myId) {
     members.sort((a, b) => (order[a.role] ?? 3) - (order[b.role] ?? 3));
 
     for (const m of members) {
-      listEl.appendChild(buildMemberRow(m, { myRole, myId, onAction }));
+      listEl.appendChild(buildMemberRow(m, { myRole, myId, onAction, onProfile: showMemberProfileModal }));
     }
     // Only owner/admin may add members: hide the add row otherwise.
     addRow.style.display = isPrivileged(myRole) ? "flex" : "none";
@@ -382,6 +379,37 @@ async function showMembersModal(groupId, myId) {
     try { members = await getGroupMembers(groupId); } catch { members = []; }
     showAddMemberModal(groupId, members, renderMembers);
   });
+}
+
+// ── Member profile modal ─────────────────────────────────────────────────────
+
+// showMemberProfileModal displays a read-only profile card for a group member:
+// large avatar, name, @nick, id, and role. Opened by tapping a member's avatar.
+function showMemberProfileModal(m) {
+  const nick = m.username || m.nickname;
+  const av = avatar(m, 96);
+  av.style.margin = "4px auto 12px";
+
+  const rows = [
+    el("div", { style: "color:#fff;font-size:20px;font-weight:600;text-align:center;" }, memberName(m)),
+    nick ? el("div", { style: "color:#8a8a94;font-size:15px;text-align:center;margin-top:2px;" }, `@${nick}`) : null,
+    el("div", { style: "display:flex;justify-content:space-between;padding:10px 4px;border-top:1px solid rgba(255,255,255,0.08);margin-top:16px;" },
+      el("span", { style: "color:#8a8a94;font-size:14px;" }, "Роль"),
+      el("span", { style: "color:#fff;font-size:14px;" }, roleLabel(m.role)),
+    ),
+    el("div", { style: "display:flex;justify-content:space-between;padding:10px 4px;border-top:1px solid rgba(255,255,255,0.08);" },
+      el("span", { style: "color:#8a8a94;font-size:14px;" }, "ID"),
+      el("span", { style: "color:#fff;font-size:14px;" }, String(m.user_id)),
+    ),
+  ];
+
+  const closeBtn = el("button", { class: "btn-secondary", style: "width:100%;margin-top:16px;font-size:14px;" }, "Закрыть");
+  const box = el("div", { style: BOX_STYLE, onclick: (e) => e.stopPropagation() }, av, ...rows, closeBtn);
+  const overlay = el("div", { style: OVERLAY_STYLE }, box);
+  const close = () => overlay.remove();
+  closeBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  document.body.appendChild(overlay);
 }
 
 // showActionSheet renders a small bottom-anchored menu of actions. Each action's
