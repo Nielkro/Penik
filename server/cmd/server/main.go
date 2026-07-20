@@ -122,7 +122,7 @@ func main() {
 	mux.Handle("PATCH /api/v1/groups/{group_id}/members/{user_id}",
 		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.ChangeMemberRole(database)))))
 	mux.Handle("POST /api/v1/groups/{group_id}/accept",
-		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.AcceptInvitation(database, hub)))))
+		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.AcceptInvitation(database)))))
 	mux.Handle("POST /api/v1/groups/{group_id}/decline",
 		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.DeclineInvitation(database)))))
 	mux.Handle("GET /api/v1/groups/{group_id}/keys",

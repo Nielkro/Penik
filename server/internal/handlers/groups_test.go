@@ -87,7 +87,7 @@ func TestGroupCRUDAndMembership(t *testing.T) {
 	w = httptest.NewRecorder()
 	r = as("POST", "/x", bobID, bobDev, nil)
 	r.SetPathValue("group_id", itoa(groupID))
-	AcceptInvitation(database, nil)(w, r)
+	AcceptInvitation(database)(w, r)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("bob accept: expected 204 got %d body=%s", w.Code, w.Body.String())
 	}
@@ -192,7 +192,7 @@ func TestInviteActiveMemberRejected(t *testing.T) {
 	wa := httptest.NewRecorder()
 	ra := as("POST", "/a", bobID, bobDev, nil)
 	ra.SetPathValue("group_id", itoa(groupID))
-	AcceptInvitation(database, nil)(wa, ra)
+	AcceptInvitation(database)(wa, ra)
 	if wa.Code != http.StatusNoContent {
 		t.Fatalf("accept: got %d", wa.Code)
 	}
@@ -234,7 +234,7 @@ func TestAcceptBumpsMembershipVersion(t *testing.T) {
 	wa := httptest.NewRecorder()
 	ra := as("POST", "/a", bobID, bobDev, nil)
 	ra.SetPathValue("group_id", itoa(groupID))
-	AcceptInvitation(database, nil)(wa, ra)
+	AcceptInvitation(database)(wa, ra)
 	if wa.Code != http.StatusNoContent {
 		t.Fatalf("accept: got %d", wa.Code)
 	}
@@ -476,46 +476,6 @@ func TestInviteNotifiesAndPendingListed(t *testing.T) {
 	}
 }
 
-// TestAcceptNotifiesAdmins covers the accept → GROUP_MEMBER_CHANGED push to the
-// group's active owner/admins (hub non-nil), which is what triggers the owner to
-// rotate and distribute a fresh key to the newly active device.
-func TestAcceptNotifiesAdmins(t *testing.T) {
-	database, _ := db.Open(filepath.Join(t.TempDir(), "accnotify.db"))
-	defer database.Close()
-	ownerID, ownerDev := newUser(t, database, "owner")
-	bobID, bobDev := newUser(t, database, "bob")
-	groupID := mkGroup(t, database, ownerID, ownerDev)
-
-	// Owner invites bob.
-	w := httptest.NewRecorder()
-	r := as("POST", "/m", ownerID, ownerDev, memberInviteRequest{UserID: bobID})
-	r.SetPathValue("group_id", itoa(groupID))
-	InviteMember(database, nil)(w, r)
-	if w.Code != http.StatusOK {
-		t.Fatalf("invite: expected 200 got %d body=%s", w.Code, w.Body.String())
-	}
-
-	// Bob accepts with a real hub so notifyGroupAdmins runs its owner/admin
-	// device-lookup + best-effort send path (owner is offline, frame is dropped).
-	hub := ws.NewHub()
-	w = httptest.NewRecorder()
-	r = as("POST", "/a", bobID, bobDev, nil)
-	r.SetPathValue("group_id", itoa(groupID))
-	AcceptInvitation(database, hub)(w, r)
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("accept: expected 204 got %d body=%s", w.Code, w.Body.String())
-	}
-
-	// Bob is now active: he can read the group.
-	w = httptest.NewRecorder()
-	r = as("GET", "/g", bobID, bobDev, nil)
-	r.SetPathValue("group_id", itoa(groupID))
-	GetGroup(database)(w, r)
-	if w.Code != http.StatusOK {
-		t.Fatalf("bob active GetGroup: expected 200 got %d", w.Code)
-	}
-}
-
 func TestInviteAndRoleErrorPaths(t *testing.T) {	database, _ := db.Open(filepath.Join(t.TempDir(), "invrole.db"))
 	defer database.Close()
 	ownerID, ownerDev := newUser(t, database, "owner")
@@ -594,7 +554,7 @@ func TestAcceptWithoutInvitationConflicts(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := as("POST", "/g", eveID, eveDev, nil)
 	r.SetPathValue("group_id", itoa(groupID))
-	AcceptInvitation(database, nil)(w, r)
+	AcceptInvitation(database)(w, r)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("accept without invite: expected 409 got %d", w.Code)
 	}
@@ -602,7 +562,7 @@ func TestAcceptWithoutInvitationConflicts(t *testing.T) {
 	w = httptest.NewRecorder()
 	r = as("POST", "/g", eveID, eveDev, nil)
 	r.SetPathValue("group_id", "999999")
-	AcceptInvitation(database, nil)(w, r)
+	AcceptInvitation(database)(w, r)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("accept missing group: expected 404 got %d", w.Code)
 	}
@@ -618,7 +578,7 @@ func TestDeleteGroupOwnerOnly(t *testing.T) {
 	wa := httptest.NewRecorder()
 	ra := as("POST", "/g", bobID, bobDev, nil)
 	ra.SetPathValue("group_id", itoa(groupID))
-	AcceptInvitation(database, nil)(wa, ra)
+	AcceptInvitation(database)(wa, ra)
 
 	w := httptest.NewRecorder()
 	r := as("DELETE", "/g", bobID, bobDev, nil)
@@ -719,7 +679,7 @@ func TestHandlersDBErrorPaths(t *testing.T) {
 		{"delete", call(DeleteGroup(database), "DELETE", true, nil)},
 		{"members", call(ListMembers(database), "GET", true, nil)},
 		{"invite", call(InviteMember(database, nil), "POST", true, memberInviteRequest{UserID: 42})},
-		{"accept", call(AcceptInvitation(database, nil), "POST", true, nil)},
+		{"accept", call(AcceptInvitation(database), "POST", true, nil)},
 		{"remove", call(RemoveMember(database), "DELETE", true, nil)},
 		{"role", call(ChangeMemberRole(database), "PATCH", true, memberRoleRequest{Role: roleAdmin})},
 		{"history", call(GetGroupHistory(database), "GET", true, nil)},
@@ -749,7 +709,7 @@ func TestReachableValidationBranches(t *testing.T) {
 	wa := httptest.NewRecorder()
 	ra := as("POST", "/a", bobID, bobDev, nil)
 	ra.SetPathValue("group_id", itoa(groupID))
-	AcceptInvitation(database, nil)(wa, ra)
+	AcceptInvitation(database)(wa, ra)
 
 	// PatchGroup with an empty name -> 400.
 	w := httptest.NewRecorder()
@@ -862,7 +822,7 @@ func TestGroupWriteFaultBranches(t *testing.T) {
 		wa := httptest.NewRecorder()
 		ra := as("POST", "/a", bobID, bobDev, nil)
 		ra.SetPathValue("group_id", itoa(groupID))
-		AcceptInvitation(database, nil)(wa, ra)
+		AcceptInvitation(database)(wa, ra)
 		database.Exec(`CREATE TRIGGER t_rm BEFORE UPDATE OF removed_at ON group_members
 			BEGIN SELECT RAISE(ABORT,'boom'); END`)
 		w := httptest.NewRecorder()
@@ -885,7 +845,7 @@ func TestGroupWriteFaultBranches(t *testing.T) {
 		wa := httptest.NewRecorder()
 		ra := as("POST", "/a", bobID, bobDev, nil)
 		ra.SetPathValue("group_id", itoa(groupID))
-		AcceptInvitation(database, nil)(wa, ra)
+		AcceptInvitation(database)(wa, ra)
 		database.Exec(`CREATE TRIGGER t_role BEFORE UPDATE OF role ON group_members
 			BEGIN SELECT RAISE(ABORT,'boom'); END`)
 		w := httptest.NewRecorder()
@@ -1001,7 +961,7 @@ func TestMemberPermissionBranches(t *testing.T) {
 	wa := httptest.NewRecorder()
 	ra := as("POST", "/a", memID, memDev, nil)
 	ra.SetPathValue("group_id", itoa(groupID))
-	AcceptInvitation(database, nil)(wa, ra) // mem is now an active plain member
+	AcceptInvitation(database)(wa, ra) // mem is now an active plain member
 
 	// Plain member cannot invite (role branch).
 	w := httptest.NewRecorder()
@@ -1026,7 +986,7 @@ func TestMemberPermissionBranches(t *testing.T) {
 	w = httptest.NewRecorder()
 	r = as("POST", "/g", memID, memDev, nil)
 	r.SetPathValue("group_id", "bad")
-	AcceptInvitation(database, nil)(w, r)
+	AcceptInvitation(database)(w, r)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("accept invalid path: expected 400 got %d", w.Code)
 	}
@@ -1075,7 +1035,7 @@ func TestTxErrorBranches(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := as("POST", "/a", bobID, bobDev, nil)
 		r.SetPathValue("group_id", itoa(groupID))
-		AcceptInvitation(database, nil)(w, r)
+		AcceptInvitation(database)(w, r)
 		if w.Code != http.StatusInternalServerError {
 			t.Fatalf("expected 500 got %d", w.Code)
 		}

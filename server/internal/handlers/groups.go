@@ -20,6 +20,7 @@ const (
 	roleMember = "member"
 
 	statusActive  = "active"
+	statusPending = "pending"
 	statusRemoved = "removed"
 
 	maxGroupNameLen = 128
@@ -411,10 +412,10 @@ func notifyMemberChanged(database *db.DB, r *http.Request, hub *ws.Hub, groupID,
 }
 
 // AcceptInvitation lets a pending member become active and advances the
-// membership epoch so a key rotation can follow the new active roster. On
-// success it pushes GROUP_MEMBER_CHANGED to the group's active owner/admins so
-// one of them rotates and distributes a fresh key envelope to the new device.
-func AcceptInvitation(database *db.DB, hub *ws.Hub) http.HandlerFunc {
+// membership epoch. The inviter already pre-staged a key envelope for the
+// invitee's devices at invite time (variant A), so the newly active device can
+// fetch the current key version straight away without a rotation.
+func AcceptInvitation(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID, ok := groupIDFromPath(w, r)
 		if !ok {
@@ -455,37 +456,7 @@ func AcceptInvitation(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		// Notify active owner/admins so a rotation covers the newly active device.
-		notifyGroupAdmins(database, r, hub, groupID, mv)
 		w.WriteHeader(http.StatusNoContent)
-	}
-}
-
-// notifyGroupAdmins pushes GROUP_MEMBER_CHANGED to every online device of the
-// group's active owner and admins. Best-effort, mirroring notifyMemberChanged:
-// on delivery failure or offline admins the roster reconciles on next sync.
-func notifyGroupAdmins(database *db.DB, r *http.Request, hub *ws.Hub, groupID, membershipVersion int64) {
-	if hub == nil {
-		return
-	}
-	payload, err := msgpack.Marshal(ws.GroupMemberChanged{GroupID: groupID, MembershipVersion: membershipVersion})
-	if err != nil {
-		return
-	}
-	rows, err := database.QueryContext(r.Context(),
-		`SELECT d.id FROM devices d
-		 JOIN group_members gm ON gm.user_id=d.user_id
-		 WHERE gm.group_id=? AND gm.status='active' AND gm.role IN (?,?)`,
-		groupID, roleOwner, roleAdmin)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var did int64
-		if rows.Scan(&did) == nil {
-			hub.SendToDeviceFrame(did, ws.OpGroupMemberChanged, payload)
-		}
 	}
 }
 
