@@ -24,6 +24,14 @@ const (
 	OpMsgRead             Opcode = 0x18
 	OpPairingHistoryReady Opcode = 0x19
 	OpPairingClaimed      Opcode = 0x1a
+
+	OpGroupMessageSend      Opcode = 0x20
+	OpGroupMessageRecv      Opcode = 0x21
+	OpGroupMessageAck       Opcode = 0x22
+	OpGroupKeyAvailable     Opcode = 0x23
+	OpGroupMemberChanged    Opcode = 0x24
+	OpGroupMessageDelivered Opcode = 0x25
+	OpGroupMessageRead      Opcode = 0x26
 )
 
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]
@@ -168,4 +176,60 @@ type PairingHistoryReady struct {
 type PairingClaimed struct {
 	SessionID string `msgpack:"session_id"`
 	PublicKey string `msgpack:"public_key"`
+}
+
+// GroupKeyAvailable notifies a device that a new group key version has an
+// envelope waiting for it. The device fetches the envelope over REST.
+type GroupKeyAvailable struct {
+	GroupID    int64 `msgpack:"group_id"`
+	KeyVersion int64 `msgpack:"key_version"`
+}
+
+// GroupMemberChanged notifies active devices that a group's membership changed
+// and a key rotation is expected.
+type GroupMemberChanged struct {
+	GroupID           int64 `msgpack:"group_id"`
+	MembershipVersion int64 `msgpack:"membership_version"`
+}
+
+// GroupMessageSend is sent client→server to post an encrypted group message.
+// Sender identity is taken from the authenticated connection, never the payload.
+type GroupMessageSend struct {
+	GroupID    int64  `msgpack:"group_id"`
+	MessageID  string `msgpack:"message_id"`
+	KeyVersion int64  `msgpack:"key_version"`
+	Ciphertext []byte `msgpack:"ciphertext"`
+	Salt       []byte `msgpack:"salt"`
+	Nonce      []byte `msgpack:"nonce"`
+	CreatedAt  int64  `msgpack:"created_at"`
+}
+
+// GroupMessageRecv is pushed server→client to deliver a group message.
+type GroupMessageRecv struct {
+	GroupID        int64  `msgpack:"group_id"`
+	ID             int64  `msgpack:"id"`
+	MessageID      string `msgpack:"message_id"`
+	SenderUserID   int64  `msgpack:"sender_user_id"`
+	SenderDeviceID int64  `msgpack:"sender_device_id"`
+	KeyVersion     int64  `msgpack:"key_version"`
+	Ciphertext     []byte `msgpack:"ciphertext"`
+	Salt           []byte `msgpack:"salt"`
+	Nonce          []byte `msgpack:"nonce"`
+	CreatedAt      int64  `msgpack:"created_at"`
+}
+
+// GroupMessageAck confirms server-side persistence of a GroupMessageSend.
+type GroupMessageAck struct {
+	GroupID   int64  `msgpack:"group_id"`
+	MessageID string `msgpack:"message_id"`
+	ID        int64  `msgpack:"id"`
+}
+
+// GroupMessageDelivered / GroupMessageRead are sent client→server for receipts.
+type GroupMessageDelivered struct {
+	ID int64 `msgpack:"id"`
+}
+
+type GroupMessageRead struct {
+	ID int64 `msgpack:"id"`
 }

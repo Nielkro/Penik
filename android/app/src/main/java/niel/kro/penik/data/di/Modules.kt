@@ -8,6 +8,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import niel.kro.penik.data.local.dao.ChatDao
+import niel.kro.penik.data.local.dao.GroupDao
 import niel.kro.penik.data.local.dao.MessageDao
 import niel.kro.penik.data.local.database.PenikDatabase
 import niel.kro.penik.data.network.api.ApiService
@@ -21,6 +22,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 import niel.kro.penik.data.crypto.E2EECrypto
+import niel.kro.penik.data.crypto.GroupCrypto
 import niel.kro.penik.data.crypto.PreKeyManager
 
 
@@ -36,7 +38,13 @@ object DatabaseModule {
             PenikDatabase::class.java,
             "penik_database"
         )
-            .addMigrations(PenikDatabase.MIGRATION_1_2, PenikDatabase.MIGRATION_2_3)
+            .addMigrations(
+                PenikDatabase.MIGRATION_1_2,
+                PenikDatabase.MIGRATION_2_3,
+                PenikDatabase.MIGRATION_3_4,
+                PenikDatabase.MIGRATION_4_5,
+                PenikDatabase.MIGRATION_5_6,
+            )
             .build()
     }
 
@@ -45,6 +53,9 @@ object DatabaseModule {
 
     @Provides
     fun provideChatDao(db: PenikDatabase): ChatDao = db.chatDao()
+
+    @Provides
+    fun provideGroupDao(db: PenikDatabase): GroupDao = db.groupDao()
 }
 
 @Module
@@ -100,6 +111,12 @@ object CryptoModule {
     @Singleton
     fun provideE2EECrypto(): E2EECrypto {
         return E2EECrypto()
+    }
+
+    @Provides
+    @Singleton
+    fun provideGroupCrypto(e2eeCrypto: E2EECrypto): GroupCrypto {
+        return GroupCrypto(e2eeCrypto)
     }
 
     @Provides

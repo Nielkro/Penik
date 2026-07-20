@@ -22,6 +22,13 @@ export const OP = {
   MSG_READ:        0x18,
   PAIRING_HISTORY_READY: 0x19,
   PAIRING_CLAIMED: 0x1a,
+  GROUP_MESSAGE_SEND:      0x20,
+  GROUP_MESSAGE_RECV:      0x21,
+  GROUP_MESSAGE_ACK:       0x22,
+  GROUP_KEY_AVAILABLE:     0x23,
+  GROUP_MEMBER_CHANGED:    0x24,
+  GROUP_MESSAGE_DELIVERED: 0x25,
+  GROUP_MESSAGE_READ:      0x26,
 };
 
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

@@ -10,6 +10,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import niel.kro.penik.ui.screen.auth.AuthScreen
 import niel.kro.penik.ui.screen.chatroom.ChatRoomScreen
+import niel.kro.penik.ui.screen.groups.GroupChatScreen
 import niel.kro.penik.ui.viewmodel.StartupViewModel
 import niel.kro.penik.ui.screen.pairing.PairingScannerScreen
 
@@ -42,6 +43,9 @@ fun NavGraph(
                 onChatClick = { userId, name ->
                     navController.navigate(Screen.ChatRoom.createRoute(userId, name))
                 },
+                onGroupClick = { groupId, name ->
+                    navController.navigate(Screen.GroupChat.createRoute(groupId, name))
+                },
                 onLogout = {
                     navController.navigate(Screen.Auth.route) {
                         popUpTo(0) { inclusive = true }
@@ -67,6 +71,22 @@ fun NavGraph(
             ChatRoomScreen(
                 chatUserId = chatUserId,
                 chatName = chatName,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.GroupChat.route,
+            arguments = listOf(
+                navArgument("groupId") { type = NavType.LongType },
+                navArgument("groupName") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val groupId = backStackEntry.arguments?.getLong("groupId") ?: return@composable
+            val groupName = backStackEntry.arguments?.getString("groupName") ?: ""
+            GroupChatScreen(
+                groupId = groupId,
+                groupName = groupName,
                 onBack = { navController.popBackStack() }
             )
         }

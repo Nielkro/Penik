@@ -1,7 +1,7 @@
 import { ws } from "./ws.js";
 
 const DB_NAME = "penik-messenger";
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 let _db = null;
 
@@ -20,6 +20,22 @@ export function openDB() {
       }
       if (!db.objectStoreNames.contains("e2ee_keys")) {
         db.createObjectStore("e2ee_keys", { keyPath: "id" });
+      }
+      // Group stores (DB v6+).
+      if (!db.objectStoreNames.contains("groups")) {
+        db.createObjectStore("groups", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("group_members")) {
+        const gm = db.createObjectStore("group_members", { keyPath: ["group_id", "user_id"] });
+        gm.createIndex("group_id", "group_id", { unique: false });
+      }
+      if (!db.objectStoreNames.contains("group_keys")) {
+        // key: `${group_id}:${key_version}` → { group_id, key_version, key }
+        db.createObjectStore("group_keys", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("group_messages")) {
+        const gms = db.createObjectStore("group_messages", { keyPath: ["group_id", "message_id"] });
+        gms.createIndex("group_id", "group_id", { unique: false });
       }
       // Clean up legacy object stores if they exist
       const legacyStores = ["identity", "pre_keys", "signed_pre_keys", "sessions_v2", "identities", "sessions", "opk_pool", "skipped_keys"];
@@ -234,6 +250,37 @@ export async function deleteChatData(userId) {
   });
 }
 
+// deleteGroupData removes a group and every locally cached row associated with
+// it (members, keys, messages). Used when declining an invite or leaving.
+export async function deleteGroupData(groupId) {
+  await openDB();
+  const gid = Number(groupId);
+  await new Promise((resolve, reject) => {
+    const transaction = _db.transaction(
+      ["groups", "group_members", "group_keys", "group_messages"], "readwrite");
+    transaction.objectStore("groups").delete(gid);
+    // Members and messages are keyed by a group_id index; iterate and delete.
+    for (const storeName of ["group_members", "group_messages"]) {
+      const idx = transaction.objectStore(storeName).index("group_id");
+      idx.openCursor(IDBKeyRange.only(gid)).onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) { cursor.delete(); cursor.continue(); }
+      };
+    }
+    // Keys use a string primary key `${group_id}:${version}`; scan by prefix.
+    const keyStore = transaction.objectStore("group_keys");
+    keyStore.openCursor().onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        if (Number(cursor.value.group_id) === gid) cursor.delete();
+        cursor.continue();
+      }
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = (e) => reject(e.target.error);
+  });
+}
+
 export async function updateMsgId(oldId, newId) {
   await openDB();
   const transaction = _db.transaction(["messages"], "readwrite");
@@ -312,7 +359,7 @@ export async function findAndResolvePendingSentMessage(chatId, timestamp, server
 export async function clearIndexedDB() {
   await openDB();
   return new Promise((resolve, reject) => {
-    const list = ["contacts", "messages", "e2ee_keys"];
+    const list = ["contacts", "messages", "e2ee_keys", "groups", "group_members", "group_keys", "group_messages"];
     const transaction = _db.transaction(list, "readwrite");
     for (const s of list) {
       transaction.objectStore(s).clear();
@@ -382,4 +429,125 @@ export function getPersistentDeviceName() {
     localStorage.setItem("device_name", name);
   }
   return name;
+}
+
+// ── Groups ──
+
+export async function saveGroup(group) {
+  await openDB();
+  return put(tx("groups", "readwrite"), { ...group, id: Number(group.id) });
+}
+
+export async function getGroup(groupId) {
+  await openDB();
+  return get(tx("groups"), Number(groupId));
+}
+
+export async function getAllGroups() {
+  await openDB();
+  return getAll(tx("groups"));
+}
+
+export async function saveGroupMembers(groupId, members) {
+  await openDB();
+  const gid = Number(groupId);
+  return new Promise((resolve, reject) => {
+    const transaction = _db.transaction("group_members", "readwrite");
+    const store = transaction.objectStore("group_members");
+    // Replace the full member set for this group.
+    const idx = store.index("group_id");
+    idx.openCursor(IDBKeyRange.only(gid)).onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        cursor.delete();
+        cursor.continue();
+      } else {
+        for (const m of members) {
+          store.put({ ...m, group_id: gid, user_id: Number(m.user_id) });
+        }
+      }
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = (e) => reject(e.target.error);
+  });
+}
+
+export async function getGroupMembers(groupId) {
+  await openDB();
+  const gid = Number(groupId);
+  return new Promise((resolve, reject) => {
+    const store = _db.transaction("group_members", "readonly").objectStore("group_members");
+    const idx = store.index("group_id");
+    const out = [];
+    const req = idx.openCursor(IDBKeyRange.only(gid));
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        out.push(cursor.value);
+        cursor.continue();
+      } else {
+        resolve(out);
+      }
+    };
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+// Group keys are stored keyed by `${group_id}:${key_version}`. The key bytes are
+// held as a Uint8Array; the surrounding e2ee_keys identity envelope already
+// protects the device at rest.
+function groupKeyId(groupId, version) {
+  return `${Number(groupId)}:${Number(version)}`;
+}
+
+export async function saveGroupKey(groupId, version, keyBytes) {
+  await openDB();
+  return put(tx("group_keys", "readwrite"), {
+    id: groupKeyId(groupId, version),
+    group_id: Number(groupId),
+    key_version: Number(version),
+    key: keyBytes,
+  });
+}
+
+export async function getGroupKey(groupId, version) {
+  await openDB();
+  const rec = await get(tx("group_keys"), groupKeyId(groupId, version));
+  return rec ? rec.key : null;
+}
+
+export async function saveGroupMessage(message) {
+  await openDB();
+  return put(tx("group_messages", "readwrite"), {
+    ...message,
+    group_id: Number(message.group_id),
+  });
+}
+
+export async function getGroupMessage(groupId, messageId) {
+  await openDB();
+  return get(tx("group_messages"), [Number(groupId), String(messageId)]);
+}
+
+export async function getGroupMessages(groupId, limit = 50) {
+  await openDB();
+  const gid = Number(groupId);
+  return new Promise((resolve, reject) => {
+    const store = _db.transaction("group_messages", "readonly").objectStore("group_messages");
+    const idx = store.index("group_id");
+    const out = [];
+    const req = idx.openCursor(IDBKeyRange.only(gid), "prev");
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor && out.length < limit) {
+        out.push(cursor.value);
+        cursor.continue();
+      } else {
+        // Sort ascending by server id (falls back to created_at for pending).
+        out.sort((a, b) => (a.id || 0) - (b.id || 0) || a.created_at - b.created_at);
+        resolve(out);
+      }
+    };
+    req.onerror = (e) => reject(e.target.error);
+  });
 }

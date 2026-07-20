@@ -119,3 +119,29 @@ export async function getMessageHistory(userId, before, limit = 40) {
 export function createPairingSession(body) { return post('/pairing/sessions', body); }
 export function getPairingSession(id) { return request('GET', `/pairing/sessions/${id}`); }
 export function uploadPairingHistory(id, body) { return request('PUT', `/pairing/sessions/${id}/history`, body); }
+
+/* ── Groups ── */
+
+export function createGroup({ name, member_user_ids }) { return post('/groups', { name, member_user_ids }); }
+export function listGroups() { return get('/groups'); }
+export function getGroup(groupId) { return get(`/groups/${groupId}`); }
+export function renameGroup(groupId, name) { return patch(`/groups/${groupId}`, { name }); }
+export function deleteGroup(groupId) { return del(`/groups/${groupId}`); }
+
+export function listGroupMembers(groupId) { return get(`/groups/${groupId}/members`); }
+export function inviteGroupMember(groupId, userId) { return post(`/groups/${groupId}/members`, { user_id: userId }); }
+export function removeGroupMember(groupId, userId) { return del(`/groups/${groupId}/members/${userId}`); }
+export function changeGroupMemberRole(groupId, userId, role) { return patch(`/groups/${groupId}/members/${userId}`, { role }); }
+export function acceptGroupInvitation(groupId) { return post(`/groups/${groupId}/accept`); }
+export function declineGroupInvitation(groupId) { return post(`/groups/${groupId}/decline`); }
+
+export function listGroupKeyVersions(groupId) { return get(`/groups/${groupId}/keys`); }
+export function getGroupEnvelope(groupId, version) { return get(`/groups/${groupId}/keys/${version}`); }
+export function uploadGroupEnvelopes(groupId, version, envelopes) { return post(`/groups/${groupId}/keys/${version}/envelopes`, { envelopes }); }
+export function rotateGroupKey(groupId) { return post(`/groups/${groupId}/keys/rotate`); }
+
+export function getGroupHistory(groupId, { limit = 100, before_id } = {}) {
+  let path = `/groups/${groupId}/messages/history?limit=${limit}`;
+  if (before_id) path += `&before_id=${before_id}`;
+  return get(path);
+}

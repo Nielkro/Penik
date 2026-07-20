@@ -6,6 +6,8 @@ import {
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, encryptMessagePayload } from "../app.js";
 import { avatar, formatTime, formatDate, el, showToast, spinner, showDeleteChatConfirmModal } from "./components.js";
+import { syncGroups, getAllGroups, getGroupMessages, onGroupUpdate } from "../groups.js";
+import { buildGroupListItem, showCreateGroupModal } from "./groups.js";
 
 
 
@@ -16,35 +18,35 @@ export async function renderChatList(container) {
 
   const header = el("div", { class: "chatlist-header" },
     el("h2", { class: "chatlist-title" }, "Чаты"),
-    el("button", { class: "icon-btn", title: "Поиск" },
-      el("span", {}, "🔍")
+    el("button", { class: "icon-btn", title: "Создать" },
+      el("span", {}, "＋")
     )
   );
-  header.querySelector(".icon-btn").addEventListener("click", () => navigate("#search"));
+  const createBtn = header.querySelector(".icon-btn");
+  createBtn.addEventListener("click", () => showCreateMenu(createBtn, () => renderChatList(container)));
 
   const searchInput = el("input", {
     type: "search",
     class: "chatlist-search",
-    placeholder: "Поиск чатов…",
+    placeholder: "Поиск чатов и групп…",
   });
 
   const listEl = el("ul", { class: "chatlist-contacts" });
   container.append(header, searchInput, listEl);
 
-  let contacts = [];
-  try {
-    contacts = await getAllContacts();
-    const me = getCurrentUser();
-    const myId = me && (me.id || me.user_id);
-    if (myId) {
-      contacts = contacts.filter(c => String(c.user_id) !== String(myId));
-    }
-  } catch {
-    contacts = [];
-  }
-
   const me = getCurrentUser();
   const myId = me && (me.id || me.user_id);
+
+  async function loadContacts() {
+    try {
+      let all = await getAllContacts();
+      if (myId) all = all.filter(c => String(c.user_id) !== String(myId));
+      return all.map(c => ({ ...c, _kind: "chat" }));
+    } catch {
+      return [];
+    }
+  }
+
   const selfChatEntry = myId ? {
     user_id: myId,
     name: "Избранное",
@@ -53,9 +55,12 @@ export async function renderChatList(container) {
     last_ts: 0
   } : null;
 
-  function renderContacts(list) {
+  let contacts = await loadContacts();
+  let groups = await loadGroupEntries();
+
+  function render(filter) {
     listEl.innerHTML = "";
-    if (selfChatEntry) {
+    if (selfChatEntry && (!filter || "избранное".includes(filter))) {
       const selfItem = el("li", { class: "chatlist-item" },
         el("div", { class: "chatlist-item-avatar", style: "width:48px;height:48px;border-radius:50%;background:#1a1a2e;display:flex;align-items:center;justify-content:center;font-size:22px;color:#00e676;" }, "\uD83D\uDCDD"),
         el("div", { class: "chatlist-item-info" },
@@ -66,54 +71,137 @@ export async function renderChatList(container) {
       selfItem.addEventListener("click", () => navigate(`#chat/${myId}`));
       listEl.appendChild(selfItem);
     }
-    if (!list.length && !selfChatEntry) {
-      listEl.appendChild(el("li", { class: "chatlist-empty" }, "Нет чатов. Найдите пользователя."));
+    // Merge personal chats and groups, then sort by most recent activity.
+    // Quiet conversations and pending invites (last_ts 0) sink to the bottom.
+    let merged = [...contacts, ...groups];
+    if (filter) {
+      merged = merged.filter(x =>
+        (x.name || "").toLowerCase().includes(filter) ||
+        (x.nickname || "").toLowerCase().includes(filter)
+      );
+    }
+    merged.sort((a, b) => (b.last_ts || 0) - (a.last_ts || 0));
+
+    if (!merged.length && !selfChatEntry) {
+      listEl.appendChild(el("li", { class: "chatlist-empty" }, "Пусто. Найдите пользователя или создайте группу."));
       return;
     }
-    list.forEach(c => {
-      const item = el("li", { class: "chatlist-item" },
-        avatar(c, 48),
-        el("div", { class: "chatlist-item-info" },
-          el("span", { class: "chatlist-item-name" }, c.name || c.nickname || ""),
-          el("span", { class: "chatlist-item-preview" }, c.last_message || "")
-        ),
-        el("span", { class: "chatlist-item-time" }, c.last_ts ? formatTime(c.last_ts) : "")
-      );
-      item.addEventListener("click", () => navigate(`#chat/${c.user_id}`));
-      listEl.appendChild(item);
-    });
+
+    for (const entry of merged) {
+      if (entry._kind === "group") {
+        listEl.appendChild(buildGroupListItem(entry, async () => {
+          groups = await loadGroupEntries();
+          render(searchInput.value.trim().toLowerCase());
+        }));
+      } else {
+        const item = el("li", { class: "chatlist-item" },
+          avatar(entry, 48),
+          el("div", { class: "chatlist-item-info" },
+            el("span", { class: "chatlist-item-name" }, entry.name || entry.nickname || ""),
+            el("span", { class: "chatlist-item-preview" }, entry.last_message || "")
+          ),
+          el("span", { class: "chatlist-item-time" }, entry.last_ts ? formatTime(entry.last_ts) : "")
+        );
+        item.addEventListener("click", () => navigate(`#chat/${entry.user_id}`));
+        listEl.appendChild(item);
+      }
+    }
   }
 
-  renderContacts(contacts);
+  render("");
 
   searchInput.addEventListener("input", () => {
-    const q = searchInput.value.toLowerCase();
-    renderContacts(contacts.filter(c =>
-      (c.name || "").toLowerCase().includes(q) ||
-      (c.nickname || "").toLowerCase().includes(q)
-    ));
+    render(searchInput.value.trim().toLowerCase());
   });
 
+  // Refresh on personal-chat updates (new/incoming messages, deletions).
   setChatListUpdateCallback(() => {
-    getAllContacts().then(all => {
-      const me = getCurrentUser();
-      const myId = me && (me.id || me.user_id);
-      let list = all;
-      if (myId) {
-        list = list.filter(c => String(c.user_id) !== String(myId));
-      }
+    loadContacts().then(list => {
       contacts = list;
-      renderContacts(list);
+      render(searchInput.value.trim().toLowerCase());
+    }).catch(() => {});
+  });
+
+  // Refresh on group updates (new invite, message, roster change).
+  const unsubGroups = onGroupUpdate(() => {
+    loadGroupEntries().then(list => {
+      groups = list;
+      render(searchInput.value.trim().toLowerCase());
     }).catch(() => {});
   });
 
   const obs = new MutationObserver(() => {
     if (!container.isConnected) {
       setChatListUpdateCallback(null);
+      unsubGroups();
       obs.disconnect();
     }
   });
   obs.observe(document.body, { childList: true, subtree: true });
+}
+
+// Load groups and enrich each with a last-message preview + timestamp so they
+// can be interleaved with personal chats and sorted by recent activity.
+async function loadGroupEntries() {
+  let list = [];
+  try {
+    list = await syncGroups();
+  } catch {
+    try { list = await getAllGroups(); } catch { list = []; }
+  }
+  return Promise.all(list.map(async (g) => {
+    let last_ts = 0;
+    let last_message = "";
+    try {
+      const msgs = await getGroupMessages(g.id);
+      const last = msgs[msgs.length - 1];
+      if (last) {
+        last_ts = last.created_at || 0;
+        last_message = last.plaintext || "";
+      }
+    } catch { /* preview falls back to role/empty */ }
+    return { ...g, _kind: "group", last_ts, last_message };
+  }));
+}
+
+// Small popup anchored under the "+" button offering the two creation flows.
+function showCreateMenu(anchor, onGroupCreated) {
+  const existing = document.getElementById("create-menu-popup");
+  if (existing) { existing.remove(); return; }
+
+  const rect = anchor.getBoundingClientRect();
+  const menu = el("div", {
+    id: "create-menu-popup",
+    style: `position:fixed;top:${rect.bottom + 6}px;right:${Math.max(8, window.innerWidth - rect.right)}px;` +
+      "background:#1e1e24;border:1px solid rgba(255,255,255,0.1);border-radius:12px;" +
+      "box-shadow:0 8px 32px rgba(0,0,0,0.5);z-index:9999;overflow:hidden;min-width:200px;",
+  });
+
+  const mkItem = (icon, label, onClick) => {
+    const it = el("button", {
+      style: "display:flex;align-items:center;gap:10px;width:100%;padding:12px 16px;" +
+        "background:transparent;border:none;color:#fff;font-size:14px;cursor:pointer;text-align:left;",
+    }, el("span", { style: "font-size:18px;" }, icon), el("span", {}, label));
+    it.addEventListener("mouseenter", () => { it.style.background = "rgba(255,255,255,0.06)"; });
+    it.addEventListener("mouseleave", () => { it.style.background = "transparent"; });
+    it.addEventListener("click", () => { menu.remove(); onClick(); });
+    return it;
+  };
+
+  menu.append(
+    mkItem("🔍", "Новый чат", () => navigate("#search")),
+    mkItem("👥", "Новая группа", () => showCreateGroupModal(onGroupCreated)),
+  );
+
+  const onDoc = (e) => {
+    if (!menu.contains(e.target) && e.target !== anchor) {
+      menu.remove();
+      document.removeEventListener("click", onDoc, true);
+    }
+  };
+  setTimeout(() => document.addEventListener("click", onDoc, true), 0);
+
+  document.body.appendChild(menu);
 }
 
 // ── Chat view ────────────────────────────────────────────────────────────────

@@ -405,7 +405,7 @@ export async function encryptKeyBackup(privateKeyBytes, passphrase) {
 
 export async function decryptKeyBackup(encryptedBlob, salt, iv, passphrase) {
   const aesKey = await deriveKeyFromPassphrase(passphrase, salt);
-  
+
   const decrypted = await subtle.decrypt(
     { name: "AES-GCM", iv: iv },
     aesKey,
@@ -413,6 +413,66 @@ export async function decryptKeyBackup(encryptedBlob, salt, iv, passphrase) {
   );
 
   return new Uint8Array(decrypted);
+}
+
+// ── Group E2EE ──
+//
+// A group uses a shared 32-byte group key per epoch (key_version). Each message
+// derives its own message key via HKDF with a random 32-byte salt, so message
+// keys never repeat even if a nonce collides. The group key itself is delivered
+// to each device wrapped (encrypted) with that device's pairwise shared secret.
+
+export const GROUP_PROTOCOL_VERSION = 1;
+
+// buildGroupAAD binds the immutable message header into the AEAD tag.
+// sender_user_id is intentionally NOT included: the server assigns sender
+// authoritatively, so a client-supplied sender cannot be verified. See the
+// EasyGroups design decision.
+export function buildGroupAAD(groupId, keyVersion, messageId, createdAt) {
+  const header = [
+    GROUP_PROTOCOL_VERSION,
+    String(groupId),
+    String(keyVersion),
+    String(messageId),
+    String(createdAt),
+  ].join("|");
+  return new TextEncoder().encode(header);
+}
+
+export function generateGroupKey() {
+  return crypto.getRandomValues(new Uint8Array(32));
+}
+
+// groupEncrypt encrypts a plaintext message under the group key for the given
+// epoch. Returns { ciphertext, salt, nonce } — all Uint8Array. createdAt must be
+// the same value stored on the message so the AAD verifies on decrypt.
+export async function groupEncrypt(plaintext, groupKey, groupId, keyVersion, messageId, createdAt) {
+  const salt = crypto.getRandomValues(new Uint8Array(32));
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const messageKey = await hkdfDerive(salt, groupKey, "penik-group-message-v1", 32);
+  const plaintextBytes = typeof plaintext === "string" ? new TextEncoder().encode(plaintext) : plaintext;
+  const aad = buildGroupAAD(groupId, keyVersion, messageId, createdAt);
+  const ciphertext = await chacha20Poly1305Encrypt(messageKey, nonce, plaintextBytes, aad);
+  return { ciphertext, salt, nonce };
+}
+
+// groupDecrypt reverses groupEncrypt. Throws if the AAD or tag does not verify.
+export async function groupDecrypt(ciphertext, groupKey, salt, nonce, groupId, keyVersion, messageId, createdAt) {
+  const messageKey = await hkdfDerive(salt, groupKey, "penik-group-message-v1", 32);
+  const aad = buildGroupAAD(groupId, keyVersion, messageId, createdAt);
+  return chacha20Poly1305Decrypt(messageKey, nonce, ciphertext, aad);
+}
+
+// wrapGroupKeyForDevice encrypts a group key for one recipient device using the
+// pairwise X25519 shared secret. Returns { encryptedKey, salt, nonce }.
+export async function wrapGroupKeyForDevice(groupKey, sharedSecret) {
+  const { ciphertext, salt, nonce } = await e2eeEncrypt(groupKey, sharedSecret);
+  return { encryptedKey: ciphertext, salt, nonce };
+}
+
+// unwrapGroupKey decrypts a group key envelope with the pairwise shared secret.
+export async function unwrapGroupKey(encryptedKey, sharedSecret, salt, nonce) {
+  return e2eeDecrypt(encryptedKey, sharedSecret, salt, nonce);
 }
 
 
