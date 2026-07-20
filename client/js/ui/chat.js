@@ -2,7 +2,7 @@ import { apiGet, apiDelete } from "../api.js";
 import {
   saveMessage, getMessages,
   updateMessageDelivered, getContact, saveContact, getAllContacts,
-  deleteChatData
+  deleteChatData, deleteMessage
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, encryptMessagePayload } from "../app.js";
 import { avatar, formatTime, formatDate, el, showToast, spinner, showDeleteChatConfirmModal } from "./components.js";
@@ -389,11 +389,33 @@ export async function renderChat(container, userId) {
       statusEl
     );
 
-    const bubble = el("div", { class: `msg-bubble ${isMine ? "msg-out" : "msg-in"}` },
-      el("span", { class: "msg-text" }, msg.plaintext || ""),
+    // A message that only exists locally as an undecryptable placeholder is
+    // dead weight: it can never be recovered, so mark it visually and let the
+    // user delete it from their local store.
+    const isFailed = typeof msg.plaintext === "string" &&
+      (msg.plaintext.startsWith("[Сообщение не расшифровано") ||
+       msg.plaintext.startsWith("[Ошибка расшифрован"));
+
+    const bubble = el("div", { class: `msg-bubble ${isMine ? "msg-out" : "msg-in"}${isFailed ? " msg-failed" : ""}` },
+      el("span", { class: "msg-text" }, isFailed ? "🔒 Сообщение не расшифровано" : (msg.plaintext || "")),
       metaEl
     );
     bubble.dataset.msgId = msg.msg_id;
+
+    if (isFailed) {
+      const delBtn = el("button", { class: "msg-del-btn", title: "Удалить локально" }, "🗑");
+      delBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        try {
+          await deleteMessage(msg.msg_id);
+          bubble.remove();
+          triggerChatListUpdate();
+        } catch (err) {
+          showToast(err.message || "Не удалось удалить", "error");
+        }
+      });
+      bubble.appendChild(delBtn);
+    }
 
     prepend ? messagesEl.prepend(bubble) : messagesEl.appendChild(bubble);
     if (!isMine && msg.msg_id) {
