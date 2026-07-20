@@ -614,6 +614,17 @@ export async function syncMessageHistory() {
 
     history.sort((a, b) => a.timestamp - b.timestamp);
 
+    // Cache key bundles per sender within this sync pass so a chat with N
+    // messages from the same sender doesn't fire N identical bundle requests.
+    const bundleCache = new Map();
+    const getSenderBundle = async (senderId) => {
+      const key = String(senderId);
+      if (bundleCache.has(key)) return bundleCache.get(key);
+      const b = await apiGet(`/keys/bundle/${senderId}`);
+      bundleCache.set(key, b);
+      return b;
+    };
+
     for (const item of history) {
       // History is device-scoped.  Never try to decrypt a fan-out copy that
       // belongs to another device of the same account (for example, the
@@ -634,7 +645,7 @@ export async function syncMessageHistory() {
       }
       const existing = await getMessage(item.id);
       if (existing && existing.plaintext &&
-          !existing.plaintext.startsWith('[Ошибка расшифрования')) {
+          !existing.plaintext.startsWith('[Сообщение не расшифровано')) {
         continue;
       }
 
@@ -651,11 +662,11 @@ export async function syncMessageHistory() {
           // the ciphertext a second time after a reload.
           const locallyStored = await getMessage(item.id);
           if (locallyStored && locallyStored.plaintext &&
-              !locallyStored.plaintext.startsWith('[Ошибка расшифрования')) {
+              !locallyStored.plaintext.startsWith('[Сообщение не расшифровано')) {
             text = locallyStored.plaintext;
             throw { __alreadyDecrypted: true };
           }
-          const senderBundle = await apiGet(`/keys/bundle/${item.sender_id}`);
+          const senderBundle = await getSenderBundle(item.sender_id);
           const senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
           const fromIdentityKey = senderDevice?.identity_key;
 
@@ -669,7 +680,7 @@ export async function syncMessageHistory() {
           text = decrypted.text;
         } catch (e) {
           if (e?.__alreadyDecrypted) continue;
-          text = `[Ошибка расшифрования: ${e.message}]`;
+          text = `[Сообщение не расшифровано]`;
         }
       }
 
@@ -683,6 +694,13 @@ export async function syncMessageHistory() {
           contact = { user_id: peerId, name: "Неизвестный", nickname: "" };
         }
       }
+      // A message fans out to every device; only the copy encrypted for this
+      // device decrypts, the rest fail. Never store an error placeholder —
+      // just skip the copies that don't belong to us.
+      if (text.startsWith('[Сообщение не расшифровано')) {
+        continue;
+      }
+
       await saveContact({
         ...contact,
         user_id: peerId,
@@ -706,7 +724,8 @@ export async function syncMessageHistory() {
         sender_id: Number(item.sender_id),
         plaintext: text,
         created_at: item.timestamp * 1000,
-        delivered: 1
+        delivered: 1,
+        client_msg_id: item.client_msg_id,
       };
       await saveMessage(storedMsg);
     }
