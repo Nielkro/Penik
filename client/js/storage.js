@@ -110,6 +110,15 @@ export async function getMessageByClientId(clientMsgId) {
   return all.find(m => m.client_msg_id === clientMsgId);
 }
 
+export async function deleteMessage(msgId) {
+  await openDB();
+  await del(tx("messages", "readwrite"), msgId);
+  await del(tx("messages", "readwrite"), String(msgId));
+  if (typeof msgId === "string" && !isNaN(Number(msgId))) {
+    await del(tx("messages", "readwrite"), Number(msgId));
+  }
+}
+
 export async function saveMessage(message) {
   await openDB();
   return put(tx("messages", "readwrite"), message);
