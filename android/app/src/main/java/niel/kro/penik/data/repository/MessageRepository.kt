@@ -50,15 +50,16 @@ class MessageRepository @Inject constructor(
             val senderId = o["sender_id"]!!.jsonPrimitive.content.toLong()
             val timestamp = o["created_at"]!!.jsonPrimitive.content.toLong()
             val text = (o["text"] ?: o["plaintext"])!!.jsonPrimitive.content
+            val serverId = (o["server_id"] ?: o["msg_id"])?.jsonPrimitive?.content?.toLongOrNull()
             
             // Delete any existing undecrypted message in this chat at this timestamp
-            messageDao.deleteUndecryptedMessagesAt(chatId, timestamp)
+            messageDao.deleteUndecryptedMessagesAt(chatId, serverId, timestamp)
             
             if (messageDao.findMatchingMessage(chatId, senderId, timestamp, text) != null) return@mapNotNull null
             
             MessageEntity(
                 localId = o["msg_id"]!!.jsonPrimitive.content,
-                serverId = (o["server_id"] ?: o["msg_id"])?.jsonPrimitive?.content?.toLongOrNull(),
+                serverId = serverId,
                 chatUserId = chatId,
                 senderId = senderId,
                 text = text,
