@@ -373,8 +373,8 @@ func InviteMember(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 		if _, err := tx.ExecContext(r.Context(),
 			`INSERT INTO group_members(group_id,user_id,role,status,joined_at,membership_version)
 			 VALUES(?,?,?,'pending',?,?)
-			 ON CONFLICT(group_id,user_id) DO UPDATE SET status='pending',removed_at=NULL,membership_version=?`,
-			groupID, req.UserID, roleMember, now, mv, mv); err != nil {
+			 ON CONFLICT(group_id,user_id) DO UPDATE SET role=?,status='pending',removed_at=NULL,membership_version=?`,
+			groupID, req.UserID, roleMember, now, mv, roleMember, mv); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}

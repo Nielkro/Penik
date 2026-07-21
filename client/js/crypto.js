@@ -356,8 +356,8 @@ export async function e2eeDecrypt(ciphertext, sharedSecret, salt, nonce) {
   return await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext);
 }
 
-export async function encryptPairingHistory(messages, sharedSecret) {
-  return e2eeEncrypt(JSON.stringify({ version: 1, messages }), sharedSecret);
+export async function encryptPairingHistory(data, sharedSecret) {
+  return e2eeEncrypt(JSON.stringify({ version: 1, ...data }), sharedSecret);
 }
 
 // Current PBKDF2 work factor for passphrase-derived backup keys. Kept in sync

@@ -7,7 +7,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.boolean
 import niel.kro.penik.data.local.dao.MessageDao
+import niel.kro.penik.data.local.dao.GroupDao
 import niel.kro.penik.data.local.entity.MessageEntity
+import niel.kro.penik.data.local.entity.GroupEntity
+import niel.kro.penik.data.local.entity.GroupMemberEntity
+import niel.kro.penik.data.local.entity.GroupKeyEntity
+import niel.kro.penik.data.local.entity.GroupMessageEntity
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.websocket.WebSocketEvent
 import niel.kro.penik.data.network.websocket.WebSocketManager
@@ -20,6 +25,7 @@ import javax.inject.Singleton
 @Singleton
 class MessageRepository @Inject constructor(
     private val messageDao: MessageDao,
+    private val groupDao: GroupDao,
     private val apiService: ApiService,
     private val webSocketManager: WebSocketManager,
     private val tokenStorage: SecureTokenStorage,
@@ -34,21 +40,108 @@ class MessageRepository @Inject constructor(
             decodeUrlBase64(envelope["salt"]!!.jsonPrimitive.content),
             decodeUrlBase64(envelope["nonce"]!!.jsonPrimitive.content)
         )
-        val messages = kotlinx.serialization.json.Json.parseToJsonElement(String(decoded)).jsonObject["messages"]!!.jsonArray
-        val imported = messages.mapNotNull { val o = it.jsonObject; val chatId = o["chat_id"]!!.jsonPrimitive.content.toLong(); val senderId = o["sender_id"]!!.jsonPrimitive.content.toLong(); val timestamp = o["created_at"]!!.jsonPrimitive.content.toLong(); val text = (o["text"] ?: o["plaintext"])!!.jsonPrimitive.content
+        val decodedJson = kotlinx.serialization.json.Json.parseToJsonElement(String(decoded)).jsonObject
+        
+        // 1. Import 1:1 messages
+        val messages = decodedJson["messages"]?.jsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
+        val imported = messages.mapNotNull {
+            val o = it.jsonObject
+            val chatId = o["chat_id"]!!.jsonPrimitive.content.toLong()
+            val senderId = o["sender_id"]!!.jsonPrimitive.content.toLong()
+            val timestamp = o["created_at"]!!.jsonPrimitive.content.toLong()
+            val text = (o["text"] ?: o["plaintext"])!!.jsonPrimitive.content
+            
+            // Delete any existing undecrypted message in this chat at this timestamp
+            messageDao.deleteUndecryptedMessagesAt(chatId, timestamp)
+            
             if (messageDao.findMatchingMessage(chatId, senderId, timestamp, text) != null) return@mapNotNull null
+            
             MessageEntity(
-            localId = o["msg_id"]!!.jsonPrimitive.content,
-            serverId = (o["server_id"] ?: o["msg_id"])?.jsonPrimitive?.content?.toLongOrNull(),
-            chatUserId = chatId,
-            senderId = senderId,
-            text = text,
-            timestamp = timestamp,
-            sentByMe = o["sender_id"]!!.jsonPrimitive.content.toLong() == tokenStorage.getUserId(),
-            delivered = o["delivered"]?.asBoolean() ?: false,
-            read = o["read"]?.asBoolean() ?: false
-        ) }
+                localId = o["msg_id"]!!.jsonPrimitive.content,
+                serverId = (o["server_id"] ?: o["msg_id"])?.jsonPrimitive?.content?.toLongOrNull(),
+                chatUserId = chatId,
+                senderId = senderId,
+                text = text,
+                timestamp = timestamp,
+                sentByMe = o["sender_id"]!!.jsonPrimitive.content.toLong() == tokenStorage.getUserId(),
+                delivered = o["delivered"]?.asBoolean() ?: false,
+                read = o["read"]?.asBoolean() ?: false
+            )
+        }
         messageDao.insertMessages(imported)
+
+        // 2. Import Groups
+        val groups = decodedJson["groups"]?.jsonArray
+        val importedGroups = groups?.map {
+            val o = it.jsonObject
+            GroupEntity(
+                id = o["id"]!!.jsonPrimitive.content.toLong(),
+                name = o["name"]!!.jsonPrimitive.content,
+                ownerUserId = o["ownerUserId"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["owner_user_id"]!!.jsonPrimitive.content.toLong(),
+                role = o["role"]?.jsonPrimitive?.content,
+                status = o["status"]?.jsonPrimitive?.content ?: "active",
+                membershipVersion = o["membershipVersion"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["membership_version"]?.jsonPrimitive?.content?.toLongOrNull() ?: 1L,
+                currentKeyVersion = o["currentKeyVersion"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["current_key_version"]?.jsonPrimitive?.content?.toLongOrNull() ?: 1L,
+                createdAt = o["createdAt"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["created_at"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+            )
+        }.orEmpty()
+        for (g in importedGroups) {
+            groupDao.upsertGroup(g)
+        }
+
+        // 3. Import Group Members
+        val groupMembers = decodedJson["group_members"]?.jsonArray
+        val importedMembers = groupMembers?.map {
+            val o = it.jsonObject
+            GroupMemberEntity(
+                groupId = o["groupId"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["group_id"]!!.jsonPrimitive.content.toLong(),
+                userId = o["userId"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["user_id"]!!.jsonPrimitive.content.toLong(),
+                role = o["role"]!!.jsonPrimitive.content,
+                status = o["status"]!!.jsonPrimitive.content,
+                joinedAt = o["joinedAt"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["joined_at"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+                name = o["name"]?.jsonPrimitive?.content ?: "",
+                nickname = o["nickname"]?.jsonPrimitive?.content ?: ""
+            )
+        }.orEmpty()
+        if (importedMembers.isNotEmpty()) {
+            groupDao.insertMembers(importedMembers)
+        }
+
+        // 4. Import Group Keys
+        val groupKeys = decodedJson["group_keys"]?.jsonArray
+        val importedKeys = groupKeys?.map {
+            val o = it.jsonObject
+            GroupKeyEntity(
+                groupId = o["group_id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["groupId"]!!.jsonPrimitive.content.toLong(),
+                keyVersion = o["key_version"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["keyVersion"]!!.jsonPrimitive.content.toLong(),
+                key = decodeUrlBase64(o["key"]!!.jsonPrimitive.content)
+            )
+        }.orEmpty()
+        for (k in importedKeys) {
+            groupDao.saveGroupKey(k)
+        }
+
+        // 5. Import Group Messages
+        val groupMessages = decodedJson["group_messages"]?.jsonArray
+        val importedGroupMessages = groupMessages?.map {
+            val o = it.jsonObject
+            val text = (o["text"] ?: o["plaintext"])!!.jsonPrimitive.content
+            GroupMessageEntity(
+                groupId = o["group_id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["groupId"]!!.jsonPrimitive.content.toLong(),
+                messageId = (o["message_id"] ?: o["messageId"])!!.jsonPrimitive.content,
+                serverId = o["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["serverId"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+                senderUserId = o["sender_user_id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["senderUserId"]!!.jsonPrimitive.content.toLong(),
+                senderDeviceId = o["sender_device_id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["senderDeviceId"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+                keyVersion = o["key_version"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["keyVersion"]!!.jsonPrimitive.content.toLong(),
+                text = text,
+                createdAt = o["created_at"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["createdAt"]!!.jsonPrimitive.content.toLong(),
+                sentByMe = (o["sender_user_id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["senderUserId"]!!.jsonPrimitive.content.toLong()) == tokenStorage.getUserId(),
+                delivered = o["delivered"]?.asBoolean() ?: false
+            )
+        }.orEmpty()
+        for (gm in importedGroupMessages) {
+            groupDao.upsertMessage(gm)
+        }
     }
 
     private fun decodeUrlBase64(value: String): ByteArray = java.util.Base64.getUrlDecoder().decode(

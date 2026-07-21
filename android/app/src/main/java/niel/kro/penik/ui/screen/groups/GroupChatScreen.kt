@@ -80,6 +80,7 @@ fun GroupChatScreen(
     var showMenu by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    var memberToRemove by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
 
     val canManage = viewModel.myRole in listOf("owner", "admin")
 
@@ -246,7 +247,7 @@ fun GroupChatScreen(
                                 Text(roleRu, color = TextMuted, fontSize = 12.sp)
                             }
                             if (canManage && member.userId != viewModel.myUserId && member.role != "owner") {
-                                TextButton(onClick = { viewModel.removeMember(member.userId) }) {
+                                TextButton(onClick = { memberToRemove = member }) {
                                     Text("Удалить", color = Accent)
                                 }
                             }
@@ -258,6 +259,31 @@ fun GroupChatScreen(
             confirmButton = {
                 TextButton(onClick = { showMembersDialog = false }) {
                     Text("Закрыть", color = Accent)
+                }
+            }
+        )
+    }
+
+    memberToRemove?.let { member ->
+        val displayName = member.name.ifEmpty { member.nickname.ifEmpty { "#${member.userId}" } }
+        AlertDialog(
+            onDismissRequest = { memberToRemove = null },
+            containerColor = Panel,
+            titleContentColor = TextPrimary,
+            textContentColor = TextPrimary,
+            title = { Text("Удалить участника", fontWeight = FontWeight.SemiBold) },
+            text = { Text("Вы действительно хотите удалить участника $displayName из группы?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.removeMember(member.userId)
+                    memberToRemove = null
+                }) {
+                    Text("Удалить", color = Accent)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { memberToRemove = null }) {
+                    Text("Отмена", color = TextPrimary)
                 }
             }
         )
