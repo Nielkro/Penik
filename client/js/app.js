@@ -4,7 +4,8 @@ import {
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
   findAndResolvePendingSentMessage, deleteChatData,
-  getPreKeyPrivate, deletePreKeyPrivate, getMessageByClientId
+  getPreKeyPrivate, deletePreKeyPrivate, getMessageByClientId,
+  getIKPrivate, saveIKPrivate
 } from './storage.js';
 import { ws } from './ws.js';
 import { renderAuth } from './ui/auth.js';
@@ -77,6 +78,31 @@ export const state = {
 export function getCurrentUser() { return state.currentUser; }
 export function setCurrentUser(u) { state.currentUser = u; }
 export function getWS() { return ws; }
+
+// loadPrivateIK returns the raw private Identity Key, caching it in memory. It
+// reads from IndexedDB, transparently migrating any key left in localStorage by
+// an older build (then removing the plaintext localStorage copy). Returns null
+// if no key exists anywhere.
+export async function loadPrivateIK() {
+  if (state.privateIK) return state.privateIK;
+
+  const stored = await getIKPrivate();
+  if (stored) {
+    state.privateIK = stored instanceof Uint8Array ? stored : new Uint8Array(stored);
+    return state.privateIK;
+  }
+
+  // One-time migration from the legacy localStorage location.
+  const legacy = localStorage.getItem("penik_ik_priv");
+  if (legacy) {
+    state.privateIK = new Uint8Array(atob(legacy).split("").map(c => c.charCodeAt(0)));
+    await saveIKPrivate(state.privateIK);
+    localStorage.removeItem("penik_ik_priv");
+    return state.privateIK;
+  }
+
+  return null;
+}
 
 /* ── Navigation ── */
 const routes = {
@@ -756,14 +782,7 @@ export async function decryptMessagePayload(payload) {
   const nonce = toUint8Array(payload.nonce);
   const fromIdentityKey = toUint8Array(payload.from_identity_key);
 
-  let myPrivateIK = state.privateIK;
-  if (!myPrivateIK) {
-    const stored = localStorage.getItem("penik_ik_priv");
-    if (stored) {
-      state.privateIK = new Uint8Array(atob(stored).split("").map(c => c.charCodeAt(0)));
-      myPrivateIK = state.privateIK;
-    }
-  }
+  const myPrivateIK = await loadPrivateIK();
   if (!myPrivateIK) {
     throw new Error("Приватный ключ не найден");
   }
@@ -794,16 +813,9 @@ export async function encryptMessagePayload(text, recipientUserId) {
     const filteredSenderDevices = isSelfChat ? [] : senderDevices.filter(d => Number(d.device_id) !== myDeviceId);
     const allDevices = [...recipientDevices, ...filteredSenderDevices];
 
-  let myPrivateIK = state.privateIK;
+  const myPrivateIK = await loadPrivateIK();
   if (!myPrivateIK) {
-    const stored = localStorage.getItem("penik_ik_priv");
-    if (stored) {
-      state.privateIK = new Uint8Array(atob(stored).split("").map(c => c.charCodeAt(0)));
-      myPrivateIK = state.privateIK;
-    }
-  }
-  if (!myPrivateIK) {
-    throw new Error("Private Identity Key not found in memory/localStorage");
+    throw new Error("Private Identity Key not found");
   }
 
   const payloads = [];
@@ -906,11 +918,10 @@ function setupGlobalWSListeners() {
 }
 
 export async function backupE2EEKeys(passphrase) {
-  const stored = localStorage.getItem("penik_ik_priv");
-  if (!stored) {
+  const privBytes = await loadPrivateIK();
+  if (!privBytes) {
     throw new Error("Локальный приватный ключ не найден. Нечего резервировать.");
   }
-  const privBytes = new Uint8Array(atob(stored).split("").map(c => c.charCodeAt(0)));
   const backup = await encryptKeyBackup(privBytes, passphrase);
 
   await apiPost("/keys/backup", {
@@ -938,9 +949,9 @@ export async function restoreE2EEKeys(passphrase) {
   const iv = toUint8Array(backup.iv);
 
   const decrypted = await decryptKeyBackup(encryptedBlob, salt, iv, passphrase);
-  
-  localStorage.setItem("penik_ik_priv", btoa(String.fromCharCode(...decrypted)));
+
+  await saveIKPrivate(decrypted);
   state.privateIK = decrypted;
-  
+
   console.log("E2EE keys successfully restored from server backup!");
 }

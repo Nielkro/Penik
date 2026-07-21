@@ -41,7 +41,7 @@ import {
   saveGroupMessage, getGroupMessage, getGroupMessages,
 } from './storage.js';
 import { ws, OP } from './ws.js';
-import { state } from './app.js';
+import { loadPrivateIK } from './app.js';
 
 /* ── base64url helpers (server uses RawURLEncoding for group blobs) ── */
 
@@ -67,14 +67,10 @@ function stdB64Decode(str) {
   return out;
 }
 
-function resolvePrivateIK() {
-  if (state.privateIK) return state.privateIK;
-  const stored = localStorage.getItem('penik_ik_priv');
-  if (stored) {
-    state.privateIK = new Uint8Array(atob(stored).split('').map(c => c.charCodeAt(0)));
-    return state.privateIK;
-  }
-  throw new Error('Private Identity Key not found in memory/localStorage');
+async function resolvePrivateIK() {
+  const priv = await loadPrivateIK();
+  if (!priv) throw new Error('Private Identity Key not found');
+  return priv;
 }
 
 function myUserId() { return Number(localStorage.getItem('user_id')); }
@@ -104,7 +100,7 @@ async function fetchDeviceKeys(userIds) {
 // wrapKeyForDevices builds envelope items for every device, using our private IK
 // and each device's public IK to derive the pairwise secret.
 async function wrapKeyForDevices(groupKey, devices) {
-  const myPriv = resolvePrivateIK();
+  const myPriv = await resolvePrivateIK();
   const envelopes = [];
   for (const dev of devices) {
     const secret = await deriveSharedSecret(myPriv, dev.ik_pub);
@@ -134,7 +130,7 @@ export async function ensureGroupKey(groupId, version) {
   const senderIK = await fetchDeviceIK(groupId, senderDeviceId);
   if (!senderIK) throw new Error(`sender device ${senderDeviceId} identity key not found`);
 
-  const myPriv = resolvePrivateIK();
+  const myPriv = await resolvePrivateIK();
   const secret = await deriveSharedSecret(myPriv, senderIK);
   const groupKey = await unwrapGroupKey(
     b64uDecode(env.encrypted_key), secret, b64uDecode(env.salt), b64uDecode(env.nonce),
@@ -253,7 +249,7 @@ export async function shareHistoryWithInvitee(groupId, userId, devices) {
   if (!messages.length || !devices.length) return;
 
   const blob = packHistoryBlob(messages);
-  const myPriv = resolvePrivateIK();
+  const myPriv = await resolvePrivateIK();
   const packets = [];
   for (const dev of devices) {
     const secret = await deriveSharedSecret(myPriv, dev.ik_pub);
@@ -283,7 +279,7 @@ export async function pullHistoryPacket(groupId) {
   const senderIK = await fetchDeviceIK(groupId, senderDeviceId);
   if (!senderIK) throw new Error(`sender device ${senderDeviceId} identity key not found`);
 
-  const myPriv = resolvePrivateIK();
+  const myPriv = await resolvePrivateIK();
   const secret = await deriveSharedSecret(myPriv, senderIK);
   const pt = await e2eeDecrypt(
     b64uDecode(packet.encrypted_history), secret, b64uDecode(packet.salt), b64uDecode(packet.nonce),

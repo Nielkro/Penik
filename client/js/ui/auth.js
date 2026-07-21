@@ -1,5 +1,5 @@
 import { apiPost, setToken, getUserById } from "../api.js";
-import { getPersistentDeviceName, saveIdentityKey, savePreKeyPrivate } from "../storage.js";
+import { getPersistentDeviceName, saveIdentityKey, savePreKeyPrivate, saveIKPrivate } from "../storage.js";
 import { navigate, setCurrentUser } from "../app.js";
 import { el, showToast, spinner } from "./components.js";
 import { generateKeyPair, encryptIdentityEnvelope } from "../crypto.js";
@@ -66,7 +66,7 @@ async function generateAndUploadKeys(password) {
     opkList: uploadOPKList,
     saveKeys: async () => {
       await saveIdentityKey(envelope);
-      localStorage.setItem("penik_ik_priv", btoa(String.fromCharCode(...ik.privateKey)));
+      await saveIKPrivate(ik.privateKey);
       for (const otpk of otpkList) {
         await savePreKeyPrivate(otpk.keyId, otpk.privateKey);
       }

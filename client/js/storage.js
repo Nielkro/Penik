@@ -395,6 +395,20 @@ export async function getIdentityKey() {
   return record ? record.envelope : null;
 }
 
+// The raw private Identity Key is held in IndexedDB (not localStorage) so it is
+// not trivially readable via a synchronous localStorage dump during an XSS. It
+// is stored as raw bytes under a dedicated key in the e2ee_keys store.
+export async function saveIKPrivate(privateKey) {
+  await openDB();
+  return put(tx("e2ee_keys", "readwrite"), { id: "identity_private_key", privateKey });
+}
+
+export async function getIKPrivate() {
+  await openDB();
+  const record = await get(tx("e2ee_keys"), "identity_private_key");
+  return record ? record.privateKey : null;
+}
+
 export async function savePreKeyPrivate(keyId, privateKey) {
   await openDB();
   const id = `prekey_${keyId.toString()}`;
