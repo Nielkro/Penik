@@ -21,6 +21,8 @@ coil = "2.7.0"
 navigationCompose = "2.9.0"
 encryptedSharedPreferences = "1.1.0"
 lifecycleViewmodelCompose = "2.11.0"
+sqlcipher = "4.9.0"
+androidxSqlite = "2.5.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -70,6 +72,10 @@ coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coi
 
 # Encrypted SharedPreferences
 encrypted-shared-prefs = { group = "androidx.security", name = "security-crypto", version.ref = "encryptedSharedPreferences" }
+
+# SQLCipher (encrypted Room database)
+sqlcipher-android = { group = "net.zetetic", name = "sqlcipher-android", version.ref = "sqlcipher" }
+androidx-sqlite = { group = "androidx.sqlite", name = "sqlite", version.ref = "androidxSqlite" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

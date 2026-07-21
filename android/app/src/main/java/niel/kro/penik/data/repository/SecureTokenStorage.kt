@@ -32,6 +32,22 @@ class SecureTokenStorage @Inject constructor(
         private const val KEY_NICKNAME = "user_nickname"
         private const val KEY_IDENTITY_PRIVATE_KEY = "identity_private_key"
         private const val KEY_PREKEY_PREFIX = "prekey_"
+        private const val KEY_DB_PASSPHRASE = "db_passphrase"
+    }
+
+    /**
+     * Returns the SQLCipher passphrase for the Room database, generating and
+     * persisting one on first use. The passphrase is the Base64 encoding of 32
+     * random bytes (~192 bits, ASCII only so it is safe to embed in SQL string
+     * literals during migration). It lives only in the Keystore-backed
+     * EncryptedSharedPreferences, never inside the database itself.
+     */
+    fun getOrCreateDatabasePassphrase(): String {
+        prefs.getString(KEY_DB_PASSPHRASE, null)?.let { return it }
+        val raw = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+        val passphrase = java.util.Base64.getEncoder().encodeToString(raw)
+        prefs.edit().putString(KEY_DB_PASSPHRASE, passphrase).apply()
+        return passphrase
     }
 
     fun saveAuth(token: String, userId: Long, deviceId: Long) {
