@@ -139,6 +139,8 @@ func main() {
 		authMW(http.HandlerFunc(handlers.ListKeyVersions(database))))
 	mux.Handle("GET /api/v1/groups/{group_id}/keys/{version}",
 		authMW(http.HandlerFunc(handlers.GetEnvelope(database))))
+	mux.Handle("GET /api/v1/groups/{group_id}/keys/{version}/devices",
+		authMW(http.HandlerFunc(handlers.ListEnvelopeDevices(database))))
 	mux.Handle("POST /api/v1/groups/{group_id}/keys/{version}/envelopes",
 		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.UploadEnvelopes(database, hub)))))
 	mux.Handle("POST /api/v1/groups/{group_id}/keys/rotate",

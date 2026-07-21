@@ -316,6 +316,85 @@ func TestListKeyVersions(t *testing.T) {
 	}
 }
 
+func TestListEnvelopeDevices(t *testing.T) {
+	database, _ := db.Open(filepath.Join(t.TempDir(), "led.db"))
+	defer database.Close()
+	ownerID, ownerDev := newUser(t, database, "owner")
+	w := httptest.NewRecorder()
+	CreateGroup(database)(w, as("POST", "/g", ownerID, ownerDev, groupCreateRequest{Name: "T"}))
+	var created map[string]any
+	json.Unmarshal(w.Body.Bytes(), &created)
+	groupID := int64(created["id"].(float64))
+
+	// No envelope for v1 yet: empty device list.
+	w = httptest.NewRecorder()
+	r := as("GET", "/d", ownerID, ownerDev, nil)
+	r.SetPathValue("group_id", itoa(groupID))
+	r.SetPathValue("version", "1")
+	ListEnvelopeDevices(database)(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list devices: got %d", w.Code)
+	}
+	var resp struct {
+		DeviceIDs []int64 `json:"device_ids"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if len(resp.DeviceIDs) != 0 {
+		t.Fatalf("expected 0 devices, got %v", resp.DeviceIDs)
+	}
+
+	// Stage a v1 envelope for the owner's device; it now appears.
+	env := envelopeUploadRequest{Envelopes: []envelopeItem{
+		{DeviceID: ownerDev, EncryptedKey: b64("k"), Salt: b64("s"), Nonce: b64("n")},
+	}}
+	wu := httptest.NewRecorder()
+	ru := as("POST", "/e", ownerID, ownerDev, env)
+	ru.SetPathValue("group_id", itoa(groupID))
+	ru.SetPathValue("version", "1")
+	UploadEnvelopes(database, nil)(wu, ru)
+
+	w = httptest.NewRecorder()
+	r = as("GET", "/d", ownerID, ownerDev, nil)
+	r.SetPathValue("group_id", itoa(groupID))
+	r.SetPathValue("version", "1")
+	ListEnvelopeDevices(database)(w, r)
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if len(resp.DeviceIDs) != 1 || resp.DeviceIDs[0] != ownerDev {
+		t.Fatalf("expected [%d], got %v", ownerDev, resp.DeviceIDs)
+	}
+
+	// Invalid version.
+	w = httptest.NewRecorder()
+	r = as("GET", "/d", ownerID, ownerDev, nil)
+	r.SetPathValue("group_id", itoa(groupID))
+	r.SetPathValue("version", "0")
+	ListEnvelopeDevices(database)(w, r)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid version: expected 400 got %d", w.Code)
+	}
+
+	// Invalid group id.
+	w = httptest.NewRecorder()
+	r = as("GET", "/d", ownerID, ownerDev, nil)
+	r.SetPathValue("group_id", "bad")
+	r.SetPathValue("version", "1")
+	ListEnvelopeDevices(database)(w, r)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid group id: expected 400 got %d", w.Code)
+	}
+
+	// Non-member is forbidden.
+	eveID, eveDev := newUser(t, database, "eve")
+	w = httptest.NewRecorder()
+	r = as("GET", "/d", eveID, eveDev, nil)
+	r.SetPathValue("group_id", itoa(groupID))
+	r.SetPathValue("version", "1")
+	ListEnvelopeDevices(database)(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("non-member: expected 403 got %d", w.Code)
+	}
+}
+
 func TestRotatePermissionsAndErrors(t *testing.T) {
 	database, _ := db.Open(filepath.Join(t.TempDir(), "rot.db"))
 	defer database.Close()

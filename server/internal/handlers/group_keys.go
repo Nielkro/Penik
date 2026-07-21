@@ -267,6 +267,47 @@ func ListKeyVersions(database *db.DB) http.HandlerFunc {
 	}
 }
 
+// ListEnvelopeDevices returns the device IDs that already have an envelope for a
+// given group key version. Owner/admin use this to compute which active devices
+// still need the current key staged (e.g. devices that joined after the last
+// rotation), so they can backfill just the missing ones without re-uploading to
+// everyone. Any active member may read it; it exposes only device IDs, not keys.
+func ListEnvelopeDevices(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		groupID, ok := groupIDFromPath(w, r)
+		if !ok {
+			return
+		}
+		version, err := strconv.ParseInt(r.PathValue("version"), 10, 64)
+		if err != nil || version <= 0 {
+			http.Error(w, "invalid version", http.StatusBadRequest)
+			return
+		}
+		if _, ok := requireActiveMember(w, database, r, groupID); !ok {
+			return
+		}
+		rows, err := database.QueryContext(r.Context(),
+			`SELECT device_id FROM group_key_envelopes WHERE group_id=? AND key_version=?`,
+			groupID, version)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		ids := []int64{}
+		for rows.Next() {
+			var did int64
+			if err := rows.Scan(&did); err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			ids = append(ids, did)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"device_ids": ids})
+	}
+}
+
 // GetEnvelope returns the encrypted group key envelope for the caller's current
 // device and the requested version. A device can only fetch its own envelope.
 func GetEnvelope(database *db.DB) http.HandlerFunc {

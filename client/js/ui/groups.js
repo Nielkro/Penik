@@ -1,7 +1,7 @@
 import {
   createGroup, syncGroups, refreshMembers, acceptInvitation, declineInvitation,
   inviteMember, removeMember, changeMemberRole, sendGroupMessage,
-  getAllGroups, getGroupMessages, onGroupUpdate,
+  getAllGroups, getGroupMessages, onGroupUpdate, backfillCurrentKey,
 } from "../groups.js";
 import { getGroupMembers, getAllContacts } from "../storage.js";
 import { navigate, getCurrentUser } from "../app.js";
@@ -203,6 +203,14 @@ export async function renderGroup(container, groupId) {
     try {
       const members = await getGroupMembers(groupId);
       for (const m of members) nameById.set(Number(m.user_id), memberName(m));
+      // If we own/admin this group, stage the current key for any active member
+      // device that is missing it (e.g. someone who joined or re-logged in after
+      // the last rotation). Without this those devices 404 on every key fetch and
+      // never see messages. Idempotent and cheap when nothing is missing.
+      const meRow = members.find(m => Number(m.user_id) === Number(myId));
+      if (meRow && isPrivileged(meRow.role)) {
+        backfillCurrentKey(groupId).catch(e => console.warn('[groups] backfill failed', e.message));
+      }
     } catch { /* names fall back to #id */ }
   })();
 
