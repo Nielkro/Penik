@@ -65,6 +65,11 @@ func main() {
 	groupWriteLimiter := middleware.NewUserRateLimiter(30, time.Minute)
 	groupRotateLimiter := middleware.NewUserRateLimiter(10, time.Minute)
 
+	// Key-bundle fetches happen per new conversation/device, so a moderate
+	// per-user cap stops mass harvesting of public keys and user existence
+	// without impeding normal session setup.
+	keyBundleLimiter := middleware.NewUserRateLimiter(60, time.Minute)
+
 	// Public routes (no auth, but rate limited).
 	mux.Handle("POST /api/v1/register", authRateLimiter.Limit(http.HandlerFunc(handlers.Register(database, cfg))))
 	mux.Handle("POST /api/v1/login", authRateLimiter.Limit(http.HandlerFunc(handlers.Login(database, cfg))))
@@ -93,7 +98,7 @@ func main() {
 	mux.Handle("POST /api/v1/keys/otk",
 		authMW(http.HandlerFunc(handlers.UploadOTK(database))))
 	mux.Handle("GET /api/v1/keys/bundle/{user_id}",
-		authMW(http.HandlerFunc(handlers.GetKeyBundle(database))))
+		authMW(keyBundleLimiter.Limit(http.HandlerFunc(handlers.GetKeyBundle(database)))))
 	mux.Handle("POST /api/v1/keys/prekeys",
 		authMW(http.HandlerFunc(handlers.UploadPreKeys(database))))
 	mux.Handle("GET /api/v1/keys/prekeys/status",
