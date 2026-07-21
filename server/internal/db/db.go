@@ -644,6 +644,13 @@ func migrateToE2EE(database *sql.DB) error {
 		return fmt.Errorf("create idx_prekeys_device_used index: %w", err)
 	}
 
+	// Login matches a device by (user_id, identity key) so a stable crypto
+	// identity maps to one device row regardless of a volatile device_name.
+	_, err = database.Exec(`CREATE INDEX IF NOT EXISTS idx_device_public_keys_pub ON device_public_keys(x25519_pub)`)
+	if err != nil {
+		return fmt.Errorf("create idx_device_public_keys_pub index: %w", err)
+	}
+
 	_, err = database.Exec(`CREATE TABLE IF NOT EXISTS used_prekeys_audit (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		device_id INTEGER NOT NULL,

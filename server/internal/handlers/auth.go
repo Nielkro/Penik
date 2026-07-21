@@ -257,13 +257,35 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 
 		// A device ID is part of message ownership. Deleting and recreating the
 		// device here would cascade-delete every offline message addressed to it.
+		//
+		// Match by identity key first: the client's IK is stable per install, so
+		// the same crypto identity should always map to the same device row. This
+		// prevents device proliferation when device_name is volatile (e.g. the web
+		// client stores it in localStorage, so clearing site data would otherwise
+		// mint a new device on every login). Fall back to (user_id, device_name)
+		// for older clients that send no IK.
 		var deviceID int64
-		err = tx.QueryRowContext(r.Context(),
-			`SELECT id FROM devices
-			 WHERE user_id=? AND device_name=?
-			 ORDER BY id DESC
-			 LIMIT 1`,
-			userID, req.DeviceName).Scan(&deviceID)
+		var lookupErr error
+		if len(req.IKPub) > 0 {
+			lookupErr = tx.QueryRowContext(r.Context(),
+				`SELECT d.id FROM devices d
+				 JOIN device_public_keys dpk ON dpk.device_id = d.id
+				 WHERE d.user_id=? AND dpk.x25519_pub=?
+				 ORDER BY d.id DESC
+				 LIMIT 1`,
+				userID, req.IKPub).Scan(&deviceID)
+		} else {
+			lookupErr = sql.ErrNoRows
+		}
+		if lookupErr == sql.ErrNoRows {
+			lookupErr = tx.QueryRowContext(r.Context(),
+				`SELECT id FROM devices
+				 WHERE user_id=? AND device_name=?
+				 ORDER BY id DESC
+				 LIMIT 1`,
+				userID, req.DeviceName).Scan(&deviceID)
+		}
+		err = lookupErr
 		if err == sql.ErrNoRows {
 			devRes, insertErr := tx.ExecContext(r.Context(),
 				`INSERT INTO devices(user_id,device_name,registration_id,created_at,last_seen) VALUES(?,?,?,?,?)`,

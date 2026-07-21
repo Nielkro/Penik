@@ -83,6 +83,10 @@ CREATE TABLE IF NOT EXISTS device_public_keys (
     updated_at INTEGER NOT NULL
 );
 
+-- Login matches a device by (user_id, identity key), so a stable crypto
+-- identity maps to one device row regardless of a volatile device_name.
+CREATE INDEX IF NOT EXISTS idx_device_public_keys_pub ON device_public_keys(x25519_pub);
+
 CREATE TABLE IF NOT EXISTS one_time_prekeys (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
