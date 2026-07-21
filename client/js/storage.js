@@ -409,6 +409,17 @@ export async function getIKPrivate() {
   return record ? record.privateKey : null;
 }
 
+export async function saveIKPublic(publicKey) {
+  await openDB();
+  return put(tx("e2ee_keys", "readwrite"), { id: "identity_public_key", publicKey });
+}
+
+export async function getIKPublic() {
+  await openDB();
+  const record = await get(tx("e2ee_keys"), "identity_public_key");
+  return record ? record.publicKey : null;
+}
+
 export async function savePreKeyPrivate(keyId, privateKey) {
   await openDB();
   const id = `prekey_${keyId.toString()}`;

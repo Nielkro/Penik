@@ -1,5 +1,5 @@
 import { apiPost, setToken, getUserById } from "../api.js";
-import { getPersistentDeviceName, saveIdentityKey, savePreKeyPrivate, saveIKPrivate } from "../storage.js";
+import { getPersistentDeviceName, saveIdentityKey, savePreKeyPrivate, saveIKPrivate, saveIKPublic, getIKPrivate, getIKPublic } from "../storage.js";
 import { navigate, setCurrentUser } from "../app.js";
 import { el, showToast, spinner } from "./components.js";
 import { generateKeyPair, encryptIdentityEnvelope } from "../crypto.js";
@@ -28,13 +28,28 @@ function buildForm(fields, submitLabel) {
   return { form, inputs, btn, errEl };
 }
 
-async function generateAndUploadKeys(password) {
+// The identity keypair must be STABLE for the life of this browser profile. The
+// server does INSERT OR REPLACE on the uploaded ik_pub, so generating a fresh
+// pair on every login silently rotates this device's identity key — after which
+// every group-key envelope (wrapped by the sender for the OLD public key) and
+// 1:1 session fails to decrypt. Reuse the persisted pair; only generate once.
+async function resolveIdentityKeyPair() {
+  const priv = await getIKPrivate();
+  const pub = await getIKPublic();
+  if (priv && pub) {
+    return { publicKey: new Uint8Array(pub), privateKey: new Uint8Array(priv), existing: true };
+  }
   const ik = await generateKeyPair();
+  return { publicKey: ik.publicKey, privateKey: ik.privateKey, existing: false };
+}
+
+async function generateAndUploadKeys(password) {
+  const ik = await resolveIdentityKeyPair();
   const envelope = await encryptIdentityEnvelope({ privateKey: ik.privateKey }, password);
-  
+
   const otpkList = [];
   const uploadOPKList = [];
-  
+
   for (let i = 0; i < 20; i++) {
     const keyPair = await window.crypto.subtle.generateKey(
       { name: "X25519" },
@@ -44,29 +59,30 @@ async function generateAndUploadKeys(password) {
     const pub = new Uint8Array(await window.crypto.subtle.exportKey("raw", keyPair.publicKey));
     const privFull = new Uint8Array(await window.crypto.subtle.exportKey("pkcs8", keyPair.privateKey));
     const priv = privFull.slice(privFull.length - 32);
-    
+
     const keyId = window.crypto.getRandomValues(new Uint32Array(1))[0];
-    
+
     const buf = new Uint8Array(37);
     const view = new DataView(buf.buffer);
     view.setUint32(0, keyId, false);
     buf[4] = 0x05;
     buf.set(pub, 5);
-    
+
     const opkB64 = btoa(String.fromCharCode(...buf));
-    
+
     otpkList.push({ keyId, privateKey: priv });
     uploadOPKList.push(opkB64);
   }
-  
+
   const ikPubB64 = btoa(String.fromCharCode(...ik.publicKey));
-  
+
   return {
     ikPub: ikPubB64,
     opkList: uploadOPKList,
     saveKeys: async () => {
       await saveIdentityKey(envelope);
       await saveIKPrivate(ik.privateKey);
+      await saveIKPublic(ik.publicKey);
       for (const otpk of otpkList) {
         await savePreKeyPrivate(otpk.keyId, otpk.privateKey);
       }

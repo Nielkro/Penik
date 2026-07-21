@@ -350,6 +350,57 @@ export async function rotateAndDistribute(groupId) {
 
 /* ── Public API: messaging ── */
 
+// backfillCurrentKey re-wraps the CURRENT group key for every active member
+// device that is missing an envelope for it, and uploads the additions. This
+// repairs the common case where a device joined (or a member re-logged in on a
+// new browser profile) AFTER the last rotation/invite, so no one ever staged the
+// key for it — the symptom is that device 404-ing on every keys/{version} fetch.
+//
+// Owner/admin only (the server rejects envelope uploads from others). Idempotent:
+// the upload uses ON CONFLICT DO UPDATE, and we only send envelopes for devices
+// that currently lack one, so calling it repeatedly is cheap and safe.
+export async function backfillCurrentKey(groupId) {
+  const grp = await dbGetGroup(groupId);
+  const version = grp ? Number(grp.current_key_version) : await currentVersion(groupId);
+
+  // We can only wrap a key we actually hold.
+  let groupKey;
+  try {
+    groupKey = await ensureGroupKey(groupId, version);
+  } catch (e) {
+    console.warn('[groups] backfill skipped, no current key locally', e.message);
+    return 0;
+  }
+
+  const members = await getGroupMembers(groupId).catch(() => []);
+  const activeUserIds = members
+    .filter(m => (m.status || 'active') === 'active')
+    .map(m => Number(m.user_id));
+  if (!activeUserIds.length) return 0;
+
+  const devices = await fetchDeviceKeys(activeUserIds);
+  if (!devices.length) return 0;
+
+  // Which of those devices already have an envelope for this version?
+  let covered = new Set();
+  try {
+    const { device_ids } = await apiGet(`/groups/${groupId}/keys/${version}/devices`);
+    covered = new Set((device_ids || []).map(Number));
+  } catch (e) {
+    // Endpoint unavailable: fall back to re-wrapping for everyone. The upload is
+    // idempotent, so this is correct, just slightly more work.
+    console.warn('[groups] envelope-coverage lookup failed, rewrapping all', e.message);
+  }
+
+  const missing = devices.filter(d => !covered.has(Number(d.device_id)));
+  if (!missing.length) return 0;
+
+  const envelopes = await wrapKeyForDevices(groupKey, missing);
+  await uploadGroupEnvelopes(groupId, version, envelopes);
+  console.log('[groups] backfilled current key v' + version + ' for', missing.length, 'device(s)');
+  return missing.length;
+}
+
 export async function sendGroupMessage(groupId, text) {
   const group = await dbGetGroup(groupId);
   const version = group ? Number(group.current_key_version) : await currentVersion(groupId);
@@ -447,12 +498,28 @@ export async function syncHistory(groupId) {
   // are unreadable. Resolve the set once and skip messages on other versions —
   // otherwise every such message triggers a doomed envelope fetch (404 storm).
   const available = new Set();
+  let haveVersionList = false;
   try {
     const { versions } = await listGroupKeyVersions(groupId);
     for (const v of versions || []) available.add(Number(v));
+    haveVersionList = true;
   } catch (e) {
     console.warn('[groups] key-version list failed, syncing all', e.message);
   }
+
+  // A device that joined after the last rotation has NO envelopes at all. The
+  // version list then comes back empty; without this guard we would fall through
+  // and hammer the envelope endpoint for every message (the 404 storm). Bail so
+  // the UI shows "key unavailable" instead of flooding the network.
+  if (haveVersionList && available.size === 0) {
+    console.warn('[groups] no key envelopes for this device in group', groupId, '- skipping history');
+    return;
+  }
+
+  // Versions we already failed to fetch this pass: many messages share a version,
+  // and ensureGroupKey only caches on success, so a single missing envelope would
+  // otherwise re-fetch once per message.
+  const failedVersions = new Set();
 
   let cursor;
   // Walk pages newest→oldest; decrypt what we have keys for. A missing key for
@@ -462,9 +529,17 @@ export async function syncHistory(groupId) {
     for (const m of page.messages) {
       const existing = await getGroupMessage(groupId, String(m.message_id));
       if (existing && existing.id) continue;
+      const version = Number(m.key_version);
       // Skip versions we can never decrypt so we don't hammer the envelope
       // endpoint. If the version list was unavailable, fall through and try.
-      if (available.size && !available.has(Number(m.key_version))) continue;
+      if (available.size && !available.has(version)) continue;
+      if (failedVersions.has(version)) continue;
+      try {
+        await ensureGroupKey(groupId, version);
+      } catch (e) {
+        failedVersions.add(version);
+        continue;
+      }
       await decryptIncoming({
         group_id: groupId, id: m.id, message_id: m.message_id,
         sender_user_id: m.sender_user_id, sender_device_id: m.sender_device_id,
