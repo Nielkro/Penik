@@ -108,8 +108,8 @@ class GroupChatViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            runCatching { groupRepository.syncHistory(groupId) }
             runCatching { _members.value = groupRepository.refreshMembers(groupId) }
+            runCatching { groupRepository.syncHistory(groupId) }
         }
     }
 

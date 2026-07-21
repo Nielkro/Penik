@@ -49,15 +49,26 @@ class GroupRepository @Inject constructor(
 
     private data class DeviceKey(val deviceId: Long, val ikPub: ByteArray)
 
+    // Short-lived per-user device-key cache. A single history sync decrypts many
+    // messages across key versions; without this, each one re-fetches every
+    // member's key bundle, producing a storm of /keys/bundle requests.
+    private val deviceKeyCache = mutableMapOf<Long, List<DeviceKey>>()
+
+    fun invalidateDeviceKeyCache() = deviceKeyCache.clear()
+
     private suspend fun fetchDeviceKeys(userIds: List<Long>): List<DeviceKey> {
         val out = mutableListOf<DeviceKey>()
         for (uid in userIds) {
+            deviceKeyCache[uid]?.let { out.addAll(it); continue }
             val resp = runCatching { api.getKeyBundle(uid) }.getOrNull() ?: continue
             val devices = resp.body()?.devices ?: continue
+            val keys = mutableListOf<DeviceKey>()
             for (d in devices) {
                 val ik = runCatching { Base64.decode(d.identityKey, Base64.DEFAULT) }.getOrNull() ?: continue
-                out.add(DeviceKey(d.deviceId, ik))
+                keys.add(DeviceKey(d.deviceId, ik))
             }
+            deviceKeyCache[uid] = keys
+            out.addAll(keys)
         }
         return out
     }
@@ -136,6 +147,7 @@ class GroupRepository @Inject constructor(
         val members = resp.members.map { GroupMemberEntity(groupId, it.userId, it.role, it.status, it.joinedAt, it.name, it.nickname) }
         dao.clearMembers(groupId)
         dao.insertMembers(members)
+        invalidateDeviceKeyCache()
         return members
     }
 
@@ -167,6 +179,7 @@ class GroupRepository @Inject constructor(
 
     /** Create a new key version and upload envelopes for all active devices. */
     suspend fun rotateAndDistribute(groupId: Long): Long? {
+        invalidateDeviceKeyCache()
         val resp = api.rotateGroupKey(groupId).body() ?: return null
         val version = resp.keyVersion
         val groupKey = groupCrypto.generateGroupKey()
@@ -257,6 +270,12 @@ class GroupRepository @Inject constructor(
     /* ── Offline history sync (ciphertext) ── */
 
     suspend fun syncHistory(groupId: Long) {
+        // Decrypting envelopes needs the sender's identity key, resolved via the
+        // member list. If members haven't been fetched yet, do it now so history
+        // isn't silently dropped as undecryptable.
+        if (dao.getMembers(groupId).isEmpty()) {
+            runCatching { refreshMembers(groupId) }
+        }
         var cursor: Long? = null
         do {
             val page = api.getGroupHistory(groupId, 100, cursor).body() ?: return
