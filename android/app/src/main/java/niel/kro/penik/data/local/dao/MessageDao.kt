@@ -22,6 +22,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE chatUserId = :chatUserId AND senderId = :senderId AND timestamp = :timestamp AND text = :text LIMIT 1")
     suspend fun findMatchingMessage(chatUserId: Long, senderId: Long, timestamp: Long, text: String): MessageEntity?
 
+    @Query("DELETE FROM messages WHERE chatUserId = :chatUserId AND timestamp = :timestamp AND text LIKE '[Ошибка%'")
+    suspend fun deleteUndecryptedMessagesAt(chatUserId: Long, timestamp: Long)
+
     @Query("UPDATE messages SET serverId = :serverId WHERE localId = :clientMsgId")
     suspend fun acknowledgeMessage(clientMsgId: String, serverId: Long)
 

@@ -1,5 +1,5 @@
 import { apiPatch, createPairingSession, getPairingSession, uploadPairingHistory } from "../api.js";
-import { getAllMessages } from "../storage.js";
+import { getAllMessages, getAllGroups, getAllGroupMembers, getAllGroupKeys, getAllGroupMessages } from "../storage.js";
 import { deriveSharedSecret, encryptPairingHistory, generateKeyPair } from "../crypto.js";
 const decodeB64Url = s => {
   const normalized = String(s).trim().replaceAll("-", "+").replaceAll("_", "/");
@@ -302,7 +302,23 @@ export function renderProfile(container) {
          });
         if (state.public_key) {
           const secret = await deriveSharedSecret(kp.privateKey, decodeB64Url(state.public_key));
-          const blob = await encryptPairingHistory(await getAllMessages(), secret);
+          const messages = await getAllMessages();
+          const groups = await getAllGroups();
+          const groupMembers = await getAllGroupMembers();
+          const rawGroupKeys = await getAllGroupKeys();
+          const groupKeys = rawGroupKeys.map(k => ({
+            ...k,
+            key: encodeB64Url(k.key)
+          }));
+          const groupMessages = await getAllGroupMessages();
+
+          const blob = await encryptPairingHistory({
+            messages,
+            groups,
+            group_members: groupMembers,
+            group_keys: groupKeys,
+            group_messages: groupMessages
+          }, secret);
           await uploadPairingHistory(session.session_id, { encrypted_history: encodeB64Url(pack(blob)) });
           showToast("История передана устройству", "success");
         }

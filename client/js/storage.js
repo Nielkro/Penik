@@ -591,3 +591,19 @@ export async function getGroupMessages(groupId, limit = 50) {
     req.onerror = (e) => reject(e.target.error);
   });
 }
+
+export async function getAllGroupMembers() {
+  await openDB();
+  return getAll(tx("group_members"));
+}
+
+export async function getAllGroupKeys() {
+  await openDB();
+  return getAll(tx("group_keys"));
+}
+
+export async function getAllGroupMessages() {
+  await openDB();
+  return getAll(tx("group_messages"));
+}
+
