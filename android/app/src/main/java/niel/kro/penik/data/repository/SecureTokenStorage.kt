@@ -31,6 +31,7 @@ class SecureTokenStorage @Inject constructor(
         private const val KEY_NAME = "user_name"
         private const val KEY_NICKNAME = "user_nickname"
         private const val KEY_IDENTITY_PRIVATE_KEY = "identity_private_key"
+        private const val KEY_IDENTITY_PUBLIC_KEY = "identity_public_key"
         private const val KEY_PREKEY_PREFIX = "prekey_"
         private const val KEY_DB_PASSPHRASE = "db_passphrase"
     }
@@ -72,6 +73,16 @@ class SecureTokenStorage @Inject constructor(
 
     fun getPrivateKey(): ByteArray? {
         val b64 = prefs.getString(KEY_IDENTITY_PRIVATE_KEY, null) ?: return null
+        return java.util.Base64.getDecoder().decode(b64)
+    }
+
+    fun savePublicKey(publicKey: ByteArray) {
+        val b64 = java.util.Base64.getEncoder().encodeToString(publicKey)
+        prefs.edit().putString(KEY_IDENTITY_PUBLIC_KEY, b64).apply()
+    }
+
+    fun getPublicKey(): ByteArray? {
+        val b64 = prefs.getString(KEY_IDENTITY_PUBLIC_KEY, null) ?: return null
         return java.util.Base64.getDecoder().decode(b64)
     }
 
