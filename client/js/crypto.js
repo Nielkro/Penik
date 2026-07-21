@@ -360,7 +360,13 @@ export async function encryptPairingHistory(messages, sharedSecret) {
   return e2eeEncrypt(JSON.stringify({ version: 1, messages }), sharedSecret);
 }
 
-export async function deriveKeyFromPassphrase(passphrase, salt) {
+// Current PBKDF2 work factor for passphrase-derived backup keys. Kept in sync
+// with encryptIdentityEnvelope (600k). LEGACY_KDF_ITERATIONS is only used to
+// open backups written before this was raised from 100k.
+export const KDF_ITERATIONS = 600000;
+const LEGACY_KDF_ITERATIONS = 100000;
+
+export async function deriveKeyFromPassphrase(passphrase, salt, iterations = KDF_ITERATIONS) {
   const enc = new TextEncoder();
   const baseKey = await subtle.importKey(
     "raw",
@@ -374,7 +380,7 @@ export async function deriveKeyFromPassphrase(passphrase, salt) {
     {
       name: "PBKDF2",
       salt: salt,
-      iterations: 100000,
+      iterations: iterations,
       hash: "SHA-256"
     },
     baseKey,
@@ -404,15 +410,21 @@ export async function encryptKeyBackup(privateKeyBytes, passphrase) {
 }
 
 export async function decryptKeyBackup(encryptedBlob, salt, iv, passphrase) {
-  const aesKey = await deriveKeyFromPassphrase(passphrase, salt);
-
-  const decrypted = await subtle.decrypt(
-    { name: "AES-GCM", iv: iv },
-    aesKey,
-    encryptedBlob
-  );
-
-  return new Uint8Array(decrypted);
+  // Backup envelopes do not record the iteration count, so try the current
+  // work factor first and fall back to the legacy one for older backups.
+  for (const iterations of [KDF_ITERATIONS, LEGACY_KDF_ITERATIONS]) {
+    try {
+      const aesKey = await deriveKeyFromPassphrase(passphrase, salt, iterations);
+      const decrypted = await subtle.decrypt(
+        { name: "AES-GCM", iv: iv },
+        aesKey,
+        encryptedBlob
+      );
+      return new Uint8Array(decrypted);
+    } catch (e) {
+      if (iterations === LEGACY_KDF_ITERATIONS) throw e;
+    }
+  }
 }
 
 // ── Group E2EE ──
