@@ -26,9 +26,24 @@ class AuthRepository @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    // The identity keypair must be stable for the life of the install. The server
+    // does INSERT OR REPLACE on the uploaded public key, so regenerating it on
+    // every login silently rotates this device's identity key — after which every
+    // group-key envelope (wrapped by the sender for the OLD public key) and 1:1
+    // session fails to decrypt. Reuse the persisted pair; only generate once.
+    private fun stableIdentityKeyPair(): Pair<ByteArray, ByteArray> {
+        val priv = tokenStorage.getPrivateKey()
+        val pub = tokenStorage.getPublicKey()
+        if (priv != null && pub != null) return Pair(priv, pub)
+        val generated = e2eeCrypto.generateX25519KeyPair()
+        tokenStorage.savePrivateKey(generated.first)
+        tokenStorage.savePublicKey(generated.second)
+        return generated
+    }
+
     suspend fun login(nickname: String, password: String, deviceName: String): Result<AuthResponse> {
         return try {
-            val (privateKey, publicKey) = e2eeCrypto.generateX25519KeyPair()
+            val (privateKey, publicKey) = stableIdentityKeyPair()
             val ikPubBase64 = Base64.getEncoder().encodeToString(publicKey)
 
             val response = apiService.login(
@@ -43,9 +58,6 @@ class AuthRepository @Inject constructor(
                 val body = response.body()!!
                 tokenStorage.saveAuth(body.token, body.userId, body.deviceId)
                 fetchAndSaveUserProfile(body.userId)
-                
-                // Save keys locally
-                tokenStorage.savePrivateKey(privateKey)
                 Result.success(AuthResponse(body.token, body.userId, body.deviceId))
             } else {
                 val msg = parseServerError(response.code(), response.errorBody()?.string())
@@ -58,7 +70,7 @@ class AuthRepository @Inject constructor(
 
     suspend fun register(name: String, nickname: String, password: String, deviceName: String): Result<AuthResponse> {
         return try {
-            val (privateKey, publicKey) = e2eeCrypto.generateX25519KeyPair()
+            val (privateKey, publicKey) = stableIdentityKeyPair()
             val ikPubBase64 = Base64.getEncoder().encodeToString(publicKey)
 
             val response = apiService.register(
@@ -74,9 +86,6 @@ class AuthRepository @Inject constructor(
                 val body = response.body()!!
                 tokenStorage.saveAuth(body.token, body.userId, body.deviceId)
                 tokenStorage.saveUserProfile(name, nickname)
-                
-                // Save keys locally
-                tokenStorage.savePrivateKey(privateKey)
                 Result.success(AuthResponse(body.token, body.userId, body.deviceId))
             } else {
                 val msg = parseServerError(response.code(), response.errorBody()?.string())
