@@ -478,6 +478,10 @@ class MessageRepository @Inject constructor(
     suspend fun deleteChatMessages(chatUserId: Long) {
         messageDao.deleteChatMessages(chatUserId)
     }
+
+    suspend fun deleteMessage(localId: String) {
+        messageDao.deleteMessageByLocalId(localId)
+    }
 }
 
 data class DecryptedOfflineMsg(
