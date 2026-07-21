@@ -7,9 +7,11 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import niel.kro.penik.data.local.dao.ChatDao
 import niel.kro.penik.data.local.dao.GroupDao
 import niel.kro.penik.data.local.dao.MessageDao
+import niel.kro.penik.data.local.database.DatabaseEncryption
 import niel.kro.penik.data.local.database.PenikDatabase
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.repository.SecureTokenStorage
@@ -30,14 +32,26 @@ import niel.kro.penik.data.crypto.PreKeyManager
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
 
+    private const val DB_NAME = "penik_database"
+
     @Provides
     @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): PenikDatabase {
+    fun provideDatabase(
+        @ApplicationContext context: Context,
+        tokenStorage: SecureTokenStorage,
+    ): PenikDatabase {
+        val passphrase = tokenStorage.getOrCreateDatabasePassphrase().toByteArray(Charsets.UTF_8)
+
+        // Convert any pre-existing plaintext database before Room opens it, so
+        // group keys and cached messages are no longer readable on-disk.
+        DatabaseEncryption.migratePlaintextIfNeeded(context, DB_NAME, passphrase)
+
         return Room.databaseBuilder(
             context,
             PenikDatabase::class.java,
-            "penik_database"
+            DB_NAME
         )
+            .openHelperFactory(SupportOpenHelperFactory(passphrase))
             .addMigrations(
                 PenikDatabase.MIGRATION_1_2,
                 PenikDatabase.MIGRATION_2_3,

@@ -95,4 +95,8 @@ dependencies {
 
     // Encrypted Shared Prefs
     implementation(libs.encrypted.shared.prefs)
+
+    // SQLCipher — encrypts the Room database at rest (group keys, message cache)
+    implementation(libs.sqlcipher.android)
+    implementation(libs.androidx.sqlite)
 }
