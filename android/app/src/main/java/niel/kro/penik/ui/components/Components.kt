@@ -17,6 +17,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -186,10 +190,28 @@ fun MessageBubble(
     isSentByMe: Boolean,
     delivered: Boolean,
     deliveredAt: Long? = null,
-    read: Boolean = false
+    read: Boolean = false,
+    onDelete: (() -> Unit)? = null
 ) {
-    val bgColor = if (isSentByMe) SentMessageBg else PanelSecondary
-    val textColor = if (isSentByMe) SentMessageText else TextPrimary
+    val isFailed = text.startsWith("[Ошибка расшифрования") || text.startsWith("[Сообщение не расшифровано")
+    var isExpanded by remember { mutableStateOf(false) }
+
+    val bgColor = if (isFailed) {
+        Color(0x26EF5350)
+    } else if (isSentByMe) {
+        SentMessageBg
+    } else {
+        PanelSecondary
+    }
+
+    val textColor = if (isFailed) {
+        Color(0xFFEF5350)
+    } else if (isSentByMe) {
+        SentMessageText
+    } else {
+        TextPrimary
+    }
+
     val alignment = if (isSentByMe) Alignment.End else Alignment.Start
 
     Column(
@@ -206,26 +228,75 @@ fun MessageBubble(
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Column {
-                Text(
-                    text = text,
-                    color = textColor,
-                    fontSize = 15.sp
-                )
-                if (isSentByMe) {
-                    val statusText = if (delivered || read) "✓✓" else "✓"
+                if (isFailed) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🔒 Не удалось расшифровать",
+                            color = textColor,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (onDelete != null) {
+                            Text(
+                                text = "🗑",
+                                color = Color(0xFFEF5350),
+                                fontSize = 16.sp,
+                                modifier = Modifier
+                                    .clickable { onDelete() }
+                                    .padding(start = 8.dp, end = 4.dp)
+                            )
+                        }
+                    }
+                    if (isExpanded) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = text,
+                            color = TextPrimary,
+                            fontSize = 13.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = statusText,
-                        color = if (read || delivered) Accent else TextMuted,
-                        fontSize = 11.sp,
-                        modifier = Modifier.align(Alignment.End)
+                        text = if (isExpanded) "Свернуть" else "Раскрыть",
+                        color = Accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clickable { isExpanded = !isExpanded }
+                            .padding(vertical = 2.dp)
+                    )
+                } else {
+                    Text(
+                        text = text,
+                        color = textColor,
+                        fontSize = 15.sp
                     )
                 }
-                Text(
-                    text = formatTime(timestamp),
-                    color = TextMuted,
-                    fontSize = 10.sp,
-                    modifier = Modifier.align(Alignment.End)
-                )
+
+                Row(
+                    modifier = Modifier.align(Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isSentByMe && !isFailed) {
+                        val statusText = if (delivered || read) "✓✓" else "✓"
+                        Text(
+                            text = statusText,
+                            color = if (read || delivered) Accent else TextMuted,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                    }
+                    Text(
+                        text = formatTime(timestamp),
+                        color = TextMuted,
+                        fontSize = 10.sp
+                    )
+                }
             }
         }
     }

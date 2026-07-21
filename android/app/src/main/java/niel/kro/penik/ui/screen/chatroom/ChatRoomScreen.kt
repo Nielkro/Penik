@@ -257,7 +257,8 @@ fun ChatRoomScreen(
                         isSentByMe = message.sentByMe,
                         delivered = message.delivered,
                         deliveredAt = message.deliveredAt,
-                        read = message.read
+                        read = message.read,
+                        onDelete = { viewModel.deleteMessage(message.localId) }
                     )
                 }
             }
