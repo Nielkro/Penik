@@ -74,13 +74,6 @@ class PairingScannerViewModel @Inject constructor(private val api: ApiService, p
                 val kp = crypto.generateX25519KeyPair()
                 val response = api.claimPairingSession(PairingClaimRequest(payload.session, payload.token, java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(kp.second)))
                 if (response.isSuccessful) {
-                    // The public half was just registered on the server as this
-                    // device's identity key. Persist the private half so group
-                    // and 1:1 key unwrapping can derive the same pairwise secret
-                    // later; without this, getPrivateKey() returns an unrelated
-                    // key and every group envelope fails to decrypt (empty groups).
-                    tokenStorage.savePrivateKey(kp.first)
-                    tokenStorage.savePublicKey(kp.second)
                     var transfer = response.body()?.encryptedHistory.orEmpty()
                     if (transfer.isBlank()) {
                         transfer = kotlinx.coroutines.withTimeoutOrNull(300_000) {
