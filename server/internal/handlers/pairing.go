@@ -182,7 +182,7 @@ func GetPairingClaim(database *db.DB) http.HandlerFunc {
 		var pub []byte
 		var claimed, exp int64
 		var history []byte
-		err := database.QueryRowContext(r.Context(), `SELECT claimed_at,expires_at,claimed_by_public_key,encrypted_history FROM pairing_sessions WHERE id=? AND owner_user_id=?`, id, middleware.UserIDFromCtx(r.Context())).Scan(&claimed, &exp, &pub, &history)
+		err := database.QueryRowContext(r.Context(), `SELECT COALESCE(claimed_at, 0), expires_at, COALESCE(claimed_by_public_key, X''), COALESCE(encrypted_history, X'') FROM pairing_sessions WHERE id=? AND owner_user_id=?`, id, middleware.UserIDFromCtx(r.Context())).Scan(&claimed, &exp, &pub, &history)
 		if err == sql.ErrNoRows {
 			http.Error(w, "not found", 404)
 			return
