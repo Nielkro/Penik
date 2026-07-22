@@ -184,16 +184,36 @@ export function renderProfile(container) {
   const backupPassInput = el("input", {
     type: "password",
     placeholder: "Пароль резервной копии",
-    class: "profile-input hidden",
-    style: "width:100%;margin-bottom:8px;padding:8px;border-radius:6px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;"
+    class: "profile-input",
+    style: "width:100%;padding:8px;padding-right:32px;border-radius:6px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;"
   });
+
+  const toggleVisibilityBtn = el("button", {
+    type: "button",
+    style: "position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#aaa;cursor:pointer;font-size:16px;padding:4px;user-select:none;line-height:1;display:flex;align-items:center;justify-content:center;"
+  }, "👁️");
+
+  toggleVisibilityBtn.addEventListener("click", () => {
+    if (backupPassInput.type === "password") {
+      backupPassInput.type = "text";
+      toggleVisibilityBtn.textContent = "🙈";
+    } else {
+      backupPassInput.type = "password";
+      toggleVisibilityBtn.textContent = "👁️";
+    }
+  });
+
+  const backupPassWrapper = el("div", {
+    class: "hidden",
+    style: "position:relative;width:100%;margin-bottom:8px;"
+  }, backupPassInput, toggleVisibilityBtn);
 
   const doBackupBtn = el("button", { class: "btn-primary hidden", style: "margin-right:8px;padding:8px 12px;font-size:12px;cursor:pointer;" }, "Создать копию");
   const doRestoreBtn = el("button", { class: "btn-secondary hidden", style: "margin-right:8px;padding:8px 12px;font-size:12px;cursor:pointer;" }, "Восстановить");
   const cancelBackupBtn = el("button", { class: "btn-ghost hidden", style: "padding:8px 12px;font-size:12px;cursor:pointer;" }, "Отмена");
 
   backupSectionBtn.addEventListener("click", () => {
-    backupPassInput.classList.remove("hidden");
+    backupPassWrapper.classList.remove("hidden");
     doBackupBtn.classList.remove("hidden");
     doRestoreBtn.classList.remove("hidden");
     cancelBackupBtn.classList.remove("hidden");
@@ -203,7 +223,9 @@ export function renderProfile(container) {
 
   cancelBackupBtn.addEventListener("click", () => {
     backupPassInput.value = "";
-    backupPassInput.classList.add("hidden");
+    backupPassInput.type = "password";
+    toggleVisibilityBtn.textContent = "👁️";
+    backupPassWrapper.classList.add("hidden");
     doBackupBtn.classList.add("hidden");
     doRestoreBtn.classList.add("hidden");
     cancelBackupBtn.classList.add("hidden");
@@ -261,7 +283,7 @@ export function renderProfile(container) {
   const backupSection = el("div", { class: "profile-backup-section", style: "margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px; width: 100%;" },
     el("h3", { style: "font-size: 14px; margin-bottom: 8px; color: #aaa;" }, "Резервное копирование (E2EE)"),
     backupSectionBtn,
-    backupPassInput,
+    backupPassWrapper,
     el("div", { style: "display:flex;margin-top:8px;" }, doBackupBtn, doRestoreBtn, cancelBackupBtn)
   );
 
