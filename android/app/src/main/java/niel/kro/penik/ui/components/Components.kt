@@ -25,9 +25,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import niel.kro.penik.ui.theme.Accent
@@ -227,12 +232,14 @@ fun MessageBubble(
             .padding(horizontal = 12.dp, vertical = 2.dp),
         horizontalAlignment = alignment
     ) {
+        val startPadding = if (isSentByMe) 12.dp else 18.dp
+        val endPadding = if (isSentByMe) 18.dp else 12.dp
         Box(
             modifier = Modifier
                 .widthIn(max = 280.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .clip(BubbleShape(isSentByMe))
                 .background(bgColor)
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .padding(start = startPadding, top = 8.dp, end = endPadding, bottom = 8.dp)
         ) {
             Column {
                 if (isFailed) {
@@ -332,5 +339,47 @@ fun ConnectionStatusBar(connectionState: ConnectionState) {
             color = color,
             fontSize = 13.sp
         )
+    }
+}
+
+class BubbleShape(private val isSentByMe: Boolean) : Shape {
+    override fun createOutline(
+        size: androidx.compose.ui.geometry.Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline {
+        val path = Path().apply {
+            val width = size.width
+            val height = size.height
+            val radius = with(density) { 14.dp.toPx() }
+            val tailWidth = with(density) { 6.dp.toPx() }
+            val ctrlOffset = with(density) { 2.dp.toPx() }
+
+            if (isSentByMe) {
+                moveTo(radius, 0f)
+                lineTo(width - tailWidth - radius, 0f)
+                quadraticTo(width - tailWidth, 0f, width - tailWidth, radius)
+                lineTo(width - tailWidth, height - radius)
+                quadraticTo(width - tailWidth, height - ctrlOffset, width, height)
+                quadraticTo(width - tailWidth + ctrlOffset, height, width - tailWidth - radius, height)
+                lineTo(radius, height)
+                quadraticTo(0f, height, 0f, height - radius)
+                lineTo(0f, radius)
+                quadraticTo(0f, 0f, radius, 0f)
+            } else {
+                moveTo(tailWidth + radius, 0f)
+                lineTo(width - radius, 0f)
+                quadraticTo(width, 0f, width, radius)
+                lineTo(width, height - radius)
+                quadraticTo(width, height, width - radius, height)
+                lineTo(tailWidth + radius, height)
+                quadraticTo(tailWidth - ctrlOffset, height, 0f, height)
+                quadraticTo(tailWidth, height - ctrlOffset, tailWidth, height - radius)
+                lineTo(tailWidth, radius)
+                quadraticTo(tailWidth, 0f, tailWidth + radius, 0f)
+            }
+            close()
+        }
+        return Outline.Generic(path)
     }
 }
