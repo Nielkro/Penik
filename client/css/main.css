@@ -514,7 +514,19 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   align-self: flex-end;
   background: var(--sent-bg);
   color: var(--sent-text);
-  border-bottom-right-radius: 5px;
+  border-bottom-right-radius: 4px;
+  padding-right: 17px;
+}
+
+.msg-out::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: -6px;
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  clip-path: path("M 0 0 C 3 0, 7 4, 7 10 L 0 10 Z");
 }
 
 .msg-in {
@@ -522,7 +534,19 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   background: var(--recv-bg);
   color: var(--text);
   border: 1px solid var(--border);
-  border-bottom-left-radius: 5px;
+  border-bottom-left-radius: 4px;
+  padding-left: 17px;
+}
+
+.msg-in::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: -6px;
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  clip-path: path("M 10 0 C 7 0, 3 4, 3 10 L 10 10 Z");
 }
 
 .msg-failed {
