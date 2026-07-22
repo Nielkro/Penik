@@ -44,8 +44,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private fun initialsColor(name: String): Color {
-    val hue = name.fold(0L) { acc, ch -> acc + ch.code } % 360
+private fun initialsColor(id: Long, name: String): Color {
+    val hue = if (id != 0L) {
+        (id * 137) % 360
+    } else {
+        name.fold(0L) { acc, ch -> acc + ch.code } % 360
+    }
     return Color.hsl(hue.toFloat(), 0.55f, 0.50f)
 }
 
@@ -61,6 +65,7 @@ private fun initialsText(name: String): String {
 @Composable
 fun InitialsAvatar(
     name: String,
+    id: Long = 0L,
     size: Dp = 48.dp,
     modifier: Modifier = Modifier
 ) {
@@ -68,7 +73,7 @@ fun InitialsAvatar(
         modifier = modifier
             .size(size)
             .clip(CircleShape)
-            .background(initialsColor(name)),
+            .background(initialsColor(id, name)),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -83,6 +88,7 @@ fun InitialsAvatar(
 @Composable
 fun ChatListItem(
     name: String,
+    userId: Long,
     lastMessage: String?,
     timestamp: Long?,
     unreadCount: Int,
@@ -95,7 +101,7 @@ fun ChatListItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        InitialsAvatar(name = name, size = 48.dp)
+        InitialsAvatar(name = name, id = userId, size = 48.dp)
 
         Spacer(modifier = Modifier.width(12.dp))
 
@@ -143,6 +149,7 @@ fun ChatListItem(
 @Composable
 fun SearchUserItem(
     name: String,
+    userId: Long,
     nickname: String,
     onClick: () -> Unit
 ) {
@@ -153,7 +160,7 @@ fun SearchUserItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        InitialsAvatar(name = name, size = 48.dp)
+        InitialsAvatar(name = name, id = userId, size = 48.dp)
 
         Spacer(modifier = Modifier.width(12.dp))
 
