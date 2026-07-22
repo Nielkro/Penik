@@ -106,6 +106,12 @@ CREATE TABLE IF NOT EXISTS pairing_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_pairing_sessions_expiry ON pairing_sessions(expires_at);
 
+CREATE TABLE IF NOT EXISTS device_history_exclusions (
+  device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  PRIMARY KEY(device_id, message_id)
+);
+
 CREATE TABLE IF NOT EXISTS groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,

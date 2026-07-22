@@ -319,7 +319,14 @@ export function renderProfile(container) {
             group_keys: groupKeys,
             group_messages: groupMessages
           }, secret);
-          await uploadPairingHistory(session.session_id, { encrypted_history: encodeB64Url(pack(blob)) });
+          const messageIds = (messages || [])
+            .map(m => Number(m.msg_id))
+            .filter(id => !isNaN(id) && id > 0);
+
+          await uploadPairingHistory(session.session_id, {
+            encrypted_history: encodeB64Url(pack(blob)),
+            message_ids: messageIds
+          });
           showToast("История передана устройству", "success");
         }
     } catch (err) { showToast(err.message || "Не удалось создать сессию", "error"); }

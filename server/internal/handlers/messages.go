@@ -76,6 +76,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 			 FROM messages m
 			 JOIN chats c ON c.id = m.chat_id
 			 WHERE m.purge_pending = 0
+			   AND m.id NOT IN (SELECT message_id FROM device_history_exclusions WHERE device_id = ?)
 			   AND (
              (m.sender_user_id = ? AND m.sender_device_id = ? AND m.deleted_by_sender = 0
               AND (m.sender_user_id != m.recipient_user_id OR m.recipient_device_id = ?))
@@ -84,7 +85,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 			   )
 			 ORDER BY m.id DESC
 			 LIMIT ?`,
-			userID, userID, deviceID, deviceID, userID, deviceID, limit)
+			userID, deviceID, userID, deviceID, deviceID, userID, deviceID, limit)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
