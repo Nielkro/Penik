@@ -374,8 +374,9 @@ export async function renderChat(container, userId) {
 
     const deliveredAt = msg.delivered_at;
     const statusText = msg.read ? "✓✓" : (msg.delivered ? "✓✓" : "✓");
+    const statusClass = "msg-status" + (msg.read ? " msg-status-read" : "");
     const statusEl = isMine
-      ? el("span", { class: "msg-status" }, statusText)
+      ? el("span", { class: statusClass }, statusText)
       : null;
     if (statusEl) statusEl.dataset.msgId = msg.msg_id;
 
@@ -518,6 +519,15 @@ export async function renderChat(container, userId) {
         // Update the time shown next to the checkmarks to delivery time
         const timeEl = statusEl.closest(".msg-meta")?.querySelector(".msg-time");
         if (timeEl) timeEl.textContent = formatTime(Date.now());
+      }
+    },
+    (msgId, status) => {
+      const statusEl = messagesEl.querySelector(`.msg-status[data-msg-id="${msgId}"]`);
+      if (statusEl) {
+        statusEl.textContent = "✓✓";
+        if (status === "read") {
+          statusEl.classList.add("msg-status-read");
+        }
       }
     }
   );

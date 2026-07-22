@@ -24,6 +24,7 @@ const (
 	OpMsgRead             Opcode = 0x18
 	OpPairingHistoryReady Opcode = 0x19
 	OpPairingClaimed      Opcode = 0x1a
+	OpMsgStatusBatch      Opcode = 0x1b
 
 	OpGroupMessageSend      Opcode = 0x20
 	OpGroupMessageRecv      Opcode = 0x21
@@ -228,4 +229,16 @@ type GroupMessageDelivered struct {
 
 type GroupMessageRead struct {
 	ID int64 `msgpack:"id"`
+}
+
+type MsgStatusItem struct {
+	MsgID       int64  `msgpack:"msg_id"`
+	ClientMsgID string `msgpack:"client_msg_id,omitempty"`
+	Delivered   bool   `msgpack:"delivered"`
+	DeliveredAt *int64 `msgpack:"delivered_at,omitempty"`
+	Read        bool   `msgpack:"read"`
+}
+
+type MsgStatusBatch struct {
+	Statuses []MsgStatusItem `msgpack:"statuses"`
 }

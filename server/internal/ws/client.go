@@ -72,6 +72,11 @@ func (c *Client) Run(ctx context.Context) {
 		log.Printf("ws client %d/%d group offline batch: %v", c.userID, c.deviceID, err)
 	}
 
+	// Send offline status updates for sent messages.
+	if err := c.sendOfflineStatusBatch(ctx); err != nil {
+		log.Printf("ws client %d/%d offline status batch: %v", c.userID, c.deviceID, err)
+	}
+
 	// Update last_seen on connect.
 	_, _ = c.db.ExecContext(ctx,
 		`UPDATE devices SET last_seen=? WHERE id=?`,
@@ -586,6 +591,51 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (c *Client) sendOfflineStatusBatch(ctx context.Context) error {
+	threshold := time.Now().Add(-7 * 24 * time.Hour).Unix()
+	rows, err := c.db.QueryContext(ctx,
+		`SELECT m.id, COALESCE(m.client_msg_id, ''), m.delivered, m.delivered_at, m.read
+		 FROM messages m
+		 WHERE m.sender_user_id = ? AND m.timestamp > ?`,
+		c.userID, threshold)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var statuses []MsgStatusItem
+	for rows.Next() {
+		var item MsgStatusItem
+		var deliveredVal int
+		var readVal int
+		var deliveredAtVal sql.NullInt64
+		if err := rows.Scan(&item.MsgID, &item.ClientMsgID, &deliveredVal, &deliveredAtVal, &readVal); err != nil {
+			continue
+		}
+		item.Delivered = deliveredVal == 1
+		item.Read = readVal == 1
+		if deliveredAtVal.Valid {
+			val := deliveredAtVal.Int64
+			item.DeliveredAt = &val
+		}
+		statuses = append(statuses, item)
+	}
+
+	if len(statuses) == 0 {
+		return nil
+	}
+
+	batch := MsgStatusBatch{Statuses: statuses}
+	frame, err := encodeFrame(OpMsgStatusBatch, batch)
+	if err != nil {
+		return err
+	}
+
+	wCtx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
+	return c.conn.Write(wCtx, websocket.MessageBinary, frame)
 }
 
 // sendPendingPurges pushes a ChatPurge for every chat that another user

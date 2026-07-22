@@ -297,10 +297,11 @@ fun MessageBubble(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (isSentByMe && !isFailed) {
-                        val statusText = if (delivered || read) "✓✓" else "✓"
+                        val statusText = if (read || delivered) "✓✓" else "✓"
+                        val statusColor = if (read) Accent else TextMuted
                         Text(
                             text = statusText,
-                            color = if (read || delivered) Accent else TextMuted,
+                            color = statusColor,
                             fontSize = 11.sp,
                             modifier = Modifier.padding(end = 4.dp)
                         )

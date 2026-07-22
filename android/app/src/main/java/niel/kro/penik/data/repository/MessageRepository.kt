@@ -240,6 +240,11 @@ class MessageRepository @Inject constructor(
         else messageDao.markRead(event.msgId)
     }
 
+    suspend fun markMessageAsRead(serverId: Long) {
+        messageDao.markRead(serverId)
+        webSocketManager.sendRead(serverId)
+    }
+
     suspend fun handleMsgRecv(event: WebSocketEvent.MsgRecv): Boolean {
         val sentByMe = event.fromUserId == tokenStorage.getUserId()
         if (messageDao.findLocalIdByServerId(event.msgId) != null) {
@@ -514,6 +519,26 @@ class MessageRepository @Inject constructor(
     suspend fun deleteMessage(localId: String, chatUserId: Long) {
         messageDao.deleteMessageByLocalId(localId)
         updateChatLastMessage(chatUserId)
+    }
+
+    suspend fun handleMsgStatusBatch(event: WebSocketEvent.MsgStatusBatch) {
+        event.statuses.forEach { item ->
+            if (item.clientMsgId.isNotBlank()) {
+                if (item.delivered) {
+                    messageDao.markDeliveredByClientId(item.clientMsgId, item.deliveredAt ?: System.currentTimeMillis())
+                }
+                if (item.read) {
+                    messageDao.markReadByClientId(item.clientMsgId)
+                }
+            } else if (item.msgId != 0L) {
+                if (item.delivered) {
+                    messageDao.markDelivered(item.msgId, item.deliveredAt)
+                }
+                if (item.read) {
+                    messageDao.markRead(item.msgId)
+                }
+            }
+        }
     }
 
     suspend fun updateChatLastMessage(chatUserId: Long) {

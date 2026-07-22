@@ -374,8 +374,8 @@ export async function logout() {
 let _activeChatCallback = null;
 let _chatListUpdateCallback = null;
 
-export function setActiveChatCallback(userId, fn, onAck) {
-  _activeChatCallback = userId ? { userId, fn, onAck } : null;
+export function setActiveChatCallback(userId, fn, onAck, onStatus) {
+  _activeChatCallback = userId ? { userId, fn, onAck, onStatus } : null;
 }
 
 export function setChatListUpdateCallback(cb) {
@@ -612,6 +612,26 @@ async function onMsgReadGlobal(payload) {
   if (!payload?.msg_id) return;
   await updateMessageRead(payload.msg_id);
   if (_activeChatCallback) _activeChatCallback.onStatus?.(payload.msg_id, "read");
+}
+
+async function onMsgStatusBatchGlobal(payload) {
+  if (!payload || !payload.statuses || !Array.isArray(payload.statuses)) return;
+  for (const item of payload.statuses) {
+    if (!item.msg_id) continue;
+    if (item.delivered) {
+      await updateMessageDelivered(item.msg_id, 1);
+    }
+    if (item.read) {
+      await updateMessageRead(item.msg_id);
+    }
+    if (_activeChatCallback) {
+      if (item.read) {
+        _activeChatCallback.onStatus?.(item.msg_id, "read");
+      } else if (item.delivered) {
+        _activeChatCallback.onAck?.(item.msg_id);
+      }
+    }
+  }
 }
 
 export async function syncMessageHistory() {
@@ -868,6 +888,7 @@ function setupGlobalWSListeners() {
   ws.on(0x03, onMsgAckReceivedGlobal);
   ws.on(0x04, onMsgDeliveredGlobal);
   ws.on(0x18, onMsgReadGlobal);
+  ws.on(0x1b, onMsgStatusBatchGlobal);
   ws.on(0x05, onOfflineBatchGlobal);
   ws.on(0x08, onChatPurgeGlobal);
   registerGroupWSListeners();
