@@ -10,7 +10,7 @@ import niel.kro.penik.data.local.entity.MessageEntity
 @Dao
 interface MessageDao {
 
-    @Query("SELECT * FROM messages WHERE chatUserId = :chatUserId ORDER BY timestamp ASC")
+    @Query("SELECT * FROM messages WHERE chatUserId = :chatUserId AND text != '[DELETED]' ORDER BY timestamp ASC")
     fun getMessagesForChat(chatUserId: Long): Flow<List<MessageEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -49,13 +49,13 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE serverId = :serverId LIMIT 1")
     suspend fun findMessageByServerId(serverId: Long): MessageEntity?
 
-    @Query("DELETE FROM messages WHERE chatUserId = :chatUserId")
+    @Query("UPDATE messages SET text = '[DELETED]' WHERE chatUserId = :chatUserId")
     suspend fun deleteChatMessages(chatUserId: Long)
 
-    @Query("DELETE FROM messages WHERE localId = :localId")
+    @Query("UPDATE messages SET text = '[DELETED]' WHERE localId = :localId")
     suspend fun deleteMessageByLocalId(localId: String)
 
-    @Query("SELECT * FROM messages WHERE chatUserId = :chatUserId ORDER BY timestamp DESC LIMIT 1")
+    @Query("SELECT * FROM messages WHERE chatUserId = :chatUserId AND text != '[DELETED]' ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLastMessageForChat(chatUserId: Long): MessageEntity?
 
     @Query("SELECT * FROM messages ORDER BY timestamp DESC LIMIT 1")

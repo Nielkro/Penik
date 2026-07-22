@@ -73,10 +73,14 @@ fun ChatRoomScreen(
     val showE2eeDialog by viewModel.showE2eeDialog.collectAsState()
     val isSelfChat = viewModel.isSelfChat
 
+    var previousSize by remember { mutableStateOf(0) }
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.lastIndex)
+        if (messages.size > previousSize) {
+            if (messages.isNotEmpty()) {
+                listState.animateScrollToItem(messages.lastIndex)
+            }
         }
+        previousSize = messages.size
     }
 
     if (showE2eeDialog) {
