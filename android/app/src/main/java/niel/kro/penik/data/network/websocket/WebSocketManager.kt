@@ -95,6 +95,15 @@ sealed class WebSocketEvent {
     data class GroupKeyAvailable(val groupId: Long, val keyVersion: Long) : WebSocketEvent()
     data class GroupMemberChanged(val groupId: Long, val membershipVersion: Long) : WebSocketEvent()
 
+    data class MsgStatusItem(
+        val msgId: Long,
+        val clientMsgId: String,
+        val delivered: Boolean,
+        val deliveredAt: Long?,
+        val read: Boolean
+    )
+    data class MsgStatusBatch(val statuses: List<MsgStatusItem>) : WebSocketEvent()
+
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
     object Pong : WebSocketEvent()
@@ -107,6 +116,7 @@ object Opcode {
     const val MSG_DELIVERED: Byte = 0x04
     const val MSG_READ: Byte = 0x18
     const val OFFLINE_BATCH: Byte = 0x05
+    const val MSG_STATUS_BATCH: Byte = 0x1b
     const val PING: Byte = 0x06
     const val PONG: Byte = 0x07
     const val CHAT_PURGE: Byte = 0x08
@@ -271,6 +281,7 @@ class WebSocketManager @Inject constructor() {
             Opcode.MSG_DELIVERED -> handleMsgDelivered(payload)
             Opcode.MSG_READ -> handleMsgRead(payload)
             Opcode.OFFLINE_BATCH -> handleOfflineBatch(payload)
+            Opcode.MSG_STATUS_BATCH -> handleMsgStatusBatch(payload)
             Opcode.PING -> sendPong()
             Opcode.PONG -> scope.launch { _events.emit(WebSocketEvent.Pong) }
             Opcode.CHAT_PURGE -> handleChatPurge(payload)
@@ -344,6 +355,48 @@ class WebSocketManager @Inject constructor() {
         }
         unpacker.close()
         scope.launch { _events.emit(WebSocketEvent.OfflineBatchEncrypted(messages)) }
+    }
+
+    private fun handleMsgStatusBatch(payload: ByteArray) {
+        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+        val outerSize = unpacker.unpackMapHeader()
+        var statusesCount = 0
+        for (i in 0 until outerSize) {
+            val key = unpacker.unpackString()
+            if (key == "statuses") {
+                statusesCount = unpacker.unpackArrayHeader()
+            } else {
+                unpacker.unpackValue()
+            }
+        }
+
+        val statuses = mutableListOf<WebSocketEvent.MsgStatusItem>()
+        for (i in 0 until statusesCount) {
+            val itemSize = unpacker.unpackMapHeader()
+            var msgId = 0L
+            var clientMsgId = ""
+            var delivered = false
+            var deliveredAt: Long? = null
+            var read = false
+
+            for (j in 0 until itemSize) {
+                val key = unpacker.unpackString()
+                if (unpacker.tryUnpackNil()) {
+                    continue
+                }
+                when (key) {
+                    "msg_id" -> msgId = unpacker.unpackLong()
+                    "client_msg_id" -> clientMsgId = unpacker.unpackString()
+                    "delivered" -> delivered = unpacker.unpackBoolean()
+                    "delivered_at" -> deliveredAt = unpacker.unpackLong()
+                    "read" -> read = unpacker.unpackBoolean()
+                    else -> unpacker.unpackValue()
+                }
+            }
+            statuses.add(WebSocketEvent.MsgStatusItem(msgId, clientMsgId, delivered, deliveredAt, read))
+        }
+        unpacker.close()
+        scope.launch { _events.emit(WebSocketEvent.MsgStatusBatch(statuses)) }
     }
 
     private fun handleChatPurge(payload: ByteArray) {

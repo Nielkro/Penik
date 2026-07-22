@@ -51,8 +51,14 @@ class ChatRoomViewModel @Inject constructor(
     init {
         loadSafetyNumber()
         viewModelScope.launch {
-            messages.collect {
+            messages.collect { list ->
                 clearUnread()
+                val unreadIncoming = list.filter { !it.sentByMe && !it.read && it.serverId != null }
+                if (unreadIncoming.isNotEmpty()) {
+                    unreadIncoming.forEach { msg ->
+                        messageRepository.markMessageAsRead(msg.serverId!!)
+                    }
+                }
             }
         }
     }
