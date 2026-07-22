@@ -52,6 +52,9 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE localId = :localId")
     suspend fun deleteMessageByLocalId(localId: String)
 
+    @Query("SELECT * FROM messages WHERE chatUserId = :chatUserId ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLastMessageForChat(chatUserId: Long): MessageEntity?
+
     @Query("SELECT * FROM messages ORDER BY timestamp DESC LIMIT 1")
     fun getLastMessage(): Flow<MessageEntity?>
 }

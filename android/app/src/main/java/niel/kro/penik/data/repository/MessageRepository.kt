@@ -143,6 +143,11 @@ class MessageRepository @Inject constructor(
         for (gm in importedGroupMessages) {
             groupDao.upsertMessage(gm)
         }
+
+        val importedChatIds = imported.map { it.chatUserId }.distinct()
+        for (chatId in importedChatIds) {
+            updateChatLastMessage(chatId)
+        }
     }
 
     private fun decodeUrlBase64(value: String): ByteArray = java.util.Base64.getUrlDecoder().decode(
@@ -480,8 +485,18 @@ class MessageRepository @Inject constructor(
         messageDao.deleteChatMessages(chatUserId)
     }
 
-    suspend fun deleteMessage(localId: String) {
+    suspend fun deleteMessage(localId: String, chatUserId: Long) {
         messageDao.deleteMessageByLocalId(localId)
+        updateChatLastMessage(chatUserId)
+    }
+
+    suspend fun updateChatLastMessage(chatUserId: Long) {
+        val lastMsg = messageDao.getLastMessageForChat(chatUserId)
+        if (lastMsg != null) {
+            chatRepository.updateLastMessage(chatUserId, lastMsg.text, lastMsg.timestamp)
+        } else {
+            chatRepository.updateLastMessage(chatUserId, "", 0)
+        }
     }
 }
 
