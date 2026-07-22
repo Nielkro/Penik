@@ -155,6 +155,7 @@ fun ChatsListContent(
                 items(searchResults, key = { it.id }) { user ->
                     SearchUserItem(
                         name = user.name,
+                        userId = user.id,
                         nickname = user.nickname,
                         onClick = {
                             onChatClick(user.id, user.name.ifBlank { user.nickname })
@@ -176,6 +177,7 @@ fun ChatsListContent(
                     items(filteredChats, key = { it.userId }) { chat ->
                         ChatListItem(
                             name = chat.name.ifBlank { chat.nickname },
+                            userId = chat.userId,
                             lastMessage = chat.lastMessage,
                             timestamp = chat.lastMessageTimestamp,
                             unreadCount = chat.unreadCount,
@@ -202,6 +204,7 @@ fun ChatsListContent(
                     items(filteredChats, key = { it.userId }) { chat ->
                         ChatListItem(
                             name = chat.name.ifBlank { chat.nickname },
+                            userId = chat.userId,
                             lastMessage = chat.lastMessage,
                             timestamp = chat.lastMessageTimestamp,
                             unreadCount = chat.unreadCount,
@@ -229,6 +232,7 @@ fun ChatsListContent(
                     item(key = "self_chat") {
                         SearchUserItem(
                             name = "$SELF_CHAT_ICON $SELF_CHAT_NAME",
+                            userId = viewModel.selfChatEntry?.id ?: 0L,
                             nickname = "",
                             onClick = {
                                 val myId = viewModel.selfChatEntry?.id ?: return@SearchUserItem
@@ -240,6 +244,7 @@ fun ChatsListContent(
                     items(filteredChats, key = { it.userId }) { chat ->
                         ChatListItem(
                             name = chat.name.ifBlank { chat.nickname },
+                            userId = chat.userId,
                             lastMessage = chat.lastMessage,
                             timestamp = chat.lastMessageTimestamp,
                             unreadCount = chat.unreadCount,

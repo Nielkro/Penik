@@ -46,7 +46,7 @@ fun ProfileScreen(
     ) {
         Spacer(modifier = Modifier.height(24.dp))
 
-        InitialsAvatar(name = displayName, size = 80.dp)
+        InitialsAvatar(name = displayName, id = viewModel.userId, size = 80.dp)
 
         Spacer(modifier = Modifier.height(16.dp))
 

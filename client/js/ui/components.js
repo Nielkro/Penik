@@ -54,7 +54,8 @@ function initialsNode(user, size) {
     .slice(0, 2)
     .toUpperCase();
 
-  const hue = [...name].reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 360;
+  const userId = Number(user && (user.user_id || user.id)) || 0;
+  const hue = userId ? (userId * 137) % 360 : [...name].reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 360;
   const bg = `hsl(${hue}, 55%, 50%)`;
   const fontSize = Math.round(size * 0.4);
 
