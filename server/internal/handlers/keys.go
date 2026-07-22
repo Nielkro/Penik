@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"database/sql"
-	"encoding/binary"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -11,52 +10,7 @@ import (
 	"messenger/server/internal/middleware"
 )
 
-type otkUploadRequest struct {
-	OPKList [][]byte `json:"opk_list"`
-}
 
-// UploadOTK handles POST /api/v1/keys/otk — upload new one-time pre-keys.
-func UploadOTK(database *db.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		deviceID := middleware.DeviceIDFromCtx(r.Context())
-
-		var req otkUploadRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", http.StatusBadRequest)
-			return
-		}
-		if len(req.OPKList) == 0 {
-			http.Error(w, "opk_list required", http.StatusBadRequest)
-			return
-		}
-		if len(req.OPKList) > maxOPKUpload {
-			http.Error(w, "too many one-time keys", http.StatusBadRequest)
-			return
-		}
-
-		now := time.Now().Unix()
-		for _, opkRaw := range req.OPKList {
-			var keyID int64
-			var pubKey []byte
-			if len(opkRaw) == 37 {
-				keyID = int64(binary.BigEndian.Uint32(opkRaw[:4]))
-				pubKey = opkRaw[4:]
-			} else {
-				pubKey = opkRaw
-			}
-			_, err := database.ExecContext(r.Context(),
-				`INSERT OR IGNORE INTO one_time_prekeys(device_id, key_id, public_key, used, reserved_at, created_at)
-				 VALUES(?, ?, ?, 0, NULL, ?)`,
-				deviceID, keyID, pubKey, now)
-			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-		}
-
-		w.WriteHeader(http.StatusNoContent)
-	}
-}
 
 
 
@@ -65,7 +19,6 @@ type keysInitRequest struct {
 	SPKPub         []byte   `json:"spk_pub"`
 	SPKSig         []byte   `json:"spk_sig"`
 	RegistrationID int64    `json:"registration_id"`
-	OPKList        [][]byte `json:"opk_list"`
 }
 
 // UploadIdentityKeys handles POST /api/v1/keys/init — upload new identity key and signed pre-key.
@@ -113,32 +66,6 @@ func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
 			}
 		}
 
-		if len(req.OPKList) > 0 {
-			_, err = tx.ExecContext(r.Context(), `DELETE FROM one_time_prekeys WHERE device_id=?`, deviceID)
-			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-			for _, opkRaw := range req.OPKList {
-				var keyID int64
-				var pubKey []byte
-				if len(opkRaw) == 37 {
-					keyID = int64(binary.BigEndian.Uint32(opkRaw[:4]))
-					pubKey = opkRaw[4:]
-				} else {
-					pubKey = opkRaw
-				}
-				_, err = tx.ExecContext(r.Context(),
-					`INSERT OR IGNORE INTO one_time_prekeys(device_id, key_id, public_key, used, reserved_at, created_at)
-					 VALUES(?, ?, ?, 0, NULL, ?)`,
-					deviceID, keyID, pubKey, now)
-				if err != nil {
-					http.Error(w, "internal error", http.StatusInternalServerError)
-					return
-				}
-			}
-		}
-
 		if err := tx.Commit(); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -151,8 +78,6 @@ func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
 type DeviceBundle struct {
 	DeviceID    int64   `json:"device_id"`
 	IdentityKey []byte  `json:"identity_key"`
-	OneTimeKey  []byte  `json:"one_time_key"`
-	KeyID       *int64  `json:"key_id"`
 }
 
 type KeyBundleResponse struct {
@@ -168,8 +93,6 @@ func GetKeyBundle(database *db.DB) http.HandlerFunc {
 			http.Error(w, "user_id required", http.StatusBadRequest)
 			return
 		}
-
-		skipOTK := r.URL.Query().Get("skip_otk") == "true"
 
 		tx, err := database.BeginTx(r.Context(), nil)
 		if err != nil {
@@ -202,39 +125,9 @@ func GetKeyBundle(database *db.DB) http.HandlerFunc {
 				return
 			}
 
-			var keyID int64
-			var opkPub []byte
-			var reservedKeyID *int64
-
-			err = tx.QueryRowContext(r.Context(),
-				`SELECT key_id, public_key FROM one_time_prekeys
-				 WHERE device_id=? AND used=0
-				 ORDER BY id LIMIT 1`,
-				deviceID).Scan(&keyID, &opkPub)
-
-			if err == nil {
-				if !skipOTK {
-					now := time.Now().Unix()
-					_, err = tx.ExecContext(r.Context(),
-						`UPDATE one_time_prekeys SET used=1, reserved_at=?
-						 WHERE device_id=? AND key_id=?`,
-						now, deviceID, keyID)
-					if err != nil {
-						http.Error(w, "internal error", http.StatusInternalServerError)
-						return
-					}
-				}
-				reservedKeyID = &keyID
-			} else if err != sql.ErrNoRows {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-
 			devices = append(devices, DeviceBundle{
 				DeviceID:    deviceID,
 				IdentityKey: x25519Pub,
-				OneTimeKey:  opkPub,
-				KeyID:       reservedKeyID,
 			})
 		}
 
@@ -245,105 +138,6 @@ func GetKeyBundle(database *db.DB) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(KeyBundleResponse{Devices: devices})
-	}
-}
-
-type prekeyUploadItem struct {
-	KeyID     int64  `json:"key_id"`
-	PublicKey []byte `json:"public_key"`
-}
-
-type prekeyUploadRequest struct {
-	Prekeys []prekeyUploadItem `json:"prekeys"`
-}
-
-// UploadPreKeys handles POST /api/v1/keys/prekeys.
-func UploadPreKeys(database *db.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		deviceID := middleware.DeviceIDFromCtx(r.Context())
-		if deviceID == 0 {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		var req prekeyUploadRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", http.StatusBadRequest)
-			return
-		}
-
-		if len(req.Prekeys) == 0 {
-			http.Error(w, "prekeys required", http.StatusBadRequest)
-			return
-		}
-
-		now := time.Now().Unix()
-		tx, err := database.BeginTx(r.Context(), nil)
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		defer tx.Rollback()
-
-		for _, pk := range req.Prekeys {
-			if len(pk.PublicKey) != 32 {
-				http.Error(w, "invalid key length", http.StatusBadRequest)
-				return
-			}
-			_, err = tx.ExecContext(r.Context(),
-				`INSERT OR REPLACE INTO one_time_prekeys(device_id, key_id, public_key, used, reserved_at, created_at)
-				 VALUES(?, ?, ?, 0, NULL, ?)`,
-				deviceID, pk.KeyID, pk.PublicKey, now)
-			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-		}
-
-		if err := tx.Commit(); err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusNoContent)
-	}
-}
-
-type PreKeysStatusResponse struct {
-	Available int `json:"available"`
-	Total     int `json:"total"`
-}
-
-// GetPreKeysStatus handles GET /api/v1/keys/prekeys/status.
-func GetPreKeysStatus(database *db.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		deviceID := middleware.DeviceIDFromCtx(r.Context())
-		if deviceID == 0 {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		var available int
-		err := database.QueryRowContext(r.Context(),
-			`SELECT COUNT(*) FROM one_time_prekeys WHERE device_id=? AND used=0`, deviceID).Scan(&available)
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-
-		var total int
-		err = database.QueryRowContext(r.Context(),
-			`SELECT COUNT(*) FROM one_time_prekeys WHERE device_id=?`, deviceID).Scan(&total)
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(PreKeysStatusResponse{
-			Available: available,
-			Total:     total,
-		})
 	}
 }
 

@@ -3,10 +3,8 @@ package handlers
 import (
 	"crypto/rand"
 	"database/sql"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"regexp"
@@ -28,7 +26,6 @@ type registerRequest struct {
 	IKPub          []byte   `json:"ik_pub"`
 	SPKPub         []byte   `json:"spk_pub"`
 	SPKSig         []byte   `json:"spk_sig"`
-	OPKList        [][]byte `json:"opk_list"`
 }
 
 type loginRequest struct {
@@ -39,7 +36,6 @@ type loginRequest struct {
 	IKPub          []byte   `json:"ik_pub"`
 	SPKPub         []byte   `json:"spk_pub"`
 	SPKSig         []byte   `json:"spk_sig"`
-	OPKList        [][]byte `json:"opk_list"`
 }
 
 type loginResponse struct {
@@ -92,10 +88,7 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 				}
 			}
 		}
-		if len(req.OPKList) > maxOPKUpload {
-			http.Error(w, fmt.Sprintf("too many one-time keys (max %d)", maxOPKUpload), http.StatusBadRequest)
-			return
-		}
+
 
 		hash, err := hashPassword(req.Password)
 		if err != nil {
@@ -150,43 +143,7 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			}
 		}
 
-		if len(req.OPKList) > 0 {
-			_, err = tx.ExecContext(r.Context(), `DELETE FROM one_time_keys WHERE device_id=?`, deviceID)
-			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-			_, err = tx.ExecContext(r.Context(), `DELETE FROM one_time_prekeys WHERE device_id=?`, deviceID)
-			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
 
-			for _, opkRaw := range req.OPKList {
-				var keyID int64
-				var pubKey []byte
-				if len(opkRaw) == 37 {
-					keyID = int64(binary.BigEndian.Uint32(opkRaw[:4]))
-					pubKey = opkRaw[4:]
-				} else {
-					pubKey = opkRaw
-				}
-				_, err = tx.ExecContext(r.Context(),
-					`INSERT OR IGNORE INTO one_time_keys(device_id,key_id,opk_pub,used) VALUES(?,?,?,0)`,
-					deviceID, keyID, pubKey)
-				if err != nil {
-					http.Error(w, "internal error", http.StatusInternalServerError)
-					return
-				}
-				_, err = tx.ExecContext(r.Context(),
-					`INSERT OR IGNORE INTO one_time_prekeys(device_id,key_id,public_key,used,reserved_at,created_at) VALUES(?,?,?,0,NULL,?)`,
-					deviceID, keyID, pubKey, now)
-				if err != nil {
-					http.Error(w, "internal error", http.StatusInternalServerError)
-					return
-				}
-			}
-		}
 
 		token, err := generateToken()
 		if err != nil {
@@ -341,38 +298,7 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			}
 		}
 
-		if len(req.OPKList) > 0 {
-			// Do not delete the existing pool on login. The client may still have
-			// ciphertexts addressed to those OTPKs (for example messages sent to
-			// this device while it was offline). Login currently publishes a new
-			// pool, but deleting the old rows would make their local private keys
-			// unusable and cause OTPK-not-found errors after reconnect/reload.
-		}
 
-		for _, opkRaw := range req.OPKList {
-			var keyID int64
-			var pubKey []byte
-			if len(opkRaw) == 37 {
-				keyID = int64(binary.BigEndian.Uint32(opkRaw[:4]))
-				pubKey = opkRaw[4:]
-			} else {
-				pubKey = opkRaw
-			}
-			_, err = tx.ExecContext(r.Context(),
-				`INSERT OR IGNORE INTO one_time_keys(device_id,key_id,opk_pub,used) VALUES(?,?,?,0)`,
-				deviceID, keyID, pubKey)
-			if err != nil {
-				loginInternalError(w, "insert one time keys", err)
-				return
-			}
-			_, err = tx.ExecContext(r.Context(),
-				`INSERT OR IGNORE INTO one_time_prekeys(device_id,key_id,public_key,used,reserved_at,created_at) VALUES(?,?,?,0,NULL,?)`,
-				deviceID, keyID, pubKey, now)
-			if err != nil {
-				loginInternalError(w, "insert one time prekeys", err)
-				return
-			}
-		}
 
 		token, err := generateToken()
 		if err != nil {

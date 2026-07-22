@@ -420,48 +420,6 @@ export async function getIKPublic() {
   return record ? record.publicKey : null;
 }
 
-export async function savePreKeyPrivate(keyId, privateKey) {
-  await openDB();
-  const id = `prekey_${keyId.toString()}`;
-  return put(tx("e2ee_keys", "readwrite"), { id, keyId: keyId.toString(), privateKey });
-}
-
-export async function getPreKeyPrivate(keyId) {
-  await openDB();
-  const id = `prekey_${keyId.toString()}`;
-  const record = await get(tx("e2ee_keys"), id);
-  return record ? record.privateKey : null;
-}
-
-export async function deletePreKeyPrivate(keyId) {
-  await openDB();
-  const id = `prekey_${keyId.toString()}`;
-  return del(tx("e2ee_keys", "readwrite"), id);
-}
-
-export async function getAllPreKeyIds() {
-  await openDB();
-  const records = await getAll(tx("e2ee_keys"));
-  return records
-    .filter(r => r.id.startsWith("prekey_"))
-    .map(r => r.keyId);
-}
-
-export async function clearPreKeyPrivates() {
-  const ids = await getAllPreKeyIds();
-  if (ids.length === 0) return;
-  await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = _db.transaction("e2ee_keys", "readwrite");
-    const store = transaction.objectStore("e2ee_keys");
-    for (const keyId of ids) {
-      store.delete(`prekey_${keyId}`);
-    }
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = (e) => reject(e.target.error);
-  });
-}
-
 export function getPersistentDeviceName() {
   let name = localStorage.getItem("device_name");
   if (!name) {

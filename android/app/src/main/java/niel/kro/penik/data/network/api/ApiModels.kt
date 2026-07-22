@@ -8,8 +8,7 @@ data class LoginRequestBody(
     val nickname: String,
     val password: String,
     @SerialName("device_name") val deviceName: String,
-    @SerialName("ik_pub") val ikPub: String? = null,
-    @SerialName("opk_list") val opkList: List<String>? = null
+    @SerialName("ik_pub") val ikPub: String? = null
 )
 
 @Serializable
@@ -18,8 +17,7 @@ data class RegisterRequestBody(
     val nickname: String,
     val password: String,
     @SerialName("device_name") val deviceName: String,
-    @SerialName("ik_pub") val ikPub: String? = null,
-    @SerialName("opk_list") val opkList: List<String>? = null
+    @SerialName("ik_pub") val ikPub: String? = null
 )
 
 @Serializable
@@ -54,8 +52,7 @@ data class HistoryMessageResponse(
     @SerialName("encryption_salt") val encryptionSalt: String? = null,
     @SerialName("encryption_nonce") val encryptionNonce: String? = null,
     @SerialName("sender_device_id") val senderDeviceId: Long? = null,
-    @SerialName("recipient_device_id") val recipientDeviceId: Long? = null,
-    @SerialName("prekey_id") val prekeyId: Long? = null
+    @SerialName("recipient_device_id") val recipientDeviceId: Long? = null
 )
 
 @Serializable
@@ -67,9 +64,7 @@ data class ChangePasswordRequestBody(
 @Serializable
 data class DeviceBundle(
     @SerialName("device_id") val deviceId: Long,
-    @SerialName("identity_key") val identityKey: String,
-    @SerialName("one_time_key") val oneTimeKey: String? = null,
-    @SerialName("key_id") val keyId: Long? = null
+    @SerialName("identity_key") val identityKey: String
 )
 
 @Serializable
@@ -77,22 +72,7 @@ data class KeyBundleResponse(
     val devices: List<DeviceBundle>
 )
 
-@Serializable
-data class PrekeyUploadItem(
-    @SerialName("key_id") val keyId: Long,
-    @SerialName("public_key") val publicKey: String
-)
 
-@Serializable
-data class PrekeysUploadRequest(
-    val prekeys: List<PrekeyUploadItem>
-)
-
-@Serializable
-data class PreKeysStatusResponse(
-    val available: Int,
-    val total: Int
-)
 @Serializable
 data class MessageStatusResponse(
     @SerialName("msg_id") val msgId: Long,

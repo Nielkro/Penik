@@ -101,8 +101,6 @@ type DeviceKeyBundle struct {
 	IKPub          []byte `msgpack:"ik_pub"`
 	SPKPub         []byte `msgpack:"spk_pub"`
 	SPKSig         []byte `msgpack:"spk_sig"`
-	OPKPub         []byte `msgpack:"opk_pub"`
-	OPKID          int64  `msgpack:"opk_id"`
 }
 
 // KeyFetchResp carries all devices' key bundles for a user.
@@ -112,7 +110,6 @@ type KeyFetchResp struct {
 
 type E2EPayload struct {
 	DeviceID   int64  `msgpack:"device_id"`
-	PrekeyID   *int64 `msgpack:"prekey_id"`
 	Ciphertext []byte `msgpack:"ciphertext"`
 	Salt       []byte `msgpack:"salt"`
 	Nonce      []byte `msgpack:"nonce"`
@@ -131,7 +128,6 @@ type MsgRecvEncrypted struct {
 	FromIdentityKey   []byte `msgpack:"from_identity_key"`
 	ChatUserID        int64  `msgpack:"chat_user_id"`
 	MsgID             int64  `msgpack:"msg_id"`
-	PrekeyID          *int64 `msgpack:"prekey_id"`
 	Ciphertext        []byte `msgpack:"ciphertext"`
 	Salt              []byte `msgpack:"salt"`
 	Nonce             []byte `msgpack:"nonce"`
@@ -142,14 +138,8 @@ type OfflineBatchEncrypted struct {
 	Msgs []MsgRecvEncrypted `msgpack:"msgs"`
 }
 
-type PrekeyPublishItem struct {
-	KeyID     int64  `msgpack:"key_id"`
-	PublicKey []byte `msgpack:"public_key"`
-}
-
 type KeyPublishReq struct {
 	X25519Pub []byte              `msgpack:"x25519_pub"`
-	Prekeys   []PrekeyPublishItem `msgpack:"prekeys"`
 }
 
 type KeyBundleReq struct {
@@ -164,7 +154,6 @@ type MsgRetryReq struct {
 
 type MsgRetryResp struct {
 	MsgID      int64  `msgpack:"msg_id"`
-	PrekeyID   int64  `msgpack:"prekey_id"`
 	Ciphertext []byte `msgpack:"ciphertext"`
 	Salt       []byte `msgpack:"salt"`
 	Nonce      []byte `msgpack:"nonce"`

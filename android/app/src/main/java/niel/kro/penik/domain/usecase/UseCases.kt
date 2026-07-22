@@ -119,7 +119,6 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 messageRepository.deleteChatMessages(event.peerId)
                 chatRepository.deleteChat(event.peerId)
             }
-            is WebSocketEvent.RefillPreKeys -> Unit
             is WebSocketEvent.PairingHistoryReady -> Unit
             is WebSocketEvent.GroupMessageRecv -> {
                 groupRepository.handleIncoming(

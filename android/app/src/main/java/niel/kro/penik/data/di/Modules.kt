@@ -25,7 +25,6 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 import niel.kro.penik.data.crypto.E2EECrypto
 import niel.kro.penik.data.crypto.GroupCrypto
-import niel.kro.penik.data.crypto.PreKeyManager
 
 
 @Module
@@ -133,13 +132,5 @@ object CryptoModule {
         return GroupCrypto(e2eeCrypto)
     }
 
-    @Provides
-    @Singleton
-    fun providePreKeyManager(
-        apiService: ApiService,
-        tokenStorage: SecureTokenStorage,
-        e2eeCrypto: E2EECrypto
-    ): PreKeyManager {
-        return PreKeyManager(apiService, tokenStorage, e2eeCrypto)
-    }
+
 }

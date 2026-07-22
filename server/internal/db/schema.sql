@@ -25,13 +25,7 @@ CREATE TABLE IF NOT EXISTS identity_keys (
   updated_at INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS one_time_keys (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-  key_id INTEGER NOT NULL DEFAULT 0,
-  opk_pub BLOB NOT NULL,
-  used INTEGER NOT NULL DEFAULT 0
-);
+
 
 
 
@@ -74,7 +68,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_nickname ON users(nickname);
-CREATE INDEX IF NOT EXISTS idx_one_time_keys_device ON one_time_keys(device_id, used);
 
 CREATE TABLE IF NOT EXISTS device_public_keys (
     device_id INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
@@ -86,27 +79,6 @@ CREATE TABLE IF NOT EXISTS device_public_keys (
 -- Login matches a device by (user_id, identity key), so a stable crypto
 -- identity maps to one device row regardless of a volatile device_name.
 CREATE INDEX IF NOT EXISTS idx_device_public_keys_pub ON device_public_keys(x25519_pub);
-
-CREATE TABLE IF NOT EXISTS one_time_prekeys (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-    key_id INTEGER NOT NULL,
-    public_key BLOB NOT NULL,
-    used INTEGER NOT NULL DEFAULT 0,
-    reserved_at INTEGER DEFAULT NULL,
-    created_at INTEGER NOT NULL,
-    UNIQUE(device_id, key_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_prekeys_device_used ON one_time_prekeys(device_id, used);
-
-CREATE TABLE IF NOT EXISTS used_prekeys_audit (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    device_id INTEGER NOT NULL,
-    key_id INTEGER NOT NULL,
-    used_by_message_id INTEGER,
-    used_at INTEGER NOT NULL
-);
 
 CREATE TABLE IF NOT EXISTS key_backups (
     user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
