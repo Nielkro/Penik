@@ -199,7 +199,8 @@ func UploadPairingHistory(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var req struct {
-			EncryptedHistory string `json:"encrypted_history"`
+			EncryptedHistory string  `json:"encrypted_history"`
+			MessageIDs       []int64 `json:"message_ids"`
 		}
 		if json.NewDecoder(r.Body).Decode(&req) != nil {
 			http.Error(w, "invalid body", 400)
@@ -211,7 +212,15 @@ func UploadPairingHistory(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 			return
 		}
 		id := r.PathValue("id")
-		res, err := database.ExecContext(r.Context(), `UPDATE pairing_sessions SET encrypted_history=? WHERE id=? AND owner_user_id=? AND claimed_at IS NOT NULL AND expires_at>?`, b, id, middleware.UserIDFromCtx(r.Context()), time.Now().Unix())
+
+		tx, err := database.BeginTx(r.Context(), nil)
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
+		defer tx.Rollback()
+
+		res, err := tx.ExecContext(r.Context(), `UPDATE pairing_sessions SET encrypted_history=? WHERE id=? AND owner_user_id=? AND claimed_at IS NOT NULL AND expires_at>?`, b, id, middleware.UserIDFromCtx(r.Context()), time.Now().Unix())
 		if err != nil {
 			http.Error(w, "internal error", 500)
 			return
@@ -221,12 +230,26 @@ func UploadPairingHistory(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 			http.Error(w, "not available", 409)
 			return
 		}
+
 		var deviceID int64
-		if err := database.QueryRowContext(r.Context(), `SELECT claimed_by_device_id FROM pairing_sessions WHERE id=?`, id).Scan(&deviceID); err == nil {
+		if err := tx.QueryRowContext(r.Context(), `SELECT claimed_by_device_id FROM pairing_sessions WHERE id=?`, id).Scan(&deviceID); err == nil && deviceID != 0 {
+			for _, msgID := range req.MessageIDs {
+				_, err = tx.ExecContext(r.Context(), `INSERT OR IGNORE INTO device_history_exclusions(device_id, message_id) VALUES(?, ?)`, deviceID, msgID)
+				if err != nil {
+					log.Printf("failed to insert history exclusion: device=%d msg=%d err=%v", deviceID, msgID, err)
+				}
+			}
+
 			if payload, err := msgpack.Marshal(ws.PairingHistoryReady{SessionID: id}); err == nil {
 				hub.SendToDeviceFrame(deviceID, ws.OpPairingHistoryReady, payload)
 			}
 		}
+
+		if err := tx.Commit(); err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
+
 		w.WriteHeader(204)
 	}
 }
