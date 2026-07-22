@@ -38,16 +38,10 @@ interface ApiService {
     suspend fun getMessageStatuses(@Path("userId") userId: Long): Response<List<MessageStatusResponse>>
 
     @GET("keys/bundle/{userId}")
-    suspend fun getKeyBundle(@Path("userId") userId: Long, @Query("skip_otk") skipOtk: Boolean = true): Response<KeyBundleResponse>
+    suspend fun getKeyBundle(@Path("userId") userId: Long): Response<KeyBundleResponse>
 
     @GET("keys/bundle/{userId}")
-    suspend fun getKeyBundleSelf(@Path("userId") userId: Long, @Query("skip_otk") skipOtk: Boolean = true): Response<KeyBundleResponse>
-
-    @POST("keys/prekeys")
-    suspend fun uploadPreKeys(@Body body: PrekeysUploadRequest): Response<Unit>
-
-    @GET("keys/prekeys/status")
-    suspend fun getPreKeysStatus(): Response<PreKeysStatusResponse>
+    suspend fun getKeyBundleSelf(@Path("userId") userId: Long): Response<KeyBundleResponse>
 
     @POST("pairing/sessions/claim")
     suspend fun claimPairingSession(@Body body: PairingClaimRequest): Response<PairingClaimResponse>

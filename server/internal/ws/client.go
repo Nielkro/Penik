@@ -352,10 +352,10 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 				chat_id, sender_user_id, recipient_user_id, client_msg_id,
 				plaintext, ciphertext, encryption_salt, encryption_nonce,
 				sender_device_id, recipient_device_id, prekey_id, timestamp, delivered
-			 ) VALUES(?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			 ) VALUES(?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, 0)`,
 			chatID, senderUserID, recipientID, msg.MsgID,
 			dev.Ciphertext, dev.Salt, dev.Nonce,
-			c.deviceID, dev.DeviceID, dev.PrekeyID, now)
+			c.deviceID, dev.DeviceID, now)
 		if err != nil {
 			return fmt.Errorf("insert message: %w", err)
 		}
@@ -373,7 +373,6 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 				FromIdentityKey:   senderIKPub,
 				ChatUserID:        chatUserID,
 				MsgID:             messageID,
-				PrekeyID:          dev.PrekeyID,
 				Ciphertext:        dev.Ciphertext,
 				Salt:              dev.Salt,
 				Nonce:             dev.Nonce,
@@ -391,10 +390,6 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 		if err == nil {
 			c.hub.SendToDevice(deliv.deviceID, frame)
 		}
-	}
-
-	for _, dev := range msg.Devices {
-		c.checkAndNotifyLowPreKeys(dev.DeviceID)
 	}
 
 	var firstMsgID int64
@@ -510,27 +505,6 @@ func (c *Client) handleKeyFetchReq(ctx context.Context, req *KeyFetchReq) error 
 				b.DeviceID, len(b.IKPub), len(b.SPKPub), len(b.SPKSig))
 			continue
 		}
-		// Consume one OTK atomically using DELETE RETURNING inside the transaction.
-		var opk []byte
-		var keyID int64
-		if !req.NoOTK {
-			err := tx.QueryRowContext(ctx,
-				`DELETE FROM one_time_keys
-				 WHERE id = (
-					 SELECT id
-					 FROM one_time_keys
-					 WHERE device_id=? AND used=0
-					 ORDER BY id
-					 LIMIT 1
-				 ) RETURNING opk_pub, key_id`,
-				b.DeviceID).Scan(&opk, &keyID)
-			if err != nil && err != sql.ErrNoRows {
-				log.Printf("ws key fetch: delete otk for device %d: %v", b.DeviceID, err)
-			} else if err == nil && opk != nil {
-				b.OPKPub = opk
-				b.OPKID = keyID
-			}
-		}
 		bundles = append(bundles, b)
 	}
 
@@ -554,7 +528,7 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 		`SELECT m.id, m.sender_user_id, m.sender_device_id, m.recipient_device_id,
 		        COALESCE(dpk.x25519_pub, ''),
 		        CASE WHEN ch.user1_id = ? THEN ch.user2_id ELSE ch.user1_id END as chat_user_id,
-		        m.prekey_id, m.ciphertext, m.encryption_salt, m.encryption_nonce, m.timestamp
+		        m.ciphertext, m.encryption_salt, m.encryption_nonce, m.timestamp
 		 FROM messages m
 		 JOIN chats ch ON m.chat_id = ch.id
 		 LEFT JOIN device_public_keys dpk ON m.sender_device_id = dpk.device_id
@@ -588,7 +562,7 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 		var senderIK []byte
 		if err := rows.Scan(
 			&m.MsgID, &m.FromUserID, &m.FromDeviceID, &m.RecipientDeviceID, &senderIK,
-			&m.ChatUserID, &m.PrekeyID, &m.Ciphertext, &m.Salt, &m.Nonce, &m.TS,
+			&m.ChatUserID, &m.Ciphertext, &m.Salt, &m.Nonce, &m.TS,
 		); err != nil {
 			continue
 		}
@@ -738,16 +712,6 @@ func (c *Client) handleKeyPublish(ctx context.Context, req *KeyPublishReq) error
 		return fmt.Errorf("insert device_public_keys: %w", err)
 	}
 
-	for _, pk := range req.Prekeys {
-		_, err = tx.ExecContext(ctx,
-			`INSERT OR REPLACE INTO one_time_prekeys(device_id, key_id, public_key, used, reserved_at, created_at)
-			 VALUES(?, ?, ?, 0, NULL, ?)`,
-			c.deviceID, pk.KeyID, pk.PublicKey, now)
-		if err != nil {
-			return fmt.Errorf("insert one_time_prekeys: %w", err)
-		}
-	}
-
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
@@ -782,37 +746,9 @@ func (c *Client) handleKeyBundleReq(ctx context.Context, req *KeyBundleReq) erro
 			return err
 		}
 
-		var keyID int64
-		var opkPub []byte
-		var hasOPK bool
-
-		err = tx.QueryRowContext(ctx,
-			`SELECT key_id, public_key FROM one_time_prekeys
-			 WHERE device_id=? AND used=0
-			 ORDER BY id LIMIT 1`,
-			deviceID).Scan(&keyID, &opkPub)
-
-		if err == nil {
-			now := time.Now().Unix()
-			_, err = tx.ExecContext(ctx,
-				`UPDATE one_time_prekeys SET used=1, reserved_at=?
-				 WHERE device_id=? AND key_id=?`,
-				now, deviceID, keyID)
-			if err != nil {
-				return err
-			}
-			hasOPK = true
-		} else if err != sql.ErrNoRows {
-			return err
-		}
-
 		var bundle DeviceKeyBundle
 		bundle.DeviceID = deviceID
 		bundle.IKPub = x25519Pub
-		if hasOPK {
-			bundle.OPKPub = opkPub
-			bundle.OPKID = keyID
-		}
 		devices = append(devices, bundle)
 	}
 
@@ -822,18 +758,6 @@ func (c *Client) handleKeyBundleReq(ctx context.Context, req *KeyBundleReq) erro
 
 	c.pushFrame(OpKeyBundleResp, KeyFetchResp{Devices: devices})
 	return nil
-}
-
-func (c *Client) checkAndNotifyLowPreKeys(deviceID int64) {
-	var count int
-	err := c.db.QueryRow(`SELECT COUNT(*) FROM one_time_prekeys WHERE device_id=? AND used=0`, deviceID).Scan(&count)
-	if err != nil {
-		return
-	}
-	if count < 5 {
-		frame := []byte{byte(OpRefillPreKeys)}
-		c.hub.SendToDevice(deviceID, frame)
-	}
 }
 
 func (c *Client) handleMsgRetryReq(ctx context.Context, req *MsgRetryReq) error {
@@ -902,15 +826,11 @@ func (c *Client) handleMsgRetryResp(ctx context.Context, req *MsgRetryResp) erro
 	}
 
 	// 3. Update the message ciphertext, salt, nonce, prekey_id, and reset delivered to 0
-	var prekeyIDVal interface{}
-	if req.PrekeyID != 0 {
-		prekeyIDVal = req.PrekeyID
-	}
 	_, err = tx.ExecContext(ctx,
 		`UPDATE messages
-		 SET ciphertext=?, encryption_salt=?, encryption_nonce=?, prekey_id=?, delivered=0, delivered_at=NULL
+		 SET ciphertext=?, encryption_salt=?, encryption_nonce=?, prekey_id=NULL, delivered=0, delivered_at=NULL
 		 WHERE id=?`,
-		req.Ciphertext, req.Salt, req.Nonce, prekeyIDVal, req.MsgID)
+		req.Ciphertext, req.Salt, req.Nonce, req.MsgID)
 	if err != nil {
 		return err
 	}
@@ -920,13 +840,6 @@ func (c *Client) handleMsgRetryResp(ctx context.Context, req *MsgRetryResp) erro
 	err = tx.QueryRowContext(ctx, `SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, senderDeviceID).Scan(&senderIKPub)
 	if err != nil {
 		return fmt.Errorf("lookup sender ik: %w", err)
-	}
-
-	// 5. Retrieve prekey_id from messages (if any)
-	var prekeyID *int64
-	err = tx.QueryRowContext(ctx, `SELECT prekey_id FROM messages WHERE id=?`, req.MsgID).Scan(&prekeyID)
-	if err != nil {
-		return err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -941,7 +854,6 @@ func (c *Client) handleMsgRetryResp(ctx context.Context, req *MsgRetryResp) erro
 		FromIdentityKey:   senderIKPub,
 		ChatUserID:        senderUserID,
 		MsgID:             req.MsgID,
-		PrekeyID:          prekeyID,
 		Ciphertext:        req.Ciphertext,
 		Salt:              req.Salt,
 		Nonce:             req.Nonce,

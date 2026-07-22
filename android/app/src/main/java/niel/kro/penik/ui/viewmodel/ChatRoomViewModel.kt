@@ -12,8 +12,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import niel.kro.penik.data.network.api.ApiService
-import niel.kro.penik.data.repository.SecureTokenStorage
+import niel.kro.penik.data.repository.ChatRepository
 import niel.kro.penik.data.repository.MessageRepository
+import niel.kro.penik.data.repository.SecureTokenStorage
 import niel.kro.penik.domain.usecase.LoadMessagesUseCase
 import niel.kro.penik.domain.usecase.SendMessageUseCase
 import java.security.MessageDigest
@@ -26,7 +27,8 @@ class ChatRoomViewModel @Inject constructor(
     private val sendMessageUseCase: SendMessageUseCase,
     private val apiService: ApiService,
     private val tokenStorage: SecureTokenStorage,
-    private val messageRepository: MessageRepository
+    private val messageRepository: MessageRepository,
+    private val chatRepository: ChatRepository
 ) : ViewModel() {
 
     private val chatUserId: Long = savedStateHandle.get<Long>("chatUserId") ?: 0L
@@ -48,6 +50,17 @@ class ChatRoomViewModel @Inject constructor(
 
     init {
         loadSafetyNumber()
+        viewModelScope.launch {
+            messages.collect {
+                clearUnread()
+            }
+        }
+    }
+
+    private fun clearUnread() {
+        viewModelScope.launch {
+            chatRepository.clearUnread(chatUserId)
+        }
     }
 
     fun sendMessage(text: String) {

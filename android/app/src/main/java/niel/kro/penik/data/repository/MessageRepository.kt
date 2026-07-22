@@ -216,7 +216,6 @@ class MessageRepository @Inject constructor(
 
             E2EDevicePayload(
                 deviceId = device.deviceId,
-                prekeyId = null,
                 ciphertext = encrypted.ciphertext,
                 salt = encrypted.salt,
                 nonce = encrypted.nonce
@@ -286,7 +285,6 @@ class MessageRepository @Inject constructor(
             decryptMessagePayload(
                 myDeviceId = tokenStorage.getDeviceId(),
                 fromIdentityKey = event.fromIdentityKey,
-                prekeyId = event.prekeyId,
                 ciphertext = event.ciphertext,
                 salt = event.salt,
                 nonce = event.nonce
@@ -301,7 +299,7 @@ class MessageRepository @Inject constructor(
                 val updated = existing.copy(text = decryptedText)
                 messageDao.insertMessage(updated)
             }
-            if (!sentByMe && decryptSuccess) {
+            if (!sentByMe) {
                 webSocketManager.sendDelivered(event.msgId)
             }
             return Pair(decryptedText, !sentByMe)
@@ -318,7 +316,7 @@ class MessageRepository @Inject constructor(
             delivered = true
         )
         messageDao.insertMessage(entity)
-        if (!sentByMe && decryptSuccess) {
+        if (!sentByMe) {
             webSocketManager.sendDelivered(event.msgId)
         }
         return Pair(decryptedText, !sentByMe)
@@ -359,7 +357,6 @@ class MessageRepository @Inject constructor(
                         decryptMessagePayload(
                             myDeviceId = tokenStorage.getDeviceId(),
                             fromIdentityKey = msg.fromIdentityKey,
-                            prekeyId = msg.prekeyId,
                             ciphertext = msg.ciphertext,
                             salt = msg.salt,
                             nonce = msg.nonce
@@ -392,7 +389,7 @@ class MessageRepository @Inject constructor(
             }
         }
         messageDao.insertMessages(entities)
-        successMsgIds.forEach { webSocketManager.sendDelivered(it) }
+        event.msgs.forEach { webSocketManager.sendDelivered(it.msgId) }
         return decryptedList
     }
 
@@ -424,7 +421,6 @@ class MessageRepository @Inject constructor(
                                 decryptMessagePayload(
                                     myDeviceId = tokenStorage.getDeviceId(),
                                     fromIdentityKey = senderIK,
-                                    prekeyId = msg.prekeyId,
                                     ciphertext = ciphertextBytes,
                                     salt = saltBytes,
                                     nonce = nonceBytes
@@ -498,7 +494,6 @@ class MessageRepository @Inject constructor(
     private fun decryptMessagePayload(
         myDeviceId: Long,
         fromIdentityKey: ByteArray,
-        prekeyId: Long?,
         ciphertext: ByteArray,
         salt: ByteArray,
         nonce: ByteArray

@@ -63,10 +63,7 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate registration id: %w", err)
 	}
 
-	if err := migrateOneTimeKeysKeyId(sqlDB); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("db: migrate otk key id: %w", err)
-	}
+
 
 	if err := migrateMessagesClientMsgId(sqlDB); err != nil {
 		sqlDB.Close()
@@ -170,7 +167,6 @@ DELETE FROM sessions
 WHERE user_id NOT IN (SELECT id FROM users)
    OR device_id NOT IN (SELECT id FROM devices);
 DELETE FROM identity_keys WHERE device_id NOT IN (SELECT id FROM devices);
-DELETE FROM one_time_keys WHERE device_id NOT IN (SELECT id FROM devices);
 
 DELETE FROM chats
 WHERE user1_id NOT IN (SELECT id FROM users)
@@ -366,42 +362,7 @@ func migrateRegistrationId(database *sql.DB) error {
 	return nil
 }
 
-func migrateOneTimeKeysKeyId(database *sql.DB) error {
-	rows, err := database.Query("PRAGMA table_info(one_time_keys)")
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
 
-	hasKeyId := false
-	for rows.Next() {
-		var cid int
-		var name, typeStr string
-		var notnull, pk int
-		var dfltVal sql.NullString
-		if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err != nil {
-			return err
-		}
-		if name == "key_id" {
-			hasKeyId = true
-		}
-	}
-
-	if !hasKeyId {
-		if _, err := database.Exec("ALTER TABLE one_time_keys ADD COLUMN key_id INTEGER NOT NULL DEFAULT 0"); err != nil {
-			return err
-		}
-		// Clean up old OPKs to force client key rotation / re-upload with correct key_id
-		if _, err := database.Exec("DELETE FROM one_time_keys;"); err != nil {
-			return err
-		}
-	}
-	// Create the unique index now that the key_id column is guaranteed to exist
-	if _, err := database.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_otk_device_key ON one_time_keys(device_id, key_id)"); err != nil {
-		return err
-	}
-	return nil
-}
 
 func migrateMessagesClientMsgId(database *sql.DB) error {
 	userOwned, err := tableHasColumn(database, "messages", "sender_user_id")
@@ -625,41 +586,11 @@ func migrateToE2EE(database *sql.DB) error {
 		return fmt.Errorf("create device_public_keys table: %w", err)
 	}
 
-	_, err = database.Exec(`CREATE TABLE IF NOT EXISTS one_time_prekeys (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-		key_id INTEGER NOT NULL,
-		public_key BLOB NOT NULL,
-		used INTEGER NOT NULL DEFAULT 0,
-		reserved_at INTEGER DEFAULT NULL,
-		created_at INTEGER NOT NULL,
-		UNIQUE(device_id, key_id)
-	)`)
-	if err != nil {
-		return fmt.Errorf("create one_time_prekeys table: %w", err)
-	}
-
-	_, err = database.Exec(`CREATE INDEX IF NOT EXISTS idx_prekeys_device_used ON one_time_prekeys(device_id, used)`)
-	if err != nil {
-		return fmt.Errorf("create idx_prekeys_device_used index: %w", err)
-	}
-
 	// Login matches a device by (user_id, identity key) so a stable crypto
 	// identity maps to one device row regardless of a volatile device_name.
 	_, err = database.Exec(`CREATE INDEX IF NOT EXISTS idx_device_public_keys_pub ON device_public_keys(x25519_pub)`)
 	if err != nil {
 		return fmt.Errorf("create idx_device_public_keys_pub index: %w", err)
-	}
-
-	_, err = database.Exec(`CREATE TABLE IF NOT EXISTS used_prekeys_audit (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		device_id INTEGER NOT NULL,
-		key_id INTEGER NOT NULL,
-		used_by_message_id INTEGER,
-		used_at INTEGER NOT NULL
-	)`)
-	if err != nil {
-		return fmt.Errorf("create used_prekeys_audit table: %w", err)
 	}
 
 	_, err = database.Exec(`CREATE TABLE IF NOT EXISTS key_backups (

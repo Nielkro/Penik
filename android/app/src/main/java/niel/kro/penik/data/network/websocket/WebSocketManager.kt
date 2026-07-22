@@ -45,7 +45,6 @@ sealed class WebSocketEvent {
         val fromIdentityKey: ByteArray,
         val chatUserId: Long,
         val msgId: Long,
-        val prekeyId: Long?,
         val ciphertext: ByteArray,
         val salt: ByteArray,
         val nonce: ByteArray,
@@ -99,7 +98,6 @@ sealed class WebSocketEvent {
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
     object Pong : WebSocketEvent()
-    object RefillPreKeys : WebSocketEvent()
 }
 
 object Opcode {
@@ -113,7 +111,6 @@ object Opcode {
     const val PONG: Byte = 0x07
     const val CHAT_PURGE: Byte = 0x08
     const val CHAT_PURGE_ACK: Byte = 0x09
-    const val REFILL_PREKEYS: Byte = 0x15
     const val PAIRING_HISTORY_READY: Byte = 0x19
     const val GROUP_MESSAGE_SEND: Byte = 0x20
     const val GROUP_MESSAGE_RECV: Byte = 0x21
@@ -277,7 +274,6 @@ class WebSocketManager @Inject constructor() {
             Opcode.PING -> sendPong()
             Opcode.PONG -> scope.launch { _events.emit(WebSocketEvent.Pong) }
             Opcode.CHAT_PURGE -> handleChatPurge(payload)
-            Opcode.REFILL_PREKEYS -> scope.launch { _events.emit(WebSocketEvent.RefillPreKeys) }
             Opcode.PAIRING_HISTORY_READY -> handlePairingHistoryReady(payload)
             Opcode.GROUP_MESSAGE_RECV -> handleGroupMessageRecv(payload)
             Opcode.GROUP_MESSAGE_ACK -> handleGroupMessageAck(payload)
@@ -486,7 +482,6 @@ class WebSocketManager @Inject constructor() {
         var fromIdentityKey = ByteArray(0)
         var chatUserId = 0L
         var msgId = 0L
-        var prekeyId: Long? = null
         var ciphertext = ByteArray(0)
         var salt = ByteArray(0)
         var nonce = ByteArray(0)
@@ -507,14 +502,6 @@ class WebSocketManager @Inject constructor() {
                 }
                 "chat_user_id" -> chatUserId = unpackLong()
                 "msg_id" -> msgId = unpackLong()
-                "prekey_id" -> {
-                    prekeyId = if (nextFormat == MessageFormat.NIL) {
-                        unpackNil()
-                        null
-                    } else {
-                        unpackLong()
-                    }
-                }
                 "ciphertext" -> {
                     val len = unpackBinaryHeader()
                     ciphertext = readPayload(len)
@@ -538,7 +525,6 @@ class WebSocketManager @Inject constructor() {
             fromIdentityKey = fromIdentityKey,
             chatUserId = chatUserId,
             msgId = msgId,
-            prekeyId = prekeyId,
             ciphertext = ciphertext,
             salt = salt,
             nonce = nonce,
@@ -557,15 +543,9 @@ class WebSocketManager @Inject constructor() {
         packer.packString("devices")
         packer.packArrayHeader(devices.size)
         for (dev in devices) {
-            packer.packMapHeader(5)
+            packer.packMapHeader(4)
             packer.packString("device_id")
             packer.packLong(dev.deviceId)
-            packer.packString("prekey_id")
-            if (dev.prekeyId == null) {
-                packer.packNil()
-            } else {
-                packer.packLong(dev.prekeyId)
-            }
             packer.packString("ciphertext")
             packer.packBinaryHeader(dev.ciphertext.size)
             packer.addPayload(dev.ciphertext)
@@ -675,7 +655,6 @@ class WebSocketManager @Inject constructor() {
 
 data class E2EDevicePayload(
     val deviceId: Long,
-    val prekeyId: Long?,
     val ciphertext: ByteArray,
     val salt: ByteArray,
     val nonce: ByteArray

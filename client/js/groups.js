@@ -85,7 +85,7 @@ async function fetchDeviceKeys(userIds) {
   for (const uid of userIds) {
     let bundle;
     try {
-      bundle = await apiGet(`/keys/bundle/${uid}?skip_otk=true`);
+      bundle = await apiGet(`/keys/bundle/${uid}`);
     } catch {
       continue;
     }

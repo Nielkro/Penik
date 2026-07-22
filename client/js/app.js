@@ -4,7 +4,7 @@ import {
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
   findAndResolvePendingSentMessage, deleteChatData,
-  getPreKeyPrivate, deletePreKeyPrivate, getMessageByClientId,
+  getMessageByClientId,
   getIKPrivate, saveIKPrivate
 } from './storage.js';
 import { ws } from './ws.js';
@@ -72,7 +72,6 @@ export const state = {
   currentUser: null,
   privateIK: null,
   retryCounters: new Map(), // msg_id -> retry attempt count
-  pendingPrekeyDeletes: new Map(), // msg_id -> prekeyId, delete OTPK only after server ack
 };
 
 export function getCurrentUser() { return state.currentUser; }
@@ -404,12 +403,11 @@ async function onMsgRecvGlobal(payload) {
   
   let decryptSuccess = true;
   let plaintext = "";
-  let usedPrekeyId = null;
   if (payload.plaintext) {
     plaintext = payload.plaintext;
   } else if (payload.ciphertext) {
     try {
-      // The server may replay a message after reconnect/reload.  OTPKs are
+      // The server may replay a message after reconnect/reload. OTPKs are
       // one-time keys, so never decrypt the same message twice: the plaintext
       // saved during the first delivery is the authoritative copy.
       const existing = payload.msg_id ? await getMessage(payload.msg_id) : null;
@@ -419,7 +417,6 @@ async function onMsgRecvGlobal(payload) {
       } else {
         const result = await decryptMessagePayload(payload);
         plaintext = result.text;
-        usedPrekeyId = result.prekeyId;
       }
     } catch (e) {
       plaintext = `[Сообщение не расшифровано]`;
@@ -471,9 +468,6 @@ async function onMsgRecvGlobal(payload) {
 
   if (ws) {
     if (decryptSuccess) {
-      if (usedPrekeyId) {
-        state.pendingPrekeyDeletes.set(String(payload.msg_id), usedPrekeyId);
-      }
       ws.send(0x04, { msg_id: payload.msg_id });
       state.retryCounters.delete(payload.msg_id);
     } else if (payload.from_device_id && payload.msg_id) {
@@ -506,13 +500,6 @@ async function onMsgAckGlobal(payload) {
   try {
     await updateMessageDelivered(payload.msg_id, 1);
   } catch (e) {}
-
-  const msgId = String(payload.msg_id);
-  const prekeyId = state.pendingPrekeyDeletes.get(msgId);
-  if (prekeyId) {
-    state.pendingPrekeyDeletes.delete(msgId);
-    try { await deletePreKeyPrivate(prekeyId); } catch (e) {}
-  }
 
   if (_activeChatCallback) {
     _activeChatCallback.onAck(payload.msg_id);
@@ -585,7 +572,6 @@ async function onMsgRetryReq(payload) {
   if (ws) {
     ws.send(0x17, {
       msg_id: Number(msgId),
-      prekey_id: targetPayload.prekey_id ? Number(targetPayload.prekey_id) : 0,
       ciphertext: targetPayload.ciphertext,
       salt: targetPayload.salt,
       nonce: targetPayload.nonce
@@ -700,7 +686,6 @@ export async function syncMessageHistory() {
             ciphertext: item.ciphertext,
             salt: item.encryption_salt,
             nonce: item.encryption_nonce,
-            prekey_id: item.prekey_id,
             from_identity_key: fromIdentityKey
           });
           text = decrypted.text;
@@ -793,7 +778,7 @@ export async function decryptMessagePayload(payload) {
 
   const plaintextBytes = await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext);
 
-  return { text: new TextDecoder().decode(plaintextBytes), prekeyId: null };
+  return { text: new TextDecoder().decode(plaintextBytes) };
 }
 
 export async function encryptMessagePayload(text, recipientUserId) {
@@ -801,8 +786,8 @@ export async function encryptMessagePayload(text, recipientUserId) {
   const myDeviceId = Number(localStorage.getItem("device_id"));
   const isSelfChat = Number(recipientUserId) === myId;
 
-  const bundleUrl = `/keys/bundle/${recipientUserId}?skip_otk=true`;
-  const senderBundleUrl = `/keys/bundle/${myId}?skip_otk=true`;
+  const bundleUrl = `/keys/bundle/${recipientUserId}`;
+  const senderBundleUrl = `/keys/bundle/${myId}`;
 
   const recipientBundle = await apiGet(bundleUrl);
   const senderBundle = await apiGet(senderBundleUrl);
@@ -834,7 +819,6 @@ export async function encryptMessagePayload(text, recipientUserId) {
 
     payloads.push({
       device_id: Number(device.device_id),
-      prekey_id: null,
       ciphertext: ciphertext,
       salt: salt,
       nonce: nonce
