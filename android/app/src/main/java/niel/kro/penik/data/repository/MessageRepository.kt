@@ -268,6 +268,19 @@ class MessageRepository @Inject constructor(
 
     suspend fun handleMsgRecvEncrypted(event: WebSocketEvent.MsgRecvEncrypted): Pair<String, Boolean> {
         val sentByMe = event.fromUserId == tokenStorage.getUserId()
+        
+        val existing = messageDao.findMessageByServerId(event.msgId)
+        if (existing != null) {
+            val text = existing.text
+            val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
+            if (!isFailed) {
+                if (!sentByMe) {
+                    webSocketManager.sendDelivered(event.msgId)
+                }
+                return Pair(text, !sentByMe)
+            }
+        }
+
         var decryptSuccess = true
         val decryptedText = try {
             decryptMessagePayload(
@@ -283,7 +296,11 @@ class MessageRepository @Inject constructor(
             "[Ошибка расшифрования сообщения: ${e.message}]"
         }
 
-        if (messageDao.findLocalIdByServerId(event.msgId) != null) {
+        if (existing != null) {
+            if (decryptSuccess) {
+                val updated = existing.copy(text = decryptedText)
+                messageDao.insertMessage(updated)
+            }
             if (!sentByMe && decryptSuccess) {
                 webSocketManager.sendDelivered(event.msgId)
             }
@@ -335,7 +352,8 @@ class MessageRepository @Inject constructor(
         val successMsgIds = mutableListOf<Long>()
         val entities = buildList {
             event.msgs.forEach { msg ->
-                if (messageDao.findLocalIdByServerId(msg.msgId) == null) {
+                val existing = messageDao.findMessageByServerId(msg.msgId)
+                if (existing == null) {
                     var decryptSuccess = true
                     val decryptedText = try {
                         decryptMessagePayload(
@@ -364,6 +382,12 @@ class MessageRepository @Inject constructor(
                         sentByMe = msg.fromUserId == myId,
                         delivered = true
                     ))
+                } else {
+                    val text = existing.text
+                    val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
+                    if (!isFailed) {
+                        decryptedList.add(DecryptedOfflineMsg(msg.chatUserId, text, msg.ts))
+                    }
                 }
             }
         }
@@ -383,7 +407,8 @@ class MessageRepository @Inject constructor(
                     if (msg.senderId == myId && msg.clientMsgId != null) {
                         messageDao.acknowledgeMessage(msg.clientMsgId, msg.msgId)
                     }
-                    if (messageDao.findLocalIdByServerId(msg.msgId) == null) {
+                    val existing = messageDao.findMessageByServerId(msg.msgId)
+                    if (existing == null) {
                         val text = if (msg.plaintext != null) {
                             msg.plaintext
                         } else if (msg.ciphertext != null && msg.encryptionSalt != null && msg.encryptionNonce != null) {
@@ -424,6 +449,12 @@ class MessageRepository @Inject constructor(
                             deliveredAt = msg.deliveredAt,
                             read = msg.read == 1
                         ))
+                    } else {
+                        val text = existing.text
+                        val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
+                        if (!isFailed) {
+                            newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
+                        }
                     }
                 }
             }
