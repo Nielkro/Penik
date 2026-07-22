@@ -59,7 +59,7 @@ class ChatRoomViewModel @Inject constructor(
 
     fun deleteMessage(localId: String) {
         viewModelScope.launch {
-            messageRepository.deleteMessage(localId)
+            messageRepository.deleteMessage(localId, chatUserId)
         }
     }
 
