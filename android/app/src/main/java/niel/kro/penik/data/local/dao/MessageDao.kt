@@ -46,6 +46,9 @@ interface MessageDao {
     @Query("SELECT localId FROM messages WHERE serverId = :serverId LIMIT 1")
     suspend fun findLocalIdByServerId(serverId: Long): String?
 
+    @Query("SELECT * FROM messages WHERE serverId = :serverId LIMIT 1")
+    suspend fun findMessageByServerId(serverId: Long): MessageEntity?
+
     @Query("DELETE FROM messages WHERE chatUserId = :chatUserId")
     suspend fun deleteChatMessages(chatUserId: Long)
 
