@@ -39,6 +39,8 @@ class GroupRepository @Inject constructor(
 
     fun observeGroups() = dao.observeGroups()
     fun observeMessages(groupId: Long) = dao.observeMessages(groupId)
+    fun observeLastMessageForGroup(groupId: Long) = dao.observeLastMessageForGroup(groupId)
+    suspend fun getLastMessageForGroup(groupId: Long) = dao.getLastMessageForGroup(groupId)
 
     private fun myUserId() = tokenStorage.getUserId()
     private fun myDeviceId() = tokenStorage.getDeviceId()
