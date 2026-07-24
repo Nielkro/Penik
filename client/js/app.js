@@ -5,7 +5,7 @@ import {
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
   findAndResolvePendingSentMessage, deleteChatData,
   getMessageByClientId,
-  getIKPrivate, saveIKPrivate
+  getIKPrivate, saveIKPrivate, getIKPublic, saveIKPublic
 } from './storage.js';
 import { ws } from './ws.js';
 import { renderAuth } from './ui/auth.js';
@@ -15,7 +15,7 @@ import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
 import {
   deriveSharedSecret, hkdfDerive, chacha20Poly1305Encrypt, chacha20Poly1305Decrypt,
-  encryptKeyBackup, decryptKeyBackup
+  encryptKeyBackup, decryptKeyBackup, derivePublicKey
 } from './crypto.js';
 import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
 
@@ -902,6 +902,11 @@ function setupGlobalWSListeners() {
   ws.onDisconnect(() => clearPendingAcks());
 
   ws.onConnect(async () => {
+    // Publish current local public identity key
+    const pubKey = await getIKPublic();
+    if (pubKey) {
+      ws.send(0x12, { x25519_pub: new Uint8Array(pubKey) });
+    }
     await flushOutbox();
     await syncMessageHistory();
     try {
@@ -954,8 +959,10 @@ export async function restoreE2EEKeys(passphrase) {
   const iv = toUint8Array(backup.iv);
 
   const decrypted = await decryptKeyBackup(encryptedBlob, salt, iv, passphrase);
+  const derivedPub = await derivePublicKey(decrypted);
 
   await saveIKPrivate(decrypted);
+  await saveIKPublic(derivedPub);
   state.privateIK = decrypted;
 
   console.log("E2EE keys successfully restored from server backup!");

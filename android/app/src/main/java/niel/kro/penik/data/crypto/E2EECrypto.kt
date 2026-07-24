@@ -10,6 +10,9 @@ import javax.crypto.KeyAgreement
 import javax.crypto.Mac
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.GCMParameterSpec
 
 data class E2EEncrypted(
     val ciphertext: ByteArray,
@@ -65,13 +68,29 @@ class E2EECrypto {
         return Pair(rawPrivate, rawPublic)
     }
 
+    fun derivePublicKey(privateKey: ByteArray): ByteArray {
+        val basepoint = ByteArray(32).also { it[0] = 9 }
+        return deriveSharedSecret(privateKey, basepoint)
+    }
+
     fun deriveSharedSecret(myPrivateKey: ByteArray, theirPublicKey: ByteArray): ByteArray {
         val keyFactory = KeyFactory.getInstance("X25519")
         
-        val cleanPublicKey = if (theirPublicKey.size == 33 && theirPublicKey[0] == 0x05.toByte()) {
-            theirPublicKey.copyOfRange(1, 33)
-        } else {
-            theirPublicKey
+        var cleanPublicKey = theirPublicKey
+        if (cleanPublicKey.size == 44) {
+            try {
+                val asciiStr = String(cleanPublicKey, Charsets.US_ASCII)
+                val decoded = Base64.getDecoder().decode(asciiStr)
+                if (decoded.size == 32) {
+                    cleanPublicKey = decoded
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("E2EE", "Failed to self-heal 44-byte public key on Android", e)
+            }
+        }
+
+        if (cleanPublicKey.size == 33 && cleanPublicKey[0] == 0x05.toByte()) {
+            cleanPublicKey = cleanPublicKey.copyOfRange(1, 33)
         }
 
         val fullPrivate = ByteArray(16 + myPrivateKey.size)
@@ -143,5 +162,48 @@ class E2EECrypto {
             i++
         }
         return okm
+    }
+
+    data class KeyBackup(
+        val encryptedBlob: ByteArray,
+        val salt: ByteArray,
+        val iv: ByteArray
+    )
+
+    fun encryptKeyBackup(privateKeyBytes: ByteArray, passphrase: String): KeyBackup {
+        val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
+        val derivedKey = deriveKeyFromPassphrase(passphrase, salt, 600000)
+        
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        val spec = GCMParameterSpec(128, iv)
+        cipher.init(Cipher.ENCRYPT_MODE, derivedKey, spec)
+        val encrypted = cipher.doFinal(privateKeyBytes)
+        
+        return KeyBackup(encrypted, salt, iv)
+    }
+
+    fun decryptKeyBackup(encryptedBlob: ByteArray, salt: ByteArray, iv: ByteArray, passphrase: String): ByteArray {
+        val iterationsList = listOf(600000, 100000)
+        var lastException: Exception? = null
+        for (iterations in iterationsList) {
+            try {
+                val derivedKey = deriveKeyFromPassphrase(passphrase, salt, iterations)
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                val spec = GCMParameterSpec(128, iv)
+                cipher.init(Cipher.DECRYPT_MODE, derivedKey, spec)
+                return cipher.doFinal(encryptedBlob)
+            } catch (e: Exception) {
+                lastException = e
+            }
+        }
+        throw lastException ?: Exception("Decryption failed")
+    }
+
+    private fun deriveKeyFromPassphrase(passphrase: String, salt: ByteArray, iterations: Int): SecretKeySpec {
+        val spec = PBEKeySpec(passphrase.toCharArray(), salt, iterations, 256)
+        val f = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val key = f.generateSecret(spec)
+        return SecretKeySpec(key.encoded, "AES")
     }
 }

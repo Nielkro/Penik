@@ -29,6 +29,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import niel.kro.penik.data.repository.SecureTokenStorage
 
 sealed class WebSocketEvent {
     data class MsgRecv(
@@ -122,6 +123,7 @@ object Opcode {
     const val CHAT_PURGE: Byte = 0x08
     const val CHAT_PURGE_ACK: Byte = 0x09
     const val PAIRING_HISTORY_READY: Byte = 0x19
+    const val KEY_PUBLISH: Byte = 0x12
     const val GROUP_MESSAGE_SEND: Byte = 0x20
     const val GROUP_MESSAGE_RECV: Byte = 0x21
     const val GROUP_MESSAGE_ACK: Byte = 0x22
@@ -165,7 +167,9 @@ enum class ConnectionState {
 }
 
 @Singleton
-class WebSocketManager @Inject constructor() {
+class WebSocketManager @Inject constructor(
+    private val tokenStorage: SecureTokenStorage
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -219,6 +223,12 @@ class WebSocketManager @Inject constructor() {
                 Log.d("WS", "Connected")
                 _connectionState.value = ConnectionState.CONNECTED
                 reconnectAttempt = 0
+                
+                // Publish current local public identity key
+                tokenStorage.getPublicKey()?.let { pubKey ->
+                    sendKeyPublish(pubKey)
+                }
+
                 scope.launch { _events.emit(WebSocketEvent.Connected) }
                 startPingLoop()
             }
@@ -698,6 +708,17 @@ class WebSocketManager @Inject constructor() {
         frame[0] = Opcode.PONG
         payload.copyInto(frame, 1)
         webSocket?.send(frame.toByteString(0, frame.size))
+    }
+
+    fun sendKeyPublish(publicKey: ByteArray) {
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        packer.packMapHeader(1)
+        packer.packString("x25519_pub")
+        packer.packBinaryHeader(publicKey.size)
+        packer.addPayload(publicKey)
+        packer.close()
+        sendFrame(Opcode.KEY_PUBLISH, bos.toByteArray())
     }
 
     fun destroy() {
