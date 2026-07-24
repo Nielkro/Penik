@@ -62,8 +62,9 @@ private fun initialsColor(id: Long, name: String): Color {
 }
 
 private fun initialsText(name: String): String {
-    if (name.isBlank()) return "?"
-    return name.split(" ")
+    val cleanName = name.replace(Regex("[^\\p{L}\\p{N}\\s]"), "").trim()
+    if (cleanName.isBlank()) return "?"
+    return cleanName.split(" ")
         .mapNotNull { it.firstOrNull() }
         .take(2)
         .joinToString("")
