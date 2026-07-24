@@ -170,7 +170,8 @@ fun GroupChatScreen(
                         isSentByMe = isOwn,
                         timestamp = msg.createdAt,
                         delivered = if (isOwn) msg.delivered else false,
-                        senderName = displayName
+                        senderName = displayName,
+                        senderUserId = msg.senderUserId
                     )
                 }
             }

@@ -238,6 +238,7 @@ fun MessageBubble(
     deliveredAt: Long? = null,
     read: Boolean = false,
     senderName: String? = null,
+    senderUserId: Long? = null,
     onDelete: (() -> Unit)? = null
 ) {
     val isFailed = text.startsWith("[Ошибка расшифрования") || text.startsWith("[Сообщение не расшифровано")
@@ -278,9 +279,11 @@ fun MessageBubble(
         ) {
             Column {
                 if (!isSentByMe && senderName != null) {
+                    val hue = if (senderUserId != null && senderUserId > 0) (senderUserId * 137) % 360 else 0L
+                    val nameColor = Color.hsl(hue.toFloat(), 0.65f, 0.65f)
                     Text(
                         text = senderName,
-                        color = Accent,
+                        color = nameColor,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(bottom = 2.dp)
