@@ -41,7 +41,29 @@ object DatabaseEncryption {
             false
         }
 
-        if (!isPlaintext) return
+        if (!isPlaintext) {
+            // Check if existing file can be opened with the current SQLCipher passphrase.
+            // If the passphrase or Keystore was reset during reinstall, SQLCipher throws
+            // "file is not a database (code 26)". In that case, delete the unreadable
+            // database file so Room can safely recreate a fresh encrypted database.
+            try {
+                SQLiteDatabase.openDatabase(
+                    dbFile.absolutePath,
+                    String(passphrase, Charsets.UTF_8),
+                    null,
+                    SQLiteDatabase.OPEN_READONLY,
+                    null,
+                ).use { db ->
+                    db.rawQuery("SELECT count(*) FROM sqlite_master", null).use { it.moveToFirst() }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Database exists but cannot be decrypted with current key (code 26/corrupt). Recreating fresh database.", e)
+                listOf("", "-wal", "-shm", ".enc").forEach { suffix ->
+                    File(dbFile.absolutePath + suffix).takeIf { it.exists() }?.delete()
+                }
+            }
+            return
+        }
 
         Log.i(TAG, "Migrating plaintext database to encrypted storage")
         val encryptedFile = File(dbFile.parent, "$databaseName.enc")
