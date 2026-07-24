@@ -21,6 +21,38 @@ import niel.kro.penik.domain.usecase.SyncHistoryUseCase
 import niel.kro.penik.data.repository.AuthRepository
 import javax.inject.Inject
 
+import niel.kro.penik.data.repository.GroupRepository
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+
+sealed interface FeedItem {
+    val id: Long
+    val name: String
+    val lastMessage: String?
+    val lastMessageTimestamp: Long?
+    val unreadCount: Int
+
+    data class ChatItem(
+        override val id: Long,
+        override val name: String,
+        val nickname: String,
+        override val lastMessage: String?,
+        override val lastMessageTimestamp: Long?,
+        override val unreadCount: Int
+    ) : FeedItem
+
+    data class GroupItem(
+        override val id: Long,
+        override val name: String,
+        override val lastMessage: String?,
+        override val lastMessageTimestamp: Long?,
+        override val unreadCount: Int,
+        val status: String
+    ) : FeedItem
+}
+
 @HiltViewModel
 class ChatsListViewModel @Inject constructor(
     private val loadChatsUseCase: LoadChatsUseCase,
@@ -28,11 +60,34 @@ class ChatsListViewModel @Inject constructor(
     private val logoutUseCase: LogoutUseCase,
     private val authRepository: AuthRepository,
     private val webSocketManager: WebSocketManager,
-    private val apiService: ApiService
+    private val apiService: ApiService,
+    private val groupRepository: GroupRepository
 ) : ViewModel() {
 
-    val chats = loadChatsUseCase()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val feed: StateFlow<List<FeedItem>> = combine(
+        loadChatsUseCase().map { list ->
+            list.map { FeedItem.ChatItem(it.userId, it.name, it.nickname, it.lastMessage, it.lastMessageTimestamp, it.unreadCount) }
+        },
+        groupRepository.observeGroups().flatMapLatest { groups ->
+            if (groups.isEmpty()) return@flatMapLatest flowOf(emptyList<FeedItem.GroupItem>())
+            val flows = groups.map { group ->
+                groupRepository.observeLastMessageForGroup(group.id).map { lastMsg ->
+                    FeedItem.GroupItem(
+                        id = group.id,
+                        name = group.name,
+                        lastMessage = lastMsg?.text,
+                        lastMessageTimestamp = lastMsg?.createdAt?.let { it * 1000 },
+                        unreadCount = 0, // In Android E2EE, group unread counts are simplified
+                        status = group.status
+                    )
+                }
+            }
+            combine(flows) { it.toList() }
+        }
+    ) { chatsList, groupsList ->
+        (chatsList + groupsList).sortedByDescending { it.lastMessageTimestamp ?: 0L }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val connectionState = webSocketManager.connectionState
 

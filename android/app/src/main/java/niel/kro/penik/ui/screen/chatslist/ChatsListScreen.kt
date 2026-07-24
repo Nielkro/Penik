@@ -47,13 +47,16 @@ import niel.kro.penik.ui.viewmodel.ChatsListViewModel
 private const val SELF_CHAT_NAME = "Избранное"
 private const val SELF_CHAT_ICON = "\uD83D\uDCDD"
 
+import niel.kro.penik.ui.viewmodel.FeedItem
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatsListContent(
     onChatClick: (Long, String) -> Unit,
+    onGroupClick: (Long, String) -> Unit,
     viewModel: ChatsListViewModel = hiltViewModel()
 ) {
-    val chats by viewModel.chats.collectAsState()
+    val feed by viewModel.feed.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
@@ -70,10 +73,11 @@ fun ChatsListContent(
         viewModel.searchUsers(searchQuery)
     }
 
-    val filteredChats = if (searchQuery.isBlank()) {
-        chats
+    val filteredFeed = if (searchQuery.isBlank()) {
+        feed
     } else {
-        chats.filter {
+        feed.filter {
+            it.name.contains(searchQuery, ignoreCase = true) ||
             it.lastMessage?.contains(searchQuery, ignoreCase = true) == true
         }
     }
@@ -90,7 +94,7 @@ fun ChatsListContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(focusRequester),
-                        placeholder = { Text("Поиск людей...", color = TextMuted) },
+                        placeholder = { Text("Поиск...", color = TextMuted) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = InputBg,
@@ -103,7 +107,7 @@ fun ChatsListContent(
                     )
                 } else {
                     Text(
-                        text = "Чаты",
+                        text = "Чаты и группы",
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp
                     )
@@ -164,25 +168,29 @@ fun ChatsListContent(
                     HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
                 }
 
-                if (filteredChats.isNotEmpty()) {
+                if (filteredFeed.isNotEmpty()) {
                     item {
                         Text(
-                            text = "Сообщения",
+                            text = "Чаты и группы",
                             color = TextMuted,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
-                    items(filteredChats, key = { it.userId }) { chat ->
+                    items(filteredFeed, key = { "${if (it is FeedItem.ChatItem) "chat" else "group"}-${it.id}" }) { item ->
                         ChatListItem(
-                            name = chat.name.ifBlank { chat.nickname },
-                            userId = chat.userId,
-                            lastMessage = chat.lastMessage,
-                            timestamp = chat.lastMessageTimestamp,
-                            unreadCount = chat.unreadCount,
+                            name = if (item is FeedItem.GroupItem) "👥 ${item.name}" else item.name,
+                            userId = item.id,
+                            lastMessage = item.lastMessage,
+                            timestamp = item.lastMessageTimestamp,
+                            unreadCount = item.unreadCount,
                             onClick = {
-                                onChatClick(chat.userId, chat.name.ifBlank { chat.nickname })
+                                if (item is FeedItem.GroupItem) {
+                                    onGroupClick(item.id, item.name)
+                                } else {
+                                    onChatClick(item.id, item.name)
+                                }
                             }
                         )
                     }
@@ -194,35 +202,39 @@ fun ChatsListContent(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (filteredChats.isEmpty()) "Ничего не найдено" else "",
+                    text = if (filteredFeed.isEmpty()) "Ничего не найдено" else "",
                     color = TextMuted,
                     fontSize = 16.sp
                 )
             }
-            if (filteredChats.isNotEmpty()) {
+            if (filteredFeed.isNotEmpty()) {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(filteredChats, key = { it.userId }) { chat ->
+                    items(filteredFeed, key = { "${if (it is FeedItem.ChatItem) "chat" else "group"}-${it.id}" }) { item ->
                         ChatListItem(
-                            name = chat.name.ifBlank { chat.nickname },
-                            userId = chat.userId,
-                            lastMessage = chat.lastMessage,
-                            timestamp = chat.lastMessageTimestamp,
-                            unreadCount = chat.unreadCount,
+                            name = if (item is FeedItem.GroupItem) "👥 ${item.name}" else item.name,
+                            userId = item.id,
+                            lastMessage = item.lastMessage,
+                            timestamp = item.lastMessageTimestamp,
+                            unreadCount = item.unreadCount,
                             onClick = {
-                                onChatClick(chat.userId, chat.name.ifBlank { chat.nickname })
+                                if (item is FeedItem.GroupItem) {
+                                    onGroupClick(item.id, item.name)
+                                } else {
+                                    onChatClick(item.id, item.name)
+                                }
                             }
                         )
                     }
                 }
             }
         } else {
-            if (filteredChats.isEmpty()) {
+            if (filteredFeed.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Нет чатов",
+                        text = "Нет переписок",
                         color = TextMuted,
                         fontSize = 16.sp
                     )
@@ -241,15 +253,19 @@ fun ChatsListContent(
                         )
                         HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
                     }
-                    items(filteredChats, key = { it.userId }) { chat ->
+                    items(filteredFeed, key = { "${if (it is FeedItem.ChatItem) "chat" else "group"}-${it.id}" }) { item ->
                         ChatListItem(
-                            name = chat.name.ifBlank { chat.nickname },
-                            userId = chat.userId,
-                            lastMessage = chat.lastMessage,
-                            timestamp = chat.lastMessageTimestamp,
-                            unreadCount = chat.unreadCount,
+                            name = if (item is FeedItem.GroupItem) "👥 ${item.name}" else item.name,
+                            userId = item.id,
+                            lastMessage = item.lastMessage,
+                            timestamp = item.lastMessageTimestamp,
+                            unreadCount = item.unreadCount,
                             onClick = {
-                                onChatClick(chat.userId, chat.name.ifBlank { chat.nickname })
+                                if (item is FeedItem.GroupItem) {
+                                    onGroupClick(item.id, item.name)
+                                } else {
+                                    onChatClick(item.id, item.name)
+                                }
                             }
                         )
                     }
