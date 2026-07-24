@@ -79,12 +79,16 @@ class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
     }
 
     /** Wrap a group key for one recipient device using the pairwise shared secret. */
-    fun wrapKeyForDevice(groupKey: ByteArray, sharedSecret: ByteArray): E2EEncrypted =
-        e2ee.encrypt(groupKey, sharedSecret)
+    fun wrapKeyForDevice(groupKey: ByteArray, sharedSecret: ByteArray, groupId: Long, keyVersion: Long): E2EEncrypted {
+        val aad = "penik-group-key-wrap-v1|$groupId|$keyVersion".toByteArray(Charsets.UTF_8)
+        return e2ee.encrypt(groupKey, sharedSecret, "penik-group-key-wrap-v1", aad)
+    }
 
     /** Unwrap a group key envelope with the pairwise shared secret. */
-    fun unwrapKey(encryptedKey: ByteArray, sharedSecret: ByteArray, salt: ByteArray, nonce: ByteArray): ByteArray =
-        e2ee.decrypt(encryptedKey, sharedSecret, salt, nonce)
+    fun unwrapKey(encryptedKey: ByteArray, sharedSecret: ByteArray, salt: ByteArray, nonce: ByteArray, groupId: Long, keyVersion: Long): ByteArray {
+        val aad = "penik-group-key-wrap-v1|$groupId|$keyVersion".toByteArray(Charsets.UTF_8)
+        return e2ee.decrypt(encryptedKey, sharedSecret, salt, nonce, "penik-group-key-wrap-v1", aad)
+    }
 
     // HKDF-SHA256, identical construction to E2EECrypto.hkdfDerive.
     private fun hkdf(salt: ByteArray, ikm: ByteArray, info: ByteArray, length: Int): ByteArray {

@@ -527,14 +527,16 @@ export async function groupDecrypt(ciphertext, groupKey, salt, nonce, groupId, k
 
 // wrapGroupKeyForDevice encrypts a group key for one recipient device using the
 // pairwise X25519 shared secret. Returns { encryptedKey, salt, nonce }.
-export async function wrapGroupKeyForDevice(groupKey, sharedSecret) {
-  const { ciphertext, salt, nonce } = await e2eeEncrypt(groupKey, sharedSecret, "penik-group-key-wrap-v1");
+export async function wrapGroupKeyForDevice(groupKey, sharedSecret, groupId, keyVersion) {
+  const aad = new TextEncoder().encode(`penik-group-key-wrap-v1|${groupId}|${keyVersion}`);
+  const { ciphertext, salt, nonce } = await e2eeEncrypt(groupKey, sharedSecret, "penik-group-key-wrap-v1", aad);
   return { encryptedKey: ciphertext, salt, nonce };
 }
 
 // unwrapGroupKey decrypts a group key envelope with the pairwise shared secret.
-export async function unwrapGroupKey(encryptedKey, sharedSecret, salt, nonce) {
-  return e2eeDecrypt(encryptedKey, sharedSecret, salt, nonce, "penik-group-key-wrap-v1");
+export async function unwrapGroupKey(encryptedKey, sharedSecret, salt, nonce, groupId, keyVersion) {
+  const aad = new TextEncoder().encode(`penik-group-key-wrap-v1|${groupId}|${keyVersion}`);
+  return e2eeDecrypt(encryptedKey, sharedSecret, salt, nonce, "penik-group-key-wrap-v1", aad);
 }
 
 export async function derivePublicKey(privateKey) {
