@@ -75,10 +75,17 @@ fun UserAvatar(
     userId: Long,
     name: String,
     size: Dp = 48.dp,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    avatarKey: Any? = null
 ) {
+    val avatarUrl = if (avatarKey != null) {
+        "https://penik.dev.slavchat.ru/api/v1/avatar/$userId?t=$avatarKey"
+    } else {
+        "https://penik.dev.slavchat.ru/api/v1/avatar/$userId"
+    }
+
     SubcomposeAsyncImage(
-        model = "https://penik.dev.slavchat.ru/api/v1/avatar/$userId",
+        model = avatarUrl,
         contentDescription = "Avatar",
         modifier = modifier
             .size(size)

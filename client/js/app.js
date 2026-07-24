@@ -359,6 +359,9 @@ export async function logout() {
   localStorage.removeItem("device_id");
   localStorage.removeItem("penik_sign_jwk");
   state.currentUser = null;
+  state.privateIK = null;
+  state.retryCounters.clear();
+  pendingAcks.clear();
   _mainLayout = null;
   _chatListRendered = false;
   setActiveChatCallback(null);

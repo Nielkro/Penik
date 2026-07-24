@@ -352,11 +352,11 @@ export async function hkdfDerive(salt, ikm, info, length) {
   return new Uint8Array(derivedBits);
 }
 
-export async function e2eeEncrypt(plaintext, sharedSecret) {
+export async function e2eeEncrypt(plaintext, sharedSecret, info = "penik-pairwise-message-v1") {
   const salt = crypto.getRandomValues(new Uint8Array(32));
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   
-  const derivedKey = await hkdfDerive(salt, sharedSecret, "PenikE2EE", 32);
+  const derivedKey = await hkdfDerive(salt, sharedSecret, info, 32);
   const plaintextBytes = typeof plaintext === "string" ? new TextEncoder().encode(plaintext) : plaintext;
   
   const ciphertext = await chacha20Poly1305Encrypt(derivedKey, nonce, plaintextBytes);
@@ -364,14 +364,14 @@ export async function e2eeEncrypt(plaintext, sharedSecret) {
   return { ciphertext, salt, nonce };
 }
 
-export async function e2eeDecrypt(ciphertext, sharedSecret, salt, nonce) {
-  const derivedKey = await hkdfDerive(salt, sharedSecret, "PenikE2EE", 32);
+export async function e2eeDecrypt(ciphertext, sharedSecret, salt, nonce, info = "penik-pairwise-message-v1") {
+  const derivedKey = await hkdfDerive(salt, sharedSecret, info, 32);
   
   return await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext);
 }
 
 export async function encryptPairingHistory(data, sharedSecret) {
-  return e2eeEncrypt(JSON.stringify({ version: 1, ...data }), sharedSecret);
+  return e2eeEncrypt(JSON.stringify({ version: 1, ...data }), sharedSecret, "penik-pairing-history-v1");
 }
 
 // Current PBKDF2 work factor for passphrase-derived backup keys. Kept in sync
@@ -450,19 +450,55 @@ export async function decryptKeyBackup(encryptedBlob, salt, iv, passphrase) {
 
 export const GROUP_PROTOCOL_VERSION = 1;
 
-// buildGroupAAD binds the immutable message header into the AEAD tag.
+// buildGroupAAD binds the immutable message header into the AEAD tag using length-prefixed encoding.
 // sender_user_id is intentionally NOT included: the server assigns sender
-// authoritatively, so a client-supplied sender cannot be verified. See the
-// EasyGroups design decision.
+// authoritatively, so a client-supplied sender cannot be verified.
 export function buildGroupAAD(groupId, keyVersion, messageId, createdAt) {
-  const header = [
+  const fields = [
     GROUP_PROTOCOL_VERSION,
     String(groupId),
     String(keyVersion),
     String(messageId),
     String(createdAt),
-  ].join("|");
-  return new TextEncoder().encode(header);
+  ];
+
+  const chunks = [];
+  for (const field of fields) {
+    const bytes = new TextEncoder().encode(String(field));
+    const len = new Uint8Array(4);
+    new DataView(len.buffer).setUint32(0, bytes.length, false);
+    chunks.push(len, bytes);
+  }
+
+  const totalLen = chunks.reduce((sum, c) => sum + c.length, 0);
+  const out = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+export function requireBytes(val, expectedLength = null, paramName = "field") {
+  let bytes;
+  if (val instanceof Uint8Array) {
+    bytes = val;
+  } else if (typeof val === "string") {
+    bytes = decodeKey(val);
+  } else if (val instanceof ArrayBuffer) {
+    bytes = new Uint8Array(val);
+  } else if (Array.isArray(val)) {
+    bytes = new Uint8Array(val);
+  } else {
+    throw new Error(`Invalid type for ${paramName}: expected Uint8Array or Base64 string`);
+  }
+
+  if (expectedLength !== null && bytes.length !== expectedLength) {
+    throw new Error(`Invalid byte length for ${paramName}: expected ${expectedLength}, got ${bytes.length}`);
+  }
+
+  return bytes;
 }
 
 export function generateGroupKey() {
@@ -492,13 +528,13 @@ export async function groupDecrypt(ciphertext, groupKey, salt, nonce, groupId, k
 // wrapGroupKeyForDevice encrypts a group key for one recipient device using the
 // pairwise X25519 shared secret. Returns { encryptedKey, salt, nonce }.
 export async function wrapGroupKeyForDevice(groupKey, sharedSecret) {
-  const { ciphertext, salt, nonce } = await e2eeEncrypt(groupKey, sharedSecret);
+  const { ciphertext, salt, nonce } = await e2eeEncrypt(groupKey, sharedSecret, "penik-group-key-wrap-v1");
   return { encryptedKey: ciphertext, salt, nonce };
 }
 
 // unwrapGroupKey decrypts a group key envelope with the pairwise shared secret.
 export async function unwrapGroupKey(encryptedKey, sharedSecret, salt, nonce) {
-  return e2eeDecrypt(encryptedKey, sharedSecret, salt, nonce);
+  return e2eeDecrypt(encryptedKey, sharedSecret, salt, nonce, "penik-group-key-wrap-v1");
 }
 
 export async function derivePublicKey(privateKey) {

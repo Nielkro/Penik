@@ -27,14 +27,17 @@ export function el(tag, attrs = {}, ...children) {
 export function avatar(user, size = 40) {
   const wrap = el("div", { class: "avatar", style: `width:${size}px;height:${size}px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0;` });
 
-  if (user && user.avatar_url) {
+  const userId = user && (user.user_id || user.id);
+  const avatarUrl = (user && user.avatar_url) || (userId ? `/api/v1/avatar/${userId}` : null);
+
+  if (avatarUrl) {
     const img = el("img", {
-      src: user.avatar_url,
+      src: avatarUrl,
       alt: user.name || user.username || "?",
       style: `width:${size}px;height:${size}px;object-fit:cover;`,
     });
     img.onerror = () => {
-      wrap.removeChild(img);
+      if (wrap.contains(img)) wrap.removeChild(img);
       wrap.appendChild(initialsNode(user, size));
     };
     wrap.appendChild(img);

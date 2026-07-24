@@ -1,4 +1,4 @@
-import { apiPatch, createPairingSession, getPairingSession, uploadPairingHistory } from "../api.js";
+import { apiPatch, createPairingSession, getPairingSession, uploadPairingHistory, uploadAvatar } from "../api.js";
 import { getAllMessages, getAllGroups, getAllGroupMembers, getAllGroupKeys, getAllGroupMessages } from "../storage.js";
 import { deriveSharedSecret, encryptPairingHistory, generateKeyPair } from "../crypto.js";
 const decodeB64Url = s => {
@@ -28,8 +28,67 @@ export function renderProfile(container) {
     el("h2", { class: "profile-title" }, "Профиль")
   );
 
-  const avatarEl = avatar(user, 80);
+  const userId = user.user_id || user.id || "";
+
+  const avatarContainer = el("div", {
+    style: "position:relative;cursor:pointer;display:inline-block;border-radius:50%;overflow:hidden;margin-bottom:12px;",
+    title: "Нажмите, чтобы изменить аватар"
+  });
+
+  const currentAvatarUser = { ...user };
+  if (!currentAvatarUser.avatar_url && userId) {
+    currentAvatarUser.avatar_url = `/api/v1/avatar/${userId}?t=${Date.now()}`;
+  }
+
+  const avatarEl = avatar(currentAvatarUser, 96);
   avatarEl.classList.add("profile-avatar");
+
+  const avatarOverlay = el("div", {
+    style: "position:absolute;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;opacity:0;transition:opacity 0.2s ease;"
+  }, "📷");
+
+  avatarContainer.addEventListener("mouseenter", () => avatarOverlay.style.opacity = "1");
+  avatarContainer.addEventListener("mouseleave", () => avatarOverlay.style.opacity = "0");
+
+  const fileInput = el("input", {
+    type: "file",
+    accept: "image/png, image/jpeg, image/webp, image/gif",
+    style: "display:none;"
+  });
+
+  avatarContainer.appendChild(avatarEl);
+  avatarContainer.appendChild(avatarOverlay);
+  avatarContainer.appendChild(fileInput);
+
+  avatarContainer.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      showToast("Размер файла не должен превышать 5МБ", "error");
+      return;
+    }
+
+    avatarOverlay.style.opacity = "1";
+    avatarOverlay.innerHTML = "";
+    avatarOverlay.appendChild(spinner());
+
+    try {
+      await uploadAvatar(file);
+      const newAvatarUrl = `/api/v1/avatar/${userId}?t=${Date.now()}`;
+      const updatedUser = { ...user, avatar_url: newAvatarUrl };
+      setCurrentUser(updatedUser);
+
+      showToast("Аватар успешно обновлён!", "success");
+      renderProfile(container);
+    } catch (err) {
+      showToast(err.message || "Ошибка загрузки аватара", "error");
+      avatarOverlay.style.opacity = "0";
+      avatarOverlay.textContent = "📷";
+    }
+  });
 
   const nameDisplay = el("span", { class: "profile-name", id: "profile-name-display" }, user.name || "");
   const nameInput = el("input", {
@@ -44,7 +103,6 @@ export function renderProfile(container) {
   const cancelBtn = el("button", { class: "btn-ghost profile-cancel-btn hidden", id: "profile-cancel-btn" }, "Отмена");
 
   const username = user.username || user.nickname || "";
-  const userId = user.user_id || user.id || "";
   const usernameEl = el("span", { class: "profile-username" }, `@${username}`);
   const userIdEl = el("span", { class: "profile-uid" }, `ID: ${userId}`);
 
@@ -364,11 +422,11 @@ export function renderProfile(container) {
   );
 
   const card = el("div", { class: "profile-card", style: "display: flex; flex-direction: column; align-items: center;" },
-    avatarEl,
+    avatarContainer,
     infoSection,
     pwSection,
-    backupSection
-    , pairingSection
+    backupSection,
+    pairingSection
   );
 
   const wrap = el("div", { class: "profile-wrap" },

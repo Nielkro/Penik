@@ -480,8 +480,12 @@ fun AuthScreen(
                                 onClick = { viewModel.submitLoginE2eePassword(onLoginSuccess) }
                             )
                             Spacer(modifier = Modifier.height(12.dp))
+                            TextButton(onClick = { viewModel.skipE2eeBackup(onLoginSuccess) }) {
+                                Text("Войти как новое устройство (создать свои ключи)", color = Accent, fontSize = 13.sp, textAlign = TextAlign.Center)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
                             TextButton(onClick = { showResetDialog = true }) {
-                                Text("Забыли e2ee-пароль? (Начать с чистого листа)", color = Accent, fontSize = 13.sp, textAlign = TextAlign.Center)
+                                Text("Забыли e2ee-пароль? (Начать с чистого листа)", color = TextMuted, fontSize = 12.sp, textAlign = TextAlign.Center)
                             }
                         }
                     }

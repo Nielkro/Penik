@@ -277,4 +277,22 @@ class AuthViewModel @Inject constructor(
             )
         }
     }
+
+    fun skipE2eeBackup(onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                // Generate a unique fresh X25519 keypair for this specific device
+                authRepository.generateAndSaveKeys()
+                messageRepository.syncHistory()
+                authRepository.getToken()?.let { tok ->
+                    webSocketManager.connect("penik.dev.slavchat.ru", 443, tok)
+                }
+                _uiState.value = _uiState.value.copy(isLoading = false)
+                onSuccess()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: "Ошибка инициализации ключей устройства")
+            }
+        }
+    }
 }
