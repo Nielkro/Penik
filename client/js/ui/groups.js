@@ -227,8 +227,20 @@ export async function renderGroup(container, groupId) {
     }
     seen.add(key);
     const mine = Number(msg.sender_user_id) === Number(myId);
+    const senderId = Number(msg.sender_user_id);
+    const senderNameSpan = mine ? null : el("span", { class: "msg-sender", style: "display:block;font-size:11px;opacity:0.7;margin-bottom:2px;font-weight:bold;color:var(--accent,#00e676);" }, nameById.get(senderId) || msg.sender_name || `#${senderId}`);
+    
+    if (!mine && !nameById.has(senderId)) {
+      // Resolve sender name from API if not loaded in roster yet
+      apiGet(`/users/${senderId}`).then(usr => {
+        const resolvedName = usr.name || usr.nickname || `#${senderId}`;
+        nameById.set(senderId, resolvedName);
+        if (senderNameSpan) senderNameSpan.textContent = resolvedName;
+      }).catch(() => {});
+    }
+
     const bubble = el("div", { class: `msg-bubble ${mine ? "msg-out" : "msg-in"}`, "data-mid": key },
-      mine ? null : el("span", { class: "msg-sender", style: "display:block;font-size:11px;opacity:0.7;margin-bottom:2px;" }, nameById.get(Number(msg.sender_user_id)) || msg.sender_name || `#${msg.sender_user_id}`),
+      senderNameSpan,
       el("span", { class: "msg-text" }, msg.plaintext || ""),
       el("div", { class: "msg-meta" },
         el("span", { class: "msg-time" }, formatTime(msg.created_at)),
