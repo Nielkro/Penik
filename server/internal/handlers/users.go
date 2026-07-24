@@ -229,7 +229,7 @@ func UploadAvatar(database *db.DB, cfg *config.Config, hub *ws.Hub) http.Handler
 
 		// Notify contacts and group peers via WS
 		if hub != nil {
-			go notifyAvatarUpdatePeers(r.Context(), database, hub, userID)
+			go notifyAvatarUpdatePeers(context.Background(), database, hub, userID)
 		}
 
 		w.WriteHeader(http.StatusNoContent)
@@ -240,9 +240,9 @@ func notifyAvatarUpdatePeers(ctx context.Context, database *db.DB, hub *ws.Hub, 
 	// Find all 1:1 chat partners and group members sharing chats with userID
 	query := `
 		SELECT DISTINCT d.id FROM devices d WHERE d.user_id IN (
-			SELECT sender_id FROM messages WHERE recipient_id = ?
+			SELECT sender_user_id FROM messages WHERE recipient_user_id = ?
 			UNION
-			SELECT recipient_id FROM messages WHERE sender_id = ?
+			SELECT recipient_user_id FROM messages WHERE sender_user_id = ?
 			UNION
 			SELECT user_id FROM group_members WHERE group_id IN (
 				SELECT group_id FROM group_members WHERE user_id = ?
