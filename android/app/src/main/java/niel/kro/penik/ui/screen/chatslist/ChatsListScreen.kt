@@ -44,10 +44,10 @@ import niel.kro.penik.ui.theme.TextMuted
 import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.ChatsListViewModel
 
+import niel.kro.penik.ui.viewmodel.FeedItem
+
 private const val SELF_CHAT_NAME = "Избранное"
 private const val SELF_CHAT_ICON = "\uD83D\uDCDD"
-
-import niel.kro.penik.ui.viewmodel.FeedItem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
