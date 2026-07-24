@@ -191,11 +191,15 @@ func UploadAvatar(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		// Validate and decode as WebP.
-		img, err := webp.Decode(bytes.NewReader(data))
+		// Validate and decode image (PNG, JPEG, GIF, WebP).
+		img, _, err := image.Decode(bytes.NewReader(data))
 		if err != nil {
-			http.Error(w, "only WebP images are accepted", http.StatusUnsupportedMediaType)
-			return
+			var webpErr error
+			img, webpErr = webp.Decode(bytes.NewReader(data))
+			if webpErr != nil {
+				http.Error(w, "invalid image format (PNG, JPEG, WebP accepted)", http.StatusUnsupportedMediaType)
+				return
+			}
 		}
 
 		// Resize to 128×128.
@@ -314,5 +318,56 @@ func UpdatePassword(database *db.DB) http.HandlerFunc {
 		}
 
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// CheckNickname handles GET /api/v1/users/check?nickname=...
+func CheckNickname(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		nickname := r.URL.Query().Get("nickname")
+		if nickname == "" {
+			http.Error(w, "nickname query param required", http.StatusBadRequest)
+			return
+		}
+
+		var count int
+		err := database.QueryRowContext(r.Context(),
+			`SELECT COUNT(1) FROM users WHERE nickname=?`, nickname).Scan(&count)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{
+			"available": count == 0,
+		})
+	}
+}
+
+// GetUserByNicknameProfile handles GET /api/v1/users/{nickname}/profile
+func GetUserByNicknameProfile(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		nickname := r.PathValue("nickname")
+		if nickname == "" {
+			http.Error(w, "nickname path param required", http.StatusBadRequest)
+			return
+		}
+
+		var id int64
+		var name, dbNickname string
+		err := database.QueryRowContext(r.Context(),
+			`SELECT id, name, nickname FROM users WHERE nickname=?`, nickname).Scan(&id, &name, &dbNickname)
+		if err != nil {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"id":       id,
+			"name":     name,
+			"nickname": dbNickname,
+		})
 	}
 }

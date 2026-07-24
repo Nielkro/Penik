@@ -196,3 +196,29 @@ data class GroupHistoryResponse(
     val messages: List<GroupHistoryMessage> = emptyList(),
     @SerialName("next_cursor") val nextCursor: String? = null
 )
+
+@Serializable
+data class NicknameCheckResponse(
+    val available: Boolean
+)
+
+@Serializable
+data class PublicProfileResponse(
+    val id: Long,
+    val name: String,
+    val nickname: String
+)
+
+@Serializable
+data class KeyBackupRequest(
+    @SerialName("encrypted_blob") val encryptedBlob: String,
+    val salt: String,
+    val iv: String
+)
+
+@Serializable
+data class KeyBackupResponse(
+    @SerialName("encrypted_blob") val encryptedBlob: String,
+    val salt: String,
+    val iv: String
+)

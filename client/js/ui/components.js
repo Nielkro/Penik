@@ -266,17 +266,17 @@ export function showSafetyNumberModal(title, safetyNumber) {
   });
 }
 
-export function showConfirmModal(title, text) {
+export function showConfirmModal(title, text, confirmText = "Подтвердить", cancelText = "Отмена", isDanger = false) {
   return new Promise((resolve) => {
     const cancelBtn = el("button", {
       class: "btn-secondary",
       style: "flex:1;padding:12px;font-size:14px;border-radius:8px;cursor:pointer;margin-right:8px;background:rgba(255,255,255,0.05);color:#fff;border:1px solid rgba(255,255,255,0.1);"
-    }, "Отмена");
+    }, cancelText);
 
     const confirmBtn = el("button", {
       class: "btn-primary",
-      style: "flex:1;padding:12px;font-size:14px;border-radius:8px;cursor:pointer;background:#22c55e;color:#fff;border:none;"
-    }, "Доверять");
+      style: `flex:1;padding:12px;font-size:14px;border-radius:8px;cursor:pointer;background:${isDanger ? "#ef4444" : "#22c55e"};color:#fff;border:none;`
+    }, confirmText);
 
     const modalBox = el("div", {
       style: "background:#1e1e24;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;width:100%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.5);display:flex;flex-direction:column;"

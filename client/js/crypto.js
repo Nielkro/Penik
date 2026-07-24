@@ -284,7 +284,21 @@ export async function generateKeyPair() {
 }
 
 export async function deriveSharedSecret(privateKey, publicKey) {
-  const cleanPublic = publicKey.length === 33 && publicKey[0] === 5 ? publicKey.slice(1) : publicKey;
+  let cleanPublic = publicKey;
+  if (cleanPublic.length === 44) {
+    try {
+      const asciiStr = String.fromCharCode(...cleanPublic);
+      const decoded = new Uint8Array(atob(asciiStr).split("").map(c => c.charCodeAt(0)));
+      if (decoded.length === 32) {
+        cleanPublic = decoded;
+      }
+    } catch (e) {
+      console.error("Failed to self-heal 44-byte public key:", e);
+    }
+  }
+  if (cleanPublic.length === 33 && cleanPublic[0] === 5) {
+    cleanPublic = cleanPublic.slice(1);
+  }
 
   const pkcs8 = new Uint8Array(48);
   pkcs8.set([0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x04, 0x22, 0x04, 0x20], 0);
@@ -485,6 +499,11 @@ export async function wrapGroupKeyForDevice(groupKey, sharedSecret) {
 // unwrapGroupKey decrypts a group key envelope with the pairwise shared secret.
 export async function unwrapGroupKey(encryptedKey, sharedSecret, salt, nonce) {
   return e2eeDecrypt(encryptedKey, sharedSecret, salt, nonce);
+}
+
+export async function derivePublicKey(privateKey) {
+  const sodium = await getSodium();
+  return sodium.crypto_scalarmult_base(privateKey);
 }
 
 

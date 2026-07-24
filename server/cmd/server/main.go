@@ -65,6 +65,8 @@ func main() {
 	// Public routes (no auth, but rate limited).
 	mux.Handle("POST /api/v1/register", authRateLimiter.Limit(http.HandlerFunc(handlers.Register(database, cfg))))
 	mux.Handle("POST /api/v1/login", authRateLimiter.Limit(http.HandlerFunc(handlers.Login(database, cfg))))
+	mux.Handle("GET /api/v1/users/check", authRateLimiter.Limit(http.HandlerFunc(handlers.CheckNickname(database))))
+	mux.Handle("GET /api/v1/users/{nickname}/profile", authRateLimiter.Limit(http.HandlerFunc(handlers.GetUserByNicknameProfile(database))))
 
 	// Avatar (GET is public, PUT requires auth).
 	mux.HandleFunc("GET /api/v1/avatar/{user_id}", handlers.GetAvatar(database))

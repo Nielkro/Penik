@@ -23,6 +23,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
@@ -65,6 +68,30 @@ private fun initialsText(name: String): String {
         .take(2)
         .joinToString("")
         .uppercase()
+}
+
+@Composable
+fun UserAvatar(
+    userId: Long,
+    name: String,
+    size: Dp = 48.dp,
+    modifier: Modifier = Modifier
+) {
+    SubcomposeAsyncImage(
+        model = "https://penik.dev.slavchat.ru/api/v1/avatar/$userId",
+        contentDescription = "Avatar",
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape),
+        contentScale = ContentScale.Crop
+    ) {
+        val state = painter.state
+        if (state is coil.compose.AsyncImagePainter.State.Loading || state is coil.compose.AsyncImagePainter.State.Error) {
+            InitialsAvatar(name = name, id = userId, size = size)
+        } else {
+            SubcomposeAsyncImageContent()
+        }
+    }
 }
 
 @Composable

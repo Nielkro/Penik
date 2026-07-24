@@ -8,6 +8,8 @@ import niel.kro.penik.data.network.api.RegisterRequestBody
 import niel.kro.penik.domain.model.AuthResponse
 import niel.kro.penik.data.crypto.E2EECrypto
 import java.util.Base64
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 
 import java.net.ConnectException
 import java.net.SocketTimeoutException
@@ -127,6 +129,126 @@ class AuthRepository @Inject constructor(
 
     fun logout() {
         tokenStorage.clear()
+    }
+
+    suspend fun uploadKeyBackup(passphrase: String): Result<Unit> {
+        return try {
+            val privateKey = tokenStorage.getPrivateKey() ?: return Result.failure(Exception("Локальный приватный ключ не найден"))
+            val backup = e2eeCrypto.encryptKeyBackup(privateKey, passphrase)
+            val b64Blob = Base64.getEncoder().encodeToString(backup.encryptedBlob)
+            val b64Salt = Base64.getEncoder().encodeToString(backup.salt)
+            val b64Iv = Base64.getEncoder().encodeToString(backup.iv)
+
+            val response = apiService.uploadKeyBackup(
+                niel.kro.penik.data.network.api.KeyBackupRequest(
+                    encryptedBlob = b64Blob,
+                    salt = b64Salt,
+                    iv = b64Iv
+                )
+            )
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(mapException(e)))
+        }
+    }
+
+    suspend fun restoreKeyBackup(passphrase: String): Result<Unit> {
+        return try {
+            val response = apiService.getKeyBackup()
+            if (response.isSuccessful) {
+                val body = response.body()!!
+                val blob = Base64.getDecoder().decode(body.encryptedBlob)
+                val salt = Base64.getDecoder().decode(body.salt)
+                val iv = Base64.getDecoder().decode(body.iv)
+
+                val decryptedPrivKey = e2eeCrypto.decryptKeyBackup(blob, salt, iv, passphrase)
+                val derivedPubKey = e2eeCrypto.derivePublicKey(decryptedPrivKey)
+
+                tokenStorage.savePrivateKey(decryptedPrivKey)
+                tokenStorage.savePublicKey(derivedPubKey)
+
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(mapException(e)))
+        }
+    }
+
+    suspend fun resetKeyBackup(newPassphrase: String): Result<Unit> {
+        return try {
+            val generated = e2eeCrypto.generateX25519KeyPair()
+            val privateKey = generated.first
+            val publicKey = generated.second
+
+            val backup = e2eeCrypto.encryptKeyBackup(privateKey, newPassphrase)
+            val b64Blob = Base64.getEncoder().encodeToString(backup.encryptedBlob)
+            val b64Salt = Base64.getEncoder().encodeToString(backup.salt)
+            val b64Iv = Base64.getEncoder().encodeToString(backup.iv)
+
+            val response = apiService.uploadKeyBackup(
+                niel.kro.penik.data.network.api.KeyBackupRequest(
+                    encryptedBlob = b64Blob,
+                    salt = b64Salt,
+                    iv = b64Iv
+                )
+            )
+            if (response.isSuccessful) {
+                tokenStorage.savePrivateKey(privateKey)
+                tokenStorage.savePublicKey(publicKey)
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(mapException(e)))
+        }
+    }
+
+    suspend fun checkNickname(nickname: String): Result<Boolean> {
+        return try {
+            val response = apiService.checkNickname(nickname)
+            if (response.isSuccessful) {
+                Result.success(response.body()?.available ?: false)
+            } else {
+                Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(mapException(e)))
+        }
+    }
+
+    suspend fun getPublicProfile(nickname: String): Result<niel.kro.penik.data.network.api.PublicProfileResponse> {
+        return try {
+            val response = apiService.getPublicProfile(nickname)
+            if (response.isSuccessful) {
+                Result.success(response.body()!!)
+            } else {
+                Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(mapException(e)))
+        }
+    }
+
+    suspend fun uploadAvatar(avatarBytes: ByteArray): Result<Unit> {
+        return try {
+            val requestFile = avatarBytes.toRequestBody("image/webp".toMediaTypeOrNull())
+            val body = okhttp3.MultipartBody.Part.createFormData("avatar", "avatar.webp", requestFile)
+            val response = apiService.uploadAvatar(body)
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(mapException(e)))
+        }
     }
 
     private fun parseServerError(code: Int, body: String?): String {
