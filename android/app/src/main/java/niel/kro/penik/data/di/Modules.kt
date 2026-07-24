@@ -51,6 +51,8 @@ object DatabaseModule {
             DB_NAME
         )
             .openHelperFactory(SupportOpenHelperFactory(passphrase))
+            .fallbackToDestructiveMigrationOnDowngrade()
+            .fallbackToDestructiveMigration()
             .addMigrations(
                 PenikDatabase.MIGRATION_1_2,
                 PenikDatabase.MIGRATION_2_3,
