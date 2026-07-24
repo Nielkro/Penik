@@ -329,7 +329,7 @@ export async function renderChat(container, userId) {
       contact = resolved;
       nameEl.textContent = resolved.name || resolved.nickname || "";
       nickEl.textContent = resolved.nickname ? `@${resolved.nickname}` : "";
-      const newAvatar = avatar(resolved, 40);
+      const newAvatar = avatar(resolved, 40, avatarUpdateTimestamps.get(String(userId)));
       avatarEl.replaceWith(newAvatar);
       avatarEl = newAvatar;
     })();
