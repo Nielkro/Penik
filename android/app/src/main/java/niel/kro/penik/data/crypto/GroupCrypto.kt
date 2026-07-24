@@ -29,14 +29,22 @@ class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
 
     /** AAD header, byte-identical to buildGroupAAD in the web client. */
     fun buildAad(groupId: Long, keyVersion: Long, messageId: String, createdAt: Long): ByteArray {
-        val header = listOf(
+        val fields = listOf(
             PROTOCOL_VERSION.toString(),
             groupId.toString(),
             keyVersion.toString(),
             messageId,
-            createdAt.toString(),
-        ).joinToString("|")
-        return header.toByteArray(Charsets.UTF_8)
+            createdAt.toString()
+        )
+        val bos = java.io.ByteArrayOutputStream()
+        for (field in fields) {
+            val bytes = field.toByteArray(Charsets.UTF_8)
+            val lenBytes = ByteArray(4)
+            java.nio.ByteBuffer.wrap(lenBytes).putInt(bytes.size)
+            bos.write(lenBytes)
+            bos.write(bytes)
+        }
+        return bos.toByteArray()
     }
 
     fun encryptMessage(
