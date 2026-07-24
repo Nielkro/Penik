@@ -352,22 +352,22 @@ export async function hkdfDerive(salt, ikm, info, length) {
   return new Uint8Array(derivedBits);
 }
 
-export async function e2eeEncrypt(plaintext, sharedSecret, info = "penik-pairwise-message-v1") {
+export async function e2eeEncrypt(plaintext, sharedSecret, info = "penik-pairwise-message-v1", aad = new Uint8Array(0)) {
   const salt = crypto.getRandomValues(new Uint8Array(32));
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   
   const derivedKey = await hkdfDerive(salt, sharedSecret, info, 32);
   const plaintextBytes = typeof plaintext === "string" ? new TextEncoder().encode(plaintext) : plaintext;
   
-  const ciphertext = await chacha20Poly1305Encrypt(derivedKey, nonce, plaintextBytes);
+  const ciphertext = await chacha20Poly1305Encrypt(derivedKey, nonce, plaintextBytes, aad);
   
   return { ciphertext, salt, nonce };
 }
 
-export async function e2eeDecrypt(ciphertext, sharedSecret, salt, nonce, info = "penik-pairwise-message-v1") {
+export async function e2eeDecrypt(ciphertext, sharedSecret, salt, nonce, info = "penik-pairwise-message-v1", aad = new Uint8Array(0)) {
   const derivedKey = await hkdfDerive(salt, sharedSecret, info, 32);
   
-  return await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext);
+  return await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext, aad);
 }
 
 export async function encryptPairingHistory(data, sharedSecret) {
