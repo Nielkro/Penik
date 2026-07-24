@@ -38,7 +38,8 @@ class MessageRepository @Inject constructor(
         val decoded = e2eeCrypto.decrypt(
             decodeUrlBase64(envelope["ciphertext"]!!.jsonPrimitive.content), secret,
             decodeUrlBase64(envelope["salt"]!!.jsonPrimitive.content),
-            decodeUrlBase64(envelope["nonce"]!!.jsonPrimitive.content)
+            decodeUrlBase64(envelope["nonce"]!!.jsonPrimitive.content),
+            "penik-pairing-history-v1"
         )
         val decodedJson = kotlinx.serialization.json.Json.parseToJsonElement(String(decoded)).jsonObject
         
