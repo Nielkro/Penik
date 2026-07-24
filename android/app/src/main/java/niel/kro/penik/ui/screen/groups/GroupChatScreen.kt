@@ -160,11 +160,17 @@ fun GroupChatScreen(
             ) {
                 items(messages) { msg ->
                     val isOwn = msg.sentByMe
+                    val senderMember = members.find { it.userId == msg.senderUserId }
+                    val displayName = senderMember?.let {
+                        it.name.ifEmpty { it.nickname.ifEmpty { "#${it.userId}" } }
+                    } ?: "#${msg.senderUserId}"
+                    
                     MessageBubble(
                         text = msg.text,
                         isSentByMe = isOwn,
                         timestamp = msg.createdAt,
-                        delivered = if (isOwn) msg.delivered else false
+                        delivered = if (isOwn) msg.delivered else false,
+                        senderName = displayName
                     )
                 }
             }

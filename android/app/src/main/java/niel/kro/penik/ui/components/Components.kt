@@ -237,6 +237,7 @@ fun MessageBubble(
     delivered: Boolean,
     deliveredAt: Long? = null,
     read: Boolean = false,
+    senderName: String? = null,
     onDelete: (() -> Unit)? = null
 ) {
     val isFailed = text.startsWith("[Ошибка расшифрования") || text.startsWith("[Сообщение не расшифровано")
@@ -276,6 +277,15 @@ fun MessageBubble(
                 .padding(start = startPadding, top = 8.dp, end = endPadding, bottom = 8.dp)
         ) {
             Column {
+                if (!isSentByMe && senderName != null) {
+                    Text(
+                        text = senderName,
+                        color = Accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 2.dp)
+                    )
+                }
                 if (isFailed) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
