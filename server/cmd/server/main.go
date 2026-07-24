@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -33,6 +34,10 @@ func main() {
 		log.Fatalf("open db: %v", err)
 	}
 	defer database.Close()
+
+	if err := migrateAvatarsToDisk(database, cfg.UploadDir); err != nil {
+		log.Printf("avatar migration error: %v", err)
+	}
 
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
@@ -70,7 +75,7 @@ func main() {
 	mux.Handle("GET /api/v1/users/{nickname}/profile", authRateLimiter.Limit(http.HandlerFunc(handlers.GetUserByNicknameProfile(database))))
 
 	// Avatar (GET is public, PUT requires auth).
-	mux.HandleFunc("GET /api/v1/avatar/{user_id}", handlers.GetAvatar(database))
+	mux.HandleFunc("GET /api/v1/avatar/{user_id}", handlers.GetAvatar(database, cfg))
 
 	// Authenticated routes — wrap each with the auth middleware.
 	authMW := middleware.Auth(database)
@@ -198,4 +203,57 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Printf("server shutdown: %v", err)
 	}
+}
+
+func migrateAvatarsToDisk(database *db.DB, uploadDir string) error {
+	rows, err := database.Query("SELECT id, avatar FROM users WHERE avatar IS NOT NULL AND length(avatar) > 0")
+	if err != nil {
+		// Table doesn't exist, schema is not loaded, or avatar column doesn't exist (should not happen after db.Open)
+		return nil
+	}
+	defer rows.Close()
+
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		return err
+	}
+
+	type avatarRecord struct {
+		id   int64
+		data []byte
+	}
+	var records []avatarRecord
+
+	for rows.Next() {
+		var id int64
+		var data []byte
+		if err := rows.Scan(&id, &data); err != nil {
+			return err
+		}
+		records = append(records, avatarRecord{id: id, data: data})
+	}
+
+	if len(records) == 0 {
+		return nil
+	}
+
+	log.Printf("Migrating %d avatars from database to %s...", len(records), uploadDir)
+
+	for _, rec := range records {
+		filePath := filepath.Join(uploadDir, fmt.Sprintf("%d.webp", rec.id))
+		if err := os.WriteFile(filePath, rec.data, 0644); err != nil {
+			return fmt.Errorf("write avatar for user %d: %w", rec.id, err)
+		}
+	}
+
+	// Clear the avatar column in db to reclaim space
+	_, err = database.Exec("UPDATE users SET avatar = NULL")
+	if err != nil {
+		return fmt.Errorf("clear users avatar column: %w", err)
+	}
+
+	// Run vacuum to shrink database file size
+	_, _ = database.Exec("VACUUM")
+
+	log.Printf("Successfully migrated %d avatars to disk and cleared database columns.", len(records))
+	return nil
 }

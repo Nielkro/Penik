@@ -15,6 +15,13 @@ import niel.kro.penik.data.network.api.CreateGroupRequest
 import niel.kro.penik.data.network.api.EnvelopeItem
 import niel.kro.penik.data.network.api.InviteMemberRequest
 import niel.kro.penik.data.network.api.UploadEnvelopesRequest
+import niel.kro.penik.data.network.api.ChangeRoleRequest
+import niel.kro.penik.data.network.api.UploadHistoryPacketsRequest
+import niel.kro.penik.data.network.api.HistoryPacketItem
+import niel.kro.penik.data.network.api.HistoryBlobMessage
+import niel.kro.penik.data.network.api.HistoryBlob
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 import niel.kro.penik.data.network.websocket.WebSocketManager
 import java.util.UUID
 import javax.inject.Inject
@@ -168,6 +175,7 @@ class GroupRepository @Inject constructor(
     suspend fun acceptInvitation(groupId: Long) {
         api.acceptGroupInvitation(groupId)
         refreshMembers(groupId)
+        runCatching { pullHistoryPacket(groupId) }
     }
 
     suspend fun declineInvitation(groupId: Long) {
@@ -179,16 +187,27 @@ class GroupRepository @Inject constructor(
         dao.deleteGroup(groupId)
     }
 
-    suspend fun inviteMember(groupId: Long, userId: Long) {
+    suspend fun inviteMember(groupId: Long, userId: Long, shareHistory: Boolean = false) {
         api.inviteGroupMember(groupId, InviteMemberRequest(userId))
         refreshMembers(groupId)
-        rotateAndDistribute(groupId)
+        val newVersion = rotateAndDistribute(groupId)
+        if (shareHistory && newVersion != null) {
+            val devices = fetchDeviceKeys(listOf(userId))
+            if (devices.isNotEmpty()) {
+                runCatching { shareHistoryWithInvitee(groupId, userId, devices) }
+            }
+        }
     }
 
     suspend fun removeMember(groupId: Long, userId: Long) {
         api.removeGroupMember(groupId, userId)
         refreshMembers(groupId)
         rotateAndDistribute(groupId)
+    }
+
+    suspend fun changeMemberRole(groupId: Long, userId: Long, role: String) {
+        api.changeGroupMemberRole(groupId, userId, ChangeRoleRequest(role))
+        refreshMembers(groupId)
     }
 
     /** Create a new key version and upload envelopes for all active devices. */
@@ -305,5 +324,79 @@ class GroupRepository @Inject constructor(
             }
             cursor = page.nextCursor?.toLongOrNull()
         } while (cursor != null)
+    }
+
+    private suspend fun pullHistoryPacket(groupId: Long) {
+        val resp = api.getGroupHistoryPacket(groupId)
+        if (!resp.isSuccessful) return
+        val packet = resp.body() ?: return
+
+        val senderDeviceId = packet.senderDeviceId
+        val senderIK = fetchDeviceIK(groupId, senderDeviceId) ?: return
+
+        val secret = e2ee.deriveSharedSecret(myPrivateIK(), senderIK)
+        val pt = e2ee.decrypt(
+            Base64.decode(packet.encryptedHistory, urlB64Flags),
+            secret,
+            Base64.decode(packet.salt, urlB64Flags),
+            Base64.decode(packet.nonce, urlB64Flags),
+            "penik-pairwise-message-v1"
+        )
+
+        val jsonStr = String(pt, Charsets.UTF_8)
+        val blob = Json.decodeFromString<HistoryBlob>(jsonStr)
+        for (m in blob.messages) {
+            val existing = dao.getMessage(groupId, m.messageId)
+            if (existing != null && existing.serverId != 0L) continue
+            dao.upsertMessage(
+                GroupMessageEntity(
+                    groupId = groupId,
+                    messageId = m.messageId,
+                    serverId = m.id,
+                    senderUserId = m.senderUserId,
+                    senderDeviceId = m.senderDeviceId,
+                    keyVersion = m.keyVersion,
+                    text = m.plaintext,
+                    createdAt = m.createdAt,
+                    sentByMe = m.senderUserId == myUserId(),
+                    delivered = true
+                )
+            )
+        }
+    }
+
+    private suspend fun shareHistoryWithInvitee(groupId: Long, userId: Long, devices: List<DeviceKey>) {
+        val messages = dao.getMessages(groupId)
+        if (messages.isEmpty() || devices.isEmpty()) return
+
+        val blobMessageList = messages.map {
+            HistoryBlobMessage(
+                id = it.serverId,
+                messageId = it.messageId,
+                senderUserId = it.senderUserId,
+                senderDeviceId = it.senderDeviceId,
+                keyVersion = it.keyVersion,
+                plaintext = it.text,
+                createdAt = it.createdAt
+            )
+        }
+        val jsonStr = Json.encodeToString(HistoryBlob(version = 1, messages = blobMessageList))
+        val blobBytes = jsonStr.toByteArray(Charsets.UTF_8)
+
+        val myPrivateIK = myPrivateIK()
+        val packets = mutableListOf<HistoryPacketItem>()
+        for (dev in devices) {
+            val secret = e2ee.deriveSharedSecret(myPrivateIK, dev.ikPub)
+            val enc = e2ee.encrypt(blobBytes, secret, "penik-pairwise-message-v1")
+            packets.add(
+                HistoryPacketItem(
+                    deviceId = dev.deviceId,
+                    encryptedHistory = Base64.encodeToString(enc.ciphertext, urlB64Flags),
+                    salt = Base64.encodeToString(enc.salt, urlB64Flags),
+                    nonce = Base64.encodeToString(enc.nonce, urlB64Flags)
+                )
+            )
+        }
+        api.uploadGroupHistoryPackets(groupId, UploadHistoryPacketsRequest(packets))
     }
 }

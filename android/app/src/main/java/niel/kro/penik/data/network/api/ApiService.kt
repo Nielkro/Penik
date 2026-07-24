@@ -101,6 +101,12 @@ interface ApiService {
     @GET("groups/{groupId}/messages/history")
     suspend fun getGroupHistory(@Path("groupId") groupId: Long, @Query("limit") limit: Int = 100, @Query("before_id") beforeId: Long? = null): Response<GroupHistoryResponse>
 
+    @POST("groups/{groupId}/history-packets")
+    suspend fun uploadGroupHistoryPackets(@Path("groupId") groupId: Long, @Body body: UploadHistoryPacketsRequest): Response<Unit>
+
+    @GET("groups/{groupId}/history-packets")
+    suspend fun getGroupHistoryPacket(@Path("groupId") groupId: Long): Response<HistoryPacketResponse>
+
     @GET("users/check")
     suspend fun checkNickname(
         @Query("nickname") nickname: String
