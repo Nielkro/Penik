@@ -111,9 +111,9 @@ class E2EECrypto {
         return agreement.generateSecret()
     }
 
-    fun encrypt(plaintext: ByteArray, sharedSecret: ByteArray): E2EEncrypted {
+    fun encrypt(plaintext: ByteArray, sharedSecret: ByteArray, info: String = "penik-pairwise-message-v1"): E2EEncrypted {
         val salt = ByteArray(32).also { SecureRandom().nextBytes(it) }
-        val derivedKeyBytes = hkdfDerive(salt, sharedSecret, "PenikE2EE".toByteArray(Charsets.UTF_8), 32)
+        val derivedKeyBytes = hkdfDerive(salt, sharedSecret, info.toByteArray(Charsets.UTF_8), 32)
         
         val nonce = ByteArray(12).also { SecureRandom().nextBytes(it) }
         val derivedKey = SecretKeySpec(derivedKeyBytes, "ChaCha20")
@@ -126,14 +126,21 @@ class E2EECrypto {
         return E2EEncrypted(ciphertext, salt, nonce)
     }
 
-    fun decrypt(ciphertext: ByteArray, sharedSecret: ByteArray, salt: ByteArray, nonce: ByteArray): ByteArray {
-        val derivedKeyBytes = hkdfDerive(salt, sharedSecret, "PenikE2EE".toByteArray(Charsets.UTF_8), 32)
-        val derivedKey = SecretKeySpec(derivedKeyBytes, "ChaCha20")
-        
-        val cipher = Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
-        val spec = IvParameterSpec(nonce)
-        cipher.init(Cipher.DECRYPT_MODE, derivedKey, spec)
-        return cipher.doFinal(ciphertext)
+    fun decrypt(ciphertext: ByteArray, sharedSecret: ByteArray, salt: ByteArray, nonce: ByteArray, info: String = "penik-pairwise-message-v1"): ByteArray {
+        try {
+            val derivedKeyBytes = hkdfDerive(salt, sharedSecret, info.toByteArray(Charsets.UTF_8), 32)
+            val derivedKey = SecretKeySpec(derivedKeyBytes, "ChaCha20")
+            
+            val cipher = Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
+            val spec = IvParameterSpec(nonce)
+            cipher.init(Cipher.DECRYPT_MODE, derivedKey, spec)
+            return cipher.doFinal(ciphertext)
+        } catch (e: Exception) {
+            if (info == "penik-pairwise-message-v1") {
+                return decrypt(ciphertext, sharedSecret, salt, nonce, "PenikE2EE")
+            }
+            throw e
+        }
     }
 
     private fun hkdfDerive(salt: ByteArray, ikm: ByteArray, info: ByteArray, length: Int): ByteArray {
