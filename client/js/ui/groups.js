@@ -228,7 +228,9 @@ export async function renderGroup(container, groupId) {
     seen.add(key);
     const mine = Number(msg.sender_user_id) === Number(myId);
     const senderId = Number(msg.sender_user_id);
-    const senderNameSpan = mine ? null : el("span", { class: "msg-sender", style: "display:block;font-size:11px;opacity:0.7;margin-bottom:2px;font-weight:bold;color:var(--accent,#00e676);" }, nameById.get(senderId) || msg.sender_name || `#${senderId}`);
+    const hue = senderId ? (senderId * 137) % 360 : 0;
+    const nickColor = `hsl(${hue}, 60%, 65%)`;
+    const senderNameSpan = mine ? null : el("span", { class: "msg-sender", style: `display:block;font-size:11px;opacity:0.9;margin-bottom:2px;font-weight:bold;color:${nickColor};` }, nameById.get(senderId) || msg.sender_name || `#${senderId}`);
     
     if (!mine && !nameById.has(senderId)) {
       // Resolve sender name from API if not loaded in roster yet
