@@ -33,14 +33,18 @@ class AuthRepository @Inject constructor(
     // every login silently rotates this device's identity key — after which every
     // group-key envelope (wrapped by the sender for the OLD public key) and 1:1
     // session fails to decrypt. Reuse the persisted pair; only generate once.
-    private fun stableIdentityKeyPair(): Pair<ByteArray, ByteArray> {
-        val priv = tokenStorage.getPrivateKey()
-        val pub = tokenStorage.getPublicKey()
-        if (priv != null && pub != null) return Pair(priv, pub)
+    fun generateAndSaveKeys(): Pair<ByteArray, ByteArray> {
         val generated = e2eeCrypto.generateX25519KeyPair()
         tokenStorage.savePrivateKey(generated.first)
         tokenStorage.savePublicKey(generated.second)
         return generated
+    }
+
+    private fun stableIdentityKeyPair(): Pair<ByteArray, ByteArray> {
+        val priv = tokenStorage.getPrivateKey()
+        val pub = tokenStorage.getPublicKey()
+        if (priv != null && pub != null) return Pair(priv, pub)
+        return generateAndSaveKeys()
     }
 
     suspend fun login(nickname: String, password: String, deviceName: String): Result<AuthResponse> {
@@ -173,7 +177,11 @@ class AuthRepository @Inject constructor(
 
                 Result.success(Unit)
             } else {
-                Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
+                if (response.code() == 404) {
+                    Result.failure(Exception("Резервная копия ключей не найдена на сервере"))
+                } else {
+                    Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
+                }
             }
         } catch (e: Exception) {
             Result.failure(Exception(mapException(e)))
@@ -260,13 +268,22 @@ class AuthRepository @Inject constructor(
                 null
             }
         }
-        if (!serverMsg.isNullOrBlank()) return serverMsg
+
+        if (!serverMsg.isNullOrBlank()) {
+            return when (serverMsg) {
+                "backup_not_found" -> "Резервная копия ключей не найдена на сервере"
+                "user not found" -> "Пользователь не найден"
+                "invalid password" -> "Неверный пароль"
+                "nickname already taken" -> "Никнейм уже занят"
+                else -> serverMsg
+            }
+        }
 
         return when (code) {
             400 -> "Неверный запрос. Проверьте введённые данные"
             401 -> "Неверный никнейм или пароль"
             403 -> "Доступ запрещён"
-            404 -> "Сервер не найден"
+            404 -> "Запрашиваемый ресурс не найден"
             409 -> "Пользователь уже существует"
             422 -> "Некорректные данные"
             429 -> "Слишком много попыток. Подождите немного"

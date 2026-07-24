@@ -13,6 +13,7 @@ import javax.crypto.spec.SecretKeySpec
 import javax.crypto.spec.PBEKeySpec
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
+import java.util.Base64
 
 data class E2EEncrypted(
     val ciphertext: ByteArray,

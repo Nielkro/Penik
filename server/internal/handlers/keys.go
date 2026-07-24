@@ -207,7 +207,11 @@ func DownloadKeyBackup(database *db.DB) http.HandlerFunc {
 			`SELECT encrypted_blob, salt, iv, created_at FROM key_backups WHERE user_id=?`, userID).
 			Scan(&resp.EncryptedBlob, &resp.Salt, &resp.IV, &resp.CreatedAt)
 		if err == sql.ErrNoRows {
-			http.Error(w, "backup not found", http.StatusNotFound)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "backup_not_found",
+			})
 			return
 		} else if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)

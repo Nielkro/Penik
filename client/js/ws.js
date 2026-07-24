@@ -35,8 +35,8 @@ export const OP = {
 
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const WS_URL = `${wsProtocol}//${window.location.host}/api/v1/ws`;
-const PING_INTERVAL = 25_000;
-const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 15000, 30000];
+const MAX_FRAME_SIZE = 10 * 1024 * 1024; // 10MB limit
+const PONG_TIMEOUT = 10_000;
 
 class WSManager {
   constructor() {
@@ -45,6 +45,7 @@ class WSManager {
     this._pendingReplies = new Map();
     this._reconnectAttempt = 0;
     this._pingTimer = null;
+    this._pongTimer = null;
     this._reconnectTimer = null;
     this._manualClose = false;
     this._connected = false;
@@ -70,6 +71,7 @@ class WSManager {
       this._ws = null;
     }
     this._connected = false;
+    this._pendingReplies.clear();
   }
 
   get connected() { return this._connected; }
@@ -129,21 +131,34 @@ class WSManager {
     return true;
   }
 
-  /* Send and wait for a specific reply opcode */
+  /* Send and wait for a specific reply opcode or matching req_id */
   request(sendOp, sendPayload, replyOp, timeoutMs = 10_000) {
+    const reqId = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : String(Date.now() + Math.random());
+    const payloadWithReq = { ...(sendPayload || {}), req_id: reqId };
+
     const next = () => new Promise((resolve, reject) => {
+      const replyKey = `${replyOp}:${reqId}`;
+
       const timer = setTimeout(() => {
+        this._pendingReplies.delete(replyKey);
         this._pendingReplies.delete(replyOp);
         reject(new Error(`WS request timeout op=${sendOp}`));
       }, timeoutMs);
 
-      this._pendingReplies.set(replyOp, (data) => {
+      const callback = (data) => {
         clearTimeout(timer);
+        this._pendingReplies.delete(replyKey);
+        this._pendingReplies.delete(replyOp);
         resolve(data);
-      });
+      };
 
-      if (!this.send(sendOp, sendPayload)) {
+      // Store by key `replyOp:reqId` first, fallback to opcode
+      this._pendingReplies.set(replyKey, callback);
+      this._pendingReplies.set(replyOp, callback);
+
+      if (!this.send(sendOp, payloadWithReq)) {
         clearTimeout(timer);
+        this._pendingReplies.delete(replyKey);
         this._pendingReplies.delete(replyOp);
         reject(new Error('WebSocket not connected'));
       }
@@ -199,28 +214,51 @@ class WSManager {
   }
 
   _handleFrame(buffer) {
-    const bytes = new Uint8Array(buffer);
-    if (bytes.length < 1) return;
-
-    const opcode = bytes[0];
-    const payload = bytes.length > 1 ? decode(bytes.slice(1)) : {};
-
-    /* Handle pong internally */
-    if (opcode === OP.PONG) return;
-
-    /* Handle pending replies first */
-    if (this._pendingReplies.has(opcode)) {
-      const cb = this._pendingReplies.get(opcode);
-      this._pendingReplies.delete(opcode);
-      cb(payload);
+    if (!buffer || buffer.byteLength > MAX_FRAME_SIZE) {
+      console.warn('[ws] Dropping frame exceeding max size or empty', buffer?.byteLength);
       return;
     }
 
-    /* Dispatch to registered handlers */
-    const handlers = this._handlers.get(opcode) || [];
-    handlers.forEach(fn => {
-      try { fn(payload); } catch (e) { console.error('[ws] Handler error', e); }
-    });
+    try {
+      const bytes = new Uint8Array(buffer);
+      if (bytes.length < 1) return;
+
+      const opcode = bytes[0];
+      const payload = bytes.length > 1 ? decode(bytes.slice(1)) : {};
+
+      /* Handle pong internally */
+      if (opcode === OP.PONG) {
+        if (this._pongTimer) {
+          clearTimeout(this._pongTimer);
+          this._pongTimer = null;
+        }
+        return;
+      }
+
+      /* Handle pending replies by req_id or opcode */
+      if (payload && payload.req_id) {
+        const replyKey = `${opcode}:${payload.req_id}`;
+        if (this._pendingReplies.has(replyKey)) {
+          const cb = this._pendingReplies.get(replyKey);
+          cb(payload);
+          return;
+        }
+      }
+
+      if (this._pendingReplies.has(opcode)) {
+        const cb = this._pendingReplies.get(opcode);
+        cb(payload);
+        return;
+      }
+
+      /* Dispatch to registered handlers */
+      const handlers = this._handlers.get(opcode) || [];
+      handlers.forEach(fn => {
+        try { fn(payload); } catch (e) { console.error('[ws] Handler error', e); }
+      });
+    } catch (err) {
+      console.error('[ws] Failed to decode/process frame', err);
+    }
   }
 
   _startPing() {
@@ -228,12 +266,19 @@ class WSManager {
     this._pingTimer = setInterval(() => {
       if (this._ws?.readyState === WebSocket.OPEN) {
         this.send(OP.PING, {});
+        // Expect PONG response within PONG_TIMEOUT ms
+        if (this._pongTimer) clearTimeout(this._pongTimer);
+        this._pongTimer = setTimeout(() => {
+          console.warn('[ws] PONG timeout - closing stuck connection');
+          if (this._ws) this._ws.close();
+        }, PONG_TIMEOUT);
       }
     }, PING_INTERVAL);
   }
 
   _clearTimers() {
     if (this._pingTimer) { clearInterval(this._pingTimer); this._pingTimer = null; }
+    if (this._pongTimer) { clearTimeout(this._pongTimer); this._pongTimer = null; }
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
   }
 

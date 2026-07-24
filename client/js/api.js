@@ -99,6 +99,33 @@ export async function updateMe({ name }) {
   return patch('/users/me', { name });
 }
 
+export async function uploadAvatar(file) {
+  const formData = new FormData();
+  formData.append('avatar', file);
+  const token = getToken();
+  const headers = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}/avatar`, {
+    method: 'PUT',
+    headers,
+    body: formData
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = text;
+    try {
+      const data = JSON.parse(text);
+      if (data && data.error) msg = data.error;
+    } catch {}
+    const err = new Error(msg || 'Не удалось загрузить аватар');
+    err.status = res.status;
+    throw err;
+  }
+  return true;
+}
+
 export async function searchUsers(query) {
   const encoded = encodeURIComponent(query);
   return get(`/users/search?q=${encoded}`);
