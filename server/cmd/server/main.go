@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -148,12 +149,22 @@ func main() {
 	mux.Handle("GET /api/v1/ws",
 		authMW(http.HandlerFunc(handlers.WebSocketHandler(hub, database, cfg))))
 
-	// Serve static files from embedded FS.
+	// Serve static files from embedded FS with Cache-Control for assets.
 	distFS, err := fs.Sub(frontendFS, "dist")
 	if err != nil {
 		log.Fatalf("sub fs: %v", err)
 	}
-	mux.Handle("GET /", http.FileServer(http.FS(distFS)))
+	fileServer := http.FileServer(http.FS(distFS))
+	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Vite assets are hashed (e.g. /assets/libsodium-wrappers-XXX.js), cache forever (1 year)
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, ".html") {
+			// Always validate index.html so updates load instantly
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+		fileServer.ServeHTTP(w, r)
+	}))
 
 	// Wrap mux with global middleware (max body, CORS).
 	var handler http.Handler = mux
