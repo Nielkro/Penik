@@ -2,6 +2,7 @@ package niel.kro.penik.data.repository
 
 import android.util.Base64
 import android.util.Log
+import kotlinx.coroutines.flow.firstOrNull
 import niel.kro.penik.data.crypto.E2EECrypto
 import niel.kro.penik.data.crypto.GroupCrypto
 import niel.kro.penik.data.local.dao.GroupDao
@@ -136,12 +137,20 @@ class GroupRepository @Inject constructor(
         return entity
     }
 
+    private var lastSyncGroupsTime: Long = 0L
+
     suspend fun syncGroups(): List<GroupEntity> {
+        val now = System.currentTimeMillis()
+        if (now - lastSyncGroupsTime < 5000L) {
+            // Retrieve currently saved groups from database directly to avoid spamming the network
+            return dao.observeGroups().firstOrNull() ?: emptyList()
+        }
         val resp = api.listGroups().body() ?: return emptyList()
         val entities = resp.groups.map {
             GroupEntity(it.id, it.name, it.ownerUserId, it.role, it.status, it.membershipVersion, it.currentKeyVersion, it.createdAt)
         }
         entities.forEach { dao.upsertGroup(it) }
+        lastSyncGroupsTime = now
         return entities
     }
 
