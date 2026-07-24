@@ -85,7 +85,7 @@ func main() {
 	mux.Handle("PATCH /api/v1/users/me/password",
 		authMW(http.HandlerFunc(handlers.UpdatePassword(database))))
 	mux.Handle("PUT /api/v1/avatar",
-		authMW(http.HandlerFunc(handlers.UploadAvatar(database, cfg))))
+		authMW(http.HandlerFunc(handlers.UploadAvatar(database, cfg, hub))))
 
 	mux.Handle("POST /api/v1/keys/init",
 		authMW(http.HandlerFunc(handlers.UploadIdentityKeys(database))))

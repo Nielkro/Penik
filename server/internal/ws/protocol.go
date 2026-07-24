@@ -25,6 +25,7 @@ const (
 	OpPairingHistoryReady Opcode = 0x19
 	OpPairingClaimed      Opcode = 0x1a
 	OpMsgStatusBatch      Opcode = 0x1b
+	OpUserAvatarUpdate    Opcode = 0x1c
 
 	OpGroupMessageSend      Opcode = 0x20
 	OpGroupMessageRecv      Opcode = 0x21

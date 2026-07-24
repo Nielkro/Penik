@@ -21,7 +21,7 @@ func Load() *Config {
 	cfg := &Config{
 		Port:           getEnv("PORT", "8143"),
 		DBPath:         getEnv("DB_PATH", "./data/messenger.db"),
-		MaxAvatarSize:  getEnvInt64("MAX_AVATAR_SIZE", 102400),
+		MaxAvatarSize:  getEnvInt64("MAX_AVATAR_SIZE", 5*1024*1024),
 		MaxBodySize:    getEnvInt64("MAX_BODY_SIZE", 1<<20), // 1 MB
 		AllowedOrigins: getEnv("ALLOWED_ORIGINS", "*"),
 	}
