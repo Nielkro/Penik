@@ -309,6 +309,12 @@ async function boot() {
   await openDB();
   setupGlobalWSListeners();
 
+  const loading = document.getElementById('loading');
+  if (loading) loading.remove();
+
+  window.addEventListener('hashchange', handleRoute);
+  handleRoute();
+
   const token = getToken();
   if (token) {
     try {
@@ -320,6 +326,7 @@ async function boot() {
           user.user_id = user.id;
           user.username = user.nickname;
           setCurrentUser(user);
+          triggerChatListUpdate();
         } else {
           logout();
           return;
@@ -337,12 +344,6 @@ async function boot() {
       }
     }
   }
-
-  const loading = document.getElementById('loading');
-  if (loading) loading.remove();
-
-  window.addEventListener('hashchange', handleRoute);
-  handleRoute();
 }
 
 boot().catch(err => {
