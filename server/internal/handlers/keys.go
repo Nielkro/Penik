@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"crypto/md5"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -136,8 +138,25 @@ func GetKeyBundle(database *db.DB) http.HandlerFunc {
 			return
 		}
 
+		resp := KeyBundleResponse{Devices: devices}
+		bodyBytes, err := json.Marshal(resp)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		etag := fmt.Sprintf(`"%x"`, md5.Sum(bodyBytes))
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "private, no-cache")
+
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(KeyBundleResponse{Devices: devices})
+		w.WriteHeader(http.StatusOK)
+		w.Write(bodyBytes)
 	}
 }
 
