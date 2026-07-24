@@ -14,7 +14,7 @@ import { renderGroup } from './ui/groups.js';
 import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
 import {
-  deriveSharedSecret, hkdfDerive, chacha20Poly1305Encrypt, chacha20Poly1305Decrypt,
+  deriveSharedSecret, e2eeEncrypt, e2eeDecrypt,
   encryptKeyBackup, decryptKeyBackup, derivePublicKey
 } from './crypto.js';
 import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
@@ -799,12 +799,9 @@ export async function decryptMessagePayload(payload) {
   }
 
   const secret = await deriveSharedSecret(myPrivateIK, fromIdentityKey);
-  const info = new TextEncoder().encode("PenikE2EE");
-  const derivedKey = await hkdfDerive(salt, secret, info, 32);
+  const textBytes = await e2eeDecrypt(ciphertext, secret, salt, nonce, "penik-pairwise-message-v1");
 
-  const plaintextBytes = await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext);
-
-  return { text: new TextDecoder().decode(plaintextBytes) };
+  return { text: new TextDecoder().decode(textBytes) };
 }
 
 export async function encryptMessagePayload(text, recipientUserId) {
@@ -834,14 +831,7 @@ export async function encryptMessagePayload(text, recipientUserId) {
     const recipientIKPub = new Uint8Array(atob(device.identity_key).split("").map(c => c.charCodeAt(0)));
 
     const secret = await deriveSharedSecret(myPrivateIK, recipientIKPub);
-
-    const salt = window.crypto.getRandomValues(new Uint8Array(32));
-    const nonce = window.crypto.getRandomValues(new Uint8Array(12));
-
-    const info = new TextEncoder().encode("PenikE2EE");
-    const derivedKey = await hkdfDerive(salt, secret, info, 32);
-
-    const ciphertext = await chacha20Poly1305Encrypt(derivedKey, nonce, new TextEncoder().encode(text));
+    const { ciphertext, salt, nonce } = await e2eeEncrypt(text, secret, "penik-pairwise-message-v1");
 
     payloads.push({
       device_id: Number(device.device_id),
