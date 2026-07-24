@@ -359,7 +359,10 @@ export async function logout() {
   localStorage.removeItem("device_id");
   localStorage.removeItem("penik_sign_jwk");
   state.currentUser = null;
-  state.privateIK = null;
+  if (state.privateIK) {
+    state.privateIK.fill(0);
+    state.privateIK = null;
+  }
   state.retryCounters.clear();
   pendingAcks.clear();
   _mainLayout = null;
@@ -407,7 +410,7 @@ async function onMsgRecvGlobal(payload) {
   let decryptSuccess = true;
   let plaintext = "";
   if (payload.plaintext) {
-    plaintext = payload.plaintext;
+    plaintext = `[Нешифрованное] ${payload.plaintext}`;
   } else if (payload.ciphertext) {
     try {
       // The server may replay a message after reconnect/reload. OTPKs are
