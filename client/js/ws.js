@@ -23,6 +23,7 @@ export const OP = {
   PAIRING_HISTORY_READY: 0x19,
   PAIRING_CLAIMED: 0x1a,
   MSG_STATUS_BATCH: 0x1b,
+  USER_AVATAR_UPDATE: 0x1c,
   GROUP_MESSAGE_SEND:      0x20,
   GROUP_MESSAGE_RECV:      0x21,
   GROUP_MESSAGE_ACK:       0x22,
@@ -35,6 +36,8 @@ export const OP = {
 
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const WS_URL = `${wsProtocol}//${window.location.host}/api/v1/ws`;
+const PING_INTERVAL = 25_000;
+const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 15000, 30000];
 const MAX_FRAME_SIZE = 10 * 1024 * 1024; // 10MB limit
 const PONG_TIMEOUT = 10_000;
 

@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"bytes"
+	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -16,9 +18,11 @@ import (
 	"time"
 
 	"github.com/chai2010/webp"
+	"github.com/shamaton/msgpack/v2"
 	"messenger/server/internal/config"
 	"messenger/server/internal/db"
 	"messenger/server/internal/middleware"
+	"messenger/server/internal/ws"
 )
 
 
@@ -165,7 +169,7 @@ func UpdateNickname(database *db.DB) http.HandlerFunc {
 }
 
 // UploadAvatar handles PUT /api/v1/avatar — multipart, WebP only, max 100KB.
-func UploadAvatar(database *db.DB, cfg *config.Config) http.HandlerFunc {
+func UploadAvatar(database *db.DB, cfg *config.Config, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
 
@@ -187,7 +191,7 @@ func UploadAvatar(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 		if int64(len(data)) > cfg.MaxAvatarSize {
-			http.Error(w, "avatar too large (max 100KB)", http.StatusRequestEntityTooLarge)
+			http.Error(w, "avatar too large (max 5MB)", http.StatusRequestEntityTooLarge)
 			return
 		}
 
@@ -223,8 +227,57 @@ func UploadAvatar(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
+		// Notify contacts and group peers via WS
+		if hub != nil {
+			go notifyAvatarUpdatePeers(r.Context(), database, hub, userID)
+		}
+
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+func notifyAvatarUpdatePeers(ctx context.Context, database *db.DB, hub *ws.Hub, userID int64) {
+	// Find all 1:1 chat partners and group members sharing chats with userID
+	query := `
+		SELECT DISTINCT d.id FROM devices d WHERE d.user_id IN (
+			SELECT sender_id FROM messages WHERE recipient_id = ?
+			UNION
+			SELECT recipient_id FROM messages WHERE sender_id = ?
+			UNION
+			SELECT user_id FROM group_members WHERE group_id IN (
+				SELECT group_id FROM group_members WHERE user_id = ?
+			)
+			UNION
+			SELECT ?
+		)
+	`
+	rows, err := database.QueryContext(ctx, query, userID, userID, userID, userID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	var deviceIDs []int64
+	for rows.Next() {
+		var devID int64
+		if err := rows.Scan(&devID); err == nil {
+			deviceIDs = append(deviceIDs, devID)
+		}
+	}
+
+	if len(deviceIDs) == 0 {
+		return
+	}
+
+	payload, err := msgpack.Marshal(map[string]any{
+		"user_id": userID,
+		"ts":      time.Now().Unix(),
+	})
+	if err != nil {
+		return
+	}
+
+	hub.BroadcastAvatarUpdate(deviceIDs, payload)
 }
 
 // GetAvatar handles GET /api/v1/avatar/:user_id.
@@ -245,9 +298,18 @@ func GetAvatar(database *db.DB) http.HandlerFunc {
 			return
 		}
 
+		// Calculate ETag as MD5 hash of image bytes
+		etag := fmt.Sprintf(`"%x"`, md5.Sum(avatar))
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "private, no-cache")
+
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+
 		// Stored as WebP; content-type reflects that.
 		w.Header().Set("Content-Type", "image/webp")
-		w.Header().Set("Cache-Control", "public, max-age=86400")
 		w.WriteHeader(http.StatusOK)
 		w.Write(avatar)
 	}

@@ -7,9 +7,9 @@ import {
   getMessageByClientId,
   getIKPrivate, saveIKPrivate, getIKPublic, saveIKPublic
 } from './storage.js';
-import { ws } from './ws.js';
+import { ws, OP } from './ws.js';
 import { renderAuth } from './ui/auth.js';
-import { renderChatList, renderChat } from './ui/chat.js';
+import { renderChatList, renderChat, avatarUpdateTimestamps } from './ui/chat.js';
 import { renderGroup } from './ui/groups.js';
 import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
@@ -894,6 +894,20 @@ function setupGlobalWSListeners() {
   ws.on(0x1b, onMsgStatusBatchGlobal);
   ws.on(0x05, onOfflineBatchGlobal);
   ws.on(0x08, onChatPurgeGlobal);
+  ws.on(OP.USER_AVATAR_UPDATE, (payload) => {
+    if (payload && payload.user_id) {
+      console.log(`[ws] Received avatar update for user ${payload.user_id}`);
+      const ts = payload.ts ? payload.ts * 1000 : Date.now();
+      avatarUpdateTimestamps.set(String(payload.user_id), ts);
+      triggerChatListUpdate();
+      if (_activeChatCallback && String(_activeChatCallback.userId) === String(payload.user_id)) {
+        const chatScreen = document.getElementById('screen-chat');
+        if (chatScreen && chatScreen.classList.contains('active')) {
+          renderChat(chatScreen, payload.user_id);
+        }
+      }
+    }
+  });
   registerGroupWSListeners();
 
   // Periodically drop pending ACKs that never resolved, and clear them on

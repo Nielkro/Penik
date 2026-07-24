@@ -24,11 +24,14 @@ export function el(tag, attrs = {}, ...children) {
 
 // Avatar
 
-export function avatar(user, size = 40) {
+export function avatar(user, size = 40, forceTimestamp = null) {
   const wrap = el("div", { class: "avatar", style: `width:${size}px;height:${size}px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0;` });
 
   const userId = user && (user.user_id || user.id);
-  const avatarUrl = (user && user.avatar_url) || (userId ? `/api/v1/avatar/${userId}` : null);
+  let avatarUrl = (user && user.avatar_url) || (userId ? `/api/v1/avatar/${userId}` : null);
+  if (avatarUrl && forceTimestamp) {
+    avatarUrl += (avatarUrl.includes("?") ? "&t=" : "?t=") + forceTimestamp;
+  }
 
   if (avatarUrl) {
     const img = el("img", {

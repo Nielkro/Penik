@@ -69,3 +69,18 @@ func (h *Hub) IsOnline(deviceID int64) bool {
 	h.mu.RUnlock()
 	return ok
 }
+
+// BroadcastAvatarUpdate sends OpUserAvatarUpdate to all active connections for specified device IDs.
+func (h *Hub) BroadcastAvatarUpdate(deviceIDs []int64, payload []byte) {
+	frame := append([]byte{byte(OpUserAvatarUpdate)}, payload...)
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, devID := range deviceIDs {
+		if c, ok := h.clients[devID]; ok {
+			select {
+			case c.send <- frame:
+			default:
+			}
+		}
+	}
+}

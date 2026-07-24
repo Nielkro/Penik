@@ -11,6 +11,8 @@ import { buildGroupListItem, showCreateGroupModal } from "./groups.js";
 
 
 
+export const avatarUpdateTimestamps = new Map();
+
 // ── Chat list ────────────────────────────────────────────────────────────────
 
 export async function renderChatList(container) {
@@ -95,7 +97,7 @@ export async function renderChatList(container) {
         }));
       } else {
         const item = el("li", { class: "chatlist-item" },
-          avatar(entry, 48),
+          avatar(entry, 48, avatarUpdateTimestamps.get(String(entry.user_id))),
           el("div", { class: "chatlist-item-info" },
             el("span", { class: "chatlist-item-name" }, entry.name || entry.nickname || ""),
             el("span", { class: "chatlist-item-preview" }, entry.last_message || "")
@@ -289,7 +291,7 @@ export async function renderChat(container, userId) {
     });
   }
 
-  let avatarEl = avatar(contact, 40);
+  let avatarEl = avatar(contact, 40, avatarUpdateTimestamps.get(String(userId)));
   const nameEl = el("span", { class: "chat-header-name" }, contact.name || contact.nickname);
   const nickEl = el("span", { class: "chat-header-nick" }, contact.nickname ? `@${contact.nickname}` : "");
   const headerChildren = [
