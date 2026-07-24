@@ -111,7 +111,7 @@ class E2EECrypto {
         return agreement.generateSecret()
     }
 
-    fun encrypt(plaintext: ByteArray, sharedSecret: ByteArray, info: String = "penik-pairwise-message-v1"): E2EEncrypted {
+    fun encrypt(plaintext: ByteArray, sharedSecret: ByteArray, info: String = "penik-pairwise-message-v1", aad: ByteArray? = null): E2EEncrypted {
         val salt = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val derivedKeyBytes = hkdfDerive(salt, sharedSecret, info.toByteArray(Charsets.UTF_8), 32)
         
@@ -121,12 +121,15 @@ class E2EECrypto {
         val cipher = Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
         val spec = IvParameterSpec(nonce)
         cipher.init(Cipher.ENCRYPT_MODE, derivedKey, spec)
+        if (aad != null) {
+            cipher.updateAAD(aad)
+        }
         val ciphertext = cipher.doFinal(plaintext)
         
         return E2EEncrypted(ciphertext, salt, nonce)
     }
 
-    fun decrypt(ciphertext: ByteArray, sharedSecret: ByteArray, salt: ByteArray, nonce: ByteArray, info: String = "penik-pairwise-message-v1"): ByteArray {
+    fun decrypt(ciphertext: ByteArray, sharedSecret: ByteArray, salt: ByteArray, nonce: ByteArray, info: String = "penik-pairwise-message-v1", aad: ByteArray? = null): ByteArray {
         try {
             val derivedKeyBytes = hkdfDerive(salt, sharedSecret, info.toByteArray(Charsets.UTF_8), 32)
             val derivedKey = SecretKeySpec(derivedKeyBytes, "ChaCha20")
@@ -134,10 +137,13 @@ class E2EECrypto {
             val cipher = Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
             val spec = IvParameterSpec(nonce)
             cipher.init(Cipher.DECRYPT_MODE, derivedKey, spec)
+            if (aad != null) {
+                cipher.updateAAD(aad)
+            }
             return cipher.doFinal(ciphertext)
         } catch (e: Exception) {
             if (info == "penik-pairwise-message-v1") {
-                return decrypt(ciphertext, sharedSecret, salt, nonce, "PenikE2EE")
+                return decrypt(ciphertext, sharedSecret, salt, nonce, "PenikE2EE", aad)
             }
             throw e
         }

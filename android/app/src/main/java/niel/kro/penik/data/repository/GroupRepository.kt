@@ -73,11 +73,11 @@ class GroupRepository @Inject constructor(
         return out
     }
 
-    private fun wrapKeyForDevices(groupKey: ByteArray, devices: List<DeviceKey>): List<EnvelopeItem> {
+    private fun wrapKeyForDevices(groupKey: ByteArray, devices: List<DeviceKey>, groupId: Long, version: Long): List<EnvelopeItem> {
         val priv = myPrivateIK()
         return devices.map { dev ->
             val secret = e2ee.deriveSharedSecret(priv, dev.ikPub)
-            val env = groupCrypto.wrapKeyForDevice(groupKey, secret)
+            val env = groupCrypto.wrapKeyForDevice(groupKey, secret, groupId, version)
             EnvelopeItem(
                 deviceId = dev.deviceId,
                 encryptedKey = Base64.encodeToString(env.ciphertext, urlB64Flags),
@@ -100,6 +100,7 @@ class GroupRepository @Inject constructor(
             groupCrypto.unwrapKey(
                 Base64.decode(env.encryptedKey, urlB64Flags), secret,
                 Base64.decode(env.salt, urlB64Flags), Base64.decode(env.nonce, urlB64Flags),
+                groupId, version
             )
         }.getOrNull() ?: return null
         dao.saveGroupKey(GroupKeyEntity(groupId, version, key))
@@ -127,7 +128,7 @@ class GroupRepository @Inject constructor(
         dao.saveGroupKey(GroupKeyEntity(body.id, 1, groupKey))
         val devices = fetchDeviceKeys(listOf(myUserId()))
         if (devices.isNotEmpty()) {
-            api.uploadGroupEnvelopes(body.id, 1, UploadEnvelopesRequest(wrapKeyForDevices(groupKey, devices)))
+            api.uploadGroupEnvelopes(body.id, 1, UploadEnvelopesRequest(wrapKeyForDevices(groupKey, devices, body.id, 1)))
         }
         refreshMembers(body.id)
         return entity
@@ -190,7 +191,7 @@ class GroupRepository @Inject constructor(
         val userIds = resp.devices.map { it.userId }.distinct()
         val devices = fetchDeviceKeys(userIds)
         if (devices.isNotEmpty()) {
-            api.uploadGroupEnvelopes(groupId, version, UploadEnvelopesRequest(wrapKeyForDevices(groupKey, devices)))
+            api.uploadGroupEnvelopes(groupId, version, UploadEnvelopesRequest(wrapKeyForDevices(groupKey, devices, groupId, version)))
         }
         dao.getGroup(groupId)?.let { dao.upsertGroup(it.copy(currentKeyVersion = version)) }
         return version

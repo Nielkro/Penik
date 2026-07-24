@@ -99,12 +99,12 @@ async function fetchDeviceKeys(userIds) {
 
 // wrapKeyForDevices builds envelope items for every device, using our private IK
 // and each device's public IK to derive the pairwise secret.
-async function wrapKeyForDevices(groupKey, devices) {
+async function wrapKeyForDevices(groupKey, devices, groupId, version) {
   const myPriv = await resolvePrivateIK();
   const envelopes = [];
   for (const dev of devices) {
     const secret = await deriveSharedSecret(myPriv, dev.ik_pub);
-    const { encryptedKey, salt, nonce } = await wrapGroupKeyForDevice(groupKey, secret);
+    const { encryptedKey, salt, nonce } = await wrapGroupKeyForDevice(groupKey, secret, groupId, version);
     envelopes.push({
       device_id: dev.device_id,
       encrypted_key: b64uEncode(encryptedKey),
@@ -134,6 +134,7 @@ export async function ensureGroupKey(groupId, version) {
   const secret = await deriveSharedSecret(myPriv, senderIK);
   const groupKey = await unwrapGroupKey(
     b64uDecode(env.encrypted_key), secret, b64uDecode(env.salt), b64uDecode(env.nonce),
+    groupId, version
   );
   await saveGroupKey(groupId, version, groupKey);
   return groupKey;
@@ -163,7 +164,7 @@ export async function createGroup(name, memberUserIds) {
   // Only the owner is active at creation; invitees are pending until they accept.
   const devices = await fetchDeviceKeys([myUserId()]);
   if (devices.length) {
-    const envelopes = await wrapKeyForDevices(groupKey, devices);
+    const envelopes = await wrapKeyForDevices(groupKey, devices, group.id, 1);
     await uploadGroupEnvelopes(group.id, 1, envelopes);
   }
   await refreshMembers(group.id);
@@ -231,7 +232,7 @@ export async function inviteMember(groupId, userId, { shareHistory = false } = {
 
   // Stage the current version so the invitee can read messages sent after join.
   const groupKey = await ensureGroupKey(groupId, current);
-  const envelopes = await wrapKeyForDevices(groupKey, devices);
+  const envelopes = await wrapKeyForDevices(groupKey, devices, groupId, current);
   await uploadGroupEnvelopes(groupId, current, envelopes);
 
   if (shareHistory) {
@@ -339,7 +340,7 @@ export async function rotateAndDistribute(groupId) {
   const userIds = [...new Set((resp.devices || []).map(d => Number(d.user_id)))];
   const devices = await fetchDeviceKeys(userIds);
   if (devices.length) {
-    const envelopes = await wrapKeyForDevices(groupKey, devices);
+    const envelopes = await wrapKeyForDevices(groupKey, devices, groupId, version);
     await uploadGroupEnvelopes(groupId, version, envelopes);
   }
   // Reflect the new current version locally.
@@ -395,7 +396,7 @@ export async function backfillCurrentKey(groupId) {
   const missing = devices.filter(d => !covered.has(Number(d.device_id)));
   if (!missing.length) return 0;
 
-  const envelopes = await wrapKeyForDevices(groupKey, missing);
+  const envelopes = await wrapKeyForDevices(groupKey, missing, groupId, version);
   await uploadGroupEnvelopes(groupId, version, envelopes);
   console.log('[groups] backfilled current key v' + version + ' for', missing.length, 'device(s)');
   return missing.length;
