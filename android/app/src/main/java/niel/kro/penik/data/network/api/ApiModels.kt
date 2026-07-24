@@ -167,6 +167,42 @@ data class EnvelopeItem(
 data class UploadEnvelopesRequest(val envelopes: List<EnvelopeItem>)
 
 @Serializable
+data class HistoryPacketItem(
+    @SerialName("device_id") val deviceId: Long,
+    @SerialName("encrypted_history") val encryptedHistory: String,
+    val salt: String,
+    val nonce: String
+)
+
+@Serializable
+data class UploadHistoryPacketsRequest(val packets: List<HistoryPacketItem>)
+
+@Serializable
+data class HistoryPacketResponse(
+    @SerialName("encrypted_history") val encryptedHistory: String,
+    val salt: String,
+    val nonce: String,
+    @SerialName("sender_device_id") val senderDeviceId: Long
+)
+
+@Serializable
+data class HistoryBlobMessage(
+    val id: Long,
+    @SerialName("message_id") val messageId: String,
+    @SerialName("sender_user_id") val senderUserId: Long,
+    @SerialName("sender_device_id") val senderDeviceId: Long,
+    @SerialName("key_version") val keyVersion: Long,
+    val plaintext: String,
+    @SerialName("created_at") val createdAt: Long
+)
+
+@Serializable
+data class HistoryBlob(
+    val version: Int,
+    val messages: List<HistoryBlobMessage>
+)
+
+@Serializable
 data class GroupEnvelopeResponse(
     @SerialName("key_version") val keyVersion: Long,
     @SerialName("encrypted_key") val encryptedKey: String,

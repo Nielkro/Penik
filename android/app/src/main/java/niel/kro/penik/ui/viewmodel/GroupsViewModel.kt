@@ -16,6 +16,8 @@ import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.UserSearchResult
 import niel.kro.penik.data.repository.AuthRepository
 import niel.kro.penik.data.repository.GroupRepository
+import niel.kro.penik.data.repository.ChatRepository
+import niel.kro.penik.data.local.entity.ChatEntity
 import javax.inject.Inject
 
 @HiltViewModel
@@ -85,6 +87,7 @@ class GroupChatViewModel @Inject constructor(
     private val groupRepository: GroupRepository,
     private val authRepository: AuthRepository,
     private val apiService: ApiService,
+    private val chatRepository: ChatRepository,
     savedStateHandle: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
 
@@ -97,6 +100,9 @@ class GroupChatViewModel @Inject constructor(
 
     private val _members = MutableStateFlow<List<GroupMemberEntity>>(emptyList())
     val members: StateFlow<List<GroupMemberEntity>> = _members.asStateFlow()
+
+    val contacts = chatRepository.getAllChats()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _searchResults = MutableStateFlow<List<UserSearchResult>>(emptyList())
     val searchResults: StateFlow<List<UserSearchResult>> = _searchResults.asStateFlow()
@@ -124,10 +130,10 @@ class GroupChatViewModel @Inject constructor(
         }
     }
 
-    fun invite(userId: Long) {
+    fun invite(userId: Long, shareHistory: Boolean = false) {
         viewModelScope.launch {
             try {
-                groupRepository.inviteMember(groupId, userId)
+                groupRepository.inviteMember(groupId, userId, shareHistory)
                 _members.value = groupRepository.refreshMembers(groupId)
             } catch (e: Exception) {
                 _error.value = e.message ?: "Не удалось пригласить"
@@ -142,6 +148,17 @@ class GroupChatViewModel @Inject constructor(
                 _members.value = groupRepository.refreshMembers(groupId)
             } catch (e: Exception) {
                 _error.value = e.message ?: "Не удалось удалить"
+            }
+        }
+    }
+
+    fun changeMemberRole(userId: Long, role: String) {
+        viewModelScope.launch {
+            try {
+                groupRepository.changeMemberRole(groupId, userId, role)
+                _members.value = groupRepository.refreshMembers(groupId)
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Не удалось изменить роль"
             }
         }
     }

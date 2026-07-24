@@ -14,6 +14,7 @@ type Config struct {
 	MaxAvatarSize  int64
 	MaxBodySize    int64
 	AllowedOrigins string // comma-separated list, "*" for any
+	UploadDir      string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -24,6 +25,7 @@ func Load() *Config {
 		MaxAvatarSize:  getEnvInt64("MAX_AVATAR_SIZE", 5*1024*1024),
 		MaxBodySize:    getEnvInt64("MAX_BODY_SIZE", 1<<20), // 1 MB
 		AllowedOrigins: getEnv("ALLOWED_ORIGINS", "*"),
+		UploadDir:      getEnv("UPLOAD_DIR", "./data/upload"),
 	}
 
 	ttlStr := getEnv("SESSION_TTL", "720h")

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +26,8 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import niel.kro.penik.ui.components.MessageBubble
+import niel.kro.penik.ui.components.UserAvatar
 import niel.kro.penik.ui.theme.Accent
 import niel.kro.penik.ui.theme.Background
 import niel.kro.penik.ui.theme.Border
@@ -81,6 +85,7 @@ fun GroupChatScreen(
     var searchQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     var memberToRemove by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
+    var selectedMemberForActions by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
 
     val canManage = viewModel.myRole in listOf("owner", "admin")
 
@@ -234,42 +239,136 @@ fun GroupChatScreen(
     }
 
     if (showMembersDialog) {
+        val sortedMembers = remember(members) {
+            members.sortedWith(compareBy {
+                when (it.role) {
+                    "owner" -> 0
+                    "admin" -> 1
+                    "member" -> 2
+                    else -> 3
+                }
+            })
+        }
         AlertDialog(
             onDismissRequest = { showMembersDialog = false },
             containerColor = Panel,
             titleContentColor = TextPrimary,
             title = { Text("Участники", fontWeight = FontWeight.SemiBold) },
             text = {
-                LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                    items(members) { member ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
+                Column {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                    ) {
+                        itemsIndexed(sortedMembers) { index, member ->
+                            val isMe = member.userId == viewModel.myUserId
+                            val isPrivileged = viewModel.myRole == "owner" || viewModel.myRole == "admin"
+                            val canManageRow = viewModel.myRole == "owner" && member.role != "owner" && !isMe
+                            val canRemoveRow = isPrivileged && member.role != "owner" && !isMe
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = canManageRow || canRemoveRow) {
+                                        selectedMemberForActions = member
+                                    }
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.Start,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 val displayName = member.name.ifEmpty { member.nickname.ifEmpty { "#${member.userId}" } }
-                                val roleRu = when (member.role) {
-                                    "owner" -> "владелец"; "admin" -> "админ"; "member" -> "участник"; else -> member.role
+                                UserAvatar(
+                                    userId = member.userId,
+                                    name = displayName,
+                                    size = 40.dp,
+                                    modifier = Modifier.padding(end = 12.dp)
+                                )
+                                Column {
+                                    val displayNameWithMe = displayName + if (isMe) " (вы)" else ""
+                                    val roleRu = when (member.role) {
+                                        "owner" -> "владелец"
+                                        "admin" -> "админ"
+                                        "member" -> "участник"
+                                        else -> member.role
+                                    } + if (member.status == "pending") " · приглашён" else ""
+                                    Text(displayNameWithMe, color = TextPrimary, fontWeight = FontWeight.Medium)
+                                    Text(roleRu, color = TextMuted, fontSize = 12.sp)
                                 }
-                                Text(displayName, color = TextPrimary, fontWeight = FontWeight.Medium)
-                                Text(roleRu, color = TextMuted, fontSize = 12.sp)
                             }
-                            if (canManage && member.userId != viewModel.myUserId && member.role != "owner") {
-                                TextButton(onClick = { memberToRemove = member }) {
-                                    Text("Удалить", color = Accent)
-                                }
+                            if (index < sortedMembers.lastIndex) {
+                                HorizontalDivider(color = Border)
                             }
                         }
-                        HorizontalDivider(color = Border)
+                    }
+                    if (canManage) {
+                        HorizontalDivider(color = Border, modifier = Modifier.padding(vertical = 4.dp))
+                        TextButton(
+                            onClick = {
+                                showMembersDialog = false
+                                showInviteDialog = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("＋ Добавить участника", color = Accent, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { showMembersDialog = false }) {
                     Text("Закрыть", color = Accent)
+                }
+            }
+        )
+    }
+
+    selectedMemberForActions?.let { member ->
+        val isMe = member.userId == viewModel.myUserId
+        val isPrivileged = viewModel.myRole == "owner" || viewModel.myRole == "admin"
+        val canManageRow = viewModel.myRole == "owner" && member.role != "owner" && !isMe
+        val canRemoveRow = isPrivileged && member.role != "owner" && !isMe
+
+        AlertDialog(
+            onDismissRequest = { selectedMemberForActions = null },
+            containerColor = Panel,
+            titleContentColor = TextPrimary,
+            title = { Text(member.name.ifEmpty { member.nickname.ifEmpty { "#${member.userId}" } }) },
+            text = {
+                Column {
+                    if (canManageRow) {
+                        TextButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                val newRole = if (member.role == "admin") "member" else "admin"
+                                viewModel.changeMemberRole(member.userId, newRole)
+                                selectedMemberForActions = null
+                            }
+                        ) {
+                            Text(
+                                if (member.role == "admin") "Снять роль админа" else "Сделать админом",
+                                color = Accent,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                    if (canRemoveRow) {
+                        TextButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                memberToRemove = member
+                                selectedMemberForActions = null
+                            }
+                        ) {
+                            Text("Удалить из группы", color = Accent, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { selectedMemberForActions = null }) {
+                    Text("Отмена", color = TextPrimary)
                 }
             }
         )
@@ -301,6 +400,18 @@ fun GroupChatScreen(
     }
 
     if (showInviteDialog) {
+        val contactsList by viewModel.contacts.collectAsState()
+        var shareHistory by remember { mutableStateOf(false) }
+        val existingMemberIds = remember(members) { members.map { it.userId }.toSet() }
+        val inviteableContacts = remember(contactsList, existingMemberIds, searchQuery) {
+            contactsList.filter {
+                it.userId !in existingMemberIds &&
+                (searchQuery.isBlank() ||
+                 it.nickname.contains(searchQuery, ignoreCase = true) ||
+                 it.name.contains(searchQuery, ignoreCase = true))
+            }
+        }
+
         AlertDialog(
             onDismissRequest = { showInviteDialog = false; searchQuery = "" },
             containerColor = Panel,
@@ -311,7 +422,7 @@ fun GroupChatScreen(
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        label = { Text("Поиск пользователей") },
+                        label = { Text("Поиск контактов") },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = InputBg,
@@ -325,21 +436,57 @@ fun GroupChatScreen(
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    LazyColumn(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                        items(searchResults) { user ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { shareHistory = !shareHistory }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = shareHistory,
+                            onCheckedChange = { shareHistory = it },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = Accent,
+                                uncheckedColor = TextMuted,
+                                checkmarkColor = TextPrimary
+                            )
+                        )
+                        Text(
+                            text = "Поделиться историей чата до вступления",
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
+                    HorizontalDivider(color = Border)
+                    LazyColumn(modifier = Modifier.fillMaxWidth().padding(top = 8.dp).weight(1f, fill = false)) {
+                        items(inviteableContacts) { contact ->
+                            val displayName = contact.name.ifEmpty { contact.nickname.ifEmpty { "#${contact.userId}" } }
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        viewModel.invite(user.id)
+                                        viewModel.invite(contact.userId, shareHistory)
                                         showInviteDialog = false
                                         searchQuery = ""
                                     }
                                     .padding(vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                horizontalArrangement = Arrangement.Start,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(user.nickname, color = TextPrimary)
+                                UserAvatar(
+                                    userId = contact.userId,
+                                    name = displayName,
+                                    size = 40.dp,
+                                    modifier = Modifier.padding(end = 12.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(displayName, color = TextPrimary, fontWeight = FontWeight.Medium)
+                                    if (contact.nickname.isNotEmpty()) {
+                                        Text("@${contact.nickname}", color = TextMuted, fontSize = 12.sp)
+                                    }
+                                }
                                 Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Accent, modifier = Modifier.size(20.dp))
                             }
                             HorizontalDivider(color = Border)

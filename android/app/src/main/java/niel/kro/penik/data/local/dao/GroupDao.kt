@@ -56,6 +56,9 @@ interface GroupDao {
     @Query("SELECT * FROM group_messages WHERE groupId = :groupId ORDER BY serverId, createdAt")
     fun observeMessages(groupId: Long): Flow<List<GroupMessageEntity>>
 
+    @Query("SELECT * FROM group_messages WHERE groupId = :groupId ORDER BY serverId, createdAt")
+    suspend fun getMessages(groupId: Long): List<GroupMessageEntity>
+
     @Query("SELECT * FROM group_messages WHERE groupId = :groupId AND messageId = :messageId LIMIT 1")
     suspend fun getMessage(groupId: Long, messageId: String): GroupMessageEntity?
 

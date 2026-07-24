@@ -13,6 +13,8 @@ import (
 	_ "image/png"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"time"
@@ -220,9 +222,13 @@ func UploadAvatar(database *db.DB, cfg *config.Config, hub *ws.Hub) http.Handler
 		}
 		avatarBytes := buf.Bytes()
 
-		_, err = database.ExecContext(r.Context(),
-			`UPDATE users SET avatar=? WHERE id=?`, avatarBytes, userID)
-		if err != nil {
+		if err := os.MkdirAll(cfg.UploadDir, 0755); err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		filePath := filepath.Join(cfg.UploadDir, fmt.Sprintf("%d.webp", userID))
+		if err := os.WriteFile(filePath, avatarBytes, 0644); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
@@ -281,7 +287,7 @@ func notifyAvatarUpdatePeers(ctx context.Context, database *db.DB, hub *ws.Hub, 
 }
 
 // GetAvatar handles GET /api/v1/avatar/:user_id.
-func GetAvatar(database *db.DB) http.HandlerFunc {
+func GetAvatar(database *db.DB, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := r.PathValue("user_id")
 		id, err := strconv.ParseInt(idStr, 10, 64)
@@ -290,10 +296,18 @@ func GetAvatar(database *db.DB) http.HandlerFunc {
 			return
 		}
 
-		var avatar []byte
+		// Check if user exists first to return proper 404
+		var exists int
 		err = database.QueryRowContext(r.Context(),
-			`SELECT avatar FROM users WHERE id=?`, id).Scan(&avatar)
-		if err != nil || len(avatar) == 0 {
+			`SELECT 1 FROM users WHERE id=?`, id).Scan(&exists)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		filePath := filepath.Join(cfg.UploadDir, fmt.Sprintf("%d.webp", id))
+		avatar, err := os.ReadFile(filePath)
+		if err != nil {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
