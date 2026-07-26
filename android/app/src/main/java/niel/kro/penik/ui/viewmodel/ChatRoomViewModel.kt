@@ -48,6 +48,11 @@ class ChatRoomViewModel @Inject constructor(
     private val _showE2eeDialog = MutableStateFlow(false)
     val showE2eeDialog: StateFlow<Boolean> = _showE2eeDialog
 
+    private val _online = MutableStateFlow(false)
+    val online: StateFlow<Boolean> = _online
+    private val _lastSeen = MutableStateFlow(0L)
+    val lastSeen: StateFlow<Long> = _lastSeen
+
     init {
         loadSafetyNumber()
         viewModelScope.launch {
@@ -60,6 +65,24 @@ class ChatRoomViewModel @Inject constructor(
                     }
                 }
             }
+        }
+        if (!isSelfChat) {
+            viewModelScope.launch {
+                while (true) {
+                    refreshPresence()
+                    kotlinx.coroutines.delay(25_000)
+                }
+            }
+        }
+    }
+
+    private suspend fun refreshPresence() {
+        try {
+            val profile = apiService.getUserProfile(chatUserId).body() ?: return
+            _online.value = profile.online
+            _lastSeen.value = profile.lastSeen
+        } catch (_: Exception) {
+            // Keep showing whatever was last known.
         }
     }
 

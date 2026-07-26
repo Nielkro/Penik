@@ -377,6 +377,15 @@ fun GroupSettingsScreen(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text("@${member.nickname}", color = TextMuted, fontSize = 14.sp)
                     }
+                    val presence = niel.kro.penik.ui.util.formatPresence(member.online, member.lastSeen)
+                    if (presence.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            presence,
+                            color = if (member.online) Accent else TextMuted,
+                            fontSize = 13.sp
+                        )
+                    }
                     Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider(color = Border)
                     Row(

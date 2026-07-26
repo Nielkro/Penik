@@ -201,7 +201,7 @@ class GroupRepository @Inject constructor(
         val resp = api.listGroupMembers(groupId).body() ?: return emptyList()
         val members = resp.members
             .filter { it.status != "removed" }
-            .map { GroupMemberEntity(groupId, it.userId, it.role, it.status, it.joinedAt, it.name, it.nickname) }
+            .map { GroupMemberEntity(groupId, it.userId, it.role, it.status, it.joinedAt, it.name, it.nickname, it.online, it.lastSeen) }
         dao.clearMembers(groupId)
         dao.insertMembers(members)
         invalidateDeviceKeyCache()
