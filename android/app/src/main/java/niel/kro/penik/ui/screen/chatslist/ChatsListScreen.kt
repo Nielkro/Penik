@@ -59,6 +59,8 @@ fun ChatsListContent(
     val feed by viewModel.feed.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
+    val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
+    val userAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.userAvatarKeys.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
@@ -186,6 +188,7 @@ fun ChatsListContent(
                             timestamp = item.lastMessageTimestamp,
                             unreadCount = item.unreadCount,
                             isGroup = item is FeedItem.GroupItem,
+                            avatarKey = if (item is FeedItem.GroupItem) groupAvatarKeys[item.id] else userAvatarKeys[item.id],
                             onClick = {
                                 if (item is FeedItem.GroupItem) {
                                     onGroupClick(item.id, item.name)
@@ -218,6 +221,7 @@ fun ChatsListContent(
                             timestamp = item.lastMessageTimestamp,
                             unreadCount = item.unreadCount,
                             isGroup = item is FeedItem.GroupItem,
+                            avatarKey = if (item is FeedItem.GroupItem) groupAvatarKeys[item.id] else userAvatarKeys[item.id],
                             onClick = {
                                 if (item is FeedItem.GroupItem) {
                                     onGroupClick(item.id, item.name)
@@ -263,6 +267,7 @@ fun ChatsListContent(
                             timestamp = item.lastMessageTimestamp,
                             unreadCount = item.unreadCount,
                             isGroup = item is FeedItem.GroupItem,
+                            avatarKey = if (item is FeedItem.GroupItem) groupAvatarKeys[item.id] else userAvatarKeys[item.id],
                             onClick = {
                                 if (item is FeedItem.GroupItem) {
                                     onGroupClick(item.id, item.name)

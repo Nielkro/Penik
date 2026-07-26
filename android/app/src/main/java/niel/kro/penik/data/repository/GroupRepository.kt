@@ -76,6 +76,7 @@ class GroupRepository @Inject constructor(
             val body = okhttp3.MultipartBody.Part.createFormData("avatar", "avatar.webp", requestFile)
             val response = api.uploadGroupAvatar(groupId, body)
             if (response.isSuccessful) {
+                AvatarCacheBus.bumpGroup(groupId)
                 Result.success(Unit)
             } else {
                 Result.failure(Exception("Не удалось загрузить аватар группы"))

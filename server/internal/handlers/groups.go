@@ -1,14 +1,27 @@
 package handlers
 
 import (
+	"bytes"
+	"crypto/md5"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"image"
+	"image/draw"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
+	"github.com/chai2010/webp"
 	"github.com/shamaton/msgpack/v2"
+	"messenger/server/internal/config"
 	"messenger/server/internal/db"
 	"messenger/server/internal/middleware"
 	"messenger/server/internal/ws"
@@ -644,3 +657,142 @@ func GetGroupHistory(database *db.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(resp)
 	}
 }
+
+// UploadGroupAvatar handles PUT /api/v1/groups/{group_id}/avatar — multipart, WebP only, max 100KB (or cfg.MaxAvatarSize).
+func UploadGroupAvatar(database *db.DB, cfg *config.Config, hub *ws.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		groupID, ok := groupIDFromPath(w, r)
+		if !ok {
+			return
+		}
+
+		role, ok := requireActiveMember(w, database, r, groupID)
+		if !ok {
+			return
+		}
+		if role != roleOwner && role != roleAdmin {
+			http.Error(w, "only owner or admin can edit group", http.StatusForbidden)
+			return
+		}
+
+		if err := r.ParseMultipartForm(cfg.MaxAvatarSize + 1024); err != nil {
+			http.Error(w, "multipart parse error", http.StatusBadRequest)
+			return
+		}
+
+		file, _, err := r.FormFile("avatar")
+		if err != nil {
+			http.Error(w, "avatar field required", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		data, err := io.ReadAll(io.LimitReader(file, cfg.MaxAvatarSize+1))
+		if err != nil {
+			http.Error(w, "read error", http.StatusInternalServerError)
+			return
+		}
+		if int64(len(data)) > cfg.MaxAvatarSize {
+			http.Error(w, "avatar too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+
+		img, _, err := image.Decode(bytes.NewReader(data))
+		if err != nil {
+			var webpErr error
+			img, webpErr = webp.Decode(bytes.NewReader(data))
+			if webpErr != nil {
+				http.Error(w, "invalid image format (PNG, JPEG, WebP accepted)", http.StatusUnsupportedMediaType)
+				return
+			}
+		}
+
+		resized := resizeImage(img, 128, 128)
+
+		bounds := resized.Bounds()
+		rgba := image.NewRGBA(bounds)
+		draw.Draw(rgba, bounds, resized, bounds.Min, draw.Src)
+		var buf bytes.Buffer
+		if err := webp.Encode(&buf, rgba, &webp.Options{Quality: 85}); err != nil {
+			http.Error(w, "image encoding failed", http.StatusInternalServerError)
+			return
+		}
+		avatarBytes := buf.Bytes()
+
+		if err := os.MkdirAll(cfg.UploadDir, 0755); err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		filePath := filepath.Join(cfg.UploadDir, fmt.Sprintf("group_%d.webp", groupID))
+		if err := os.WriteFile(filePath, avatarBytes, 0644); err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		notifyGroupAvatarUpdate(database, r, hub, groupID)
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// notifyGroupAvatarUpdate pushes GROUP_AVATAR_UPDATE to every online device of
+// every active group member, so clients re-fetch the avatar instead of using
+// a cached copy. Best-effort: offline devices simply pick up the new avatar
+// next time they load it, since the URL itself is stable.
+func notifyGroupAvatarUpdate(database *db.DB, r *http.Request, hub *ws.Hub, groupID int64) {
+	if hub == nil {
+		return
+	}
+	payload, err := msgpack.Marshal(ws.GroupAvatarUpdate{GroupID: groupID, TS: time.Now().Unix()})
+	if err != nil {
+		return
+	}
+	devices, err := activeDevices(database, r, groupID)
+	if err != nil {
+		return
+	}
+	for _, dev := range devices {
+		hub.SendToDeviceFrame(dev["device_id"], ws.OpGroupAvatarUpdate, payload)
+	}
+}
+
+// GetGroupAvatar handles GET /api/v1/groups/{group_id}/avatar.
+func GetGroupAvatar(database *db.DB, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		groupID, ok := groupIDFromPath(w, r)
+		if !ok {
+			return
+		}
+
+		// Check if group exists and not deleted
+		var exists int
+		err := database.QueryRowContext(r.Context(),
+			`SELECT 1 FROM groups WHERE id=? AND deleted_at IS NULL`, groupID).Scan(&exists)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		filePath := filepath.Join(cfg.UploadDir, fmt.Sprintf("group_%d.webp", groupID))
+		avatar, err := os.ReadFile(filePath)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		etag := fmt.Sprintf(`"%x"`, md5.Sum(avatar))
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "private, no-cache")
+
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+
+		w.Header().Set("Content-Type", "image/webp")
+		w.WriteHeader(http.StatusOK)
+		w.Write(avatar)
+	}
+}
+

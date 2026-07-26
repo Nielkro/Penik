@@ -99,7 +99,8 @@ fun GroupSettingsScreen(
     val contactsList by viewModel.contacts.collectAsState()
     val error by viewModel.error.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val avatarUpdateKey by viewModel.avatarUpdateKey.collectAsState()
+    val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
+    val avatarUpdateKey = groupAvatarKeys[groupId]
 
     var showRenameDialog by remember { mutableStateOf(false) }
     var renameInputText by remember { mutableStateOf("") }

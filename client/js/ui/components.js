@@ -51,6 +51,56 @@ export function avatar(user, size = 40, forceTimestamp = null) {
   return wrap;
 }
 
+// Shared cache-buster for group avatars: bumped locally after a self-upload,
+// and by the GROUP_AVATAR_UPDATE websocket event when any member changes it.
+export const groupAvatarUpdateTimestamps = new Map();
+
+export function groupAvatar(group, size = 40, forceTimestamp = null) {
+  const container = el("div", {
+    style: `position:relative;width:${size}px;height:${size}px;flex-shrink:0;`
+  });
+
+  const wrap = el("div", {
+    class: "avatar",
+    style: `width:100%;height:100%;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;`
+  });
+
+  const groupId = group && group.id;
+  const ts = forceTimestamp || (groupId ? groupAvatarUpdateTimestamps.get(String(groupId)) : null);
+  let avatarUrl = groupId ? `/api/v1/groups/${groupId}/avatar` : null;
+  if (avatarUrl && ts) {
+    avatarUrl += `?t=${ts}`;
+  }
+
+  if (avatarUrl) {
+    const img = el("img", {
+      src: avatarUrl,
+      alt: (group && group.name) || "?",
+      style: `width:100%;height:100%;object-fit:cover;`,
+    });
+    img.onerror = () => {
+      if (wrap.contains(img)) wrap.removeChild(img);
+      wrap.appendChild(initialsNode(group, size));
+    };
+    wrap.appendChild(img);
+  } else {
+    wrap.appendChild(initialsNode(group, size));
+  }
+
+  container.appendChild(wrap);
+
+  const badgeSize = Math.max(14, Math.min(22, Math.round(size * 0.35)));
+  const badgeFontSize = Math.max(9, Math.min(14, Math.round(badgeSize * 0.6)));
+
+  const badge = el("div", {
+    style: `position:absolute;bottom:-2px;right:-2px;width:${badgeSize}px;height:${badgeSize}px;border-radius:50%;background:#00e676;color:#121214;display:flex;align-items:center;justify-content:center;font-size:${badgeFontSize}px;box-shadow:0 0 0 2px #1e1e24;font-weight:bold;z-index:2;line-height:1;`
+  }, "👥");
+
+  container.appendChild(badge);
+
+  return container;
+}
+
 function initialsNode(user, size) {
   const name = (user && (user.name || user.username)) || "?";
   const initials = name
@@ -366,5 +416,55 @@ export function showDeleteChatConfirmModal() {
     });
 
     document.body.appendChild(overlay);
+  });
+}
+
+export function showPromptModal(title, placeholder, defaultValue = "") {
+  return new Promise((resolve) => {
+    const input = el("input", {
+      type: "text",
+      value: defaultValue,
+      placeholder: placeholder,
+      style: "width:100%;padding:12px;font-size:14px;border-radius:8px;background:#1a1a2e;color:#fff;border:1px solid rgba(255,255,255,0.1);margin-bottom:20px;outline:none;"
+    });
+
+    const cancelBtn = el("button", {
+      class: "btn-secondary",
+      style: "flex:1;padding:12px;font-size:14px;border-radius:8px;cursor:pointer;margin-right:8px;background:rgba(255,255,255,0.05);color:#fff;border:1px solid rgba(255,255,255,0.1);"
+    }, "Отмена");
+
+    const confirmBtn = el("button", {
+      class: "btn-primary",
+      style: "flex:1;padding:12px;font-size:14px;border-radius:8px;cursor:pointer;background:#22c55e;color:#fff;border:none;"
+    }, "Сохранить");
+
+    const modalBox = el("div", {
+      style: "background:#1e1e24;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;width:100%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.5);display:flex;flex-direction:column;"
+    },
+      el("h3", { style: "font-size:18px;margin-bottom:16px;color:#fff;font-weight:600;line-height:1.4;text-align:center;" }, title),
+      input,
+      el("div", { style: "display:flex;justify-content:space-between;" }, cancelBtn, confirmBtn)
+    );
+
+    const overlay = el("div", {
+      style: "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;"
+    }, modalBox);
+
+    const closeWithResult = (value) => {
+      document.body.removeChild(overlay);
+      resolve(value);
+    };
+
+    confirmBtn.addEventListener("click", () => {
+      closeWithResult(input.value.trim());
+    });
+    cancelBtn.addEventListener("click", () => closeWithResult(null));
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) closeWithResult(null);
+    });
+
+    document.body.appendChild(overlay);
+    input.focus();
+    input.select();
   });
 }

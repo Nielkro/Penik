@@ -155,6 +155,33 @@ export function getGroup(groupId) { return get(`/groups/${groupId}`); }
 export function renameGroup(groupId, name) { return patch(`/groups/${groupId}`, { name }); }
 export function deleteGroup(groupId) { return del(`/groups/${groupId}`); }
 
+export async function uploadGroupAvatar(groupId, file) {
+  const formData = new FormData();
+  formData.append('avatar', file);
+  const token = getToken();
+  const headers = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}/groups/${groupId}/avatar`, {
+    method: 'PUT',
+    headers,
+    body: formData
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = text;
+    try {
+      const data = JSON.parse(text);
+      if (data && data.error) msg = data.error;
+    } catch {}
+    const err = new Error(msg || 'Не удалось загрузить аватар группы');
+    err.status = res.status;
+    throw err;
+  }
+  return true;
+}
+
 export function listGroupMembers(groupId) { return get(`/groups/${groupId}/members`); }
 export function inviteGroupMember(groupId, userId) { return post(`/groups/${groupId}/members`, { user_id: userId }); }
 export function removeGroupMember(groupId, userId) { return del(`/groups/${groupId}/members/${userId}`); }

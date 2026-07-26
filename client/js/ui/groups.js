@@ -2,10 +2,11 @@ import {
   createGroup, syncGroups, refreshMembers, acceptInvitation, declineInvitation,
   inviteMember, removeMember, changeMemberRole, sendGroupMessage,
   getAllGroups, getGroupMessages, onGroupUpdate, backfillCurrentKey,
+  renameGroup, uploadGroupAvatar,
 } from "../groups.js";
 import { getGroupMembers, getAllContacts } from "../storage.js";
-import { navigate, getCurrentUser } from "../app.js";
-import { el, avatar, formatTime, showToast, spinner, showConfirmModal } from "./components.js";
+import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
+import { el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, showToast, spinner, showConfirmModal, showPromptModal } from "./components.js";
 
 // Role labels in Russian for the members UI.
 const ROLE_LABEL = { owner: "владелец", admin: "админ", member: "участник" };
@@ -34,10 +35,7 @@ export function buildGroupListItem(g, onChange) {
   );
 
   const item = el("li", { class: "chatlist-item" },
-    el("div", {
-      class: "chatlist-item-avatar",
-      style: "width:48px;height:48px;border-radius:50%;background:#1a1a2e;display:flex;align-items:center;justify-content:center;font-size:22px;color:#00e676;",
-    }, "👥"),
+    groupAvatar(g, 48),
     info,
   );
 
@@ -95,7 +93,7 @@ export async function renderGroupList(container) {
   if (container._groupListUnsub) container._groupListUnsub();
   let stale = false;
   const unsub = onGroupUpdate((evt) => {
-    if (evt.type !== "members") return;
+    if (evt.type !== "members" && evt.type !== "avatar") return;
     if (stale || !document.body.contains(container)) { unsub(); return; }
     stale = true;
     renderGroupList(container);
@@ -171,9 +169,13 @@ export async function renderGroup(container, groupId) {
   // concurrently running history/group sync, which contends IndexedDB and can
   // stall these reads; deferring them until after the shell is attached keeps
   // the chat visible instead of leaving just the (sidebar) main screen.
+  const avatarContainer = el("div", { style: "cursor:pointer;margin-right:12px;display:flex;align-items:center;" });
+  avatarContainer.addEventListener("click", () => showMembersModal(groupId, myId));
+
   const nameEl = el("span", { class: "chat-header-name" }, `Группа ${groupId}`);
   const header = el("div", { class: "chat-header" },
     el("button", { class: "icon-btn chat-back" }, "←"),
+    avatarContainer,
     el("div", { class: "chat-header-info" },
       nameEl,
       el("span", { class: "chat-header-nick" }, ""),
@@ -194,12 +196,21 @@ export async function renderGroup(container, groupId) {
   container.appendChild(chatWrap);
 
   // Resolve the real title and member names after the shell is mounted.
+  let headerGroup = { id: groupId, name: `Группа ${groupId}` };
+  function renderHeaderAvatar() {
+    avatarContainer.innerHTML = "";
+    avatarContainer.appendChild(groupAvatar(headerGroup, 40));
+  }
   (async () => {
     try {
       const groups = await getAllGroups();
       const group = groups.find(g => Number(g.id) === groupId);
-      if (group) nameEl.textContent = group.name;
-    } catch { /* keep fallback title */ }
+      if (group) {
+        headerGroup = group;
+        nameEl.textContent = group.name;
+      }
+    } catch { /* keep fallback name/avatar */ }
+    renderHeaderAvatar();
     try {
       const members = await getGroupMembers(groupId);
       for (const m of members) nameById.set(Number(m.user_id), memberName(m));
@@ -264,6 +275,7 @@ export async function renderGroup(container, groupId) {
   const unsub = onGroupUpdate((evt) => {
     if (Number(evt.groupId) !== groupId) return;
     if (evt.type === "message" || evt.type === "ack") appendMessage(evt.message);
+    if (evt.type === "avatar") renderHeaderAvatar();
   });
   // Detach the listener when the view is torn down (navigation replaces innerHTML).
   const observer = new MutationObserver(() => {
@@ -339,8 +351,45 @@ function buildMemberRow(m, { myRole, myId, onAction, onProfile }) {
 }
 
 async function showMembersModal(groupId, myId) {
-  const listEl = el("ul", { style: "list-style:none;padding:0;margin:4px 0;max-height:340px;overflow:auto;" });
+  let groups = [];
+  try { groups = await getAllGroups(); } catch {}
+  let group = groups.find(g => Number(g.id) === groupId) || { id: groupId, name: `Группа ${groupId}` };
+
+  const listEl = el("ul", { style: "list-style:none;padding:0;margin:4px 0;max-height:220px;overflow:auto;" });
   const closeBtn = el("button", { class: "btn-secondary", style: "font-size:14px;" }, "Закрыть");
+
+  // Avatar display
+  const avatarWrapper = el("div", {
+    style: "position:relative;margin: 8px auto 12px;width:80px;height:80px;border-radius:50%;overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;background:#1a1a2e;"
+  });
+  const fileInput = el("input", { type: "file", accept: "image/*", style: "display:none;" });
+  let avatarTimestamp = Date.now();
+
+  function updateAvatarDisplay() {
+    avatarWrapper.innerHTML = "";
+    avatarWrapper.appendChild(groupAvatar(group, 80, avatarTimestamp));
+  }
+  updateAvatarDisplay();
+
+  // Rename components
+  const titleEl = el("span", { style: "font-size:18px;font-weight:bold;color:#fff;" }, group.name);
+  const renameIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  renameIcon.setAttribute("viewBox", "0 0 24 24");
+  renameIcon.setAttribute("width", "16");
+  renameIcon.setAttribute("height", "16");
+  renameIcon.setAttribute("fill", "none");
+  renameIcon.setAttribute("stroke", "#00e676");
+  renameIcon.setAttribute("stroke-width", "2");
+  renameIcon.setAttribute("stroke-linecap", "round");
+  renameIcon.setAttribute("stroke-linejoin", "round");
+  renameIcon.innerHTML = `<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>`;
+
+  const renameBtn = el("button", {
+    style: "background:none;border:none;cursor:pointer;padding:4px;display:none;align-items:center;justify-content:center;"
+  }, renameIcon);
+  const titleContainer = el("div", {
+    style: "display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px;"
+  }, titleEl, renameBtn, fileInput);
 
   // "+ Добавить участника" row lives below a divider, styled after the sketch.
   const addRow = el("button", {
@@ -352,7 +401,9 @@ async function showMembersModal(groupId, myId) {
 
   const overlay = el("div", { style: OVERLAY_STYLE },
     el("div", { style: BOX_STYLE },
-      el("h3", { style: "font-size:18px;margin-bottom:12px;color:#fff;text-align:center;" }, "Участники"),
+      avatarWrapper,
+      titleContainer,
+      el("h4", { style: "font-size:14px;color:#8a8a94;margin:8px 0;font-weight:normal;" }, "Участники"),
       listEl,
       el("hr", { style: "border:none;border-top:1px solid rgba(255,255,255,0.1);width:100%;margin:4px 0;" }),
       addRow,
@@ -360,6 +411,49 @@ async function showMembersModal(groupId, myId) {
     ),
   );
   document.body.appendChild(overlay);
+
+  avatarWrapper.addEventListener("click", () => {
+    if (isPrivileged(myRole)) {
+      fileInput.click();
+    }
+  });
+
+  fileInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      avatarWrapper.style.opacity = "0.5";
+      await uploadGroupAvatar(groupId, file);
+      avatarTimestamp = Date.now();
+      groupAvatarUpdateTimestamps.set(String(groupId), avatarTimestamp);
+      updateAvatarDisplay();
+      triggerChatListUpdate();
+      showToast("Аватар группы обновлен!");
+    } catch (err) {
+      showToast(err.message || "Не удалось загрузить аватар", "error");
+    } finally {
+      avatarWrapper.style.opacity = "1";
+    }
+  });
+
+  renameBtn.addEventListener("click", async () => {
+    const newName = await showPromptModal("Переименовать группу", "Название группы", group.name);
+    if (newName && newName !== group.name) {
+      try {
+        await renameGroup(groupId, newName);
+        group.name = newName;
+        titleEl.textContent = newName;
+        const chatNameEl = document.querySelector(".chat-header-name");
+        if (chatNameEl && (chatNameEl.textContent === group.name || chatNameEl.textContent === `Группа ${groupId}`)) {
+          chatNameEl.textContent = newName;
+        }
+        showToast("Название группы изменено!");
+      } catch (err) {
+        showToast(err.message || "Не удалось переименовать группу", "error");
+      }
+    }
+  });
+
   const close = () => overlay.remove();
   closeBtn.addEventListener("click", close);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
@@ -401,6 +495,7 @@ async function showMembersModal(groupId, myId) {
     }
     // Only owner/admin may add members: hide the add row otherwise.
     addRow.style.display = isPrivileged(myRole) ? "flex" : "none";
+    renameBtn.style.display = isPrivileged(myRole) ? "inline-block" : "none";
   }
   await renderMembers();
 

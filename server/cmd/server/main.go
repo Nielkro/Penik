@@ -117,6 +117,9 @@ func main() {
 		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.PatchGroup(database)))))
 	mux.Handle("DELETE /api/v1/groups/{group_id}",
 		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.DeleteGroup(database)))))
+	mux.HandleFunc("GET /api/v1/groups/{group_id}/avatar", handlers.GetGroupAvatar(database, cfg))
+	mux.Handle("PUT /api/v1/groups/{group_id}/avatar",
+		authMW(http.HandlerFunc(handlers.UploadGroupAvatar(database, cfg, hub))))
 	mux.Handle("GET /api/v1/groups/{group_id}/members",
 		authMW(http.HandlerFunc(handlers.ListMembers(database))))
 	mux.Handle("POST /api/v1/groups/{group_id}/members",

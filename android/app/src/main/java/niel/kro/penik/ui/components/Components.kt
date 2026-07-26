@@ -186,6 +186,7 @@ fun ChatListItem(
     timestamp: Long?,
     unreadCount: Int,
     isGroup: Boolean = false,
+    avatarKey: Any? = null,
     onClick: () -> Unit
 ) {
     Row(
@@ -196,9 +197,9 @@ fun ChatListItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (isGroup) {
-            GroupAvatar(groupId = userId, name = name, size = 48.dp)
+            GroupAvatar(groupId = userId, name = name, size = 48.dp, avatarKey = avatarKey)
         } else {
-            UserAvatar(userId = userId, name = name, size = 48.dp)
+            UserAvatar(userId = userId, name = name, size = 48.dp, avatarKey = avatarKey)
         }
 
         Spacer(modifier = Modifier.width(12.dp))
