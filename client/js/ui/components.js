@@ -163,7 +163,7 @@ export function formatPresence(presence) {
   const seenDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
-  if (seenDay.getTime() === today.getTime()) return `был(а) в сети сегодня в ${time}`;
+  if (seenDay.getTime() === today.getTime()) return `был(а) в сети в ${time}`;
   if (seenDay.getTime() === yesterday.getTime()) return `был(а) в сети вчера в ${time}`;
   return `был(а) в сети ${d.toLocaleDateString([], { day: "numeric", month: "long" })} в ${time}`;
 }
