@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import niel.kro.penik.ui.components.GroupAvatar
 import niel.kro.penik.ui.theme.Accent
 import niel.kro.penik.ui.theme.Background
 import niel.kro.penik.ui.theme.Border
@@ -115,10 +116,10 @@ fun GroupsListScreen(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Default.Group,
-                                contentDescription = null,
-                                tint = Accent,
+                            GroupAvatar(
+                                groupId = group.id,
+                                name = group.name,
+                                size = 44.dp,
                                 modifier = Modifier.padding(end = 12.dp)
                             )
                             Column(modifier = Modifier.weight(1f)) {

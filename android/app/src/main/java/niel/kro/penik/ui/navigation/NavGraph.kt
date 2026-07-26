@@ -11,6 +11,7 @@ import androidx.navigation.navArgument
 import niel.kro.penik.ui.screen.auth.AuthScreen
 import niel.kro.penik.ui.screen.chatroom.ChatRoomScreen
 import niel.kro.penik.ui.screen.groups.GroupChatScreen
+import niel.kro.penik.ui.screen.groups.GroupSettingsScreen
 import niel.kro.penik.ui.viewmodel.StartupViewModel
 import niel.kro.penik.ui.screen.pairing.PairingScannerScreen
 
@@ -87,6 +88,22 @@ fun NavGraph(
             GroupChatScreen(
                 groupId = groupId,
                 groupName = groupName,
+                onBack = { navController.popBackStack() },
+                onGroupSettingsClick = { id ->
+                    navController.navigate(Screen.GroupSettings.createRoute(id))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.GroupSettings.route,
+            arguments = listOf(
+                navArgument("groupId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val groupId = backStackEntry.arguments?.getLong("groupId") ?: return@composable
+            GroupSettingsScreen(
+                groupId = groupId,
                 onBack = { navController.popBackStack() }
             )
         }
