@@ -108,12 +108,11 @@ fun GroupSettingsScreen(
     var inviteSearchQuery by remember { mutableStateOf("") }
     var shareHistory by remember { mutableStateOf(false) }
 
-    var selectedMemberForActions by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
     var selectedMemberForProfile by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
     var memberToRemove by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
 
     val myUserId = viewModel.myUserId
-    val myRole = viewModel.myRole
+    val myRole = members.find { it.userId == myUserId }?.role ?: "member"
     val isMeOwner = myRole == "owner"
     val isMePrivileged = myRole == "owner" || myRole == "admin"
 
@@ -275,13 +274,12 @@ fun GroupSettingsScreen(
 
                 itemsIndexed(sortedMembers) { index, member ->
                     val isMe = member.userId == myUserId
-                    val canManageRow = isMeOwner && member.role != "owner" && !isMe
-                    val canRemoveRow = isMePrivileged && member.role != "owner" && !isMe
 
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Panel)
+                            .clickable { selectedMemberForProfile = member }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -290,18 +288,9 @@ fun GroupSettingsScreen(
                             userId = member.userId,
                             name = displayName,
                             size = 40.dp,
-                            modifier = Modifier
-                                .padding(end = 12.dp)
-                                .clip(CircleShape)
-                                .clickable { selectedMemberForProfile = member }
+                            modifier = Modifier.padding(end = 12.dp)
                         )
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable(enabled = canManageRow || canRemoveRow) {
-                                    selectedMemberForActions = member
-                                }
-                        ) {
+                        Column {
                             val displayNameWithMe = displayName + if (isMe) " (вы)" else ""
                             val roleRu = roleLabel(member.role) + if (member.status == "pending") " · приглашён" else ""
                             Text(displayNameWithMe, color = TextPrimary, fontWeight = FontWeight.Medium)
@@ -361,9 +350,14 @@ fun GroupSettingsScreen(
         )
     }
 
-    // Member Profile Dialog (read-only card: avatar, name, @nickname, role, id)
+    // Member Profile Dialog: avatar, name, @nickname, role, id, and — for privileged
+    // viewers — actions to change role / remove the member.
     selectedMemberForProfile?.let { member ->
         val displayName = member.name.ifEmpty { member.nickname.ifEmpty { "#${member.userId}" } }
+        val isMe = member.userId == myUserId
+        val canManageRow = isMeOwner && member.role != "owner" && !isMe
+        val canRemoveRow = isMePrivileged && member.role != "owner" && !isMe
+
         AlertDialog(
             onDismissRequest = { selectedMemberForProfile = null },
             containerColor = Panel,
@@ -400,36 +394,17 @@ fun GroupSettingsScreen(
                         Text("${member.userId}", color = TextPrimary, fontSize = 14.sp)
                     }
                     HorizontalDivider(color = Border)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { selectedMemberForProfile = null }) {
-                    Text("Закрыть", color = Accent)
-                }
-            }
-        )
-    }
 
-    // Manage Member Actions Dialog
-    selectedMemberForActions?.let { member ->
-        val isMe = member.userId == myUserId
-        val canManageRow = isMeOwner && member.role != "owner" && !isMe
-        val canRemoveRow = isMePrivileged && member.role != "owner" && !isMe
-
-        AlertDialog(
-            onDismissRequest = { selectedMemberForActions = null },
-            containerColor = Panel,
-            titleContentColor = TextPrimary,
-            title = { Text(member.name.ifEmpty { member.nickname.ifEmpty { "#${member.userId}" } }) },
-            text = {
-                Column {
+                    if (canManageRow || canRemoveRow) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
                     if (canManageRow) {
                         TextButton(
                             modifier = Modifier.fillMaxWidth(),
                             onClick = {
                                 val newRole = if (member.role == "admin") "member" else "admin"
                                 viewModel.changeMemberRole(member.userId, newRole)
-                                selectedMemberForActions = null
+                                selectedMemberForProfile = null
                             }
                         ) {
                             Text(
@@ -444,18 +419,17 @@ fun GroupSettingsScreen(
                             modifier = Modifier.fillMaxWidth(),
                             onClick = {
                                 memberToRemove = member
-                                selectedMemberForActions = null
+                                selectedMemberForProfile = null
                             }
                         ) {
-                            Text("Удалить из группы", color = Accent, modifier = Modifier.fillMaxWidth())
+                            Text("Удалить из группы", color = Danger, modifier = Modifier.fillMaxWidth())
                         }
                     }
                 }
             },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { selectedMemberForActions = null }) {
-                    Text("Отмена", color = TextPrimary)
+            confirmButton = {
+                TextButton(onClick = { selectedMemberForProfile = null }) {
+                    Text("Закрыть", color = Accent)
                 }
             }
         )

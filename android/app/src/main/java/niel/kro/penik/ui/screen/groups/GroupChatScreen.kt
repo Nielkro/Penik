@@ -89,7 +89,8 @@ fun GroupChatScreen(
     var memberToRemove by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
     var selectedMemberForActions by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
 
-    val canManage = viewModel.myRole in listOf("owner", "admin")
+    val myRole = members.find { it.userId == viewModel.myUserId }?.role ?: "member"
+    val canManage = myRole in listOf("owner", "admin")
 
     var previousSize by remember { mutableStateOf(0) }
     LaunchedEffect(messages.size) {
@@ -282,8 +283,8 @@ fun GroupChatScreen(
                     ) {
                         itemsIndexed(sortedMembers) { index, member ->
                             val isMe = member.userId == viewModel.myUserId
-                            val isPrivileged = viewModel.myRole == "owner" || viewModel.myRole == "admin"
-                            val canManageRow = viewModel.myRole == "owner" && member.role != "owner" && !isMe
+                            val isPrivileged = myRole == "owner" || myRole == "admin"
+                            val canManageRow = myRole == "owner" && member.role != "owner" && !isMe
                             val canRemoveRow = isPrivileged && member.role != "owner" && !isMe
 
                             Row(
@@ -344,8 +345,8 @@ fun GroupChatScreen(
 
     selectedMemberForActions?.let { member ->
         val isMe = member.userId == viewModel.myUserId
-        val isPrivileged = viewModel.myRole == "owner" || viewModel.myRole == "admin"
-        val canManageRow = viewModel.myRole == "owner" && member.role != "owner" && !isMe
+        val isPrivileged = myRole == "owner" || myRole == "admin"
+        val canManageRow = myRole == "owner" && member.role != "owner" && !isMe
         val canRemoveRow = isPrivileged && member.role != "owner" && !isMe
 
         AlertDialog(
