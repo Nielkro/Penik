@@ -314,18 +314,29 @@ func ListMembers(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		defer rows.Close()
-		out := []map[string]any{}
+		type memberRow struct {
+			uid, joined              int64
+			role, status, name, nick string
+		}
+		var members []memberRow
 		for rows.Next() {
-			var uid, joined int64
-			var role, status, name, nickname string
-			if err := rows.Scan(&uid, &role, &status, &joined, &name, &nickname); err != nil {
+			var m memberRow
+			if err := rows.Scan(&m.uid, &m.role, &m.status, &m.joined, &m.name, &m.nick); err != nil {
+				rows.Close()
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}
-			online, lastSeen := userPresence(r.Context(), database, hub, uid)
+			members = append(members, m)
+		}
+		rows.Close()
+		// userPresence issues its own query; the DB pool is limited to a single
+		// SQLite connection, so it must run after the member rows above are
+		// fully read and closed to avoid deadlocking on that one connection.
+		out := []map[string]any{}
+		for _, m := range members {
+			online, lastSeen := userPresence(r.Context(), database, hub, m.uid)
 			out = append(out, map[string]any{
-				"user_id": uid, "role": role, "status": status, "joined_at": joined, "name": name, "nickname": nickname,
+				"user_id": m.uid, "role": m.role, "status": m.status, "joined_at": m.joined, "name": m.name, "nickname": m.nick,
 				"online": online, "last_seen": lastSeen,
 			})
 		}
