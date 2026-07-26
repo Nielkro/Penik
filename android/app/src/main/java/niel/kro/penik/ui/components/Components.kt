@@ -1,6 +1,7 @@
 package niel.kro.penik.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -16,8 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -27,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import androidx.compose.ui.draw.clip
@@ -41,6 +46,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import niel.kro.penik.ui.theme.Accent
 import niel.kro.penik.ui.theme.Background
 import niel.kro.penik.ui.theme.Danger
@@ -74,6 +81,49 @@ private fun initialsText(name: String): String {
         .uppercase()
 }
 
+// avatarUrlFor builds the same avatar URL UserAvatar/GroupAvatar load, so
+// callers (e.g. a tap-to-view-fullscreen handler) can reference the exact
+// image being displayed without duplicating the URL scheme.
+fun avatarUrlFor(isGroup: Boolean, id: Long, avatarKey: Any? = null): String {
+    val base = if (isGroup) {
+        "https://penik.dev.slavchat.ru/api/v1/groups/$id/avatar"
+    } else {
+        "https://penik.dev.slavchat.ru/api/v1/avatar/$id"
+    }
+    return if (avatarKey != null) "$base?t=$avatarKey" else base
+}
+
+// FullscreenImageViewer shows `url` full-screen in a dialog, dismissed by
+// tapping anywhere outside the image or the close button.
+@Composable
+fun FullscreenImageViewer(url: String?, onDismiss: () -> Unit) {
+    if (url == null) return
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.92f))
+                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onDismiss() },
+            contentAlignment = Alignment.Center
+        ) {
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {},
+                contentScale = ContentScale.Fit
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "Закрыть", tint = Color.White)
+            }
+        }
+    }
+}
+
 @Composable
 fun UserAvatar(
     userId: Long,
@@ -82,11 +132,7 @@ fun UserAvatar(
     modifier: Modifier = Modifier,
     avatarKey: Any? = null
 ) {
-    val avatarUrl = if (avatarKey != null) {
-        "https://penik.dev.slavchat.ru/api/v1/avatar/$userId?t=$avatarKey"
-    } else {
-        "https://penik.dev.slavchat.ru/api/v1/avatar/$userId"
-    }
+    val avatarUrl = avatarUrlFor(isGroup = false, id = userId, avatarKey = avatarKey)
 
     SubcomposeAsyncImage(
         model = avatarUrl,
@@ -113,11 +159,7 @@ fun GroupAvatar(
     modifier: Modifier = Modifier,
     avatarKey: Any? = null
 ) {
-    val avatarUrl = if (avatarKey != null) {
-        "https://penik.dev.slavchat.ru/api/v1/groups/$groupId/avatar?t=$avatarKey"
-    } else {
-        "https://penik.dev.slavchat.ru/api/v1/groups/$groupId/avatar"
-    }
+    val avatarUrl = avatarUrlFor(isGroup = true, id = groupId, avatarKey = avatarKey)
 
     Box(modifier = modifier.size(size)) {
         SubcomposeAsyncImage(
@@ -187,7 +229,8 @@ fun ChatListItem(
     unreadCount: Int,
     isGroup: Boolean = false,
     avatarKey: Any? = null,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onAvatarClick: ((String) -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -196,10 +239,17 @@ fun ChatListItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (isGroup) {
-            GroupAvatar(groupId = userId, name = name, size = 48.dp, avatarKey = avatarKey)
+        val avatarModifier = if (onAvatarClick != null) {
+            Modifier.clickable { onAvatarClick(avatarUrlFor(isGroup, userId, avatarKey)) }
         } else {
-            UserAvatar(userId = userId, name = name, size = 48.dp, avatarKey = avatarKey)
+            Modifier
+        }
+        Box(modifier = avatarModifier) {
+            if (isGroup) {
+                GroupAvatar(groupId = userId, name = name, size = 48.dp, avatarKey = avatarKey)
+            } else {
+                UserAvatar(userId = userId, name = name, size = 48.dp, avatarKey = avatarKey)
+            }
         }
 
         Spacer(modifier = Modifier.width(12.dp))

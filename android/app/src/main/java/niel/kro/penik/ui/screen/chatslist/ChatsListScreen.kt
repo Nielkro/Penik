@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import niel.kro.penik.ui.components.ChatListItem
 import niel.kro.penik.ui.components.ConnectionStatusBar
+import niel.kro.penik.ui.components.FullscreenImageViewer
 import niel.kro.penik.ui.components.SearchUserItem
 import niel.kro.penik.ui.theme.Background
 import niel.kro.penik.ui.theme.Border
@@ -63,6 +64,7 @@ fun ChatsListContent(
     val userAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.userAvatarKeys.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
+    var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(isSearchActive) {
@@ -195,7 +197,8 @@ fun ChatsListContent(
                                 } else {
                                     onChatClick(item.id, item.name)
                                 }
-                            }
+                            },
+                            onAvatarClick = { url -> fullscreenAvatarUrl = url }
                         )
                     }
                 }
@@ -228,7 +231,8 @@ fun ChatsListContent(
                                 } else {
                                     onChatClick(item.id, item.name)
                                 }
-                            }
+                            },
+                            onAvatarClick = { url -> fullscreenAvatarUrl = url }
                         )
                     }
                 }
@@ -274,11 +278,14 @@ fun ChatsListContent(
                                 } else {
                                     onChatClick(item.id, item.name)
                                 }
-                            }
+                            },
+                            onAvatarClick = { url -> fullscreenAvatarUrl = url }
                         )
                     }
                 }
             }
         }
     }
+
+    FullscreenImageViewer(url = fullscreenAvatarUrl, onDismiss = { fullscreenAvatarUrl = null })
 }
