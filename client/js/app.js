@@ -910,7 +910,7 @@ function setupGlobalWSListeners() {
   });
   ws.on(OP.SERVER_SHUTDOWN, () => {
     console.log('[ws] Server is shutting down, disconnecting');
-    ws.disconnect();
+    ws.closeForServerShutdown();
     showToast('Сервер выключается…', 'warning');
   });
   registerGroupWSListeners();

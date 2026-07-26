@@ -95,6 +95,20 @@ class WSManager {
     this._pendingReplies.clear();
   }
 
+  /**
+   * Closes the socket after a server-initiated shutdown notice, without
+   * setting _manualClose - the server closes the connection on its own right
+   * after this anyway, so this just avoids waiting for that round trip. The
+   * normal onclose -> _scheduleReconnect path still runs, so the client keeps
+   * retrying (and notifyRestSuccess still reconnects immediately once REST
+   * calls start succeeding again).
+   */
+  closeForServerShutdown() {
+    if (this._ws) {
+      this._ws.close();
+    }
+  }
+
   get connected() { return this._connected; }
 
   isConnected() { return this._connected; }
