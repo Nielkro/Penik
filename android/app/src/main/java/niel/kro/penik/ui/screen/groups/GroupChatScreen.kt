@@ -119,7 +119,7 @@ fun GroupChatScreen(
                 title = {
                     Row(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .fillMaxWidth()
                             .clickable { onGroupSettingsClick(groupId) },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
