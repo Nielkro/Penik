@@ -105,6 +105,7 @@ sealed class WebSocketEvent {
     )
     data class MsgStatusBatch(val statuses: List<MsgStatusItem>) : WebSocketEvent()
     data class UserAvatarUpdate(val userId: Long, val ts: Long) : WebSocketEvent()
+    data class PresenceUpdate(val userId: Long, val online: Boolean, val lastSeen: Long) : WebSocketEvent()
     data class GroupAvatarUpdate(val groupId: Long, val ts: Long) : WebSocketEvent()
 
     object Connected : WebSocketEvent()
@@ -121,6 +122,7 @@ object Opcode {
     const val OFFLINE_BATCH: Byte = 0x05
     const val MSG_STATUS_BATCH: Byte = 0x1b
     const val USER_AVATAR_UPDATE: Byte = 0x1c
+    const val PRESENCE_UPDATE: Byte = 0x1d
     const val PING: Byte = 0x06
     const val PONG: Byte = 0x07
     const val CHAT_PURGE: Byte = 0x08
@@ -301,6 +303,7 @@ class WebSocketManager @Inject constructor(
             Opcode.CHAT_PURGE -> handleChatPurge(payload)
             Opcode.PAIRING_HISTORY_READY -> handlePairingHistoryReady(payload)
             Opcode.USER_AVATAR_UPDATE -> handleUserAvatarUpdate(payload)
+            Opcode.PRESENCE_UPDATE -> handlePresenceUpdate(payload)
             Opcode.GROUP_MESSAGE_RECV -> handleGroupMessageRecv(payload)
             Opcode.GROUP_MESSAGE_ACK -> handleGroupMessageAck(payload)
             Opcode.GROUP_KEY_AVAILABLE -> handleGroupKeyAvailable(payload)
@@ -319,6 +322,20 @@ class WebSocketManager @Inject constructor(
             scope.launch { _events.emit(WebSocketEvent.UserAvatarUpdate(userId, ts)) }
         } catch (e: Exception) {
             Log.e("WS", "Failed to parse UserAvatarUpdate frame", e)
+        }
+    }
+
+    private fun handlePresenceUpdate(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val userId = (map["user_id"] as? Number)?.toLong() ?: return
+            val online = map["online"] as? Boolean ?: false
+            val lastSeen = (map["last_seen"] as? Number)?.toLong() ?: 0L
+            scope.launch { _events.emit(WebSocketEvent.PresenceUpdate(userId, online, lastSeen)) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse PresenceUpdate frame", e)
         }
     }
 

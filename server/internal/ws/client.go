@@ -52,12 +52,15 @@ func newClient(h *Hub, conn *websocket.Conn, userID, deviceID int64, database *d
 func (c *Client) Run(ctx context.Context) {
 	c.conn.SetReadLimit(5 * 1024 * 1024) // 5 MB max WebSocket frame limit
 	c.hub.register <- c
+	go c.broadcastPresenceConnect(context.Background())
 	defer func() {
 		c.hub.unregister <- c
 		c.conn.Close(websocket.StatusNormalClosure, "bye")
 		// Best-effort: record when this device went offline, so last_seen
 		// reflects "last active" rather than only "last connected."
-		_, _ = c.db.Exec(`UPDATE devices SET last_seen=? WHERE id=?`, time.Now().Unix(), c.deviceID)
+		now := time.Now().Unix()
+		_, _ = c.db.Exec(`UPDATE devices SET last_seen=? WHERE id=?`, now, c.deviceID)
+		go c.broadcastPresenceDisconnect(context.Background(), now)
 	}()
 
 	// Send offline messages immediately.
@@ -696,6 +699,68 @@ func (c *Client) handleChatPurgeAck(ctx context.Context, msg *ChatPurgeAck) erro
 		   AND chat_id IN (SELECT id FROM chats WHERE user1_id = ? AND user2_id = ?)`,
 		c.userID, u1, u2)
 	return err
+}
+
+// broadcastPresenceConnect notifies peers that this device just came online.
+func (c *Client) broadcastPresenceConnect(ctx context.Context) {
+	c.broadcastPresenceFrame(ctx, true, time.Now().Unix())
+}
+
+// broadcastPresenceDisconnect notifies peers that this device went offline,
+// unless another of the user's devices is still connected.
+func (c *Client) broadcastPresenceDisconnect(ctx context.Context, lastSeen int64) {
+	online := false
+	rows, err := c.db.QueryContext(ctx, `SELECT id FROM devices WHERE user_id=?`, c.userID)
+	if err == nil {
+		for rows.Next() {
+			var devID int64
+			if rows.Scan(&devID) == nil && devID != c.deviceID && c.hub.IsOnline(devID) {
+				online = true
+			}
+		}
+		rows.Close()
+	}
+	c.broadcastPresenceFrame(ctx, online, lastSeen)
+}
+
+func (c *Client) broadcastPresenceFrame(ctx context.Context, online bool, lastSeen int64) {
+	deviceIDs := c.peerDevices(ctx)
+	if len(deviceIDs) == 0 {
+		return
+	}
+	payload, err := msgpack.Marshal(PresenceUpdate{UserID: c.userID, Online: online, LastSeen: lastSeen})
+	if err != nil {
+		return
+	}
+	c.hub.BroadcastPresence(deviceIDs, payload)
+}
+
+// peerDevices finds all devices belonging to users who share a 1:1 chat or a
+// group with c.userID, so they can be notified of this user's presence changes.
+func (c *Client) peerDevices(ctx context.Context) []int64 {
+	query := `
+		SELECT DISTINCT d.id FROM devices d WHERE d.user_id IN (
+			SELECT sender_user_id FROM messages WHERE recipient_user_id = ?
+			UNION
+			SELECT recipient_user_id FROM messages WHERE sender_user_id = ?
+			UNION
+			SELECT user_id FROM group_members WHERE group_id IN (
+				SELECT group_id FROM group_members WHERE user_id = ?
+			)
+		)`
+	rows, err := c.db.QueryContext(ctx, query, c.userID, c.userID, c.userID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var deviceIDs []int64
+	for rows.Next() {
+		var devID int64
+		if rows.Scan(&devID) == nil {
+			deviceIDs = append(deviceIDs, devID)
+		}
+	}
+	return deviceIDs
 }
 
 func (c *Client) sendToUserDevices(ctx context.Context, userID, excludeDeviceID int64, frame []byte) {

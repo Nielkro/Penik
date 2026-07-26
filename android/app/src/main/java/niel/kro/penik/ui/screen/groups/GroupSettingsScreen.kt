@@ -101,6 +101,7 @@ fun GroupSettingsScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
     val avatarUpdateKey = groupAvatarKeys[groupId]
+    val livePresence by niel.kro.penik.data.repository.PresenceBus.presence.collectAsState()
 
     var showRenameDialog by remember { mutableStateOf(false) }
     var renameInputText by remember { mutableStateOf("") }
@@ -377,12 +378,15 @@ fun GroupSettingsScreen(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text("@${member.nickname}", color = TextMuted, fontSize = 14.sp)
                     }
-                    val presence = niel.kro.penik.ui.util.formatPresence(member.online, member.lastSeen)
+                    val liveState = livePresence[member.userId]
+                    val memberOnline = liveState?.online ?: member.online
+                    val memberLastSeen = liveState?.lastSeen ?: member.lastSeen
+                    val presence = niel.kro.penik.ui.util.formatPresence(memberOnline, memberLastSeen)
                     if (presence.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             presence,
-                            color = if (member.online) Accent else TextMuted,
+                            color = if (memberOnline) Accent else TextMuted,
                             fontSize = 13.sp
                         )
                     }

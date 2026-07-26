@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.repository.ChatRepository
 import niel.kro.penik.data.repository.MessageRepository
+import niel.kro.penik.data.repository.PresenceBus
 import niel.kro.penik.data.repository.SecureTokenStorage
 import niel.kro.penik.domain.usecase.LoadMessagesUseCase
 import niel.kro.penik.domain.usecase.SendMessageUseCase
@@ -71,6 +72,16 @@ class ChatRoomViewModel @Inject constructor(
                 while (true) {
                     refreshPresence()
                     kotlinx.coroutines.delay(25_000)
+                }
+            }
+            // Live push: apply PRESENCE_UPDATE events immediately instead of
+            // waiting for the next poll tick.
+            viewModelScope.launch {
+                PresenceBus.presence.collect { map ->
+                    map[chatUserId]?.let { state ->
+                        _online.value = state.online
+                        _lastSeen.value = state.lastSeen
+                    }
                 }
             }
         }

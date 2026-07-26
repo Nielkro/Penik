@@ -19,6 +19,7 @@ import {
   encryptKeyBackup, decryptKeyBackup, derivePublicKey
 } from './crypto.js';
 import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
+import { emitPresenceUpdate } from './presence.js';
 
 function u8ToHex(arr) {
   return Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
@@ -900,6 +901,11 @@ function setupGlobalWSListeners() {
           renderChat(chatScreen, payload.user_id);
         }
       }
+    }
+  });
+  ws.on(OP.PRESENCE_UPDATE, (payload) => {
+    if (payload && payload.user_id != null) {
+      emitPresenceUpdate(payload.user_id, { online: payload.online, last_seen: payload.last_seen });
     }
   });
   registerGroupWSListeners();

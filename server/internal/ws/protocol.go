@@ -26,6 +26,7 @@ const (
 	OpPairingClaimed      Opcode = 0x1a
 	OpMsgStatusBatch      Opcode = 0x1b
 	OpUserAvatarUpdate    Opcode = 0x1c
+	OpPresenceUpdate      Opcode = 0x1d
 
 	OpGroupMessageSend      Opcode = 0x20
 	OpGroupMessageRecv      Opcode = 0x21
@@ -243,6 +244,14 @@ type MsgStatusItem struct {
 
 type MsgStatusBatch struct {
 	Statuses []MsgStatusItem `msgpack:"statuses"`
+}
+
+// PresenceUpdate is pushed to peers (1:1 chat partners and group co-members)
+// when a user's online/last_seen state changes.
+type PresenceUpdate struct {
+	UserID   int64 `msgpack:"user_id"`
+	Online   bool  `msgpack:"online"`
+	LastSeen int64 `msgpack:"last_seen"`
 }
 
 // GroupAvatarUpdate notifies active devices that a group's avatar changed,
