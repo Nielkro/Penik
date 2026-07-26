@@ -296,7 +296,7 @@ func DeleteGroup(database *db.DB) http.HandlerFunc {
 }
 
 // ListMembers returns members of a group the caller belongs to.
-func ListMembers(database *db.DB) http.HandlerFunc {
+func ListMembers(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		groupID, ok := groupIDFromPath(w, r)
@@ -323,7 +323,11 @@ func ListMembers(database *db.DB) http.HandlerFunc {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}
-			out = append(out, map[string]any{"user_id": uid, "role": role, "status": status, "joined_at": joined, "name": name, "nickname": nickname})
+			online, lastSeen := userPresence(r.Context(), database, hub, uid)
+			out = append(out, map[string]any{
+				"user_id": uid, "role": role, "status": status, "joined_at": joined, "name": name, "nickname": nickname,
+				"online": online, "last_seen": lastSeen,
+			})
 		}
 		json.NewEncoder(w).Encode(map[string]any{"members": out})
 	}

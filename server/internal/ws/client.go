@@ -55,6 +55,9 @@ func (c *Client) Run(ctx context.Context) {
 	defer func() {
 		c.hub.unregister <- c
 		c.conn.Close(websocket.StatusNormalClosure, "bye")
+		// Best-effort: record when this device went offline, so last_seen
+		// reflects "last active" rather than only "last connected."
+		_, _ = c.db.Exec(`UPDATE devices SET last_seen=? WHERE id=?`, time.Now().Unix(), c.deviceID)
 	}()
 
 	// Send offline messages immediately.

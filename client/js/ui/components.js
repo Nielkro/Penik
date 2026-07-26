@@ -147,6 +147,27 @@ export function formatDate(ts) {
   return d.toLocaleDateString([], { year: "numeric", month: "long", day: "numeric" });
 }
 
+// Presence: "в сети" / "был(а) в сети <when>". `presence` is the
+// {online, last_seen} shape returned by GET /users/:id and group members.
+export function formatPresence(presence) {
+  if (!presence) return "";
+  if (presence.online) return "в сети";
+  const ts = presence.last_seen;
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  if (isNaN(d.getTime()) || ts <= 0) return "";
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today - 86400000);
+  const seenDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+
+  if (seenDay.getTime() === today.getTime()) return `был(а) в сети сегодня в ${time}`;
+  if (seenDay.getTime() === yesterday.getTime()) return `был(а) в сети вчера в ${time}`;
+  return `был(а) в сети ${d.toLocaleDateString([], { day: "numeric", month: "long" })} в ${time}`;
+}
+
 // Toast notifications
 
 let _toastContainer = null;

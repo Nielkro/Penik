@@ -6,7 +6,7 @@ import {
 } from "../groups.js";
 import { getGroupMembers, getAllContacts } from "../storage.js";
 import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
-import { el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, showToast, spinner, showConfirmModal, showPromptModal } from "./components.js";
+import { el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence, showToast, spinner, showConfirmModal, showPromptModal } from "./components.js";
 
 // Role labels in Russian for the members UI.
 const ROLE_LABEL = { owner: "владелец", admin: "админ", member: "участник" };
@@ -524,9 +524,12 @@ function showMemberProfileModal(m) {
   const av = avatar(m, 96);
   av.style.margin = "4px auto 12px";
 
+  const presence = formatPresence(m);
+
   const rows = [
     el("div", { style: "color:#fff;font-size:20px;font-weight:600;text-align:center;" }, memberName(m)),
     nick ? el("div", { style: "color:#8a8a94;font-size:15px;text-align:center;margin-top:2px;" }, `@${nick}`) : null,
+    presence ? el("div", { style: `color:${m.online ? "#00e676" : "#8a8a94"};font-size:13px;text-align:center;margin-top:4px;` }, presence) : null,
     el("div", { style: "display:flex;justify-content:space-between;padding:10px 4px;border-top:1px solid rgba(255,255,255,0.08);margin-top:16px;" },
       el("span", { style: "color:#8a8a94;font-size:14px;" }, "Роль"),
       el("span", { style: "color:#fff;font-size:14px;" }, roleLabel(m.role)),

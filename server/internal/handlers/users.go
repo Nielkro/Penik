@@ -77,7 +77,7 @@ func SearchUsers(database *db.DB) http.HandlerFunc {
 }
 
 // GetUser handles GET /api/v1/users/:id.
-func GetUser(database *db.DB) http.HandlerFunc {
+func GetUser(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := r.PathValue("id")
 		id, err := strconv.ParseInt(idStr, 10, 64)
@@ -94,11 +94,15 @@ func GetUser(database *db.DB) http.HandlerFunc {
 			return
 		}
 
+		online, lastSeen := userPresence(r.Context(), database, hub, id)
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"id":       id,
-			"name":     name,
-			"nickname": nickname,
+			"id":        id,
+			"name":      name,
+			"nickname":  nickname,
+			"online":    online,
+			"last_seen": lastSeen,
 		})
 	}
 }
