@@ -118,7 +118,9 @@ fun GroupChatScreen(
             TopAppBar(
                 title = {
                     Row(
-                        modifier = Modifier.clickable { onGroupSettingsClick(groupId) },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable { onGroupSettingsClick(groupId) },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         GroupAvatar(
