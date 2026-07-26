@@ -21,6 +21,7 @@ import (
 
 	"github.com/chai2010/webp"
 	"github.com/shamaton/msgpack/v2"
+	xdraw "golang.org/x/image/draw"
 	"messenger/server/internal/config"
 	"messenger/server/internal/db"
 	"messenger/server/internal/middleware"
@@ -213,7 +214,7 @@ func UploadAvatar(database *db.DB, cfg *config.Config, hub *ws.Hub) http.Handler
 		}
 
 		// Resize to 128×128.
-		resized := resizeImage(img, 128, 128)
+		resized := resizeImage(img, 256, 256)
 
 		// Encode as WebP for compact storage.
 		bounds := resized.Bounds()
@@ -333,20 +334,12 @@ func GetAvatar(database *db.DB, cfg *config.Config) http.HandlerFunc {
 	}
 }
 
-// resizeImage scales src to fit within dstW×dstH using nearest-neighbour sampling.
+// resizeImage scales src to fit within dstW×dstH using Catmull-Rom
+// interpolation. Nearest-neighbour (the previous approach) produces visibly
+// blocky/aliased avatars, especially on round crops and HiDPI screens.
 func resizeImage(src image.Image, dstW, dstH int) image.Image {
-	srcBounds := src.Bounds()
-	srcW := srcBounds.Dx()
-	srcH := srcBounds.Dy()
-
 	dst := image.NewRGBA(image.Rect(0, 0, dstW, dstH))
-	for y := 0; y < dstH; y++ {
-		for x := 0; x < dstW; x++ {
-			srcX := x * srcW / dstW
-			srcY := y * srcH / dstH
-			dst.Set(x, y, src.At(srcBounds.Min.X+srcX, srcBounds.Min.Y+srcY))
-		}
-	}
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), xdraw.Over, nil)
 	return dst
 }
 

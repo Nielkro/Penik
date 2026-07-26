@@ -722,7 +722,7 @@ func UploadGroupAvatar(database *db.DB, cfg *config.Config, hub *ws.Hub) http.Ha
 			}
 		}
 
-		resized := resizeImage(img, 128, 128)
+		resized := resizeImage(img, 256, 256)
 
 		bounds := resized.Bounds()
 		rgba := image.NewRGBA(bounds)
