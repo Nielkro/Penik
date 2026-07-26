@@ -200,6 +200,10 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
+	log.Println("notifying clients of shutdown…")
+	hub.BroadcastServerShutdown()
+	time.Sleep(100 * time.Millisecond) // Give clients a moment to receive the notification
+
 	log.Println("shutting down…")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

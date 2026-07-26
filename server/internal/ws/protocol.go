@@ -27,6 +27,7 @@ const (
 	OpMsgStatusBatch      Opcode = 0x1b
 	OpUserAvatarUpdate    Opcode = 0x1c
 	OpPresenceUpdate      Opcode = 0x1d
+	OpServerShutdown      Opcode = 0x1e
 
 	OpGroupMessageSend      Opcode = 0x20
 	OpGroupMessageRecv      Opcode = 0x21

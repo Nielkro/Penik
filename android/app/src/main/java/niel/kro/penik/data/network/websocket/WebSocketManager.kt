@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -110,6 +111,7 @@ sealed class WebSocketEvent {
 
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
+    object ServerShutdown : WebSocketEvent()
     object Pong : WebSocketEvent()
 }
 
@@ -123,6 +125,7 @@ object Opcode {
     const val MSG_STATUS_BATCH: Byte = 0x1b
     const val USER_AVATAR_UPDATE: Byte = 0x1c
     const val PRESENCE_UPDATE: Byte = 0x1d
+    const val SERVER_SHUTDOWN: Byte = 0x1e
     const val PING: Byte = 0x06
     const val PONG: Byte = 0x07
     const val CHAT_PURGE: Byte = 0x08
@@ -205,7 +208,23 @@ class WebSocketManager @Inject constructor(
         this.token = token
         manualDisconnect = false
         reconnectAttempt = 0
-        doConnect()
+        // Start with a quick REST health check, then proceed to WebSocket.
+        scope.launch {
+            try {
+                val healthUrl = "https://$host/api/v1/ping"
+                withContext(Dispatchers.IO) {
+                    val request = Request.Builder().url(healthUrl).build()
+                    val response = client.newCall(request).execute()
+                    if (!response.isSuccessful && response.code != 404) {
+                        Log.d("WS", "Health check failed, waiting a bit before WS connect")
+                        delay(500)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d("WS", "Health check skipped: ${e.message}")
+            }
+            doConnect()
+        }
     }
 
     fun disconnect() {
@@ -304,6 +323,7 @@ class WebSocketManager @Inject constructor(
             Opcode.PAIRING_HISTORY_READY -> handlePairingHistoryReady(payload)
             Opcode.USER_AVATAR_UPDATE -> handleUserAvatarUpdate(payload)
             Opcode.PRESENCE_UPDATE -> handlePresenceUpdate(payload)
+            Opcode.SERVER_SHUTDOWN -> scope.launch { _events.emit(WebSocketEvent.ServerShutdown) }
             Opcode.GROUP_MESSAGE_RECV -> handleGroupMessageRecv(payload)
             Opcode.GROUP_MESSAGE_ACK -> handleGroupMessageAck(payload)
             Opcode.GROUP_KEY_AVAILABLE -> handleGroupKeyAvailable(payload)
