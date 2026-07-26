@@ -14,6 +14,7 @@ import niel.kro.penik.data.local.dao.MessageDao
 import niel.kro.penik.data.local.database.DatabaseEncryption
 import niel.kro.penik.data.local.database.PenikDatabase
 import niel.kro.penik.data.network.api.ApiService
+import niel.kro.penik.data.network.websocket.WebSocketManager
 import niel.kro.penik.data.repository.SecureTokenStorage
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -89,7 +90,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(tokenStorage: SecureTokenStorage): OkHttpClient {
+    fun provideOkHttpClient(
+        tokenStorage: SecureTokenStorage,
+        webSocketManager: WebSocketManager
+    ): OkHttpClient {
         return OkHttpClient.Builder()
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
@@ -102,6 +106,13 @@ object NetworkModule {
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BODY
             })
+            .addInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                if (response.isSuccessful) {
+                    webSocketManager.notifyRestSuccess()
+                }
+                response
+            }
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build()
