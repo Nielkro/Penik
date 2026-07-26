@@ -99,3 +99,16 @@ func (h *Hub) BroadcastPresence(deviceIDs []int64, payload []byte) {
 		}
 	}
 }
+
+// BroadcastServerShutdown sends OpServerShutdown to all connected clients.
+func (h *Hub) BroadcastServerShutdown() {
+	frame := []byte{byte(OpServerShutdown)}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, c := range h.clients {
+		select {
+		case c.send <- frame:
+		default:
+		}
+	}
+}

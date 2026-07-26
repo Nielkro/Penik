@@ -908,6 +908,11 @@ function setupGlobalWSListeners() {
       emitPresenceUpdate(payload.user_id, { online: payload.online, last_seen: payload.last_seen });
     }
   });
+  ws.on(OP.SERVER_SHUTDOWN, () => {
+    console.log('[ws] Server is shutting down, disconnecting');
+    ws.disconnect();
+    showToast('Сервер выключается…', 'warning');
+  });
   registerGroupWSListeners();
 
   // Periodically drop pending ACKs that never resolved, and clear them on

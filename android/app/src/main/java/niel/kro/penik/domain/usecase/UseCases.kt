@@ -75,6 +75,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
     private val messageRepository: MessageRepository,
     private val chatRepository: ChatRepository,
     private val groupRepository: GroupRepository,
+    private val webSocketManager: WebSocketManager,
 ) {
     suspend operator fun invoke(event: WebSocketEvent) {
         when (event) {
@@ -151,6 +152,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
             }
             is WebSocketEvent.PresenceUpdate -> {
                 niel.kro.penik.data.repository.PresenceBus.update(event.userId, event.online, event.lastSeen)
+            }
+            is WebSocketEvent.ServerShutdown -> {
+                webSocketManager.disconnect()
             }
             else -> {}
         }

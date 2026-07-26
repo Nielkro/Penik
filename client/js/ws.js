@@ -25,6 +25,7 @@ export const OP = {
   MSG_STATUS_BATCH: 0x1b,
   USER_AVATAR_UPDATE: 0x1c,
   PRESENCE_UPDATE: 0x1d,
+  SERVER_SHUTDOWN: 0x1e,
   GROUP_MESSAGE_SEND:      0x20,
   GROUP_MESSAGE_RECV:      0x21,
   GROUP_MESSAGE_ACK:       0x22,
@@ -65,7 +66,11 @@ class WSManager {
     if (!token) return;
 
     this._manualClose = false;
-    this._doConnect(token);
+    // Quick REST health check before attempting WS
+    fetch('/api/v1/ping')
+      .then(r => { if (!r.ok && r.status !== 404) console.log('[ws] health check OK'); })
+      .catch(() => {})
+      .finally(() => this._doConnect(token));
   }
 
   disconnect() {
