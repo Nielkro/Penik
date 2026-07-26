@@ -5,7 +5,7 @@ import {
   deleteChatData, deleteMessage
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, encryptMessagePayload } from "../app.js";
-import { avatar, formatTime, formatDate, el, showToast, spinner, showDeleteChatConfirmModal } from "./components.js";
+import { avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, showDeleteChatConfirmModal } from "./components.js";
 import { syncGroups, getAllGroups, getGroupMessages, onGroupUpdate } from "../groups.js";
 import { buildGroupListItem, showCreateGroupModal } from "./groups.js";
 
@@ -293,6 +293,7 @@ export async function renderChat(container, userId) {
 
   let avatarEl = avatar(contact, 40, avatarUpdateTimestamps.get(String(userId)));
   const nameEl = el("span", { class: "chat-header-name" }, contact.name || contact.nickname);
+  // Subtitle: nickname until presence resolves, then "в сети" / "был(а) в сети …".
   const nickEl = el("span", { class: "chat-header-nick" }, contact.nickname ? `@${contact.nickname}` : "");
   const headerChildren = [
     el("button", { class: "icon-btn chat-back" }, "\u2190"),
@@ -328,11 +329,31 @@ export async function renderChat(container, userId) {
       }
       contact = resolved;
       nameEl.textContent = resolved.name || resolved.nickname || "";
-      nickEl.textContent = resolved.nickname ? `@${resolved.nickname}` : "";
+      // Leave nickEl to refreshPresence() below — it owns the subtitle once
+      // presence resolves, so it doesn't get clobbered by the nickname here.
       const newAvatar = avatar(resolved, 40, avatarUpdateTimestamps.get(String(userId)));
       avatarEl.replaceWith(newAvatar);
       avatarEl = newAvatar;
     })();
+
+    // Presence isn't cached locally (it changes constantly): fetch it fresh
+    // and refresh periodically while this chat stays open.
+    const refreshPresence = async () => {
+      try {
+        const res = await apiGet(`/users/${userId}`);
+        const status = formatPresence(res);
+        if (status) nickEl.textContent = status;
+      } catch { /* keep whatever is currently shown */ }
+    };
+    refreshPresence();
+    const presenceTimer = setInterval(refreshPresence, 25_000);
+    const presenceObserver = new MutationObserver(() => {
+      if (!document.body.contains(chatWrap)) {
+        clearInterval(presenceTimer);
+        presenceObserver.disconnect();
+      }
+    });
+    presenceObserver.observe(document.body, { childList: true, subtree: true });
   }
 
   // Load history

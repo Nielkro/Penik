@@ -346,7 +346,7 @@ func TestListGroupsAndMembers(t *testing.T) {	database, _ := db.Open(filepath.Jo
 	w = httptest.NewRecorder()
 	r := as("GET", "/g", ownerID, ownerDev, nil)
 	r.SetPathValue("group_id", itoa(groupID))
-	ListMembers(database)(w, r)
+	ListMembers(database, nil)(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list members: got %d", w.Code)
 	}
@@ -361,7 +361,7 @@ func TestListGroupsAndMembers(t *testing.T) {	database, _ := db.Open(filepath.Jo
 	w = httptest.NewRecorder()
 	r = as("GET", "/g", bobID, bobDev, nil)
 	r.SetPathValue("group_id", itoa(groupID))
-	ListMembers(database)(w, r)
+	ListMembers(database, nil)(w, r)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("pending member ListMembers: expected 403 got %d", w.Code)
 	}
@@ -372,7 +372,7 @@ func TestGroupInvalidPathValues(t *testing.T) {
 	defer database.Close()
 	ownerID, ownerDev := newUser(t, database, "owner")
 
-	for _, h := range []http.HandlerFunc{GetGroup(database), PatchGroup(database), DeleteGroup(database), ListMembers(database), InviteMember(database, nil), GetGroupHistory(database)} {
+	for _, h := range []http.HandlerFunc{GetGroup(database), PatchGroup(database), DeleteGroup(database), ListMembers(database, nil), InviteMember(database, nil), GetGroupHistory(database)} {
 		w := httptest.NewRecorder()
 		r := as("GET", "/g", ownerID, ownerDev, nil)
 		r.SetPathValue("group_id", "notanumber")
@@ -677,7 +677,7 @@ func TestHandlersDBErrorPaths(t *testing.T) {
 		{"get", call(GetGroup(database), "GET", true, nil)},
 		{"patch", call(PatchGroup(database), "PATCH", true, groupPatchRequest{Name: "Y"})},
 		{"delete", call(DeleteGroup(database), "DELETE", true, nil)},
-		{"members", call(ListMembers(database), "GET", true, nil)},
+		{"members", call(ListMembers(database, nil), "GET", true, nil)},
 		{"invite", call(InviteMember(database, nil), "POST", true, memberInviteRequest{UserID: 42})},
 		{"accept", call(AcceptInvitation(database), "POST", true, nil)},
 		{"remove", call(RemoveMember(database), "DELETE", true, nil)},

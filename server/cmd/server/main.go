@@ -83,7 +83,7 @@ func main() {
 	mux.Handle("GET /api/v1/users/search",
 		authMW(http.HandlerFunc(handlers.SearchUsers(database))))
 	mux.Handle("GET /api/v1/users/{id}",
-		authMW(http.HandlerFunc(handlers.GetUser(database))))
+		authMW(http.HandlerFunc(handlers.GetUser(database, hub))))
 	mux.Handle("PUT /api/v1/users/me/name",
 		authMW(http.HandlerFunc(handlers.UpdateName(database))))
 	mux.Handle("PUT /api/v1/users/me/nickname",
@@ -121,7 +121,7 @@ func main() {
 	mux.Handle("PUT /api/v1/groups/{group_id}/avatar",
 		authMW(http.HandlerFunc(handlers.UploadGroupAvatar(database, cfg, hub))))
 	mux.Handle("GET /api/v1/groups/{group_id}/members",
-		authMW(http.HandlerFunc(handlers.ListMembers(database))))
+		authMW(http.HandlerFunc(handlers.ListMembers(database, hub))))
 	mux.Handle("POST /api/v1/groups/{group_id}/members",
 		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.InviteMember(database, hub)))))
 	mux.Handle("DELETE /api/v1/groups/{group_id}/members/{user_id}",
