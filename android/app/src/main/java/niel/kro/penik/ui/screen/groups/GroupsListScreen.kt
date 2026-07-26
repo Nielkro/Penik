@@ -41,7 +41,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import niel.kro.penik.ui.components.FullscreenImageViewer
 import niel.kro.penik.ui.components.GroupAvatar
+import niel.kro.penik.ui.components.avatarUrlFor
 import niel.kro.penik.ui.theme.Accent
 import niel.kro.penik.ui.theme.Background
 import niel.kro.penik.ui.theme.Border
@@ -63,6 +65,7 @@ fun GroupsListScreen(
     val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
     var newGroupName by remember { mutableStateOf("") }
+    var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(error) {
         if (error != null) {
@@ -117,13 +120,19 @@ fun GroupsListScreen(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            GroupAvatar(
-                                groupId = group.id,
-                                name = group.name,
-                                size = 44.dp,
-                                modifier = Modifier.padding(end = 12.dp),
-                                avatarKey = groupAvatarKeys[group.id]
-                            )
+                            Box(
+                                modifier = Modifier.clickable {
+                                    fullscreenAvatarUrl = avatarUrlFor(true, group.id, groupAvatarKeys[group.id])
+                                }
+                            ) {
+                                GroupAvatar(
+                                    groupId = group.id,
+                                    name = group.name,
+                                    size = 44.dp,
+                                    modifier = Modifier.padding(end = 12.dp),
+                                    avatarKey = groupAvatarKeys[group.id]
+                                )
+                            }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(group.name, color = TextPrimary, fontWeight = FontWeight.Medium, fontSize = 16.sp)
                                 Text(
@@ -207,4 +216,6 @@ fun GroupsListScreen(
             }
         )
     }
+
+    FullscreenImageViewer(url = fullscreenAvatarUrl, onDismiss = { fullscreenAvatarUrl = null })
 }

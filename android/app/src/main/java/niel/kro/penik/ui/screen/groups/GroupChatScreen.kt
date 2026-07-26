@@ -55,9 +55,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import niel.kro.penik.ui.components.FullscreenImageViewer
 import niel.kro.penik.ui.components.GroupAvatar
 import niel.kro.penik.ui.components.MessageBubble
 import niel.kro.penik.ui.components.UserAvatar
+import niel.kro.penik.ui.components.avatarUrlFor
 import niel.kro.penik.ui.theme.Accent
 import niel.kro.penik.ui.theme.Background
 import niel.kro.penik.ui.theme.Border
@@ -89,6 +91,7 @@ fun GroupChatScreen(
     val listState = rememberLazyListState()
     var memberToRemove by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
     var selectedMemberForActions by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
+    var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
 
     val myRole = members.find { it.userId == viewModel.myUserId }?.role ?: "member"
     val canManage = myRole in listOf("owner", "admin")
@@ -125,13 +128,19 @@ fun GroupChatScreen(
                             .clickable { onGroupSettingsClick(groupId) },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        GroupAvatar(
-                            groupId = groupId,
-                            name = groupName,
-                            size = 36.dp,
-                            modifier = Modifier.padding(end = 10.dp),
-                            avatarKey = groupAvatarKeys[groupId]
-                        )
+                        Box(
+                            modifier = Modifier.clickable {
+                                fullscreenAvatarUrl = avatarUrlFor(true, groupId, groupAvatarKeys[groupId])
+                            }
+                        ) {
+                            GroupAvatar(
+                                groupId = groupId,
+                                name = groupName,
+                                size = 36.dp,
+                                modifier = Modifier.padding(end = 10.dp),
+                                avatarKey = groupAvatarKeys[groupId]
+                            )
+                        }
                         Column {
                             Text(groupName, color = TextPrimary, fontWeight = FontWeight.SemiBold)
                             Text("${members.size} участников", color = TextMuted, fontSize = 12.sp)
@@ -523,4 +532,6 @@ fun GroupChatScreen(
             }
         )
     }
+
+    FullscreenImageViewer(url = fullscreenAvatarUrl, onDismiss = { fullscreenAvatarUrl = null })
 }

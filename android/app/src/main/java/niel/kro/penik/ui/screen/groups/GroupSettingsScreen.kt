@@ -61,8 +61,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.graphics.Color
+import niel.kro.penik.ui.components.FullscreenImageViewer
 import niel.kro.penik.ui.components.GroupAvatar
 import niel.kro.penik.ui.components.UserAvatar
+import niel.kro.penik.ui.components.avatarUrlFor
 import niel.kro.penik.ui.theme.Accent
 import niel.kro.penik.ui.theme.Background
 import niel.kro.penik.ui.theme.Border
@@ -112,6 +115,7 @@ fun GroupSettingsScreen(
 
     var selectedMemberForProfile by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
     var memberToRemove by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
+    var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
 
     val myUserId = viewModel.myUserId
     val myRole = members.find { it.userId == myUserId }?.role ?: "member"
@@ -170,36 +174,54 @@ fun GroupSettingsScreen(
                 item {
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Group Avatar
+                    // Group Avatar: tap the photo to view it full-screen; the
+                    // camera badge (owner/admin only) opens the picker to change it.
                     Box(
-                        modifier = Modifier
-                            .size(96.dp)
-                            .clip(CircleShape)
-                            .clickable(enabled = isMePrivileged) { imagePickerLauncher.launch("image/*") },
+                        modifier = Modifier.size(96.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        GroupAvatar(
-                            groupId = groupId,
-                            name = groupName,
-                            size = 96.dp,
-                            avatarKey = avatarUpdateKey
-                        )
-
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                color = Accent,
-                                modifier = Modifier.size(32.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(96.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    fullscreenAvatarUrl = avatarUrlFor(true, groupId, avatarUpdateKey)
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            GroupAvatar(
+                                groupId = groupId,
+                                name = groupName,
+                                size = 96.dp,
+                                avatarKey = avatarUpdateKey
                             )
-                        }
-                    }
 
-                    if (isMePrivileged) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Нажмите на аватар для смены",
-                            color = TextMuted,
-                            fontSize = 12.sp
-                        )
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    color = Accent,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                        }
+
+                        if (isMePrivileged) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(Accent)
+                                    .clickable { imagePickerLauncher.launch("image/*") },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = "Изменить аватар группы",
+                                    tint = Color(0xFF121214),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -576,4 +598,6 @@ fun GroupSettingsScreen(
             }
         )
     }
+
+    FullscreenImageViewer(url = fullscreenAvatarUrl, onDismiss = { fullscreenAvatarUrl = null })
 }
