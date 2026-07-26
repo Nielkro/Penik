@@ -84,3 +84,18 @@ func (h *Hub) BroadcastAvatarUpdate(deviceIDs []int64, payload []byte) {
 		}
 	}
 }
+
+// BroadcastPresence sends OpPresenceUpdate to all active connections for specified device IDs.
+func (h *Hub) BroadcastPresence(deviceIDs []int64, payload []byte) {
+	frame := append([]byte{byte(OpPresenceUpdate)}, payload...)
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, devID := range deviceIDs {
+		if c, ok := h.clients[devID]; ok {
+			select {
+			case c.send <- frame:
+			default:
+			}
+		}
+	}
+}

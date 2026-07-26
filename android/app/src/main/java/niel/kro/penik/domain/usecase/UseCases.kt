@@ -149,6 +149,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
             is WebSocketEvent.UserAvatarUpdate -> {
                 niel.kro.penik.data.repository.AvatarCacheBus.bumpUser(event.userId, event.ts)
             }
+            is WebSocketEvent.PresenceUpdate -> {
+                niel.kro.penik.data.repository.PresenceBus.update(event.userId, event.online, event.lastSeen)
+            }
             else -> {}
         }
     }

@@ -8,6 +8,7 @@ import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpda
 import { avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, showDeleteChatConfirmModal } from "./components.js";
 import { syncGroups, getAllGroups, getGroupMessages, onGroupUpdate } from "../groups.js";
 import { buildGroupListItem, showCreateGroupModal } from "./groups.js";
+import { onPresenceUpdate } from "../presence.js";
 
 
 
@@ -347,9 +348,16 @@ export async function renderChat(container, userId) {
     };
     refreshPresence();
     const presenceTimer = setInterval(refreshPresence, 25_000);
+    // Live push: update immediately on a PRESENCE_UPDATE event instead of
+    // waiting for the next poll tick.
+    const unsubPresence = onPresenceUpdate(userId, (presence) => {
+      const status = formatPresence(presence);
+      if (status) nickEl.textContent = status;
+    });
     const presenceObserver = new MutationObserver(() => {
       if (!document.body.contains(chatWrap)) {
         clearInterval(presenceTimer);
+        unsubPresence();
         presenceObserver.disconnect();
       }
     });
