@@ -5,7 +5,7 @@ import {
   deleteChatData, deleteMessage
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, encryptMessagePayload } from "../app.js";
-import { avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, showDeleteChatConfirmModal } from "./components.js";
+import { avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, showDeleteChatConfirmModal, showFullscreenImage } from "./components.js";
 import { syncGroups, getAllGroups, getGroupMessages, onGroupUpdate } from "../groups.js";
 import { buildGroupListItem, showCreateGroupModal } from "./groups.js";
 import { onPresenceUpdate } from "../presence.js";
@@ -97,8 +97,15 @@ export async function renderChatList(container) {
           render(searchInput.value.trim().toLowerCase());
         }));
       } else {
+        const avatarEl = avatar(entry, 48, avatarUpdateTimestamps.get(String(entry.user_id)));
+        avatarEl.style.cursor = "zoom-in";
+        avatarEl.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const img = avatarEl.querySelector("img");
+          if (img) showFullscreenImage(img.src, entry.name || entry.nickname || "");
+        });
         const item = el("li", { class: "chatlist-item" },
-          avatar(entry, 48, avatarUpdateTimestamps.get(String(entry.user_id))),
+          avatarEl,
           el("div", { class: "chatlist-item-info" },
             el("span", { class: "chatlist-item-name" }, entry.name || entry.nickname || ""),
             el("span", { class: "chatlist-item-preview" }, entry.last_message || "")

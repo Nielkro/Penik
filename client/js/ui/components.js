@@ -51,6 +51,29 @@ export function avatar(user, size = 40, forceTimestamp = null) {
   return wrap;
 }
 
+// showFullscreenImage opens a tap-to-close overlay showing `url` at full size.
+// Used for viewing user/group avatars full-screen instead of navigating away.
+export function showFullscreenImage(url, altText = "") {
+  const overlay = el("div", {
+    style: "position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out;",
+  });
+  const img = el("img", {
+    src: url,
+    alt: altText,
+    style: "max-width:92vw;max-height:92vh;border-radius:8px;object-fit:contain;cursor:default;",
+  });
+  img.addEventListener("click", (e) => e.stopPropagation());
+  const closeBtn = el("button", {
+    style: "position:absolute;top:16px;right:16px;background:none;border:none;color:#fff;font-size:28px;cursor:pointer;line-height:1;padding:8px;",
+  }, "✕");
+  const close = () => overlay.remove();
+  closeBtn.addEventListener("click", close);
+  overlay.addEventListener("click", close);
+  overlay.append(img, closeBtn);
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
 // Shared cache-buster for group avatars: bumped locally after a self-upload,
 // and by the GROUP_AVATAR_UPDATE websocket event when any member changes it.
 export const groupAvatarUpdateTimestamps = new Map();

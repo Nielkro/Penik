@@ -6,7 +6,7 @@ import {
 } from "../groups.js";
 import { getGroupMembers, getAllContacts } from "../storage.js";
 import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
-import { el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence, showToast, spinner, showConfirmModal, showPromptModal } from "./components.js";
+import { el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence, showToast, spinner, showConfirmModal, showPromptModal, showFullscreenImage } from "./components.js";
 import { onPresenceUpdate } from "../presence.js";
 
 // Role labels in Russian for the members UI.
@@ -35,8 +35,16 @@ export function buildGroupListItem(g, onChange) {
     el("span", { class: "chatlist-item-preview" }, preview),
   );
 
+  const avatarEl = groupAvatar(g, 48);
+  avatarEl.style.cursor = "zoom-in";
+  avatarEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const img = avatarEl.querySelector("img");
+    if (img) showFullscreenImage(img.src, g.name || "");
+  });
+
   const item = el("li", { class: "chatlist-item" },
-    groupAvatar(g, 48),
+    avatarEl,
     info,
   );
 
@@ -171,7 +179,11 @@ export async function renderGroup(container, groupId) {
   // stall these reads; deferring them until after the shell is attached keeps
   // the chat visible instead of leaving just the (sidebar) main screen.
   const avatarContainer = el("div", { style: "cursor:pointer;margin-right:12px;display:flex;align-items:center;" });
-  avatarContainer.addEventListener("click", () => showMembersModal(groupId, myId));
+  avatarContainer.addEventListener("click", () => {
+    const img = avatarContainer.querySelector("img");
+    if (img) showFullscreenImage(img.src, headerGroup.name || "");
+    else showMembersModal(groupId, myId);
+  });
 
   const nameEl = el("span", { class: "chat-header-name" }, `Группа ${groupId}`);
   const header = el("div", { class: "chat-header" },
@@ -360,17 +372,24 @@ async function showMembersModal(groupId, myId) {
   const closeBtn = el("button", { class: "btn-secondary", style: "font-size:14px;" }, "Закрыть");
 
   // Avatar display
-  const avatarWrapper = el("div", {
-    style: "position:relative;margin: 8px auto 12px;width:80px;height:80px;border-radius:50%;overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;background:#1a1a2e;"
+  const avatarInner = el("div", {
+    style: "width:100%;height:100%;border-radius:50%;overflow:hidden;cursor:zoom-in;display:flex;align-items:center;justify-content:center;background:#1a1a2e;"
   });
+  const editAvatarBtn = el("button", {
+    style: "position:absolute;top:-2px;right:-2px;width:26px;height:26px;border-radius:50%;background:#00e676;border:2px solid #1e1e24;display:none;align-items:center;justify-content:center;cursor:pointer;padding:0;font-size:13px;z-index:3;",
+    title: "Изменить аватар группы",
+  }, "📷");
+  const avatarWrapper = el("div", {
+    style: "position:relative;margin: 8px auto 12px;width:80px;height:80px;"
+  }, avatarInner, editAvatarBtn);
   const fileInput = el("input", { type: "file", accept: "image/*", style: "display:none;" });
 
   // No forceTimestamp here: groupAvatar() falls back to the shared
   // groupAvatarUpdateTimestamps cache-buster, which is kept fresh by both a
   // local upload and incoming GROUP_AVATAR_UPDATE websocket events.
   function updateAvatarDisplay() {
-    avatarWrapper.innerHTML = "";
-    avatarWrapper.appendChild(groupAvatar(group, 80));
+    avatarInner.innerHTML = "";
+    avatarInner.appendChild(groupAvatar(group, 80));
   }
   updateAvatarDisplay();
 
@@ -423,17 +442,21 @@ async function showMembersModal(groupId, myId) {
     }
   });
 
-  avatarWrapper.addEventListener("click", () => {
-    if (isPrivileged(myRole)) {
-      fileInput.click();
-    }
+  avatarInner.addEventListener("click", () => {
+    const img = avatarInner.querySelector("img");
+    if (img) showFullscreenImage(img.src, group.name || "");
+  });
+
+  editAvatarBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    fileInput.click();
   });
 
   fileInput.addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     try {
-      avatarWrapper.style.opacity = "0.5";
+      avatarInner.style.opacity = "0.5";
       await uploadGroupAvatar(groupId, file);
       groupAvatarUpdateTimestamps.set(String(groupId), Date.now());
       updateAvatarDisplay();
@@ -442,7 +465,7 @@ async function showMembersModal(groupId, myId) {
     } catch (err) {
       showToast(err.message || "Не удалось загрузить аватар", "error");
     } finally {
-      avatarWrapper.style.opacity = "1";
+      avatarInner.style.opacity = "1";
     }
   });
 
@@ -506,6 +529,7 @@ async function showMembersModal(groupId, myId) {
     // Only owner/admin may add members: hide the add row otherwise.
     addRow.style.display = isPrivileged(myRole) ? "flex" : "none";
     renameBtn.style.display = isPrivileged(myRole) ? "inline-block" : "none";
+    editAvatarBtn.style.display = isPrivileged(myRole) ? "flex" : "none";
   }
   await renderMembers();
 
