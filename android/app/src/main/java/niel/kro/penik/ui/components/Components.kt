@@ -185,6 +185,7 @@ fun ChatListItem(
     lastMessage: String?,
     timestamp: Long?,
     unreadCount: Int,
+    isGroup: Boolean = false,
     onClick: () -> Unit
 ) {
     Row(
@@ -194,7 +195,11 @@ fun ChatListItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        InitialsAvatar(name = name, id = userId, size = 48.dp)
+        if (isGroup) {
+            GroupAvatar(groupId = userId, name = name, size = 48.dp)
+        } else {
+            UserAvatar(userId = userId, name = name, size = 48.dp)
+        }
 
         Spacer(modifier = Modifier.width(12.dp))
 

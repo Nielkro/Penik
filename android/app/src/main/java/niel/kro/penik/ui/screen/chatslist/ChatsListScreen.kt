@@ -180,11 +180,12 @@ fun ChatsListContent(
                     }
                     items(filteredFeed, key = { "${if (it is FeedItem.ChatItem) "chat" else "group"}-${it.id}" }) { item ->
                         ChatListItem(
-                            name = if (item is FeedItem.GroupItem) "👥 ${item.name}" else item.name,
+                            name = item.name,
                             userId = item.id,
                             lastMessage = item.lastMessage,
                             timestamp = item.lastMessageTimestamp,
                             unreadCount = item.unreadCount,
+                            isGroup = item is FeedItem.GroupItem,
                             onClick = {
                                 if (item is FeedItem.GroupItem) {
                                     onGroupClick(item.id, item.name)
@@ -211,11 +212,12 @@ fun ChatsListContent(
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(filteredFeed, key = { "${if (it is FeedItem.ChatItem) "chat" else "group"}-${it.id}" }) { item ->
                         ChatListItem(
-                            name = if (item is FeedItem.GroupItem) "👥 ${item.name}" else item.name,
+                            name = item.name,
                             userId = item.id,
                             lastMessage = item.lastMessage,
                             timestamp = item.lastMessageTimestamp,
                             unreadCount = item.unreadCount,
+                            isGroup = item is FeedItem.GroupItem,
                             onClick = {
                                 if (item is FeedItem.GroupItem) {
                                     onGroupClick(item.id, item.name)
@@ -255,11 +257,12 @@ fun ChatsListContent(
                     }
                     items(filteredFeed, key = { "${if (it is FeedItem.ChatItem) "chat" else "group"}-${it.id}" }) { item ->
                         ChatListItem(
-                            name = if (item is FeedItem.GroupItem) "👥 ${item.name}" else item.name,
+                            name = item.name,
                             userId = item.id,
                             lastMessage = item.lastMessage,
                             timestamp = item.lastMessageTimestamp,
                             unreadCount = item.unreadCount,
+                            isGroup = item is FeedItem.GroupItem,
                             onClick = {
                                 if (item is FeedItem.GroupItem) {
                                     onGroupClick(item.id, item.name)
