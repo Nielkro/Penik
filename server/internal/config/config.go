@@ -23,7 +23,7 @@ func Load() *Config {
 		Port:           getEnv("PORT", "8143"),
 		DBPath:         getEnv("DB_PATH", "./data/messenger.db"),
 		MaxAvatarSize:  getEnvInt64("MAX_AVATAR_SIZE", 5*1024*1024),
-		MaxBodySize:    getEnvInt64("MAX_BODY_SIZE", 1<<20), // 1 MB
+		MaxBodySize:    getEnvInt64("MAX_BODY_SIZE", 6*1024*1024), // must stay >= MaxAvatarSize + multipart overhead
 		AllowedOrigins: getEnv("ALLOWED_ORIGINS", "*"),
 		UploadDir:      getEnv("UPLOAD_DIR", "./data/upload"),
 	}
