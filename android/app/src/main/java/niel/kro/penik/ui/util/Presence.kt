@@ -16,7 +16,7 @@ fun formatPresence(online: Boolean, lastSeenUnixSeconds: Long): String {
 
     val isToday = seen.get(Calendar.YEAR) == now.get(Calendar.YEAR) &&
         seen.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)
-    if (isToday) return "был(а) в сети сегодня в $time"
+    if (isToday) return "был(а) в сети в $time"
 
     val yesterday = (now.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
     val isYesterday = seen.get(Calendar.YEAR) == yesterday.get(Calendar.YEAR) &&
