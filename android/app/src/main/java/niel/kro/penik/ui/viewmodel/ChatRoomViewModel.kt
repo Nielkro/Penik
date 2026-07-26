@@ -68,14 +68,8 @@ class ChatRoomViewModel @Inject constructor(
             }
         }
         if (!isSelfChat) {
-            viewModelScope.launch {
-                while (true) {
-                    refreshPresence()
-                    kotlinx.coroutines.delay(25_000)
-                }
-            }
-            // Live push: apply PRESENCE_UPDATE events immediately instead of
-            // waiting for the next poll tick.
+            // Fetch once on open, then rely on PRESENCE_UPDATE websocket pushes.
+            viewModelScope.launch { refreshPresence() }
             viewModelScope.launch {
                 PresenceBus.presence.collect { map ->
                     map[chatUserId]?.let { state ->

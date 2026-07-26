@@ -337,26 +337,21 @@ export async function renderChat(container, userId) {
       avatarEl = newAvatar;
     })();
 
-    // Presence isn't cached locally (it changes constantly): fetch it fresh
-    // and refresh periodically while this chat stays open.
-    const refreshPresence = async () => {
+    // Presence isn't cached locally: fetch it once on open, then rely on
+    // PRESENCE_UPDATE websocket pushes to keep it live.
+    (async () => {
       try {
         const res = await apiGet(`/users/${userId}`);
         const status = formatPresence(res);
         if (status) nickEl.textContent = status;
       } catch { /* keep whatever is currently shown */ }
-    };
-    refreshPresence();
-    const presenceTimer = setInterval(refreshPresence, 25_000);
-    // Live push: update immediately on a PRESENCE_UPDATE event instead of
-    // waiting for the next poll tick.
+    })();
     const unsubPresence = onPresenceUpdate(userId, (presence) => {
       const status = formatPresence(presence);
       if (status) nickEl.textContent = status;
     });
     const presenceObserver = new MutationObserver(() => {
       if (!document.body.contains(chatWrap)) {
-        clearInterval(presenceTimer);
         unsubPresence();
         presenceObserver.disconnect();
       }
