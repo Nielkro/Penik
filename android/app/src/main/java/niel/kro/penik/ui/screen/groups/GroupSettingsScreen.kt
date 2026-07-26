@@ -79,6 +79,13 @@ private fun formatDateTime(timestamp: Long): String {
     return sdf.format(Date(ms))
 }
 
+private fun roleLabel(role: String): String = when (role) {
+    "owner" -> "владелец"
+    "admin" -> "админ"
+    "member" -> "участник"
+    else -> role
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupSettingsScreen(
@@ -102,6 +109,7 @@ fun GroupSettingsScreen(
     var shareHistory by remember { mutableStateOf(false) }
 
     var selectedMemberForActions by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
+    var selectedMemberForProfile by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
     var memberToRemove by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
 
     val myUserId = viewModel.myUserId
@@ -274,9 +282,6 @@ fun GroupSettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Panel)
-                            .clickable(enabled = canManageRow || canRemoveRow) {
-                                selectedMemberForActions = member
-                            }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -285,16 +290,20 @@ fun GroupSettingsScreen(
                             userId = member.userId,
                             name = displayName,
                             size = 40.dp,
-                            modifier = Modifier.padding(end = 12.dp)
+                            modifier = Modifier
+                                .padding(end = 12.dp)
+                                .clip(CircleShape)
+                                .clickable { selectedMemberForProfile = member }
                         )
-                        Column {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(enabled = canManageRow || canRemoveRow) {
+                                    selectedMemberForActions = member
+                                }
+                        ) {
                             val displayNameWithMe = displayName + if (isMe) " (вы)" else ""
-                            val roleRu = when (member.role) {
-                                "owner" -> "владелец"
-                                "admin" -> "админ"
-                                "member" -> "участник"
-                                else -> member.role
-                            } + if (member.status == "pending") " · приглашён" else ""
+                            val roleRu = roleLabel(member.role) + if (member.status == "pending") " · приглашён" else ""
                             Text(displayNameWithMe, color = TextPrimary, fontWeight = FontWeight.Medium)
                             Text(roleRu, color = TextMuted, fontSize = 12.sp)
                         }
@@ -347,6 +356,55 @@ fun GroupSettingsScreen(
             dismissButton = {
                 TextButton(onClick = { showRenameDialog = false }) {
                     Text("Отмена", color = TextPrimary)
+                }
+            }
+        )
+    }
+
+    // Member Profile Dialog (read-only card: avatar, name, @nickname, role, id)
+    selectedMemberForProfile?.let { member ->
+        val displayName = member.name.ifEmpty { member.nickname.ifEmpty { "#${member.userId}" } }
+        AlertDialog(
+            onDismissRequest = { selectedMemberForProfile = null },
+            containerColor = Panel,
+            titleContentColor = TextPrimary,
+            textContentColor = TextPrimary,
+            title = {},
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    UserAvatar(userId = member.userId, name = displayName, size = 96.dp)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(displayName, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    if (member.nickname.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text("@${member.nickname}", color = TextMuted, fontSize = 14.sp)
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = Border)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Роль", color = TextMuted, fontSize = 14.sp)
+                        Text(roleLabel(member.role), color = TextPrimary, fontSize = 14.sp)
+                    }
+                    HorizontalDivider(color = Border)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("ID", color = TextMuted, fontSize = 14.sp)
+                        Text("${member.userId}", color = TextPrimary, fontSize = 14.sp)
+                    }
+                    HorizontalDivider(color = Border)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedMemberForProfile = null }) {
+                    Text("Закрыть", color = Accent)
                 }
             }
         )
