@@ -80,6 +80,7 @@ fun GroupChatScreen(
     val members by viewModel.members.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val error by viewModel.error.collectAsState()
+    val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
     var inputText by remember { mutableStateOf("") }
     var showMembersDialog by remember { mutableStateOf(false) }
     var showInviteDialog by remember { mutableStateOf(false) }
@@ -128,7 +129,8 @@ fun GroupChatScreen(
                             groupId = groupId,
                             name = groupName,
                             size = 36.dp,
-                            modifier = Modifier.padding(end = 10.dp)
+                            modifier = Modifier.padding(end = 10.dp),
+                            avatarKey = groupAvatarKeys[groupId]
                         )
                         Column {
                             Text(groupName, color = TextPrimary, fontWeight = FontWeight.SemiBold)

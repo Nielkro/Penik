@@ -105,6 +105,7 @@ sealed class WebSocketEvent {
     )
     data class MsgStatusBatch(val statuses: List<MsgStatusItem>) : WebSocketEvent()
     data class UserAvatarUpdate(val userId: Long, val ts: Long) : WebSocketEvent()
+    data class GroupAvatarUpdate(val groupId: Long, val ts: Long) : WebSocketEvent()
 
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
@@ -133,6 +134,7 @@ object Opcode {
     const val GROUP_MEMBER_CHANGED: Byte = 0x24
     const val GROUP_MESSAGE_DELIVERED: Byte = 0x25
     const val GROUP_MESSAGE_READ: Byte = 0x26
+    const val GROUP_AVATAR_UPDATE: Byte = 0x28
 }
 
 private fun MessageUnpacker.readMsgRecvMap(): Map<String, Any?> {
@@ -303,6 +305,7 @@ class WebSocketManager @Inject constructor(
             Opcode.GROUP_MESSAGE_ACK -> handleGroupMessageAck(payload)
             Opcode.GROUP_KEY_AVAILABLE -> handleGroupKeyAvailable(payload)
             Opcode.GROUP_MEMBER_CHANGED -> handleGroupMemberChanged(payload)
+            Opcode.GROUP_AVATAR_UPDATE -> handleGroupAvatarUpdate(payload)
         }
     }
 
@@ -316,6 +319,19 @@ class WebSocketManager @Inject constructor(
             scope.launch { _events.emit(WebSocketEvent.UserAvatarUpdate(userId, ts)) }
         } catch (e: Exception) {
             Log.e("WS", "Failed to parse UserAvatarUpdate frame", e)
+        }
+    }
+
+    private fun handleGroupAvatarUpdate(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val groupId = (map["group_id"] as? Number)?.toLong() ?: return
+            val ts = (map["ts"] as? Number)?.toLong() ?: System.currentTimeMillis()
+            scope.launch { _events.emit(WebSocketEvent.GroupAvatarUpdate(groupId, ts)) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse GroupAvatarUpdate frame", e)
         }
     }
 

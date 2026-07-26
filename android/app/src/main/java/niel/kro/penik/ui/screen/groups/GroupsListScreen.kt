@@ -60,6 +60,7 @@ fun GroupsListScreen(
     val groups by viewModel.groups.collectAsState()
     val busy by viewModel.busy.collectAsState()
     val error by viewModel.error.collectAsState()
+    val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
     var newGroupName by remember { mutableStateOf("") }
 
@@ -120,7 +121,8 @@ fun GroupsListScreen(
                                 groupId = group.id,
                                 name = group.name,
                                 size = 44.dp,
-                                modifier = Modifier.padding(end = 12.dp)
+                                modifier = Modifier.padding(end = 12.dp),
+                                avatarKey = groupAvatarKeys[group.id]
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(group.name, color = TextPrimary, fontWeight = FontWeight.Medium, fontSize = 16.sp)

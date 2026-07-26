@@ -43,9 +43,6 @@ class GroupSettingsViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _avatarUpdateKey = MutableStateFlow(System.currentTimeMillis())
-    val avatarUpdateKey: StateFlow<Long> = _avatarUpdateKey.asStateFlow()
-
     init {
         refreshMembers()
     }
@@ -86,7 +83,6 @@ class GroupSettingsViewModel @Inject constructor(
             groupRepository.uploadGroupAvatar(groupId, bytes).fold(
                 onSuccess = {
                     _isLoading.value = false
-                    _avatarUpdateKey.value = System.currentTimeMillis()
                 },
                 onFailure = { err ->
                     _isLoading.value = false

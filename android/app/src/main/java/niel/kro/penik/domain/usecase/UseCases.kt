@@ -143,6 +143,12 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 runCatching { groupRepository.syncGroups() }
                 runCatching { groupRepository.refreshMembers(event.groupId) }
             }
+            is WebSocketEvent.GroupAvatarUpdate -> {
+                niel.kro.penik.data.repository.AvatarCacheBus.bumpGroup(event.groupId, event.ts)
+            }
+            is WebSocketEvent.UserAvatarUpdate -> {
+                niel.kro.penik.data.repository.AvatarCacheBus.bumpUser(event.userId, event.ts)
+            }
             else -> {}
         }
     }

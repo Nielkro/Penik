@@ -22,7 +22,8 @@ import {
   rotateGroupKey as apiRotateGroupKey,
   getGroupHistory,
   uploadGroupHistoryPackets,
-  getGroupHistoryPacket,
+  renameGroup as apiRenameGroup,
+  uploadGroupAvatar,
 } from './api.js';
 import {
   deriveSharedSecret,
@@ -42,6 +43,7 @@ import {
 } from './storage.js';
 import { ws, OP } from './ws.js';
 import { loadPrivateIK } from './app.js';
+import { groupAvatarUpdateTimestamps } from './ui/components.js';
 
 /* ── base64url helpers (server uses RawURLEncoding for group blobs) ── */
 
@@ -613,6 +615,13 @@ export function registerGroupWSListeners() {
     }
   });
 
+  ws.on(OP.GROUP_AVATAR_UPDATE, (frame) => {
+    const groupId = Number(frame.group_id);
+    const ts = frame.ts ? frame.ts * 1000 : Date.now();
+    groupAvatarUpdateTimestamps.set(String(groupId), ts);
+    emit({ type: 'avatar', groupId });
+  });
+
   ws.on(OP.GROUP_HISTORY_READY, async (frame) => {
     const groupId = Number(frame.group_id);
     try {
@@ -633,4 +642,16 @@ export function registerGroupWSListeners() {
     emit({ type: 'members', groupId });
   });
 }
+
+export async function renameGroup(groupId, newName) {
+  await apiRenameGroup(groupId, newName);
+  const groups = await getAllGroups();
+  const group = groups.find(g => Number(g.id) === groupId);
+  if (group) {
+    group.name = newName;
+    await saveGroup(group);
+  }
+}
+
+export { uploadGroupAvatar };
 

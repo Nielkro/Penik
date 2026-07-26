@@ -35,6 +35,7 @@ const (
 	OpGroupMessageDelivered Opcode = 0x25
 	OpGroupMessageRead      Opcode = 0x26
 	OpGroupHistoryReady     Opcode = 0x27
+	OpGroupAvatarUpdate     Opcode = 0x28
 )
 
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]
@@ -242,4 +243,11 @@ type MsgStatusItem struct {
 
 type MsgStatusBatch struct {
 	Statuses []MsgStatusItem `msgpack:"statuses"`
+}
+
+// GroupAvatarUpdate notifies active devices that a group's avatar changed,
+// so they should re-fetch it (bypassing any cached image).
+type GroupAvatarUpdate struct {
+	GroupID int64 `msgpack:"group_id"`
+	TS      int64 `msgpack:"ts"`
 }
