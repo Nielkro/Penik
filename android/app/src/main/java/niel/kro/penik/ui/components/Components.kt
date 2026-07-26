@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -98,6 +101,56 @@ fun UserAvatar(
             InitialsAvatar(name = name, id = userId, size = size)
         } else {
             SubcomposeAsyncImageContent()
+        }
+    }
+}
+
+@Composable
+fun GroupAvatar(
+    groupId: Long,
+    name: String,
+    size: Dp = 48.dp,
+    modifier: Modifier = Modifier,
+    avatarKey: Any? = null
+) {
+    val avatarUrl = if (avatarKey != null) {
+        "https://penik.dev.slavchat.ru/api/v1/groups/$groupId/avatar?t=$avatarKey"
+    } else {
+        "https://penik.dev.slavchat.ru/api/v1/groups/$groupId/avatar"
+    }
+
+    Box(modifier = modifier.size(size)) {
+        SubcomposeAsyncImage(
+            model = avatarUrl,
+            contentDescription = "Group Avatar",
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape),
+            contentScale = ContentScale.Crop
+        ) {
+            val state = painter.state
+            if (state is coil.compose.AsyncImagePainter.State.Loading || state is coil.compose.AsyncImagePainter.State.Error) {
+                InitialsAvatar(name = name, id = groupId, size = size)
+            } else {
+                SubcomposeAsyncImageContent()
+            }
+        }
+
+        val badgeSize = size * 0.4f
+        Box(
+            modifier = Modifier
+                .size(badgeSize)
+                .align(Alignment.BottomEnd)
+                .clip(CircleShape)
+                .background(Color(0xFF00E676)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.Group,
+                contentDescription = null,
+                tint = Color(0xFF121214),
+                modifier = Modifier.size(badgeSize * 0.62f)
+            )
         }
     }
 }

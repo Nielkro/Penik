@@ -55,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import niel.kro.penik.ui.components.GroupAvatar
 import niel.kro.penik.ui.components.MessageBubble
 import niel.kro.penik.ui.components.UserAvatar
 import niel.kro.penik.ui.theme.Accent
@@ -72,6 +73,7 @@ fun GroupChatScreen(
     groupId: Long,
     groupName: String,
     onBack: () -> Unit,
+    onGroupSettingsClick: (Long) -> Unit,
     viewModel: GroupChatViewModel = hiltViewModel()
 ) {
     val messages by viewModel.messages.collectAsState()
@@ -115,9 +117,20 @@ fun GroupChatScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(groupName, color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                        Text("${members.size} участников", color = TextMuted, fontSize = 12.sp)
+                    Row(
+                        modifier = Modifier.clickable { onGroupSettingsClick(groupId) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        GroupAvatar(
+                            groupId = groupId,
+                            name = groupName,
+                            size = 36.dp,
+                            modifier = Modifier.padding(end = 10.dp)
+                        )
+                        Column {
+                            Text(groupName, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                            Text("${members.size} участников", color = TextMuted, fontSize = 12.sp)
+                        }
                     }
                 },
                 navigationIcon = {
@@ -135,6 +148,10 @@ fun GroupChatScreen(
                             onDismissRequest = { showMenu = false },
                             modifier = Modifier.background(Panel)
                         ) {
+                            DropdownMenuItem(
+                                text = { Text("Настройки группы", color = TextPrimary) },
+                                onClick = { showMenu = false; onGroupSettingsClick(groupId) }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Участники", color = TextPrimary) },
                                 onClick = { showMenu = false; showMembersDialog = true }

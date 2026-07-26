@@ -23,6 +23,9 @@ interface GroupDao {
     @Query("SELECT * FROM groups WHERE id = :groupId")
     suspend fun getGroup(groupId: Long): GroupEntity?
 
+    @Query("SELECT * FROM groups WHERE id = :groupId")
+    fun observeGroup(groupId: Long): Flow<GroupEntity?>
+
     @Query("DELETE FROM groups WHERE id = :groupId")
     suspend fun deleteGroup(groupId: Long)
 

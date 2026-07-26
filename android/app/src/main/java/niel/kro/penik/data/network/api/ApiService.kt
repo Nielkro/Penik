@@ -98,6 +98,13 @@ interface ApiService {
     @POST("groups/{groupId}/keys/rotate")
     suspend fun rotateGroupKey(@Path("groupId") groupId: Long): Response<RotateKeyResponse>
 
+    @Multipart
+    @PUT("groups/{groupId}/avatar")
+    suspend fun uploadGroupAvatar(
+        @Path("groupId") groupId: Long,
+        @Part avatar: okhttp3.MultipartBody.Part
+    ): Response<Unit>
+
     @GET("groups/{groupId}/messages/history")
     suspend fun getGroupHistory(@Path("groupId") groupId: Long, @Query("limit") limit: Int = 100, @Query("before_id") beforeId: Long? = null): Response<GroupHistoryResponse>
 

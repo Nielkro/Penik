@@ -23,6 +23,9 @@ import niel.kro.penik.data.network.api.HistoryBlob
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import niel.kro.penik.data.network.websocket.WebSocketManager
+import niel.kro.penik.data.network.api.RenameGroupRequest
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -46,9 +49,41 @@ class GroupRepository @Inject constructor(
     private val urlB64Flags = Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
 
     fun observeGroups() = dao.observeGroups()
+    fun observeGroup(groupId: Long) = dao.observeGroup(groupId)
     fun observeMessages(groupId: Long) = dao.observeMessages(groupId)
     fun observeLastMessageForGroup(groupId: Long) = dao.observeLastMessageForGroup(groupId)
     suspend fun getLastMessageForGroup(groupId: Long) = dao.getLastMessageForGroup(groupId)
+
+    suspend fun renameGroup(groupId: Long, newName: String): Result<Unit> {
+        return try {
+            val response = api.renameGroup(groupId, RenameGroupRequest(newName))
+            if (response.isSuccessful) {
+                dao.getGroup(groupId)?.let {
+                    dao.upsertGroup(it.copy(name = newName))
+                }
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Не удалось переименовать группу"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun uploadGroupAvatar(groupId: Long, avatarBytes: ByteArray): Result<Unit> {
+        return try {
+            val requestFile = avatarBytes.toRequestBody("image/webp".toMediaTypeOrNull())
+            val body = okhttp3.MultipartBody.Part.createFormData("avatar", "avatar.webp", requestFile)
+            val response = api.uploadGroupAvatar(groupId, body)
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Не удалось загрузить аватар группы"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
     private fun myUserId() = tokenStorage.getUserId()
     private fun myDeviceId() = tokenStorage.getDeviceId()
