@@ -363,11 +363,13 @@ async function showMembersModal(groupId, myId) {
     style: "position:relative;margin: 8px auto 12px;width:80px;height:80px;border-radius:50%;overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;background:#1a1a2e;"
   });
   const fileInput = el("input", { type: "file", accept: "image/*", style: "display:none;" });
-  let avatarTimestamp = Date.now();
 
+  // No forceTimestamp here: groupAvatar() falls back to the shared
+  // groupAvatarUpdateTimestamps cache-buster, which is kept fresh by both a
+  // local upload and incoming GROUP_AVATAR_UPDATE websocket events.
   function updateAvatarDisplay() {
     avatarWrapper.innerHTML = "";
-    avatarWrapper.appendChild(groupAvatar(group, 80, avatarTimestamp));
+    avatarWrapper.appendChild(groupAvatar(group, 80));
   }
   updateAvatarDisplay();
 
@@ -412,6 +414,14 @@ async function showMembersModal(groupId, myId) {
   );
   document.body.appendChild(overlay);
 
+  // Live-refresh the avatar if it changes while this modal is open — either
+  // because we just uploaded a new one, or another privileged member did.
+  const unsubAvatar = onGroupUpdate((evt) => {
+    if (evt.type === "avatar" && Number(evt.groupId) === groupId) {
+      updateAvatarDisplay();
+    }
+  });
+
   avatarWrapper.addEventListener("click", () => {
     if (isPrivileged(myRole)) {
       fileInput.click();
@@ -424,8 +434,7 @@ async function showMembersModal(groupId, myId) {
     try {
       avatarWrapper.style.opacity = "0.5";
       await uploadGroupAvatar(groupId, file);
-      avatarTimestamp = Date.now();
-      groupAvatarUpdateTimestamps.set(String(groupId), avatarTimestamp);
+      groupAvatarUpdateTimestamps.set(String(groupId), Date.now());
       updateAvatarDisplay();
       triggerChatListUpdate();
       showToast("Аватар группы обновлен!");
@@ -454,7 +463,7 @@ async function showMembersModal(groupId, myId) {
     }
   });
 
-  const close = () => overlay.remove();
+  const close = () => { unsubAvatar(); overlay.remove(); };
   closeBtn.addEventListener("click", close);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
 
