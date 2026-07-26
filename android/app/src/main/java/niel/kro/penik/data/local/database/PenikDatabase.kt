@@ -20,7 +20,7 @@ import niel.kro.penik.data.local.entity.MessageEntity
         GroupEntity::class, GroupMemberEntity::class,
         GroupKeyEntity::class, GroupMessageEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class PenikDatabase : RoomDatabase() {
@@ -79,6 +79,12 @@ abstract class PenikDatabase : RoomDatabase() {
                 // Track our own membership status so pending invitations can be
                 // surfaced with accept/decline actions in the group list.
                 db.execSQL("ALTER TABLE groups ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+            }
+        }
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE group_members ADD COLUMN online INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE group_members ADD COLUMN lastSeen INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

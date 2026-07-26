@@ -204,24 +204,38 @@ fun ChatRoomScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = chatName,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        if (!isSelfChat) {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = "Код безопасности E2EE",
-                                tint = Success,
-                                modifier = Modifier
-                                    .padding(start = 8.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(Success.copy(alpha = 0.15f))
-                                    .clickable { viewModel.onSafetyClick() }
-                                    .padding(4.dp)
-                                    .size(16.dp)
+                    val online by viewModel.online.collectAsState()
+                    val lastSeen by viewModel.lastSeen.collectAsState()
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = chatName,
+                                fontWeight = FontWeight.SemiBold
                             )
+                            if (!isSelfChat) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Код безопасности E2EE",
+                                    tint = Success,
+                                    modifier = Modifier
+                                        .padding(start = 8.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Success.copy(alpha = 0.15f))
+                                        .clickable { viewModel.onSafetyClick() }
+                                        .padding(4.dp)
+                                        .size(16.dp)
+                                )
+                            }
+                        }
+                        if (!isSelfChat) {
+                            val presence = niel.kro.penik.ui.util.formatPresence(online, lastSeen)
+                            if (presence.isNotEmpty()) {
+                                Text(
+                                    text = presence,
+                                    fontSize = 12.sp,
+                                    color = if (online) Accent else TextMuted
+                                )
+                            }
                         }
                     }
                 },

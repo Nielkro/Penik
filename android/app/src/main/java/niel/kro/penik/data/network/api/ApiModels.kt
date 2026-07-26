@@ -32,7 +32,9 @@ data class UserSearchResult(
     val id: Long,
     val nickname: String,
     val name: String,
-    @SerialName("avatar_url") val avatarUrl: String? = null
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+    val online: Boolean = false,
+    @SerialName("last_seen") val lastSeen: Long = 0
 )
 
 @Serializable
@@ -127,7 +129,9 @@ data class GroupMemberResponse(
     val status: String,
     @SerialName("joined_at") val joinedAt: Long = 0,
     val name: String = "",
-    val nickname: String = ""
+    val nickname: String = "",
+    val online: Boolean = false,
+    @SerialName("last_seen") val lastSeen: Long = 0
 )
 
 @Serializable

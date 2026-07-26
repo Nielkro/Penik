@@ -48,7 +48,9 @@ data class GroupMemberEntity(
     val status: String,
     val joinedAt: Long = 0,
     val name: String = "",
-    val nickname: String = ""
+    val nickname: String = "",
+    val online: Boolean = false,
+    val lastSeen: Long = 0
 )
 
 // Group keys are stored per epoch. The key bytes are protected by the OS-level
