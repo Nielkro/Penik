@@ -154,7 +154,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 niel.kro.penik.data.repository.PresenceBus.update(event.userId, event.online, event.lastSeen)
             }
             is WebSocketEvent.ServerShutdown -> {
-                webSocketManager.disconnect()
+                webSocketManager.closeForServerShutdown()
             }
             else -> {}
         }

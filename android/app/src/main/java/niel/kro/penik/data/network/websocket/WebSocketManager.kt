@@ -234,6 +234,19 @@ class WebSocketManager @Inject constructor(
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 
+    /**
+     * Closes the socket after a server-initiated shutdown notice, without
+     * setting manualDisconnect — the server closes the connection on its own
+     * right after this anyway, so this just avoids waiting for that round trip.
+     * The normal onClosed -> handleDisconnect -> reconnectWithBackoff path
+     * still runs, so the client keeps retrying (and notifyRestSuccess still
+     * reconnects immediately once REST calls start succeeding again).
+     */
+    fun closeForServerShutdown() {
+        pingJob?.cancel()
+        webSocket?.close(1000, "Server shutdown")
+    }
+
     private fun doConnect() {
         _connectionState.value = ConnectionState.CONNECTING
         val scheme = if (connectPort == 443) "wss" else "ws"
