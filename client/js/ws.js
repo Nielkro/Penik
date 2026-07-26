@@ -66,11 +66,22 @@ class WSManager {
     if (!token) return;
 
     this._manualClose = false;
-    // Quick REST health check before attempting WS
-    fetch('/api/v1/ping')
-      .then(r => { if (!r.ok && r.status !== 404) console.log('[ws] health check OK'); })
-      .catch(() => {})
-      .finally(() => this._doConnect(token));
+    this._doConnect(token);
+  }
+
+  /**
+   * Called whenever any REST request succeeds. If we're currently disconnected
+   * and waiting on a reconnect timer, treat that as a sign the server is
+   * reachable and reconnect immediately instead of waiting out the backoff.
+   */
+  notifyRestSuccess() {
+    if (this._manualClose || this._connected) return;
+    if (this._ws && this._ws.readyState === WebSocket.CONNECTING) return;
+    const token = getToken();
+    if (!token) return;
+    this._clearTimers();
+    this._reconnectAttempt = 0;
+    this._doConnect(token);
   }
 
   disconnect() {
@@ -304,3 +315,5 @@ class WSManager {
 }
 
 export const ws = new WSManager();
+
+window.addEventListener('penik:rest-success', () => ws.notifyRestSuccess());

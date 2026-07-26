@@ -6,7 +6,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -200,6 +199,7 @@ class WebSocketManager @Inject constructor(
 
     private var connectHost: String = ""
     private var connectPort: Int = 0
+    private var reconnectJob: kotlinx.coroutines.Job? = null
 
     fun connect(host: String, port: Int, token: String) {
         if (_connectionState.value != ConnectionState.DISCONNECTED) return
@@ -208,27 +208,26 @@ class WebSocketManager @Inject constructor(
         this.token = token
         manualDisconnect = false
         reconnectAttempt = 0
-        // Start with a quick REST health check, then proceed to WebSocket.
-        scope.launch {
-            try {
-                val healthUrl = "https://$host/api/v1/ping"
-                withContext(Dispatchers.IO) {
-                    val request = Request.Builder().url(healthUrl).build()
-                    val response = client.newCall(request).execute()
-                    if (!response.isSuccessful && response.code != 404) {
-                        Log.d("WS", "Health check failed, waiting a bit before WS connect")
-                        delay(500)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.d("WS", "Health check skipped: ${e.message}")
-            }
-            doConnect()
-        }
+        doConnect()
+    }
+
+    /**
+     * Called by the REST layer whenever any API request succeeds. If the WebSocket
+     * is currently disconnected (e.g. after a 1006 close) and waiting on backoff,
+     * this is a signal the server is reachable, so reconnect immediately instead
+     * of waiting out the remaining delay.
+     */
+    fun notifyRestSuccess() {
+        if (manualDisconnect) return
+        if (_connectionState.value != ConnectionState.DISCONNECTED) return
+        reconnectJob?.cancel()
+        reconnectAttempt = 0
+        doConnect()
     }
 
     fun disconnect() {
         manualDisconnect = true
+        reconnectJob?.cancel()
         pingJob?.cancel()
         webSocket?.close(1000, "Client disconnect")
         webSocket = null
@@ -289,7 +288,7 @@ class WebSocketManager @Inject constructor(
         reconnectAttempt++
         val delayMs = minOf(1000L * (1 shl (reconnectAttempt - 1)), 30_000L)
         Log.d("WS", "Reconnecting in ${delayMs}ms (attempt $reconnectAttempt)")
-        scope.launch {
+        reconnectJob = scope.launch {
             delay(delayMs)
             doConnect()
         }

@@ -35,6 +35,8 @@ async function request(method, path, body, opts = {}) {
     throw err;
   }
 
+  if (res.ok) window.dispatchEvent(new Event('penik:rest-success'));
+
   if (res.status === 204) return null;
 
   let data;
@@ -123,6 +125,7 @@ export async function uploadAvatar(file) {
     err.status = res.status;
     throw err;
   }
+  window.dispatchEvent(new Event('penik:rest-success'));
   return true;
 }
 
@@ -179,6 +182,7 @@ export async function uploadGroupAvatar(groupId, file) {
     err.status = res.status;
     throw err;
   }
+  window.dispatchEvent(new Event('penik:rest-success'));
   return true;
 }
 
