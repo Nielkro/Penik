@@ -58,18 +58,33 @@ export async function renderChatList(container) {
     last_ts: 0
   } : null;
 
+  async function loadSelfChat() {
+    if (!selfChatEntry) return;
+    try {
+      const messages = await getMessages(myId);
+      const last = messages[messages.length - 1];
+      selfChatEntry.last_message = last?.plaintext || "";
+      selfChatEntry.last_ts = last?.created_at || 0;
+    } catch {
+      selfChatEntry.last_message = "";
+      selfChatEntry.last_ts = 0;
+    }
+  }
+
   let contacts = await loadContacts();
   let groups = await loadGroupEntries();
+  await loadSelfChat();
 
   function render(filter) {
     listEl.innerHTML = "";
     if (selfChatEntry && (!filter || "избранное".includes(filter))) {
       const selfItem = el("li", { class: "chatlist-item" },
-        el("div", { class: "chatlist-item-avatar", style: "width:48px;height:48px;border-radius:50%;background:#1a1a2e;display:flex;align-items:center;justify-content:center;font-size:22px;color:#00e676;" }, "\uD83D\uDCDD"),
+        avatar({ name: "Избранное" }, 48),
         el("div", { class: "chatlist-item-info" },
           el("span", { class: "chatlist-item-name" }, "Избранное"),
-          el("span", { class: "chatlist-item-preview" }, "")
-        )
+          el("span", { class: "chatlist-item-preview" }, selfChatEntry.last_message || "")
+        ),
+        el("span", { class: "chatlist-item-time" }, selfChatEntry.last_ts ? formatTime(selfChatEntry.last_ts) : "")
       );
       selfItem.addEventListener("click", () => navigate(`#chat/${myId}`));
       listEl.appendChild(selfItem);
@@ -126,7 +141,7 @@ export async function renderChatList(container) {
 
   // Refresh on personal-chat updates (new/incoming messages, deletions).
   setChatListUpdateCallback(() => {
-    loadContacts().then(list => {
+    Promise.all([loadContacts(), loadSelfChat()]).then(([list]) => {
       contacts = list;
       render(searchInput.value.trim().toLowerCase());
     }).catch(() => {});
