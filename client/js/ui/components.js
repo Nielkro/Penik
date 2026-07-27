@@ -199,6 +199,9 @@ export function formatPresence(presence) {
   if (isNaN(d.getTime()) || ts <= 0) return "";
 
   const now = new Date();
+  // Within the last minute — show "just now" instead of a clock time.
+  if (now.getTime() - d.getTime() < 60_000) return "был(а) в сети только что";
+
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today - 86400000);
   const seenDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
