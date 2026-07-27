@@ -19,9 +19,11 @@ import niel.kro.penik.domain.usecase.LoadChatsUseCase
 import niel.kro.penik.domain.usecase.LogoutUseCase
 import niel.kro.penik.domain.usecase.SyncHistoryUseCase
 import niel.kro.penik.data.repository.AuthRepository
+import niel.kro.penik.data.repository.MessageRepository
 import javax.inject.Inject
 
 import niel.kro.penik.data.repository.GroupRepository
+import niel.kro.penik.data.repository.ChatRepository
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -61,26 +63,60 @@ class ChatsListViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val webSocketManager: WebSocketManager,
     private val apiService: ApiService,
-    private val groupRepository: GroupRepository
+    private val groupRepository: GroupRepository,
+    private val chatRepository: ChatRepository,
+    private val messageRepository: MessageRepository
 ) : ViewModel() {
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val feed: StateFlow<List<FeedItem>> = combine(
         loadChatsUseCase().map { list ->
-            list.map { FeedItem.ChatItem(it.userId, it.name, it.nickname, it.lastMessage, it.lastMessageTimestamp, it.unreadCount) }
+            val myId = authRepository.getUserId() ?: 0L
+            // Exclude any ghost self-chat entry that may have been created before this fix.
+            list.filter { it.userId != myId }
+                .map { FeedItem.ChatItem(it.userId, it.name, it.nickname, it.lastMessage, it.lastMessageTimestamp, it.unreadCount) }
         },
         groupRepository.observeGroups().flatMapLatest { groups ->
             if (groups.isEmpty()) return@flatMapLatest flowOf(emptyList<FeedItem.GroupItem>())
             val flows = groups.map { group ->
-                groupRepository.observeLastMessageForGroup(group.id).map { lastMsg ->
-                    FeedItem.GroupItem(
-                        id = group.id,
-                        name = group.name,
-                        lastMessage = lastMsg?.text,
-                        lastMessageTimestamp = lastMsg?.createdAt?.let { it * 1000 },
-                        unreadCount = 0, // In Android E2EE, group unread counts are simplified
-                        status = group.status
-                    )
+                groupRepository.observeLastMessageForGroup(group.id).flatMapLatest { lastMsg ->
+                    if (lastMsg == null) {
+                        flowOf(
+                            FeedItem.GroupItem(
+                                id = group.id,
+                                name = group.name,
+                                lastMessage = null,
+                                lastMessageTimestamp = null,
+                                unreadCount = 0,
+                                status = group.status
+                            )
+                        )
+                    } else if (lastMsg.sentByMe) {
+                        flowOf(
+                            FeedItem.GroupItem(
+                                id = group.id,
+                                name = group.name,
+                                lastMessage = "Вы: ${lastMsg.text}",
+                                lastMessageTimestamp = lastMsg.createdAt * 1000,
+                                unreadCount = 0,
+                                status = group.status
+                            )
+                        )
+                    } else {
+                        groupRepository.observeMember(group.id, lastMsg.senderUserId).map { member ->
+                            val senderName = member?.let { m ->
+                                m.name.ifBlank { m.nickname.ifBlank { "Пользователь ${lastMsg.senderUserId}" } }
+                            } ?: "Пользователь ${lastMsg.senderUserId}"
+                            FeedItem.GroupItem(
+                                id = group.id,
+                                name = group.name,
+                                lastMessage = "$senderName: ${lastMsg.text}",
+                                lastMessageTimestamp = lastMsg.createdAt * 1000,
+                                unreadCount = 0,
+                                status = group.status
+                            )
+                        }
+                    }
                 }
             }
             combine(flows) { it.toList() }
@@ -102,9 +138,24 @@ class ChatsListViewModel @Inject constructor(
             return UserSearchResult(id = myId, name = "Избранное", nickname = "")
         }
 
+    /** Last message in the self-chat (Favourites), observed reactively. */
+    val selfChatLastMessage: StateFlow<niel.kro.penik.data.local.entity.MessageEntity?> =
+        kotlinx.coroutines.flow.flow {
+            val myId = authRepository.getUserId()
+            if (myId != null) {
+                messageRepository.observeLastMessageForChat(myId).collect { emit(it) }
+            } else {
+                emit(null)
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     init {
         viewModelScope.launch {
             syncHistoryUseCase()
+            // Remove any ghost self-chat entry created by the pre-fix bug.
+            authRepository.getUserId()?.let { myId ->
+                chatRepository.deleteChat(myId)
+            }
         }
         reconnectIfNeeded()
     }

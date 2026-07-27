@@ -26,14 +26,40 @@ const BOX_STYLE = "background:#1e1e24;border:1px solid rgba(255,255,255,0.1);bor
 // refresh itself (works for both the groups-only and unified lists).
 export function buildGroupListItem(g, onChange) {
   const isPending = g.status === "pending";
-  const preview = isPending
-    ? "Приглашение в группу"
-    : (g.last_message || (g.role ? `Роль: ${roleLabel(g.role)}` : ""));
+  const previewSpan = el("span", { class: "chatlist-item-preview" }, isPending ? "Приглашение в группу" : "...");
 
   const info = el("div", { class: "chatlist-item-info" },
     el("span", { class: "chatlist-item-name" }, g.name),
-    el("span", { class: "chatlist-item-preview" }, preview),
+    previewSpan,
   );
+
+  if (!isPending) {
+    getGroupMessages(g.id).then(async (msgs) => {
+      const last = msgs && msgs[msgs.length - 1];
+      if (last) {
+        const my = getCurrentUser();
+        const myId = my && (my.id || my.user_id);
+        let senderName = "";
+        if (Number(last.sender_user_id) === Number(myId)) {
+          senderName = "Вы";
+        } else {
+          const members = await getGroupMembers(g.id).catch(() => []);
+          const sender = members.find(m => Number(m.user_id) === Number(last.sender_user_id));
+          if (sender) {
+            senderName = sender.name || sender.nickname || sender.username || `#${last.sender_user_id}`;
+          } else {
+            senderName = last.sender_name || `#${last.sender_user_id}`;
+          }
+        }
+        previewSpan.textContent = `${senderName}: ${last.plaintext || ""}`;
+      } else {
+        previewSpan.textContent = g.role ? `Роль: ${roleLabel(g.role)}` : "";
+      }
+    }).catch((err) => {
+      console.error("[groups] preview load failed", err);
+      previewSpan.textContent = g.role ? `Роль: ${roleLabel(g.role)}` : "";
+    });
+  }
 
   const avatarEl = groupAvatar(g, 48);
   avatarEl.style.cursor = "zoom-in";

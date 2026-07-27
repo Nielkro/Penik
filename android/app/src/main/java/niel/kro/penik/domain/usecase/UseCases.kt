@@ -88,9 +88,13 @@ class HandleWebSocketEventUseCase @Inject constructor(
             }
             is WebSocketEvent.MsgRecvEncrypted -> {
                 val (text, isIncoming) = messageRepository.handleMsgRecvEncrypted(event)
-                chatRepository.updateLastMessage(event.chatUserId, text, event.ts)
-                if (isIncoming) {
-                    chatRepository.incrementUnread(event.chatUserId)
+                // Skip chat list update when the message was not meant for this device
+                // (self-chat copy encrypted for another device returns empty text).
+                if (text.isNotEmpty()) {
+                    chatRepository.updateLastMessage(event.chatUserId, text, event.ts)
+                    if (isIncoming) {
+                        chatRepository.incrementUnread(event.chatUserId)
+                    }
                 }
             }
             is WebSocketEvent.MsgAck -> {

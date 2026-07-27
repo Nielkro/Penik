@@ -145,23 +145,22 @@ private fun MessageUnpacker.readMsgRecvMap(): Map<String, Any?> {
     val size = unpackMapHeader()
     val map = mutableMapOf<String, Any?>()
     for (i in 0 until size) {
-        val key = unpackString()
-        val value: Any? = try {
-            when (key) {
-                "from_user_id", "chat_user_id", "msg_id", "ts" -> unpackLong()
-                "plaintext" -> unpackString()
-                else -> {
-                    try { unpackLong() } catch (_: Exception) {
-                        try { unpackString() } catch (_: Exception) {
-                            try { unpackBoolean() } catch (_: Exception) {
-                                unpackNil(); null
-                            }
-                        }
-                    }
-                }
+        val key = when (nextFormat.valueType) {
+            org.msgpack.value.ValueType.INTEGER -> unpackLong().toString()
+            org.msgpack.value.ValueType.STRING  -> unpackString()
+            else -> unpackValue().toString()
+        }
+        val value: Any? = if (tryUnpackNil()) {
+            null
+        } else {
+            when (nextFormat.valueType) {
+                org.msgpack.value.ValueType.INTEGER -> unpackLong()
+                org.msgpack.value.ValueType.BOOLEAN -> unpackBoolean()
+                org.msgpack.value.ValueType.STRING  -> unpackString()
+                org.msgpack.value.ValueType.FLOAT   -> unpackDouble()
+                org.msgpack.value.ValueType.BINARY  -> { val len = unpackBinaryHeader(); readPayload(len) }
+                else -> try { unpackValue().toString() } catch (_: Exception) { null }
             }
-        } catch (_: Exception) {
-            unpackNil(); null
         }
         map[key] = value
     }
@@ -392,60 +391,83 @@ class WebSocketManager @Inject constructor(
     }
 
     private fun handleMsgRecv(payload: ByteArray) {
-        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
-        val event = unpacker.readMsgRecvEncrypted()
-        unpacker.close()
-        scope.launch { _events.emit(event) }
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val event = unpacker.readMsgRecvEncrypted()
+            unpacker.close()
+            scope.launch { _events.emit(event) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse MsgRecv frame", e)
+        }
     }
 
     private fun handleMsgAck(payload: ByteArray) {
-        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
-        val map = unpacker.readMsgRecvMap()
-        unpacker.close()
-        val event = WebSocketEvent.MsgAck(
-            serverMsgId = (map["msg_id"] as? Number)?.toLong() ?: 0,
-            clientMsgId = (map["client_msg_id"] as? String) ?: ""
-        )
-        scope.launch { _events.emit(event) }
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val event = WebSocketEvent.MsgAck(
+                serverMsgId = (map["msg_id"] as? Number)?.toLong() ?: 0,
+                clientMsgId = (map["client_msg_id"] as? String) ?: ""
+            )
+            scope.launch { _events.emit(event) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse MsgAck frame", e)
+        }
     }
 
     private fun handleMsgDelivered(payload: ByteArray) {
-        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
-        val map = unpacker.readMsgRecvMap()
-        unpacker.close()
-        val event = WebSocketEvent.MsgDelivered(
-            msgId = (map["msg_id"] as? Number)?.toLong() ?: 0,
-            clientMsgId = map["client_msg_id"] as? String ?: ""
-        )
-        scope.launch { _events.emit(event) }
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val event = WebSocketEvent.MsgDelivered(
+                msgId = (map["msg_id"] as? Number)?.toLong() ?: 0,
+                clientMsgId = map["client_msg_id"] as? String ?: ""
+            )
+            scope.launch { _events.emit(event) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse MsgDelivered frame", e)
+        }
     }
 
     private fun handleMsgRead(payload: ByteArray) {
-        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
-        val map = unpacker.readMsgRecvMap(); unpacker.close()
-        scope.launch { _events.emit(WebSocketEvent.MsgRead((map["msg_id"] as? Number)?.toLong() ?: 0, map["client_msg_id"] as? String ?: "")) }
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            scope.launch { _events.emit(WebSocketEvent.MsgRead((map["msg_id"] as? Number)?.toLong() ?: 0, map["client_msg_id"] as? String ?: "")) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse MsgRead frame", e)
+        }
     }
 
     private fun handleOfflineBatch(payload: ByteArray) {
-        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
-
-        val outerSize = unpacker.unpackMapHeader()
-        var msgsCount = 0
-        for (i in 0 until outerSize) {
-            val key = unpacker.unpackString()
-            if (key == "msgs") {
-                msgsCount = unpacker.unpackArrayHeader()
-            } else {
-                unpacker.unpackValue()
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val outerSize = unpacker.unpackMapHeader()
+            var msgsCount = 0
+            for (i in 0 until outerSize) {
+                val key = unpacker.unpackString()
+                if (key == "msgs") {
+                    msgsCount = unpacker.unpackArrayHeader()
+                } else {
+                    unpacker.unpackValue()
+                }
             }
+            val messages = mutableListOf<WebSocketEvent.MsgRecvEncrypted>()
+            for (i in 0 until msgsCount) {
+                try {
+                    messages.add(unpacker.readMsgRecvEncrypted())
+                } catch (e: Exception) {
+                    Log.e("WS", "Failed to parse offline batch item", e)
+                }
+            }
+            unpacker.close()
+            scope.launch { _events.emit(WebSocketEvent.OfflineBatchEncrypted(messages)) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse OfflineBatch frame", e)
         }
-
-        val messages = mutableListOf<WebSocketEvent.MsgRecvEncrypted>()
-        for (i in 0 until msgsCount) {
-            messages.add(unpacker.readMsgRecvEncrypted())
-        }
-        unpacker.close()
-        scope.launch { _events.emit(WebSocketEvent.OfflineBatchEncrypted(messages)) }
     }
 
     private fun handleMsgStatusBatch(payload: ByteArray) {
@@ -491,13 +513,17 @@ class WebSocketManager @Inject constructor(
     }
 
     private fun handleChatPurge(payload: ByteArray) {
-        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
-        val map = unpacker.readMsgRecvMap()
-        unpacker.close()
-        val event = WebSocketEvent.ChatPurge(
-            peerId = (map["chat_user_id"] as? Number)?.toLong() ?: 0
-        )
-        scope.launch { _events.emit(event) }
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val event = WebSocketEvent.ChatPurge(
+                peerId = (map["chat_user_id"] as? Number)?.toLong() ?: 0
+            )
+            scope.launch { _events.emit(event) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse ChatPurge frame", e)
+        }
     }
 
     private fun handleGroupMessageRecv(payload: ByteArray) {

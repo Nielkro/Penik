@@ -53,6 +53,7 @@ class GroupRepository @Inject constructor(
     fun observeMessages(groupId: Long) = dao.observeMessages(groupId)
     fun observeLastMessageForGroup(groupId: Long) = dao.observeLastMessageForGroup(groupId)
     suspend fun getLastMessageForGroup(groupId: Long) = dao.getLastMessageForGroup(groupId)
+    fun observeMember(groupId: Long, userId: Long) = dao.observeMember(groupId, userId)
 
     suspend fun renameGroup(groupId: Long, newName: String): Result<Unit> {
         return try {

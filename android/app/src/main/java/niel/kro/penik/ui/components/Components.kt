@@ -39,6 +39,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
@@ -132,6 +136,40 @@ fun UserAvatar(
     modifier: Modifier = Modifier,
     avatarKey: Any? = null
 ) {
+    if (name == "Избранное") {
+        Box(
+            modifier = modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(Color(0xFF5FA8DF)),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.size(size * 0.45f)) {
+                val w = this.size.width
+                val h = this.size.height
+                val strokeWidth = w * 0.12f
+                val path = Path().apply {
+                    moveTo(w * 0.2f, h * 0.1f)
+                    lineTo(w * 0.8f, h * 0.1f)
+                    lineTo(w * 0.8f, h * 0.9f)
+                    lineTo(w * 0.5f, h * 0.65f)
+                    lineTo(w * 0.2f, h * 0.9f)
+                    close()
+                }
+                drawPath(
+                    path = path,
+                    color = Color.White,
+                    style = Stroke(
+                        width = strokeWidth,
+                        cap = StrokeCap.Round,
+                        join = StrokeJoin.Round
+                    )
+                )
+            }
+        }
+        return
+    }
+
     val avatarUrl = avatarUrlFor(isGroup = false, id = userId, avatarKey = avatarKey)
 
     SubcomposeAsyncImage(
@@ -204,6 +242,40 @@ fun InitialsAvatar(
     size: Dp = 48.dp,
     modifier: Modifier = Modifier
 ) {
+    if (name.contains("Избранное")) {
+        Box(
+            modifier = modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(Color(0xFF5FA8DF)),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.size(size * 0.45f)) {
+                val w = this.size.width
+                val h = this.size.height
+                val strokeWidth = w * 0.12f
+                val path = Path().apply {
+                    moveTo(w * 0.2f, h * 0.1f)
+                    lineTo(w * 0.8f, h * 0.1f)
+                    lineTo(w * 0.8f, h * 0.9f)
+                    lineTo(w * 0.5f, h * 0.65f)
+                    lineTo(w * 0.2f, h * 0.9f)
+                    close()
+                }
+                drawPath(
+                    path = path,
+                    color = Color.White,
+                    style = Stroke(
+                        width = strokeWidth,
+                        cap = StrokeCap.Round,
+                        join = StrokeJoin.Round
+                    )
+                )
+            }
+        }
+        return
+    }
+
     Box(
         modifier = modifier
             .size(size)
@@ -300,6 +372,8 @@ fun SearchUserItem(
     name: String,
     userId: Long,
     nickname: String,
+    lastMessage: String? = null,
+    timestamp: Long? = null,
     onClick: () -> Unit
 ) {
     Row(
@@ -322,7 +396,16 @@ fun SearchUserItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (nickname.isNotBlank()) {
+            if (lastMessage != null) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = lastMessage,
+                    color = TextMuted,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            } else if (nickname.isNotBlank()) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "@$nickname",
@@ -330,6 +413,15 @@ fun SearchUserItem(
                     fontSize = 14.sp
                 )
             }
+        }
+
+        if (timestamp != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = formatTime(timestamp),
+                color = TextMuted,
+                fontSize = 12.sp
+            )
         }
     }
 }

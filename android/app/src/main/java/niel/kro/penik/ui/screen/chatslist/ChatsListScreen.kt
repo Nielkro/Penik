@@ -60,6 +60,7 @@ fun ChatsListContent(
     val feed by viewModel.feed.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
+    val selfChatLastMessage by viewModel.selfChatLastMessage.collectAsState()
     val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
     val userAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.userAvatarKeys.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
@@ -253,9 +254,11 @@ fun ChatsListContent(
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     item(key = "self_chat") {
                         SearchUserItem(
-                            name = "$SELF_CHAT_ICON $SELF_CHAT_NAME",
+                            name = SELF_CHAT_NAME,
                             userId = viewModel.selfChatEntry?.id ?: 0L,
                             nickname = "",
+                            lastMessage = selfChatLastMessage?.text,
+                            timestamp = selfChatLastMessage?.timestamp,
                             onClick = {
                                 val myId = viewModel.selfChatEntry?.id ?: return@SearchUserItem
                                 onChatClick(myId, SELF_CHAT_NAME)
