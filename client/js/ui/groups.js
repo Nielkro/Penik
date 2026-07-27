@@ -4,9 +4,14 @@ import {
   getAllGroups, getGroupMessages, onGroupUpdate, backfillCurrentKey,
   renameGroup, uploadGroupAvatar,
 } from "../groups.js";
+import { apiGet } from "../api.js";
 import { getGroupMembers, getAllContacts } from "../storage.js";
 import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
-import { el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence, showToast, spinner, showConfirmModal, showPromptModal, showFullscreenImage } from "./components.js";
+import {
+  el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence,
+  showToast, spinner, showConfirmModal, showPromptModal, showFullscreenImage,
+  setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton,
+} from "./components.js";
 import { onPresenceUpdate } from "../presence.js";
 
 // Role labels in Russian for the members UI.
@@ -233,6 +238,7 @@ export async function renderGroup(container, groupId) {
   const inputRow = el("div", { class: "chat-input-row" }, inputEl, sendBtn);
   const chatWrap = el("div", { class: "chat-wrap" }, header, messagesEl, inputRow);
   container.appendChild(chatWrap);
+  const scrollDown = attachScrollDownButton(messagesEl);
 
   // Resolve the real title and member names after the shell is mounted.
   let headerGroup = { id: groupId, name: `Группа ${groupId}` };
@@ -291,16 +297,23 @@ export async function renderGroup(container, groupId) {
       }).catch(() => {});
     }
 
+    const textEl = el("span", { class: "msg-text" });
+    setMsgTextContent(textEl, msg.plaintext || "");
+    const timeEl = el("span", { class: "msg-time" });
+    wireMsgTime(timeEl, msg.created_at);
     const bubble = el("div", { class: `msg-bubble ${mine ? "msg-out" : "msg-in"}`, "data-mid": key },
       senderNameSpan,
-      el("span", { class: "msg-text" }, msg.plaintext || ""),
+      textEl,
       el("div", { class: "msg-meta" },
-        el("span", { class: "msg-time" }, formatTime(msg.created_at)),
+        timeEl,
         mine ? el("span", { class: "msg-status" }, msg.delivered ? "✓" : "…") : null,
       ),
     );
+    wireMsgCopy(bubble, () => msg.plaintext || textEl.innerText || "");
+    const stick = scrollDown.isNearBottom();
     messagesEl.appendChild(bubble);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    if (stick) scrollDown.scrollToBottom();
+    else scrollDown.update();
   }
 
   const loadEl = el("div", { class: "chat-loading" }, spinner());
@@ -309,6 +322,7 @@ export async function renderGroup(container, groupId) {
   try { messages = await getGroupMessages(groupId, 100); } catch { messages = []; }
   loadEl.remove();
   for (const m of messages) appendMessage(m);
+  scrollDown.scrollToBottom();
 
   // Live updates for this group.
   const unsub = onGroupUpdate((evt) => {

@@ -165,10 +165,253 @@ function initialsNode(user, size) {
 
 // Time formatting
 
+function toDate(ts) {
+  return new Date(typeof ts === "number" && ts < 1e12 ? ts * 1000 : ts);
+}
+
 export function formatTime(ts) {
-  const d = new Date(typeof ts === "number" && ts < 1e12 ? ts * 1000 : ts);
+  const d = toDate(ts);
   if (isNaN(d.getTime())) return "";
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+/** Full timestamp for hover/tap, e.g. "27 июля 2026 г., 21:38:12". */
+export function formatFullTime(ts) {
+  const d = toDate(ts);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+// Match http(s) URLs; trailing punctuation is stripped from the href.
+const MSG_URL_RE = /https?:\/\/[^\s<>"']+/gi;
+
+/**
+ * Fill a .msg-text element with plain text, turning http(s) URLs into safe
+ * <a class="msg-link"> anchors (no innerHTML — plaintext is never parsed as HTML).
+ */
+export function setMsgTextContent(el, text) {
+  el.replaceChildren();
+  if (!text) return;
+
+  const s = String(text);
+  let last = 0;
+  MSG_URL_RE.lastIndex = 0;
+  let m;
+  while ((m = MSG_URL_RE.exec(s)) !== null) {
+    if (m.index > last) {
+      el.appendChild(document.createTextNode(s.slice(last, m.index)));
+    }
+    let url = m[0];
+    let trail = "";
+    while (url.length && /[.,;:!?)]+$/.test(url)) {
+      trail = url.slice(-1) + trail;
+      url = url.slice(0, -1);
+    }
+    if (url) {
+      const a = document.createElement("a");
+      a.className = "msg-link";
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = url;
+      a.addEventListener("click", (e) => e.stopPropagation());
+      el.appendChild(a);
+    }
+    if (trail) el.appendChild(document.createTextNode(trail));
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) {
+    el.appendChild(document.createTextNode(s.slice(last)));
+  }
+}
+
+/** Wire a .msg-time span: hover shows full time (title), click toggles short/full. */
+export function wireMsgTime(timeEl, ts) {
+  const short = formatTime(ts);
+  const full = formatFullTime(ts);
+  timeEl.textContent = short;
+  timeEl.title = full || short;
+  timeEl.dataset.short = short;
+  timeEl.dataset.full = full;
+  let showingFull = false;
+  timeEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!full) return;
+    showingFull = !showingFull;
+    timeEl.textContent = showingFull ? full : short;
+    timeEl.classList.toggle("msg-time-full", showingFull);
+  });
+}
+
+/**
+ * Right-click / long-press on a message bubble → mini menu with "Копировать".
+ * `getText` is a string or a function returning the plaintext to copy.
+ */
+export function wireMsgCopy(bubble, getText) {
+  const resolveText = () => {
+    const t = typeof getText === "function" ? getText() : getText;
+    return (t == null ? "" : String(t)).trim();
+  };
+
+  const doCopy = async () => {
+    const text = resolveText();
+    if (!text) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.cssText = "position:fixed;left:-9999px;top:0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+      }
+      showToast("Скопировано");
+    } catch {
+      showToast("Не удалось скопировать", "error");
+    }
+  };
+
+  bubble.addEventListener("contextmenu", (e) => {
+    // Keep the native browser menu on links.
+    if (e.target.closest?.("a.msg-link")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showMsgActionMenu(e.clientX, e.clientY, doCopy);
+  });
+
+  // Long-press for touch devices.
+  let pressTimer = null;
+  let pressX = 0;
+  let pressY = 0;
+  const clearPress = () => {
+    if (pressTimer != null) {
+      clearTimeout(pressTimer);
+      pressTimer = null;
+    }
+  };
+  bubble.addEventListener("touchstart", (e) => {
+    if (e.target.closest?.("a.msg-link")) return;
+    const t = e.touches[0];
+    if (!t) return;
+    pressX = t.clientX;
+    pressY = t.clientY;
+    clearPress();
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      showMsgActionMenu(pressX, pressY, doCopy);
+    }, 480);
+  }, { passive: true });
+  bubble.addEventListener("touchmove", (e) => {
+    const t = e.touches[0];
+    if (!t || pressTimer == null) return;
+    if (Math.abs(t.clientX - pressX) > 10 || Math.abs(t.clientY - pressY) > 10) clearPress();
+  }, { passive: true });
+  bubble.addEventListener("touchend", clearPress, { passive: true });
+  bubble.addEventListener("touchcancel", clearPress, { passive: true });
+}
+
+function showMsgActionMenu(x, y, onCopy) {
+  document.getElementById("msg-action-menu")?.remove();
+  const menu = el("div", {
+    id: "msg-action-menu",
+    class: "msg-action-menu",
+    style: `left:${x}px;top:${y}px;`,
+  });
+  const item = el("button", { type: "button", class: "msg-action-item" }, "Копировать");
+  item.addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.remove();
+    onCopy();
+  });
+  menu.appendChild(item);
+  document.body.appendChild(menu);
+
+  // Keep menu inside the viewport.
+  requestAnimationFrame(() => {
+    const r = menu.getBoundingClientRect();
+    let left = x;
+    let top = y;
+    if (r.right > window.innerWidth - 8) left = Math.max(8, window.innerWidth - r.width - 8);
+    if (r.bottom > window.innerHeight - 8) top = Math.max(8, window.innerHeight - r.height - 8);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  });
+
+  const close = (ev) => {
+    if (menu.contains(ev.target)) return;
+    menu.remove();
+    document.removeEventListener("pointerdown", close, true);
+    document.removeEventListener("keydown", onKey, true);
+  };
+  const onKey = (ev) => {
+    if (ev.key === "Escape") {
+      menu.remove();
+      document.removeEventListener("pointerdown", close, true);
+      document.removeEventListener("keydown", onKey, true);
+    }
+  };
+  // Defer so the opening event does not immediately close the menu.
+  setTimeout(() => {
+    document.addEventListener("pointerdown", close, true);
+    document.addEventListener("keydown", onKey, true);
+  }, 0);
+}
+
+/**
+ * Wrap a .chat-messages scroller with a floating "↓" button that appears when
+ * the user scrolls up. Returns { isNearBottom, scrollToBottom, update }.
+ */
+export function attachScrollDownButton(messagesEl) {
+  const parent = messagesEl.parentNode;
+  const wrap = el("div", { class: "chat-messages-wrap" });
+  parent.insertBefore(wrap, messagesEl);
+  wrap.appendChild(messagesEl);
+
+  const btn = el("button", {
+    type: "button",
+    class: "chat-scroll-down",
+    title: "К последним сообщениям",
+    "aria-label": "К последним сообщениям",
+  }, "↓");
+  wrap.appendChild(btn);
+
+  const THRESH = 120;
+  const isNearBottom = () => {
+    const dist = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight;
+    return dist <= THRESH;
+  };
+  const update = () => {
+    btn.hidden = isNearBottom();
+  };
+  const scrollToBottom = (smooth = false) => {
+    if (smooth && typeof messagesEl.scrollTo === "function") {
+      messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: "smooth" });
+    } else {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+    btn.hidden = true;
+  };
+
+  messagesEl.addEventListener("scroll", update, { passive: true });
+  btn.addEventListener("click", () => scrollToBottom(true));
+  // New content may change scrollHeight without a scroll event.
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(update);
+    ro.observe(messagesEl);
+  }
+  update();
+  return { isNearBottom, scrollToBottom, update };
 }
 
 // Date separator label
