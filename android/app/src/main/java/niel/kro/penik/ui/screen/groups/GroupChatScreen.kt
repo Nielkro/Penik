@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.AlertDialog
@@ -31,6 +32,8 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,9 +47,11 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.launch
 import niel.kro.penik.ui.components.FullscreenImageViewer
 import niel.kro.penik.ui.components.GroupAvatar
 import niel.kro.penik.ui.components.MessageBubble
@@ -89,9 +95,17 @@ fun GroupChatScreen(
     var showMenu by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
     var memberToRemove by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
     var selectedMemberForActions by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
+
+    val showScrollDown by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 ||
+                listState.firstVisibleItemScrollOffset > 200
+        }
+    }
 
     val myRole = members.find { it.userId == viewModel.myUserId }?.role ?: "member"
     val canManage = myRole in listOf("owner", "admin")
@@ -189,26 +203,56 @@ fun GroupChatScreen(
                 .padding(padding)
                 .imePadding()
         ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp),
-                reverseLayout = false
-            ) {
-                items(messages) { msg ->
-                    val isOwn = msg.sentByMe
-                    val senderMember = members.find { it.userId == msg.senderUserId }
-                    val displayName = senderMember?.let {
-                        it.name.ifEmpty { it.nickname.ifEmpty { "#${it.userId}" } }
-                    } ?: "#${msg.senderUserId}"
-                    
-                    MessageBubble(
-                        text = msg.text,
-                        isSentByMe = isOwn,
-                        timestamp = msg.createdAt,
-                        delivered = if (isOwn) msg.delivered else false,
-                        senderName = displayName,
-                        senderUserId = msg.senderUserId
-                    )
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    reverseLayout = false
+                ) {
+                    items(messages) { msg ->
+                        val isOwn = msg.sentByMe
+                        val senderMember = members.find { it.userId == msg.senderUserId }
+                        val displayName = senderMember?.let {
+                            it.name.ifEmpty { it.nickname.ifEmpty { "#${it.userId}" } }
+                        } ?: "#${msg.senderUserId}"
+                        
+                        MessageBubble(
+                            text = msg.text,
+                            isSentByMe = isOwn,
+                            timestamp = msg.createdAt,
+                            delivered = if (isOwn) msg.delivered else false,
+                            senderName = displayName,
+                            senderUserId = msg.senderUserId
+                        )
+                    }
+                }
+
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showScrollDown,
+                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 12.dp, bottom = 8.dp)
+                ) {
+                    FloatingActionButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(messages.lastIndex)
+                            }
+                        },
+                        containerColor = Panel,
+                        contentColor = TextPrimary,
+                        elevation = FloatingActionButtonDefaults.elevation(4.dp),
+                        shape = CircleShape,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "К последним",
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
 
