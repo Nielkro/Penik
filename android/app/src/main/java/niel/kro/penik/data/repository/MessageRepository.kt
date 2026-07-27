@@ -164,6 +164,8 @@ class MessageRepository @Inject constructor(
         return messageDao.getMessagesForChat(chatUserId)
     }
 
+    fun observeLastMessageForChat(chatUserId: Long) = messageDao.observeLastMessageForChat(chatUserId)
+
     suspend fun sendMessage(toUserId: Long, text: String): String {
         val clientMsgId = UUID.randomUUID().toString()
         val myId = tokenStorage.getUserId()
@@ -272,8 +274,10 @@ class MessageRepository @Inject constructor(
     }
 
     suspend fun handleMsgRecvEncrypted(event: WebSocketEvent.MsgRecvEncrypted): Pair<String, Boolean> {
-        val sentByMe = event.fromUserId == tokenStorage.getUserId()
-        
+        val myId = tokenStorage.getUserId()
+        val sentByMe = event.fromUserId == myId
+        val isSelfChat = sentByMe && event.chatUserId == myId
+
         val existing = messageDao.findMessageByServerId(event.msgId)
         if (existing != null) {
             val text = existing.text
@@ -297,6 +301,9 @@ class MessageRepository @Inject constructor(
             )
         } catch (e: Exception) {
             decryptSuccess = false
+            if (isSelfChat) {
+                return Pair("", false)
+            }
             "[Ошибка расшифрования сообщения: ${e.message}]"
         }
 
@@ -356,6 +363,7 @@ class MessageRepository @Inject constructor(
         val successMsgIds = mutableListOf<Long>()
         val entities = buildList {
             event.msgs.forEach { msg ->
+                val isSelfChat = msg.fromUserId == myId && msg.chatUserId == myId
                 val existing = messageDao.findMessageByServerId(msg.msgId)
                 if (existing == null) {
                     var decryptSuccess = true
@@ -369,12 +377,19 @@ class MessageRepository @Inject constructor(
                         )
                     } catch (e: Exception) {
                         decryptSuccess = false
+                        if (isSelfChat) {
+                            // Encrypted for another device of ours — skip silently.
+                            return@forEach
+                        }
                         "[Ошибка расшифрования сообщения: ${e.message}]"
                     }
                     if (decryptSuccess) {
                         successMsgIds.add(msg.msgId)
                     }
-                    decryptedList.add(DecryptedOfflineMsg(msg.chatUserId, decryptedText, msg.ts))
+                    // Only expose self-chat messages that we successfully decrypted.
+                    if (!isSelfChat) {
+                        decryptedList.add(DecryptedOfflineMsg(msg.chatUserId, decryptedText, msg.ts))
+                    }
                     add(MessageEntity(
                         localId = "server-${msg.msgId}",
                         serverId = msg.msgId,
@@ -388,14 +403,19 @@ class MessageRepository @Inject constructor(
                 } else {
                     val text = existing.text
                     val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
-                    if (!isFailed) {
+                    if (!isFailed && !isSelfChat) {
                         decryptedList.add(DecryptedOfflineMsg(msg.chatUserId, text, msg.ts))
                     }
                 }
             }
         }
         messageDao.insertMessages(entities)
-        event.msgs.forEach { webSocketManager.sendDelivered(it.msgId) }
+        // Send delivery receipts only for messages from other users.
+        event.msgs.forEach { msg ->
+            if (msg.fromUserId != myId) {
+                webSocketManager.sendDelivered(msg.msgId)
+            }
+        }
         return decryptedList
     }
 

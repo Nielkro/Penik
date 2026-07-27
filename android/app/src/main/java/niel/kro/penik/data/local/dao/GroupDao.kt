@@ -73,4 +73,8 @@ interface GroupDao {
 
     @Query("SELECT * FROM group_messages WHERE groupId = :groupId ORDER BY createdAt DESC LIMIT 1")
     suspend fun getLastMessageForGroup(groupId: Long): GroupMessageEntity?
+
+    @Query("SELECT * FROM group_members WHERE groupId = :groupId AND userId = :userId LIMIT 1")
+    fun observeMember(groupId: Long, userId: Long): Flow<GroupMemberEntity?>
 }
+

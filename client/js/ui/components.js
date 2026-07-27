@@ -25,6 +25,24 @@ export function el(tag, attrs = {}, ...children) {
 // Avatar
 
 export function avatar(user, size = 40, forceTimestamp = null) {
+  if (user && user.name === "Избранное") {
+    const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svgEl.setAttribute("viewBox", "0 0 24 24");
+    svgEl.setAttribute("width", String(Math.round(size * 0.45)));
+    svgEl.setAttribute("height", String(Math.round(size * 0.45)));
+    svgEl.setAttribute("fill", "none");
+    svgEl.setAttribute("stroke", "#ffffff");
+    svgEl.setAttribute("stroke-width", "2.5");
+    svgEl.setAttribute("stroke-linecap", "round");
+    svgEl.setAttribute("stroke-linejoin", "round");
+    svgEl.innerHTML = '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>';
+
+    return el("div", {
+      class: "avatar",
+      style: `width:${size}px;height:${size}px;border-radius:50%;background:#5fa8df;display:flex;align-items:center;justify-content:center;flex-shrink:0;`
+    }, svgEl);
+  }
+
   const wrap = el("div", { class: "avatar", style: `width:${size}px;height:${size}px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0;` });
 
   const userId = user && (user.user_id || user.id);
