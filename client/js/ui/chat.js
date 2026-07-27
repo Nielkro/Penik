@@ -5,7 +5,11 @@ import {
   deleteChatData, deleteMessage
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, encryptMessagePayload } from "../app.js";
-import { avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, showDeleteChatConfirmModal, showFullscreenImage } from "./components.js";
+import {
+  avatar, formatTime, formatDate, formatPresence, el, showToast, spinner,
+  showDeleteChatConfirmModal, showFullscreenImage,
+  setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton,
+} from "./components.js";
 import { syncGroups, getAllGroups, getGroupMessages, onGroupUpdate } from "../groups.js";
 import { buildGroupListItem, showCreateGroupModal } from "./groups.js";
 import { onPresenceUpdate } from "../presence.js";
@@ -334,8 +338,10 @@ export async function renderChat(container, userId) {
   const inputEl    = el("textarea", { class: "chat-input", placeholder: "Сообщение…", rows: "1" });
   const sendBtn    = el("button", { class: "chat-send-btn" }, "➤");
   const inputRow   = el("div", { class: "chat-input-row" }, inputEl, sendBtn);
+  // messagesEl is mounted first so attachScrollDownButton can wrap it in place.
   const chatWrap   = el("div", { class: "chat-wrap" }, header, messagesEl, inputRow);
   container.appendChild(chatWrap);
+  const scrollDown = attachScrollDownButton(messagesEl);
 
   // Resolve the real contact after the shell is mounted, then patch the header.
   if (!isSelfChat) {
@@ -393,7 +399,16 @@ export async function renderChat(container, userId) {
       const existing = messagesEl.querySelector(`[data-msg-id="${msg.msg_id}"]`);
       if (existing) {
         const txt = existing.querySelector(".msg-text");
-        if (txt) txt.textContent = msg.plaintext || "";
+        if (txt) {
+          const isFailed = typeof msg.plaintext === "string" &&
+            (msg.plaintext.startsWith("[Сообщение не расшифровано") ||
+             msg.plaintext.startsWith("[Ошибка расшифрован"));
+          if (isFailed) {
+            txt.textContent = "🔒 Сообщение не расшифровано";
+          } else {
+            setMsgTextContent(txt, msg.plaintext || "");
+          }
+        }
         return;
       }
     }
@@ -401,12 +416,12 @@ export async function renderChat(container, userId) {
     const isSystem = msg.sender_id === 0;
     if (isSystem) {
       const isKeyChange = (msg.plaintext === "⚠️ Код безопасности изменился!");
+      const textEl = el("span", { class: "msg-text" });
+      setMsgTextContent(textEl, msg.plaintext || "");
       const bubble = el("div", {
         class: "msg-bubble msg-system",
         style: isKeyChange ? "cursor: pointer; text-decoration: underline;" : ""
-      },
-        el("span", { class: "msg-text" }, msg.plaintext || "")
-      );
+      }, textEl);
       if (isKeyChange) {
         bubble.addEventListener("click", () => {
           showSafetyExplanationModal(msg.chat_id);
@@ -420,7 +435,6 @@ export async function renderChat(container, userId) {
     const isMine = String(msg.sender_id) === String(me && (me.id || me.user_id));
     const ts = msg.created_at || Date.now();
 
-    const deliveredAt = msg.delivered_at;
     const statusText = msg.read ? "✓✓" : (msg.delivered ? "✓✓" : "✓");
     const statusClass = "msg-status" + (msg.read ? " msg-status-read" : "");
     const statusEl = isMine
@@ -433,10 +447,9 @@ export async function renderChat(container, userId) {
     // was delivered/replayed (and can look like it appeared hours later).
     // Chat bubbles must always show when the message was sent/created.
     const displayTime = ts;
-    const metaEl = el("div", { class: "msg-meta" },
-      el("span", { class: "msg-time" }, formatTime(displayTime)),
-      statusEl
-    );
+    const timeEl = el("span", { class: "msg-time" });
+    wireMsgTime(timeEl, displayTime);
+    const metaEl = el("div", { class: "msg-meta" }, timeEl, statusEl);
 
     // A message that only exists locally as an undecryptable placeholder is
     // dead weight: it can never be recovered, so mark it visually and let the
@@ -445,11 +458,21 @@ export async function renderChat(container, userId) {
       (msg.plaintext.startsWith("[Сообщение не расшифровано") ||
        msg.plaintext.startsWith("[Ошибка расшифрован"));
 
+    const textEl = el("span", { class: "msg-text" });
+    if (isFailed) {
+      textEl.textContent = "🔒 Сообщение не расшифровано";
+    } else {
+      setMsgTextContent(textEl, msg.plaintext || "");
+    }
+
     const bubble = el("div", { class: `msg-bubble ${isMine ? "msg-out" : "msg-in"}${isFailed ? " msg-failed" : ""}` },
-      el("span", { class: "msg-text" }, isFailed ? "🔒 Сообщение не расшифровано" : (msg.plaintext || "")),
+      textEl,
       metaEl
     );
     bubble.dataset.msgId = msg.msg_id;
+    if (!isFailed) {
+      wireMsgCopy(bubble, () => msg.plaintext || textEl.innerText || "");
+    }
 
     if (isFailed) {
       const delBtn = el("button", { class: "msg-del-btn", title: "Удалить локально" }, "🗑");
@@ -467,6 +490,7 @@ export async function renderChat(container, userId) {
     }
 
     prepend ? messagesEl.prepend(bubble) : messagesEl.appendChild(bubble);
+    scrollDown.update();
     if (!isMine && msg.msg_id) {
       const socket = getWS();
       if (socket?.isConnected()) socket.send(0x18, { msg_id: Number(msg.msg_id) });
@@ -474,7 +498,7 @@ export async function renderChat(container, userId) {
   }
 
   messages.forEach(m => appendMessage(m));
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  scrollDown.scrollToBottom();
 
   // ── Send ──────────────────────────────────────────────────────────────────
 
@@ -488,7 +512,7 @@ export async function renderChat(container, userId) {
     const now = Date.now();
     const myId = me && (me.id || me.user_id);
     appendMessage({ msg_id: tempId, sender_id: myId, plaintext: text, created_at: now });
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    scrollDown.scrollToBottom();
 
     const sendFn = async () => {
       const ws = getWS();
@@ -557,16 +581,15 @@ export async function renderChat(container, userId) {
   setActiveChatCallback(
     userId,
     (inMsg) => {
+      const stick = scrollDown.isNearBottom();
       appendMessage(inMsg);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
+      if (stick) scrollDown.scrollToBottom();
+      else scrollDown.update();
     },
     (msgId) => {
       const statusEl = messagesEl.querySelector(`.msg-status[data-msg-id="${msgId}"]`);
       if (statusEl) {
         statusEl.textContent = "✓✓";
-        // Update the time shown next to the checkmarks to delivery time
-        const timeEl = statusEl.closest(".msg-meta")?.querySelector(".msg-time");
-        if (timeEl) timeEl.textContent = formatTime(Date.now());
       }
     },
     (msgId, status) => {

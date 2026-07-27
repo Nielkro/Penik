@@ -481,6 +481,15 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   color: var(--text-muted);
 }
 
+.chat-messages-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .chat-messages {
   flex: 1;
   overflow-y: auto;
@@ -489,6 +498,37 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+.chat-scroll-down {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  z-index: 5;
+  opacity: 0.95;
+  transition: background 0.15s, transform 0.15s, opacity 0.15s;
+}
+
+.chat-scroll-down:hover {
+  background: var(--panel-secondary, var(--panel));
+  transform: translateY(-1px);
+}
+
+.chat-scroll-down[hidden] {
+  display: none !important;
 }
 
 .chat-loading {
@@ -578,6 +618,17 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 
 .msg-text {
   font-size: 15px;
+  white-space: pre-wrap;
+}
+
+.msg-link {
+  color: var(--accent);
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.msg-out .msg-link {
+  color: #b8d4ff;
 }
 
 .msg-meta {
@@ -594,10 +645,46 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   align-self: flex-end;
   line-height: 1;
   margin-top: 1px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.msg-time.msg-time-full {
+  font-size: 10px;
+  opacity: 0.95;
 }
 
 .msg-out .msg-time {
   color: rgba(200, 210, 255, 0.5);
+}
+
+/* Message context menu (copy) */
+.msg-action-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.msg-action-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.msg-action-item:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .msg-status {
