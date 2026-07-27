@@ -1,6 +1,12 @@
 package niel.kro.penik.ui.components
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.clickable
@@ -23,6 +29,7 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -30,7 +37,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
@@ -43,8 +53,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
@@ -431,6 +445,48 @@ private fun formatTime(timestamp: Long): String {
     return sdf.format(Date(timestamp))
 }
 
+private fun formatFullTime(timestamp: Long): String {
+    val sdf = SimpleDateFormat("d MMMM yyyy, HH:mm:ss", Locale("ru"))
+    return sdf.format(Date(timestamp))
+}
+
+private val URL_REGEX = Regex("""https?://[^\s<>"']+""")
+
+/** Build an AnnotatedString where http(s) URLs become clickable spans. */
+private fun buildLinkedText(text: String, linkColor: Color): androidx.compose.ui.text.AnnotatedString {
+    return buildAnnotatedString {
+        var lastEnd = 0
+        for (match in URL_REGEX.findAll(text)) {
+            val start = match.range.first
+            val rawUrl = match.value
+            // Strip trailing punctuation that likely isn't part of the URL.
+            var url = rawUrl
+            var trail = ""
+            while (url.isNotEmpty() && url.last() in ".,;:!?)]") {
+                trail = url.last() + trail
+                url = url.dropLast(1)
+            }
+            if (start > lastEnd) {
+                append(text.substring(lastEnd, start))
+            }
+            if (url.isNotEmpty()) {
+                pushStringAnnotation(tag = "URL", annotation = url)
+                withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
+                    append(url)
+                }
+                pop()
+            }
+            if (trail.isNotEmpty()) {
+                append(trail)
+            }
+            lastEnd = match.range.last + 1
+        }
+        if (lastEnd < text.length) {
+            append(text.substring(lastEnd))
+        }
+    }
+}
+
 @Composable
 fun MessageBubble(
     text: String,
@@ -445,6 +501,9 @@ fun MessageBubble(
 ) {
     val isFailed = text.startsWith("[Ошибка расшифрования") || text.startsWith("[Сообщение не расшифровано")
     var isExpanded by remember { mutableStateOf(false) }
+    var showFullTime by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
 
     val bgColor = if (isFailed) {
         Color(0x26EF5350)
@@ -462,7 +521,20 @@ fun MessageBubble(
         TextPrimary
     }
 
+    val linkColor = if (isSentByMe) {
+        Color(0xFFB8D4FF)
+    } else {
+        Accent
+    }
+
     val alignment = if (isSentByMe) Alignment.End else Alignment.Start
+
+    val doCopy: () -> Unit = {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("message", text)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+    }
 
     Column(
         modifier = Modifier
@@ -477,6 +549,15 @@ fun MessageBubble(
                 .widthIn(max = 280.dp)
                 .clip(BubbleShape(isSentByMe))
                 .background(bgColor)
+                .combinedClickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                    onLongClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        doCopy()
+                    }
+                )
                 .padding(start = startPadding, top = 8.dp, end = endPadding, bottom = 8.dp)
         ) {
             Column {
@@ -534,10 +615,20 @@ fun MessageBubble(
                             .padding(vertical = 2.dp)
                     )
                 } else {
+                    val annotated = remember(text) { buildLinkedText(text, linkColor) }
                     Text(
-                        text = text,
+                        text = annotated,
                         color = textColor,
-                        fontSize = 15.sp
+                        fontSize = 15.sp,
+                        modifier = Modifier.combinedClickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                            onLongClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                doCopy()
+                            }
+                        )
                     )
                 }
 
@@ -555,10 +646,15 @@ fun MessageBubble(
                             modifier = Modifier.padding(end = 4.dp)
                         )
                     }
+                    val timeLabel = if (showFullTime) formatFullTime(timestamp) else formatTime(timestamp)
                     Text(
-                        text = formatTime(timestamp),
+                        text = timeLabel,
                         color = TextMuted,
-                        fontSize = 10.sp
+                        fontSize = if (showFullTime) 9.sp else 10.sp,
+                        modifier = Modifier
+                            .clickable { showFullTime = !showFullTime }
+                            .padding(horizontal = 2.dp),
+                        maxLines = 1
                     )
                 }
             }
