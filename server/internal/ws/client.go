@@ -3,9 +3,11 @@ package ws
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	"github.com/shamaton/msgpack/v2"
@@ -17,7 +19,23 @@ const (
 	writeTimeout = 10 * time.Second
 	readTimeout  = 70 * time.Second // slightly longer than ping interval
 	pingInterval = 30 * time.Second
+
+	msgSendRate         = 4.0
+	msgSendBurst        = 10.0
+	serviceFrameRate    = 15.0
+	serviceFrameBurst   = 20.0
+	rateViolationLimit  = 3
+	rateViolationWindow = 2 * time.Second
 )
+
+var errFrameRateLimit = errors.New("websocket frame rate limit exceeded")
+
+type frameRateCounter struct {
+	tokens         float64
+	lastRefill     time.Time
+	violations     int
+	firstViolation time.Time
+}
 
 // Client represents a single connected WebSocket session.
 type Client struct {
@@ -28,6 +46,8 @@ type Client struct {
 	db       *db.DB
 	send     chan []byte
 	done     chan struct{}
+	rateMu   sync.Mutex
+	rate     map[Opcode]*frameRateCounter
 }
 
 // NewClient creates a new Client. Called from handlers package.
@@ -44,6 +64,7 @@ func newClient(h *Hub, conn *websocket.Conn, userID, deviceID int64, database *d
 		db:       database,
 		send:     make(chan []byte, 256),
 		done:     make(chan struct{}),
+		rate:     make(map[Opcode]*frameRateCounter),
 	}
 }
 
@@ -124,6 +145,10 @@ func (c *Client) readPump(ctx context.Context, errCh chan<- error) {
 			continue
 		}
 		if err := c.handleFrame(ctx, data); err != nil {
+			if errors.Is(err, errFrameRateLimit) {
+				errCh <- err
+				return
+			}
 			log.Printf("ws handle frame: %v", err)
 		}
 	}
@@ -171,6 +196,13 @@ func (c *Client) writePump(ctx context.Context, errCh chan<- error) {
 func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 	op := Opcode(data[0])
 	payload := data[1:]
+	rateResult := c.checkFrameRate(op)
+	if rateResult == frameRateDrop {
+		return nil
+	}
+	if rateResult == frameRateClose {
+		return fmt.Errorf("%w: %s opcode 0x%02x", errFrameRateLimit, rateProfileName(op), op)
+	}
 
 	switch op {
 	case OpMsgSend:
@@ -267,6 +299,70 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 	default:
 		return fmt.Errorf("unknown opcode 0x%02x", op)
 	}
+}
+
+// checkFrameRate applies a separate token bucket to every incoming opcode.
+// A few excess frames are dropped, but repeated excess in a short window closes the client.
+type frameRateResult uint8
+
+const (
+	frameRateAllowed frameRateResult = iota
+	frameRateDrop
+	frameRateClose
+)
+
+func (c *Client) checkFrameRate(op Opcode) frameRateResult {
+	rate, burst := serviceFrameRate, serviceFrameBurst
+	if op == OpMsgSend {
+		rate, burst = msgSendRate, msgSendBurst
+	}
+
+	now := time.Now()
+	c.rateMu.Lock()
+	defer c.rateMu.Unlock()
+
+	counter, ok := c.rate[op]
+	if !ok {
+		counter = &frameRateCounter{tokens: burst, lastRefill: now}
+		c.rate[op] = counter
+	}
+
+	elapsed := now.Sub(counter.lastRefill).Seconds()
+	counter.tokens = minFloat(burst, counter.tokens+elapsed*rate)
+	counter.lastRefill = now
+	if counter.tokens >= 1 {
+		counter.tokens--
+		if counter.violations > 0 && now.Sub(counter.firstViolation) > rateViolationWindow {
+			counter.violations = 0
+			counter.firstViolation = time.Time{}
+		}
+		return frameRateAllowed
+	}
+
+	if counter.violations == 0 || now.Sub(counter.firstViolation) > rateViolationWindow {
+		counter.violations = 1
+		counter.firstViolation = now
+	} else {
+		counter.violations++
+	}
+	if counter.violations >= rateViolationLimit {
+		return frameRateClose
+	}
+	return frameRateDrop
+}
+
+func rateProfileName(op Opcode) string {
+	if op == OpMsgSend {
+		return "message"
+	}
+	return "service"
+}
+
+func minFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error {
