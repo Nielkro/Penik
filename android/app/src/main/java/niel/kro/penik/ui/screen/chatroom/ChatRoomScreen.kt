@@ -82,19 +82,27 @@ fun ChatRoomScreen(
     val showE2eeDialog by viewModel.showE2eeDialog.collectAsState()
     val isSelfChat = viewModel.isSelfChat
 
+    // Show the button when the last message is not fully visible.
     val showScrollDown by remember {
         derivedStateOf {
-            listState.firstVisibleItemIndex > 0 ||
-                listState.firstVisibleItemScrollOffset > 200
+            val layoutInfo = listState.layoutInfo
+            val totalItems = layoutInfo.totalItemsCount
+            if (totalItems == 0) return@derivedStateOf false
+            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            lastVisibleIndex < totalItems - 1
         }
     }
 
     var previousSize by remember { mutableStateOf(0) }
     LaunchedEffect(messages.size) {
-        if (messages.size > previousSize) {
-            if (messages.isNotEmpty()) {
+        if (messages.size > previousSize && previousSize > 0) {
+            // Only auto-scroll when the user was already at the bottom.
+            if (!showScrollDown && messages.isNotEmpty()) {
                 listState.animateScrollToItem(messages.lastIndex)
             }
+        } else if (previousSize == 0 && messages.isNotEmpty()) {
+            // First load — jump to the bottom immediately.
+            listState.scrollToItem(messages.lastIndex)
         }
         previousSize = messages.size
     }

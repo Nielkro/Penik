@@ -100,10 +100,14 @@ fun GroupChatScreen(
     var selectedMemberForActions by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
 
+    // Show the button only when the last message is not visible.
     val showScrollDown by remember {
         derivedStateOf {
-            listState.firstVisibleItemIndex > 0 ||
-                listState.firstVisibleItemScrollOffset > 200
+            val layoutInfo = listState.layoutInfo
+            val totalItems = layoutInfo.totalItemsCount
+            if (totalItems == 0) return@derivedStateOf false
+            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            lastVisibleIndex < totalItems - 1
         }
     }
 
@@ -112,10 +116,14 @@ fun GroupChatScreen(
 
     var previousSize by remember { mutableStateOf(0) }
     LaunchedEffect(messages.size) {
-        if (messages.size > previousSize) {
-            if (messages.isNotEmpty()) {
+        if (messages.size > previousSize && previousSize > 0) {
+            // Only auto-scroll when the user was already at the bottom.
+            if (!showScrollDown && messages.isNotEmpty()) {
                 listState.animateScrollToItem(messages.lastIndex)
             }
+        } else if (previousSize == 0 && messages.isNotEmpty()) {
+            // First load — jump to the bottom immediately.
+            listState.scrollToItem(messages.lastIndex)
         }
         previousSize = messages.size
     }
@@ -219,7 +227,9 @@ fun GroupChatScreen(
                         MessageBubble(
                             text = msg.text,
                             isSentByMe = isOwn,
-                            timestamp = msg.createdAt,
+                            // createdAt is stored in seconds (used as AAD in group crypto);
+                            // Date() expects milliseconds.
+                            timestamp = msg.createdAt * 1000,
                             delivered = if (isOwn) msg.delivered else false,
                             senderName = displayName,
                             senderUserId = msg.senderUserId

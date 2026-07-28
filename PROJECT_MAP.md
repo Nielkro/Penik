@@ -46,14 +46,14 @@ Map of core source files for the Penik project. Paths are relative to the projec
 
 - `index.html` — Root HTML template for the web client and application container.
 - `client/index.html` — Source HTML entry point for the Vite client.
-- `client/css/main.css` — Core browser UI styles: layout, navigation, chats, groups, forms, and responsive behavior.
+- `client/css/main.css` — Core browser UI styles: layout, navigation, chats, groups, forms, responsive behavior, and the `.msg-time-tooltip` hover popup.
 - `client/js/app.js` — Main application controller: user state, hash navigation, screen layout, storage initialization, and REST/WebSocket/crypto coordination.
 - `client/js/ui/auth.js` — Renders login/registration screens and binds forms to the auth API.
 - `client/js/ui/chat.js` — Displays the chat list, direct messaging room, messages, delivery/read receipts, and input controls.
 - `client/js/ui/groups.js` — Displays the group list and group chat room, including messages, invitations, and member actions.
 - `client/js/ui/profile.js` — Profile screen for editing user data and uploading avatars.
 - `client/js/ui/search.js` — User search screen and initiator for direct chats.
-- `client/js/ui/components.js` — Shared UI components and helper rendering for avatars, menus, and group elements.
+- `client/js/ui/components.js` — Shared UI components: avatars, time formatting, hover tooltip for full timestamp, message copy menu, scroll-down button, toasts, and modals.
 
 ### Android client
 
@@ -65,9 +65,9 @@ Map of core source files for the Penik project. Paths are relative to the projec
 - `android/app/src/main/java/niel/kro/penik/ui/navigation/MainScreen.kt` — Main app layout combining chat lists, groups, profile, and logout/pairing actions.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/auth/AuthScreen.kt` — User login and registration UI.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/chatslist/ChatsListScreen.kt` — Direct chat list UI and navigation to chat rooms.
-- `android/app/src/main/java/niel/kro/penik/ui/screen/chatroom/ChatRoomScreen.kt` — Direct chat room UI: message history, input, sending, receipts, and connection state.
+- `android/app/src/main/java/niel/kro/penik/ui/screen/chatroom/ChatRoomScreen.kt` — Direct chat room UI: message history, input, sending, receipts, connection state; scroll-down FAB shown only when last message is not visible.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupsListScreen.kt` — Group list UI and pending invitations.
-- `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupChatScreen.kt` — Group chat room UI with messages and group actions.
+- `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupChatScreen.kt` — Group chat room UI with messages and group actions; scroll-down FAB shown only when last message is not visible.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupSettingsScreen.kt` — Group settings screen: member list, roles, invitations, and key rotation.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/profile/ProfileScreen.kt` — Profile UI, name/password changes, avatar management, and key backup.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/pairing/PairingScannerScreen.kt` — Screen for scanning and processing QR pairing sessions for new devices.

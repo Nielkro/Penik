@@ -645,14 +645,32 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   align-self: flex-end;
   line-height: 1;
   margin-top: 1px;
-  cursor: pointer;
+  cursor: default;
   user-select: none;
 }
 
-.msg-time.msg-time-full {
-  font-size: 10px;
-  opacity: 0.95;
+/* Floating tooltip shown on hover over .msg-time */
+.msg-time-tooltip {
+  position: fixed;
+  z-index: 10001;
+  max-width: 200px;
+  padding: 4px 8px;
+  background: var(--panel, #1e1e24);
+  border: 1px solid var(--border, rgba(255,255,255,0.12));
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font-size: 11px;
+  color: var(--text-dim, #8080a0);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: tooltipFadeIn 0.12s ease;
 }
+
+@keyframes tooltipFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 
 .msg-out .msg-time {
   color: rgba(200, 210, 255, 0.5);
