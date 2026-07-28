@@ -233,22 +233,58 @@ export function setMsgTextContent(el, text) {
   }
 }
 
-/** Wire a .msg-time span: hover shows full time (title), click toggles short/full. */
+/** Wire a .msg-time span: hover shows a floating full-time tooltip next to it. */
 export function wireMsgTime(timeEl, ts) {
   const short = formatTime(ts);
   const full = formatFullTime(ts);
   timeEl.textContent = short;
-  timeEl.title = full || short;
+  timeEl.title = "";
   timeEl.dataset.short = short;
   timeEl.dataset.full = full;
-  let showingFull = false;
-  timeEl.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (!full) return;
-    showingFull = !showingFull;
-    timeEl.textContent = showingFull ? full : short;
-    timeEl.classList.toggle("msg-time-full", showingFull);
-  });
+  timeEl.style.position = "relative";
+
+  let tip = null;
+
+  const showTip = () => {
+    if (!full || tip) return;
+    tip = document.createElement("div");
+    tip.className = "msg-time-tooltip";
+    tip.textContent = full;
+    document.body.appendChild(tip);
+
+    // Position: above the timeEl, aligned to its right edge.
+    const rect = timeEl.getBoundingClientRect();
+    const tipW = 200;
+    let left = rect.right - tipW;
+    if (left < 6) left = 6;
+    if (left + tipW > window.innerWidth - 6) left = window.innerWidth - tipW - 6;
+
+    // Prefer above; fall back to below if not enough space.
+    const spaceAbove = rect.top;
+    let top;
+    if (spaceAbove >= 36) {
+      top = rect.top - 4;
+      tip.style.transform = "translateY(-100%)";
+    } else {
+      top = rect.bottom + 4;
+    }
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+  };
+
+  const hideTip = () => {
+    if (tip) { tip.remove(); tip = null; }
+  };
+
+  timeEl.addEventListener("mouseenter", showTip);
+  timeEl.addEventListener("mouseleave", hideTip);
+  // Hide when the scroll container moves so the tip doesn't float at the wrong position.
+  const scroller = timeEl.closest(".chat-messages");
+  if (scroller) {
+    scroller.addEventListener("scroll", hideTip, { passive: true });
+  }
+  // Clean up if the element is removed from the DOM.
+  timeEl.addEventListener("blur", hideTip, { passive: true });
 }
 
 /**

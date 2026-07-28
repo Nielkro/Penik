@@ -440,14 +440,18 @@ fun SearchUserItem(
     }
 }
 
+/** Normalise a timestamp that may be in seconds or milliseconds to milliseconds. */
+private fun toMs(timestamp: Long): Long =
+    if (timestamp in 1L..9_999_999_999L) timestamp * 1000L else timestamp
+
 private fun formatTime(timestamp: Long): String {
     val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
-    return sdf.format(Date(timestamp))
+    return sdf.format(Date(toMs(timestamp)))
 }
 
 private fun formatFullTime(timestamp: Long): String {
     val sdf = SimpleDateFormat("d MMMM yyyy, HH:mm:ss", Locale("ru"))
-    return sdf.format(Date(timestamp))
+    return sdf.format(Date(toMs(timestamp)))
 }
 
 private val URL_REGEX = Regex("""https?://[^\s<>"']+""")
