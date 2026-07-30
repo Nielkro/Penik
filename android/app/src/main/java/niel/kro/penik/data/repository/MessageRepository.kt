@@ -479,7 +479,7 @@ class MessageRepository @Inject constructor(
                         // Update existing message status if changed
                         if (existing.delivered != (msg.delivered == 1) || existing.read != (msg.read == 1)) {
                             messageDao.updateStatus(
-                                serverId = msg.id,
+                                serverId = msg.msgId,
                                 delivered = msg.delivered == 1,
                                 read = msg.read == 1,
                                 deliveredAt = msg.deliveredAt ?: System.currentTimeMillis()
