@@ -472,6 +472,15 @@ class MessageRepository @Inject constructor(
                             read = msg.read == 1
                         ))
                     } else {
+                        // Update existing message status if changed
+                        if (existing.delivered != (msg.delivered == 1) || existing.read != (msg.read == 1)) {
+                            messageDao.updateStatus(
+                                serverId = msg.id,
+                                delivered = msg.delivered == 1,
+                                read = msg.read == 1,
+                                deliveredAt = msg.deliveredAt ?: System.currentTimeMillis()
+                            )
+                        }
                         val text = existing.text
                         val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
                         if (!isFailed) {
