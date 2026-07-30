@@ -2,10 +2,10 @@ import {
   createGroup, syncGroups, refreshMembers, acceptInvitation, declineInvitation,
   inviteMember, removeMember, changeMemberRole, sendGroupMessage,
   getAllGroups, getGroupMessages, onGroupUpdate, backfillCurrentKey,
-  renameGroup, uploadGroupAvatar,
+  renameGroup, uploadGroupAvatar, rotateAndDistribute
 } from "../groups.js";
-import { apiGet } from "../api.js";
-import { getGroupMembers, getAllContacts } from "../storage.js";
+import { apiGet, getUserById } from "../api.js";
+import { getGroupMembers, getAllContacts, getContact, saveContact } from "../storage.js";
 import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
 import {
   el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence,
@@ -53,7 +53,22 @@ export function buildGroupListItem(g, onChange) {
           if (sender) {
             senderName = sender.name || sender.nickname || sender.username || `#${last.sender_user_id}`;
           } else {
-            senderName = last.sender_name || `#${last.sender_user_id}`;
+            let u = await getContact(Number(last.sender_user_id));
+            if (!u || u.name === "Неизвестный") {
+              try {
+                const res = await getUserById(String(last.sender_user_id));
+                const profile = res.user || res;
+                u = { ...(u || {}), ...profile, user_id: Number(last.sender_user_id) };
+                await saveContact(u);
+              } catch (err) {
+                console.warn("[groups] preview: failed to fetch sender profile", err);
+              }
+            }
+            if (u) {
+              senderName = u.name || u.nickname || u.username || `#${last.sender_user_id}`;
+            } else {
+              senderName = `#${last.sender_user_id}`;
+            }
           }
         }
         previewSpan.textContent = `${senderName}: ${last.plaintext || ""}`;
@@ -224,10 +239,20 @@ export async function renderGroup(container, groupId) {
       nameEl,
       el("span", { class: "chat-header-nick" }, ""),
     ),
-    el("button", { class: "icon-btn group-members-btn", title: "Участники", style: "margin-left:auto;font-size:18px;" }, "👥"),
+    el("button", { class: "icon-btn group-rotate-btn", title: "Смена ключа (временная)", style: "margin-left:auto;font-size:18px;margin-right:8px;" }, "🔑"),
+    el("button", { class: "icon-btn group-members-btn", title: "Участники", style: "font-size:18px;" }, "👥"),
   );
   header.querySelector(".chat-back").addEventListener("click", () => navigate("#chats"));
   header.querySelector(".group-members-btn").addEventListener("click", () => showMembersModal(groupId, myId));
+  header.querySelector(".group-rotate-btn").addEventListener("click", async () => {
+    try {
+      showToast("Инициализация смены ключа...", "info");
+      const newVer = await rotateAndDistribute(groupId);
+      showToast(`Ключ успешно изменен! Новая версия: ${newVer}`, "success");
+    } catch (e) {
+      showToast(`Ошибка смены ключа: ${e.message}`, "error");
+    }
+  });
 
   // Cache sender_user_id → display name so bubbles show names, not "#3".
   const nameById = new Map();

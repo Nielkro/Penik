@@ -16,7 +16,7 @@ import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
 import {
   deriveSharedSecret, e2eeEncrypt, e2eeDecrypt,
-  encryptKeyBackup, decryptKeyBackup, derivePublicKey
+  encryptKeyBackup, decryptKeyBackup, derivePublicKey, generateKeyPair
 } from './crypto.js';
 import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
 import { emitPresenceUpdate } from './presence.js';
@@ -458,12 +458,15 @@ async function onMsgRecvGlobal(payload) {
   await saveMessage(inMsg);
 
   let contact = await getContact(chatPartnerId);
-  if (!contact) {
+  if (!contact || contact.name === "Неизвестный") {
     try {
       const res = await getUserById(String(chatPartnerId));
       contact = res.user || res;
-    } catch {
-      contact = { user_id: chatPartnerId, name: "Неизвестный", nickname: "" };
+    } catch (e) {
+      console.warn("Failed to fetch contact details in onMsgRecvGlobal:", e);
+      if (!contact) {
+        contact = { user_id: chatPartnerId, name: "Неизвестный", nickname: "" };
+      }
     }
   }
 
@@ -724,13 +727,15 @@ export async function syncMessageHistory() {
       }
 
       let contact = await getContact(peerId);
-      if (!contact) {
+      if (!contact || contact.name === "Неизвестный") {
         try {
           const res = await getUserById(String(peerId));
           contact = res.user || res;
         } catch (e) {
           console.error("Failed to fetch contact details for syncing:", e);
-          contact = { user_id: peerId, name: "Неизвестный", nickname: "" };
+          if (!contact) {
+            contact = { user_id: peerId, name: "Неизвестный", nickname: "" };
+          }
         }
       }
       // A message fans out to every device; only the copy encrypted for this
@@ -925,7 +930,19 @@ function setupGlobalWSListeners() {
 
   ws.onConnect(async () => {
     // Publish current local public identity key
-    const pubKey = await getIKPublic();
+    let pubKey = await getIKPublic();
+    if (!pubKey) {
+      try {
+        const ik = await generateKeyPair();
+        await saveIKPrivate(ik.privateKey);
+        await saveIKPublic(ik.publicKey);
+        state.privateIK = ik.privateKey;
+        pubKey = ik.publicKey;
+        console.log('[E2EE] Generated new identity key pair for this device');
+      } catch (e) {
+        console.error('[E2EE] Failed to generate identity key pair', e);
+      }
+    }
     if (pubKey) {
       ws.send(0x12, { x25519_pub: new Uint8Array(pubKey) });
     }

@@ -347,13 +347,17 @@ export async function renderChat(container, userId) {
   if (!isSelfChat) {
     (async () => {
       let resolved = await getContact(Number(userId));
-      if (!resolved) {
+      if (!resolved || resolved.name === "Неизвестный") {
         try {
           const res = await apiGet(`/users/${userId}`);
-          resolved = res.user || res;
-          await saveContact({ ...resolved, user_id: Number(userId) });
-        } catch {
-          resolved = { user_id: Number(userId), name: "Неизвестный", nickname: "" };
+          const profile = res.user || res;
+          resolved = { ...(resolved || {}), ...profile, user_id: Number(userId) };
+          await saveContact(resolved);
+        } catch (e) {
+          console.warn("Failed to fetch contact details in chat:", e);
+          if (!resolved) {
+            resolved = { user_id: Number(userId), name: "Неизвестный", nickname: "" };
+          }
         }
       }
       contact = resolved;

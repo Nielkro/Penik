@@ -160,6 +160,15 @@ class AuthRepository @Inject constructor(
         }
     }
 
+    suspend fun hasKeyBackup(): Boolean {
+        return try {
+            val response = apiService.getKeyBackup()
+            response.isSuccessful && response.body()?.encryptedBlob?.isNotBlank() == true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     suspend fun restoreKeyBackup(passphrase: String): Result<Unit> {
         return try {
             val response = apiService.getKeyBackup()

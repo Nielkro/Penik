@@ -21,7 +21,7 @@ class LoginUseCase @Inject constructor(
         val result = authRepository.login(nickname, password, deviceName)
         return result.map {
             messageRepository.syncHistory()
-            webSocketManager.connect("penik.dev.slavchat.ru", 443, it.token)
+            webSocketManager.connect("web.dev.penik.ru", 443, it.token)
         }
     }
 }
@@ -38,7 +38,7 @@ class RegisterUseCase @Inject constructor(
     ): Result<Unit> {
         val result = authRepository.register(name, nickname, password, deviceName)
         return result.map {
-            webSocketManager.connect("penik.dev.slavchat.ru", 443, it.token)
+            webSocketManager.connect("web.dev.penik.ru", 443, it.token)
         }
     }
 }
@@ -156,6 +156,17 @@ class HandleWebSocketEventUseCase @Inject constructor(
             }
             is WebSocketEvent.PresenceUpdate -> {
                 niel.kro.penik.data.repository.PresenceBus.update(event.userId, event.online, event.lastSeen)
+            }
+            is WebSocketEvent.Connected -> {
+                // Sync direct message history and group history/metadata on connection
+                runCatching { messageRepository.syncHistory() }
+                runCatching {
+                    val groups = groupRepository.syncGroups()
+                    for (g in groups) {
+                        if (g.status == "pending") continue
+                        runCatching { groupRepository.syncHistory(g.id) }
+                    }
+                }
             }
             is WebSocketEvent.ServerShutdown -> {
                 webSocketManager.closeForServerShutdown()

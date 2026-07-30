@@ -79,7 +79,7 @@ object DatabaseModule {
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    private const val BASE_URL = "https://penik.dev.slavchat.ru/api/v1/"
+    private const val BASE_URL = "https://web.dev.penik.ru/api/v1/"
 
     @Provides
     @Singleton

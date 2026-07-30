@@ -151,7 +151,7 @@ class AuthViewModel @Inject constructor(
                             }
                             
                             // Connect WS
-                            webSocketManager.connect("penik.dev.slavchat.ru", 443, authResp.token)
+                            webSocketManager.connect("web.dev.penik.ru", 443, authResp.token)
                             _uiState.value = _uiState.value.copy(isLoading = false)
                             onSuccess()
                         },
@@ -205,7 +205,7 @@ class AuthViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(step = 2, error = null)
     }
 
-    fun submitLoginPassword() {
+    fun submitLoginPassword(onSuccess: () -> Unit) {
         val state = _uiState.value
         if (state.password.isBlank()) {
             _uiState.value = state.copy(error = "Введите пароль")
@@ -217,7 +217,15 @@ class AuthViewModel @Inject constructor(
             val deviceName = android.os.Build.MODEL
             authRepository.login(state.nickname, state.password, deviceName).fold(
                 onSuccess = {
-                    _uiState.value = _uiState.value.copy(isLoading = false, step = 3)
+                    if (authRepository.hasKeyBackup()) {
+                        _uiState.value = _uiState.value.copy(isLoading = false, step = 3)
+                    } else {
+                        authRepository.getToken()?.let { tok ->
+                            webSocketManager.connect("web.dev.penik.ru", 443, tok)
+                        }
+                        _uiState.value = _uiState.value.copy(isLoading = false)
+                        onSuccess()
+                    }
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: "Неверный пароль")
@@ -240,7 +248,7 @@ class AuthViewModel @Inject constructor(
                     // Sync message history and connect WS
                     messageRepository.syncHistory()
                     authRepository.getToken()?.let { tok ->
-                        webSocketManager.connect("penik.dev.slavchat.ru", 443, tok)
+                        webSocketManager.connect("web.dev.penik.ru", 443, tok)
                     }
                     _uiState.value = _uiState.value.copy(isLoading = false)
                     onSuccess()
@@ -266,7 +274,7 @@ class AuthViewModel @Inject constructor(
                     // Connect WS and synchronize
                     messageRepository.syncHistory()
                     authRepository.getToken()?.let { tok ->
-                        webSocketManager.connect("penik.dev.slavchat.ru", 443, tok)
+                        webSocketManager.connect("web.dev.penik.ru", 443, tok)
                     }
                     _uiState.value = _uiState.value.copy(isLoading = false)
                     onSuccess()
@@ -286,7 +294,7 @@ class AuthViewModel @Inject constructor(
                 authRepository.generateAndSaveKeys()
                 messageRepository.syncHistory()
                 authRepository.getToken()?.let { tok ->
-                    webSocketManager.connect("penik.dev.slavchat.ru", 443, tok)
+                    webSocketManager.connect("web.dev.penik.ru", 443, tok)
                 }
                 _uiState.value = _uiState.value.copy(isLoading = false)
                 onSuccess()

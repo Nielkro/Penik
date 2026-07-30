@@ -1,4 +1,4 @@
-import { apiPatch, createPairingSession, getPairingSession, uploadPairingHistory, uploadAvatar } from "../api.js";
+import { apiPatch, apiGet, createPairingSession, getPairingSession, uploadPairingHistory, uploadAvatar } from "../api.js";
 import { getAllMessages, getAllGroups, getAllGroupMembers, getAllGroupKeys, getAllGroupMessages } from "../storage.js";
 import { deriveSharedSecret, encryptPairingHistory, generateKeyPair } from "../crypto.js";
 const decodeB64Url = s => {
@@ -344,6 +344,14 @@ export function renderProfile(container) {
     backupPassWrapper,
     el("div", { style: "display:flex;margin-top:8px;" }, doBackupBtn, doRestoreBtn, cancelBackupBtn)
   );
+
+  apiGet("/keys/backup").then(backup => {
+    if (!backup || !backup.encrypted_blob) {
+      backupSection.style.display = "none";
+    }
+  }).catch(() => {
+    backupSection.style.display = "none";
+  });
 
   const pairingBtn = el("button", { class: "btn-secondary", style: "width:100%;margin-top:8px;cursor:pointer;" }, "Подключить устройство");
   pairingBtn.addEventListener("click", async () => {

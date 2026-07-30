@@ -406,8 +406,22 @@ export async function backfillCurrentKey(groupId) {
 
 export async function sendGroupMessage(groupId, text) {
   const group = await dbGetGroup(groupId);
-  const version = group ? Number(group.current_key_version) : await currentVersion(groupId);
-  const groupKey = await ensureGroupKey(groupId, version);
+  let version = group ? Number(group.current_key_version) : await currentVersion(groupId);
+  let groupKey;
+  try {
+    groupKey = await ensureGroupKey(groupId, version);
+  } catch (e) {
+    // If the envelope is missing for this device, attempt to rotate the group key.
+    // This succeeds if the user is an owner/admin, restoring their ability to send.
+    console.log('[groups] key unavailable, attempting auto-rotation...', e.message);
+    try {
+      version = await rotateAndDistribute(groupId);
+      groupKey = await ensureGroupKey(groupId, version);
+    } catch (rotateErr) {
+      console.error('[groups] auto-rotation failed', rotateErr);
+      throw e;
+    }
+  }
 
   const messageId = crypto.randomUUID();
   // created_at is bound into the AAD and must match what the server persists and
@@ -468,6 +482,11 @@ export async function decryptIncoming(frame) {
       groupId, version, messageId, Number(frame.created_at),
     );
     text = new TextDecoder().decode(pt);
+    // Log details of the decrypted incoming group message
+    const grp = await dbGetGroup(groupId);
+    const groupName = grp ? grp.name : `Группа ${groupId}`;
+    const keyHex = Array.from(groupKey).map(b => b.toString(16).padStart(2, '0')).join('');
+    console.log(`[groups] Пришло новое сообщение в группу "${groupName}": "${text}" (использован ключ v${version}: ${keyHex})`);
   } catch (e) {
     console.error('[groups] decrypt/AAD failed for', groupId, messageId, e.message);
     return null;
