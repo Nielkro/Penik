@@ -527,8 +527,18 @@ export function renderAuth(container, initialMode = "welcome") {
           localStorage.setItem("device_id", String(res.device_id));
 
           state.password = password;
-          step = 3;
-          renderStep();
+
+          try {
+            const backup = await apiGet("/keys/backup");
+            if (backup && backup.encrypted_blob) {
+              step = 3;
+              renderStep();
+            } else {
+              navigate("#chats");
+            }
+          } catch (_) {
+            navigate("#chats");
+          }
         } catch (err) {
           showErr(err.message || "Неверный пароль.");
         } finally {

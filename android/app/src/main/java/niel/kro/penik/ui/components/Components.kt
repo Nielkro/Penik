@@ -104,9 +104,9 @@ private fun initialsText(name: String): String {
 // image being displayed without duplicating the URL scheme.
 fun avatarUrlFor(isGroup: Boolean, id: Long, avatarKey: Any? = null): String {
     val base = if (isGroup) {
-        "https://penik.dev.slavchat.ru/api/v1/groups/$id/avatar"
+        "https://web.dev.penik.ru/api/v1/groups/$id/avatar"
     } else {
-        "https://penik.dev.slavchat.ru/api/v1/avatar/$id"
+        "https://web.dev.penik.ru/api/v1/avatar/$id"
     }
     return if (avatarKey != null) "$base?t=$avatarKey" else base
 }

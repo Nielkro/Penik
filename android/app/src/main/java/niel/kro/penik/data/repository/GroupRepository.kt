@@ -151,6 +151,11 @@ class GroupRepository @Inject constructor(
             )
         }.getOrNull() ?: return null
         dao.saveGroupKey(GroupKeyEntity(groupId, version, key))
+        dao.getGroup(groupId)?.let { g ->
+            if (version > g.currentKeyVersion) {
+                dao.upsertGroup(g.copy(currentKeyVersion = version))
+            }
+        }
         return key
     }
 
@@ -267,8 +272,8 @@ class GroupRepository @Inject constructor(
     /* ── Messaging ── */
 
     suspend fun sendMessage(groupId: Long, text: String): String? {
-        val group = dao.getGroup(groupId)
-        val version = group?.currentKeyVersion ?: currentVersion(groupId)
+        // Always query the server for the latest key version to avoid mismatch if offline during rotation.
+        val version = currentVersion(groupId)
         val groupKey = ensureGroupKey(groupId, version) ?: return null
 
         val messageId = UUID.randomUUID().toString()

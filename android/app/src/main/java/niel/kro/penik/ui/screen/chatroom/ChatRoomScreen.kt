@@ -96,8 +96,12 @@ fun ChatRoomScreen(
     var previousSize by remember { mutableStateOf(0) }
     LaunchedEffect(messages.size) {
         if (messages.size > previousSize && previousSize > 0) {
-            // Only auto-scroll when the user was already at the bottom.
-            if (!showScrollDown && messages.isNotEmpty()) {
+            // Auto-scroll when user is at the bottom or within 5 messages from the bottom.
+            val layoutInfo = listState.layoutInfo
+            val totalItems = layoutInfo.totalItemsCount
+            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 5)
+            if (isNearBottom && messages.isNotEmpty()) {
                 listState.animateScrollToItem(messages.lastIndex)
             }
         } else if (previousSize == 0 && messages.isNotEmpty()) {

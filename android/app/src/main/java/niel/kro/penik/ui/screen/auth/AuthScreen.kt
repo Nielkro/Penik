@@ -438,7 +438,7 @@ fun AuthScreen(
                             PrimaryButton(
                                 text = "Войти",
                                 isLoading = state.isLoading,
-                                onClick = viewModel::submitLoginPassword
+                                onClick = { viewModel.submitLoginPassword(onLoginSuccess) }
                             )
                         }
 
