@@ -234,13 +234,17 @@ class MessageRepository @Inject constructor(
     }
 
     suspend fun handleMsgDelivered(event: WebSocketEvent.MsgDelivered) {
-        if (event.clientMsgId.isNotBlank()) messageDao.markDeliveredByClientId(event.clientMsgId)
-        else messageDao.markDelivered(event.msgId)
+        if (event.clientMsgId.isNotBlank()) {
+            messageDao.markDeliveredByClientId(event.clientMsgId)
+        }
+        messageDao.markDelivered(event.msgId)
     }
 
     suspend fun handleMsgRead(event: WebSocketEvent.MsgRead) {
-        if (event.clientMsgId.isNotBlank()) messageDao.markReadByClientId(event.clientMsgId)
-        else messageDao.markRead(event.msgId)
+        if (event.clientMsgId.isNotBlank()) {
+            messageDao.markReadByClientId(event.clientMsgId)
+        }
+        messageDao.markRead(event.msgId)
     }
 
     suspend fun markMessageAsRead(serverId: Long) {
@@ -560,7 +564,8 @@ class MessageRepository @Inject constructor(
                 if (item.read) {
                     messageDao.markReadByClientId(item.clientMsgId)
                 }
-            } else if (item.msgId != 0L) {
+            }
+            if (item.msgId != 0L) {
                 if (item.delivered) {
                     messageDao.markDelivered(item.msgId, item.deliveredAt)
                 }
