@@ -22,6 +22,7 @@ const pairingLifetime = 5 * time.Minute
 type pairingCreateRequest struct {
 	EphemeralPublicKey string `json:"ephemeral_public_key"`
 	EncryptedHistory   string `json:"encrypted_history,omitempty"`
+	TransferDirection  string `json:"transfer_direction,omitempty"`
 }
 type pairingClaimRequest struct {
 	SessionID string `json:"session_id"`
@@ -51,6 +52,13 @@ func CreatePairingSession(database *db.DB) http.HandlerFunc {
 			http.Error(w, "ephemeral_public_key required", 400)
 			return
 		}
+		if req.TransferDirection == "" {
+			req.TransferDirection = "web_to_phone"
+		}
+		if req.TransferDirection != "web_to_phone" && req.TransferDirection != "phone_to_web" {
+			http.Error(w, "invalid transfer direction", 400)
+			return
+		}
 		pub, err := base64.RawURLEncoding.DecodeString(req.EphemeralPublicKey)
 		if err != nil || len(pub) < 16 || len(pub) > 128 {
 			http.Error(w, "invalid public key", 400)
@@ -77,7 +85,7 @@ func CreatePairingSession(database *db.DB) http.HandlerFunc {
 				return
 			}
 		}
-		_, err = database.ExecContext(r.Context(), `INSERT INTO pairing_sessions(id,owner_user_id,owner_device_id,ephemeral_public_key,encrypted_history,expires_at,created_at) VALUES(?,?,?,?,?,?,?)`, id, middleware.UserIDFromCtx(r.Context()), middleware.DeviceIDFromCtx(r.Context()), pub, history, exp, now)
+		_, err = database.ExecContext(r.Context(), `INSERT INTO pairing_sessions(id,owner_user_id,owner_device_id,ephemeral_public_key,encrypted_history,transfer_direction,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?)`, id, middleware.UserIDFromCtx(r.Context()), middleware.DeviceIDFromCtx(r.Context()), pub, history, req.TransferDirection, exp, now)
 		if err != nil {
 			http.Error(w, "internal error", 500)
 			return
@@ -107,8 +115,9 @@ func ClaimPairingSession(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 		var owner, ownerDevice, exp, claimed int64
+		var direction string
 		var pub, history []byte
-		err = tx.QueryRowContext(r.Context(), `SELECT owner_user_id,owner_device_id,ephemeral_public_key,encrypted_history,expires_at,COALESCE(claimed_at,0) FROM pairing_sessions WHERE id=?`, req.SessionID).Scan(&owner, &ownerDevice, &pub, &history, &exp, &claimed)
+		err = tx.QueryRowContext(r.Context(), `SELECT owner_user_id,owner_device_id,ephemeral_public_key,encrypted_history,transfer_direction,expires_at,COALESCE(claimed_at,0) FROM pairing_sessions WHERE id=?`, req.SessionID).Scan(&owner, &ownerDevice, &pub, &history, &direction, &exp, &claimed)
 		if err == sql.ErrNoRows {
 			http.Error(w, "pairing session not found", 404)
 			return
@@ -137,7 +146,7 @@ func ClaimPairingSession(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 				http.Error(w, "pairing session expired or already claimed", 410)
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{"session_id": req.SessionID, "ephemeral_public_key": base64.RawURLEncoding.EncodeToString(pub), "encrypted_history": base64.RawURLEncoding.EncodeToString(history), "owner_user_id": owner, "expires_at": exp})
+			json.NewEncoder(w).Encode(map[string]any{"session_id": req.SessionID, "ephemeral_public_key": base64.RawURLEncoding.EncodeToString(pub), "encrypted_history": base64.RawURLEncoding.EncodeToString(history), "owner_user_id": owner, "transfer_direction": direction, "expires_at": exp})
 			return
 		}
 		// Compare the hash in constant time through SQLite blob equality; token is never stored.
@@ -170,7 +179,7 @@ func ClaimPairingSession(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 				hub.SendToDeviceFrame(ownerDevice, ws.OpPairingClaimed, payload)
 			}
 		}
-		json.NewEncoder(w).Encode(map[string]any{"session_id": req.SessionID, "ephemeral_public_key": base64.RawURLEncoding.EncodeToString(pub), "encrypted_history": base64.RawURLEncoding.EncodeToString(history), "owner_user_id": owner, "expires_at": exp})
+		json.NewEncoder(w).Encode(map[string]any{"session_id": req.SessionID, "ephemeral_public_key": base64.RawURLEncoding.EncodeToString(pub), "encrypted_history": base64.RawURLEncoding.EncodeToString(history), "owner_user_id": owner, "transfer_direction": direction, "expires_at": exp})
 	}
 }
 
@@ -181,8 +190,9 @@ func GetPairingClaim(database *db.DB) http.HandlerFunc {
 		id := r.PathValue("id")
 		var pub []byte
 		var claimed, exp int64
+		var direction string
 		var history []byte
-		err := database.QueryRowContext(r.Context(), `SELECT COALESCE(claimed_at, 0), expires_at, COALESCE(claimed_by_public_key, X''), COALESCE(encrypted_history, X'') FROM pairing_sessions WHERE id=? AND owner_user_id=?`, id, middleware.UserIDFromCtx(r.Context())).Scan(&claimed, &exp, &pub, &history)
+		err := database.QueryRowContext(r.Context(), `SELECT COALESCE(claimed_at, 0), expires_at, COALESCE(claimed_by_public_key, X''), COALESCE(encrypted_history, X''), transfer_direction FROM pairing_sessions WHERE id=? AND owner_user_id=?`, id, middleware.UserIDFromCtx(r.Context())).Scan(&claimed, &exp, &pub, &history, &direction)
 		if err == sql.ErrNoRows {
 			http.Error(w, "not found", 404)
 			return
@@ -191,7 +201,7 @@ func GetPairingClaim(database *db.DB) http.HandlerFunc {
 			http.Error(w, "internal error", 500)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"claimed": claimed != 0, "expires_at": exp, "public_key": base64.RawURLEncoding.EncodeToString(pub), "encrypted_history": base64.RawURLEncoding.EncodeToString(history)})
+		json.NewEncoder(w).Encode(map[string]any{"claimed": claimed != 0, "expires_at": exp, "public_key": base64.RawURLEncoding.EncodeToString(pub), "encrypted_history": base64.RawURLEncoding.EncodeToString(history), "transfer_direction": direction})
 	}
 }
 
@@ -220,7 +230,7 @@ func UploadPairingHistory(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		res, err := tx.ExecContext(r.Context(), `UPDATE pairing_sessions SET encrypted_history=? WHERE id=? AND owner_user_id=? AND claimed_at IS NOT NULL AND expires_at>?`, b, id, middleware.UserIDFromCtx(r.Context()), time.Now().Unix())
+		res, err := tx.ExecContext(r.Context(), `UPDATE pairing_sessions SET encrypted_history=? WHERE id=? AND ((owner_user_id=? AND transfer_direction='web_to_phone') OR (claimed_by_device_id=? AND transfer_direction='phone_to_web')) AND claimed_at IS NOT NULL AND expires_at>?`, b, id, middleware.UserIDFromCtx(r.Context()), middleware.DeviceIDFromCtx(r.Context()), time.Now().Unix())
 		if err != nil {
 			http.Error(w, "internal error", 500)
 			return
@@ -233,7 +243,12 @@ func UploadPairingHistory(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 
 		var deviceID int64
 		if err := tx.QueryRowContext(r.Context(), `SELECT claimed_by_device_id FROM pairing_sessions WHERE id=?`, id).Scan(&deviceID); err == nil && deviceID != 0 {
+			var direction string
+			_ = tx.QueryRowContext(r.Context(), `SELECT transfer_direction FROM pairing_sessions WHERE id=?`, id).Scan(&direction)
 			for _, msgID := range req.MessageIDs {
+				if direction != "web_to_phone" {
+					break
+				}
 				_, err = tx.ExecContext(r.Context(), `INSERT OR IGNORE INTO device_history_exclusions(device_id, message_id) VALUES(?, ?)`, deviceID, msgID)
 				if err != nil {
 					log.Printf("failed to insert history exclusion: device=%d msg=%d err=%v", deviceID, msgID, err)

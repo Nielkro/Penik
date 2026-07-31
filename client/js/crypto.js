@@ -374,6 +374,23 @@ export async function encryptPairingHistory(data, sharedSecret) {
   return e2eeEncrypt(JSON.stringify({ version: 1, ...data }), sharedSecret, "penik-pairing-history-v1");
 }
 
+export async function decryptPairingHistory(envelope, sharedSecret) {
+  const decodeUrl = value => {
+    const normalized = String(value).replaceAll('-', '+').replaceAll('_', '/');
+    const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+    const binary = atob(padded);
+    return Uint8Array.from(binary, char => char.charCodeAt(0));
+  };
+  const plaintext = await e2eeDecrypt(
+    decodeUrl(envelope.ciphertext),
+    sharedSecret,
+    decodeUrl(envelope.salt),
+    decodeUrl(envelope.nonce),
+    "penik-pairing-history-v1"
+  );
+  return JSON.parse(new TextDecoder().decode(plaintext));
+}
+
 // Current PBKDF2 work factor for passphrase-derived backup keys. Kept in sync
 // with encryptIdentityEnvelope (600k). LEGACY_KDF_ITERATIONS is only used to
 // open backups written before this was raised from 100k.
@@ -543,5 +560,3 @@ export async function derivePublicKey(privateKey) {
   const sodium = await getSodium();
   return sodium.crypto_scalarmult_base(privateKey);
 }
-
-

@@ -50,6 +50,8 @@ interface ApiService {
     @POST("pairing/sessions/claim")
     suspend fun claimPairingSession(@Body body: PairingClaimRequest): Response<PairingClaimResponse>
     @GET("pairing/sessions/{id}") suspend fun getPairingSession(@Path("id") id: String): Response<PairingStateResponse>
+    @PUT("pairing/sessions/{id}/history")
+    suspend fun uploadPairingHistory(@Path("id") id: String, @Body body: PairingHistoryUploadRequest): Response<Unit>
 
     /* ── Groups ── */
 

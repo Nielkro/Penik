@@ -63,8 +63,6 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate registration id: %w", err)
 	}
 
-
-
 	if err := migrateMessagesClientMsgId(sqlDB); err != nil {
 		sqlDB.Close()
 		return nil, fmt.Errorf("db: migrate messages client msg id: %w", err)
@@ -112,6 +110,7 @@ func migratePairingSchema(database *sql.DB) error {
 	}{
 		{"claimed_by_device_id", "INTEGER REFERENCES devices(id) ON DELETE SET NULL"},
 		{"claimed_by_public_key", "BLOB"},
+		{"transfer_direction", "TEXT NOT NULL DEFAULT 'web_to_phone'"},
 	}
 	for _, column := range columns {
 		has, err := tableHasColumn(database, "pairing_sessions", column.name)
@@ -361,8 +360,6 @@ func migrateRegistrationId(database *sql.DB) error {
 	}
 	return nil
 }
-
-
 
 func migrateMessagesClientMsgId(database *sql.DB) error {
 	userOwned, err := tableHasColumn(database, "messages", "sender_user_id")

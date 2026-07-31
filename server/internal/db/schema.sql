@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS pairing_sessions (
   owner_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
   ephemeral_public_key BLOB NOT NULL,
   encrypted_history BLOB,
+  transfer_direction TEXT NOT NULL DEFAULT 'web_to_phone',
   expires_at INTEGER NOT NULL,
   claimed_at INTEGER,
   claimed_by_device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,

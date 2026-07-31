@@ -1,11 +1,15 @@
 package niel.kro.penik.data.repository
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import niel.kro.penik.data.local.dao.MessageDao
 import niel.kro.penik.data.local.dao.GroupDao
 import niel.kro.penik.data.local.entity.MessageEntity
@@ -32,6 +36,101 @@ class MessageRepository @Inject constructor(
     private val chatRepository: ChatRepository,
     private val e2eeCrypto: E2EECrypto,
 ) {
+    suspend fun exportPairingHistory(secret: ByteArray): String {
+        val myId = tokenStorage.getUserId()
+        val messages = messageDao.getAllMessages().map { message ->
+            buildJsonObject {
+                message.serverId?.let { put("msg_id", it) } ?: put("msg_id", message.localId)
+                put("chat_id", message.chatUserId)
+                put("chat_user_id", message.chatUserId)
+                put("sender_id", message.senderId)
+                put("recipient_id", if (message.senderId == myId) message.chatUserId else myId)
+                put("text", message.text)
+                put("created_at", message.timestamp)
+                put("delivered", message.delivered)
+                put("delivered_at", message.deliveredAt ?: 0L)
+                put("read", message.read)
+                message.serverId?.let { put("server_id", it) }
+                message.localId.takeIf { it.isNotBlank() }?.let { put("client_msg_id", it) }
+            }
+        }
+        val contacts = chatRepository.getAllChats().first().map { chat ->
+            buildJsonObject {
+                put("user_id", chat.userId)
+                put("nickname", chat.nickname)
+                put("name", chat.name)
+                chat.avatarUrl?.let { put("avatar_url", it) }
+            }
+        }
+        val groups = groupDao.getAllGroups().map { group ->
+            buildJsonObject {
+                put("id", group.id)
+                put("name", group.name)
+                put("owner_user_id", group.ownerUserId)
+                group.role?.let { put("role", it) }
+                put("status", group.status)
+                put("membership_version", group.membershipVersion)
+                put("current_key_version", group.currentKeyVersion)
+                put("created_at", group.createdAt)
+            }
+        }
+        val members = groupDao.getAllMembers().map { member ->
+            buildJsonObject {
+                put("group_id", member.groupId)
+                put("user_id", member.userId)
+                put("role", member.role)
+                put("status", member.status)
+                put("joined_at", member.joinedAt)
+                put("name", member.name)
+                put("nickname", member.nickname)
+                put("online", member.online)
+                put("last_seen", member.lastSeen)
+            }
+        }
+        val keys = groupDao.getAllKeys().map { key ->
+            buildJsonObject {
+                put("group_id", key.groupId)
+                put("key_version", key.keyVersion)
+                put("key", encodeUrlBase64(key.key))
+            }
+        }
+        val groupMessages = groupDao.getAllMessages().map { message ->
+            buildJsonObject {
+                put("group_id", message.groupId)
+                put("message_id", message.messageId)
+                put("server_id", message.serverId)
+                put("sender_user_id", message.senderUserId)
+                put("sender_device_id", message.senderDeviceId)
+                put("key_version", message.keyVersion)
+                put("text", message.text)
+                put("created_at", message.createdAt)
+                put("sent_by_me", message.sentByMe)
+                put("delivered", message.delivered)
+            }
+        }
+        val payload = buildJsonObject {
+            put("version", 2)
+            putJsonArray("messages") { messages.forEach { add(it) } }
+            putJsonArray("contacts") { contacts.forEach { add(it) } }
+            putJsonArray("groups") { groups.forEach { add(it) } }
+            putJsonArray("group_members") { members.forEach { add(it) } }
+            putJsonArray("group_keys") { keys.forEach { add(it) } }
+            putJsonArray("group_messages") { groupMessages.forEach { add(it) } }
+        }
+        val encrypted = e2eeCrypto.encrypt(
+            payload.toString().toByteArray(Charsets.UTF_8), secret, "penik-pairing-history-v1"
+        )
+        val envelope = buildJsonObject {
+            put("ciphertext", encodeUrlBase64(encrypted.ciphertext))
+            put("salt", encodeUrlBase64(encrypted.salt))
+            put("nonce", encodeUrlBase64(encrypted.nonce))
+        }
+        return encodeUrlBase64(envelope.toString().toByteArray(Charsets.UTF_8))
+    }
+
+    private fun encodeUrlBase64(bytes: ByteArray): String =
+        java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+
     suspend fun importPairingHistory(encoded: String, secret: ByteArray) {
         val raw = decodeUrlBase64(encoded)
         val envelope = kotlinx.serialization.json.Json.parseToJsonElement(String(raw)).jsonObject

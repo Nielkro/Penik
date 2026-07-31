@@ -61,6 +61,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages ORDER BY timestamp DESC LIMIT 1")
     fun getLastMessage(): Flow<MessageEntity?>
 
+    @Query("SELECT * FROM messages ORDER BY timestamp ASC")
+    suspend fun getAllMessages(): List<MessageEntity>
+
     @Query("SELECT * FROM messages WHERE chatUserId = :chatUserId AND text != '[DELETED]' ORDER BY timestamp DESC LIMIT 1")
     fun observeLastMessageForChat(chatUserId: Long): Flow<MessageEntity?>
 }
