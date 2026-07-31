@@ -100,8 +100,12 @@ class GroupRepository @Inject constructor(
     // messages across key versions; without this, each one re-fetches every
     // member's key bundle, producing a storm of /keys/bundle requests.
     private val deviceKeyCache = mutableMapOf<Long, List<DeviceKey>>()
+    private val failedKeyVersions = mutableSetOf<Pair<Long, Long>>()
 
-    fun invalidateDeviceKeyCache() = deviceKeyCache.clear()
+    fun invalidateDeviceKeyCache() {
+        deviceKeyCache.clear()
+        failedKeyVersions.clear()
+    }
 
     private suspend fun fetchDeviceKeys(userIds: List<Long>): List<DeviceKey> {
         val out = mutableListOf<DeviceKey>()
@@ -138,10 +142,21 @@ class GroupRepository @Inject constructor(
 
     /** Return the group key for a version, fetching + unwrapping the envelope if needed. */
     suspend fun ensureGroupKey(groupId: Long, version: Long): ByteArray? {
+        val cacheKey = Pair(groupId, version)
+        if (failedKeyVersions.contains(cacheKey)) return null
+
         dao.getGroupKey(groupId, version)?.let { return it.key }
 
-        val env = runCatching { api.getGroupEnvelope(groupId, version) }.getOrNull()?.body() ?: return null
-        val senderIK = fetchDeviceIK(groupId, env.senderDeviceId) ?: return null
+        val env = runCatching { api.getGroupEnvelope(groupId, version) }.getOrNull()?.body()
+        if (env == null) {
+            failedKeyVersions.add(cacheKey)
+            return null
+        }
+        val senderIK = fetchDeviceIK(groupId, env.senderDeviceId)
+        if (senderIK == null) {
+            failedKeyVersions.add(cacheKey)
+            return null
+        }
         val secret = e2ee.deriveSharedSecret(myPrivateIK(), senderIK)
         val key = runCatching {
             groupCrypto.unwrapKey(
@@ -149,7 +164,11 @@ class GroupRepository @Inject constructor(
                 Base64.decode(env.salt, urlB64Flags), Base64.decode(env.nonce, urlB64Flags),
                 groupId, version
             )
-        }.getOrNull() ?: return null
+        }.getOrNull()
+        if (key == null) {
+            failedKeyVersions.add(cacheKey)
+            return null
+        }
         dao.saveGroupKey(GroupKeyEntity(groupId, version, key))
         dao.getGroup(groupId)?.let { g ->
             if (version > g.currentKeyVersion) {
