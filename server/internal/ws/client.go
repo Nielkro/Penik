@@ -531,7 +531,13 @@ func (c *Client) handleMsgDelivered(ctx context.Context, msg *MsgDelivered) erro
 
 	// Fan-out creates a separate row per device. Notify each sender device using its own row ID.
 	if clientMsgID.Valid {
-		rows, err := c.db.QueryContext(ctx, `SELECT recipient_device_id, id, sender_device_id FROM messages WHERE sender_user_id=? AND client_msg_id=? ORDER BY id ASC`, senderUserID, clientMsgID.String)
+		rows, err := c.db.QueryContext(ctx, `
+			SELECT m.recipient_device_id, m.id, m.sender_device_id, d.user_id 
+			FROM messages m
+			LEFT JOIN devices d ON m.recipient_device_id = d.id
+			WHERE m.sender_user_id=? AND m.client_msg_id=?
+			ORDER BY m.id ASC
+		`, senderUserID, clientMsgID.String)
 		if err == nil {
 			defer rows.Close()
 			var firstMsgID int64
@@ -544,15 +550,14 @@ func (c *Client) handleMsgDelivered(ctx context.Context, msg *MsgDelivered) erro
 			isFirst := true
 			for rows.Next() {
 				var recDevID, mID, sendDevID int64
-				if err := rows.Scan(&recDevID, &mID, &sendDevID); err == nil {
+				var ownerID sql.NullInt64
+				if err := rows.Scan(&recDevID, &mID, &sendDevID, &ownerID); err == nil {
 					if isFirst {
 						firstMsgID = mID
 						senderDeviceID = sendDevID
 						isFirst = false
 					}
-					var ownerID int64
-					_ = c.db.QueryRowContext(ctx, `SELECT user_id FROM devices WHERE id=?`, recDevID).Scan(&ownerID)
-					if ownerID == senderUserID {
+					if ownerID.Valid && ownerID.Int64 == senderUserID {
 						targets = append(targets, targetDevice{recDevID, mID})
 					}
 				}
@@ -596,7 +601,13 @@ func (c *Client) handleMsgRead(ctx context.Context, msg *MsgRead) error {
 	}
 	// Fan-out creates a separate row per device. Notify each sender device using its own row ID.
 	if clientMsgID.Valid {
-		rows, err := c.db.QueryContext(ctx, `SELECT recipient_device_id, id, sender_device_id FROM messages WHERE sender_user_id=? AND client_msg_id=? ORDER BY id ASC`, senderUserID, clientMsgID.String)
+		rows, err := c.db.QueryContext(ctx, `
+			SELECT m.recipient_device_id, m.id, m.sender_device_id, d.user_id 
+			FROM messages m
+			LEFT JOIN devices d ON m.recipient_device_id = d.id
+			WHERE m.sender_user_id=? AND m.client_msg_id=?
+			ORDER BY m.id ASC
+		`, senderUserID, clientMsgID.String)
 		if err == nil {
 			defer rows.Close()
 			var firstMsgID int64
@@ -609,15 +620,14 @@ func (c *Client) handleMsgRead(ctx context.Context, msg *MsgRead) error {
 			isFirst := true
 			for rows.Next() {
 				var recDevID, mID, sendDevID int64
-				if err := rows.Scan(&recDevID, &mID, &sendDevID); err == nil {
+				var ownerID sql.NullInt64
+				if err := rows.Scan(&recDevID, &mID, &sendDevID, &ownerID); err == nil {
 					if isFirst {
 						firstMsgID = mID
 						senderDeviceID = sendDevID
 						isFirst = false
 					}
-					var ownerID int64
-					_ = c.db.QueryRowContext(ctx, `SELECT user_id FROM devices WHERE id=?`, recDevID).Scan(&ownerID)
-					if ownerID == senderUserID {
+					if ownerID.Valid && ownerID.Int64 == senderUserID {
 						targets = append(targets, targetDevice{recDevID, mID})
 					}
 				}
