@@ -97,6 +97,11 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate pairing schema: %w", err)
 	}
 
+	if err := migrateReplyToMsgId(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate reply_to_msg_id: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
 }
 
@@ -718,3 +723,20 @@ func migrateMessagesE2EE(database *sql.DB) error {
 
 	return nil
 }
+
+// migrateReplyToMsgId adds reply_to_msg_id column to messages and group_messages tables
+func migrateReplyToMsgId(database *sql.DB) error {
+	for _, table := range []string{"messages", "group_messages"} {
+		has, err := tableHasColumn(database, table, "reply_to_msg_id")
+		if err != nil {
+			return err
+		}
+		if !has {
+			if _, err := database.Exec("ALTER TABLE " + table + " ADD COLUMN reply_to_msg_id TEXT"); err != nil {
+				return fmt.Errorf("add reply_to_msg_id to %s: %w", table, err)
+			}
+		}
+	}
+	return nil
+}
+

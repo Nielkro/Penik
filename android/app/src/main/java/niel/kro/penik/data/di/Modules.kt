@@ -61,6 +61,7 @@ object DatabaseModule {
                 PenikDatabase.MIGRATION_4_5,
                 PenikDatabase.MIGRATION_5_6,
                 PenikDatabase.MIGRATION_6_7,
+                PenikDatabase.MIGRATION_7_8,
             )
             .build()
     }

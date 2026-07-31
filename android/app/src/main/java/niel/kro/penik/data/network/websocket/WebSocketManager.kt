@@ -49,7 +49,8 @@ sealed class WebSocketEvent {
         val ciphertext: ByteArray,
         val salt: ByteArray,
         val nonce: ByteArray,
-        val ts: Long
+        val ts: Long,
+        val replyToMsgId: String? = null
     ) : WebSocketEvent()
 
     data class MsgAck(
@@ -84,7 +85,8 @@ sealed class WebSocketEvent {
         val ciphertext: ByteArray,
         val salt: ByteArray,
         val nonce: ByteArray,
-        val createdAt: Long
+        val createdAt: Long,
+        val replyToMsgId: String? = null
     ) : WebSocketEvent()
 
     data class GroupMessageAck(
@@ -537,6 +539,7 @@ class WebSocketManager @Inject constructor(
         var groupId = 0L; var id = 0L; var messageId = ""; var senderUserId = 0L
         var senderDeviceId = 0L; var keyVersion = 0L
         var ciphertext = ByteArray(0); var salt = ByteArray(0); var nonce = ByteArray(0); var createdAt = 0L
+        var replyToMsgId: String? = null
         for (i in 0 until size) {
             val key = unpacker.unpackString()
             if (unpacker.nextFormat == MessageFormat.NIL) { unpacker.unpackNil(); continue }
@@ -544,6 +547,7 @@ class WebSocketManager @Inject constructor(
                 "group_id" -> groupId = unpacker.unpackLong()
                 "id" -> id = unpacker.unpackLong()
                 "message_id" -> messageId = unpacker.unpackString()
+                "reply_to_msg_id" -> replyToMsgId = unpacker.unpackString()
                 "sender_user_id" -> senderUserId = unpacker.unpackLong()
                 "sender_device_id" -> senderDeviceId = unpacker.unpackLong()
                 "key_version" -> keyVersion = unpacker.unpackLong()
@@ -559,7 +563,7 @@ class WebSocketManager @Inject constructor(
             _events.emit(
                 WebSocketEvent.GroupMessageRecv(
                     groupId, id, messageId, senderUserId, senderDeviceId,
-                    keyVersion, ciphertext, salt, nonce, createdAt
+                    keyVersion, ciphertext, salt, nonce, createdAt, replyToMsgId
                 )
             )
         }
@@ -617,13 +621,18 @@ class WebSocketManager @Inject constructor(
         ciphertext: ByteArray,
         salt: ByteArray,
         nonce: ByteArray,
-        createdAt: Long
+        createdAt: Long,
+        replyToMsgId: String? = null
     ) {
         val bos = ByteArrayOutputStream()
         val packer = MessagePack.newDefaultPacker(bos)
-        packer.packMapHeader(7)
+        val size = if (replyToMsgId != null) 8 else 7
+        packer.packMapHeader(size)
         packer.packString("group_id"); packer.packLong(groupId)
         packer.packString("message_id"); packer.packString(messageId)
+        if (replyToMsgId != null) {
+            packer.packString("reply_to_msg_id"); packer.packString(replyToMsgId)
+        }
         packer.packString("key_version"); packer.packLong(keyVersion)
         packer.packString("ciphertext"); packer.packBinaryHeader(ciphertext.size); packer.addPayload(ciphertext)
         packer.packString("salt"); packer.packBinaryHeader(salt.size); packer.addPayload(salt)
@@ -662,6 +671,8 @@ class WebSocketManager @Inject constructor(
         var nonce = ByteArray(0)
         var ts = 0L
 
+        var replyToMsgId: String? = null
+
         for (i in 0 until size) {
             val key = unpackString()
             if (nextFormat == MessageFormat.NIL) {
@@ -677,6 +688,7 @@ class WebSocketManager @Inject constructor(
                 }
                 "chat_user_id" -> chatUserId = unpackLong()
                 "msg_id" -> msgId = unpackLong()
+                "reply_to_msg_id" -> replyToMsgId = unpackString()
                 "ciphertext" -> {
                     val len = unpackBinaryHeader()
                     ciphertext = readPayload(len)
@@ -703,18 +715,24 @@ class WebSocketManager @Inject constructor(
             ciphertext = ciphertext,
             salt = salt,
             nonce = nonce,
-            ts = ts * 1000
+            ts = ts * 1000,
+            replyToMsgId = replyToMsgId
         )
     }
 
-    fun sendEncryptedMessage(toUserId: Long, clientMsgId: String, devices: List<E2EDevicePayload>) {
+    fun sendEncryptedMessage(toUserId: Long, clientMsgId: String, devices: List<E2EDevicePayload>, replyToMsgId: String? = null) {
         val bos = ByteArrayOutputStream()
         val packer = MessagePack.newDefaultPacker(bos)
-        packer.packMapHeader(3)
+        val mapSize = if (replyToMsgId != null) 4 else 3
+        packer.packMapHeader(mapSize)
         packer.packString("to_user_id")
         packer.packLong(toUserId)
         packer.packString("msg_id")
         packer.packString(clientMsgId)
+        if (replyToMsgId != null) {
+            packer.packString("reply_to_msg_id")
+            packer.packString(replyToMsgId)
+        }
         packer.packString("devices")
         packer.packArrayHeader(devices.size)
         for (dev in devices) {

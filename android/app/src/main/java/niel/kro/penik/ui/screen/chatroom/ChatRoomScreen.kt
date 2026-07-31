@@ -305,12 +305,12 @@ fun ChatRoomScreen(
                     verticalArrangement = Arrangement.Bottom
                 ) {
                     items(messages, key = { it.localId }) { message ->
-                        var parsedText = message.text
-                        if (message.text.startsWith("{")) {
-                            try {
-                                val obj = Json.parseToJsonElement(message.text).jsonObject
-                                parsedText = obj["text"]?.jsonPrimitive?.content ?: message.text
-                            } catch (e: Exception) {}
+                        val parentMsg = message.replyToMsgId?.let { parentId ->
+                            messages.find { it.localId == parentId || it.serverId?.toString() == parentId }
+                        }
+                        val replyText = parentMsg?.text
+                        val replySender = parentMsg?.let {
+                            if (it.sentByMe) "Вы" else chatName
                         }
 
                         MessageBubble(
@@ -321,10 +321,13 @@ fun ChatRoomScreen(
                             deliveredAt = message.deliveredAt,
                             read = message.read,
                             isSelfChat = isSelfChat,
+                            replyToMsgId = message.replyToMsgId,
+                            replySender = replySender,
+                            replyText = replyText,
                             onReply = {
                                 activeReply = ReplyInfo(
                                     msgId = message.localId,
-                                    text = parsedText,
+                                    text = message.text,
                                     sender = if (message.sentByMe) "Вы" else chatName
                                 )
                             },
@@ -444,19 +447,7 @@ fun ChatRoomScreen(
                             if (inputText.isNotBlank()) {
                                 val currentReply = activeReply
                                 activeReply = null
-                                val finalPayload = if (currentReply != null) {
-                                    buildJsonObject {
-                                        put("text", inputText)
-                                        put("reply_to", buildJsonObject {
-                                            put("msg_id", currentReply.msgId)
-                                            put("text", currentReply.text)
-                                            put("sender", currentReply.sender)
-                                        })
-                                    }.toString()
-                                } else {
-                                    inputText
-                                }
-                                viewModel.sendMessage(finalPayload)
+                                viewModel.sendMessage(inputText, currentReply?.msgId)
                                 inputText = ""
                             }
                         }

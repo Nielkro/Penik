@@ -290,7 +290,7 @@ class GroupRepository @Inject constructor(
 
     /* ── Messaging ── */
 
-    suspend fun sendMessage(groupId: Long, text: String): String? {
+    suspend fun sendMessage(groupId: Long, text: String, replyToMsgId: String? = null): String? {
         // Always query the server for the latest key version to avoid mismatch if offline during rotation.
         val version = currentVersion(groupId)
         val groupKey = ensureGroupKey(groupId, version) ?: return null
@@ -310,9 +310,10 @@ class GroupRepository @Inject constructor(
                 senderUserId = myUserId(), senderDeviceId = myDeviceId(),
                 keyVersion = version, text = text, createdAt = createdAt,
                 sentByMe = true, delivered = false,
+                replyToMsgId = replyToMsgId
             )
         )
-        ws.sendGroupMessage(groupId, messageId, version, enc.ciphertext, enc.salt, enc.nonce, createdAt)
+        ws.sendGroupMessage(groupId, messageId, version, enc.ciphertext, enc.salt, enc.nonce, createdAt, replyToMsgId)
         return messageId
     }
 
@@ -329,6 +330,7 @@ class GroupRepository @Inject constructor(
     suspend fun handleIncoming(
         groupId: Long, id: Long, messageId: String, senderUserId: Long, senderDeviceId: Long,
         keyVersion: Long, ciphertext: ByteArray, salt: ByteArray, nonce: ByteArray, createdAt: Long,
+        replyToMsgId: String? = null
     ): GroupMessageEntity? {
         dao.getMessage(groupId, messageId)?.let { if (it.serverId != 0L) return null }
 
@@ -351,6 +353,7 @@ class GroupRepository @Inject constructor(
             senderUserId = senderUserId, senderDeviceId = senderDeviceId,
             keyVersion = keyVersion, text = text, createdAt = createdAt,
             sentByMe = senderUserId == myUserId(), delivered = true,
+            replyToMsgId = replyToMsgId
         )
         dao.upsertMessage(entity)
         ws.sendGroupDelivered(id)

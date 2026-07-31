@@ -122,10 +122,10 @@ class GroupChatViewModel @Inject constructor(
     val myRole: String
         get() = _members.value.find { it.userId == myUserId }?.role ?: "member"
 
-    fun send(text: String) {
+    fun send(text: String, replyToMsgId: String? = null) {
         if (text.isBlank()) return
         viewModelScope.launch {
-            val id = runCatching { groupRepository.sendMessage(groupId, text.trim()) }.getOrNull()
+            val id = runCatching { groupRepository.sendMessage(groupId, text.trim(), replyToMsgId) }.getOrNull()
             if (id == null) _error.value = "Не удалось отправить сообщение"
         }
     }

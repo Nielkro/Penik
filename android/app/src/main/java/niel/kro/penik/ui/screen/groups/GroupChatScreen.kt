@@ -240,12 +240,15 @@ fun GroupChatScreen(
                             it.name.ifEmpty { it.nickname.ifEmpty { "#${it.userId}" } }
                         } ?: "#${msg.senderUserId}"
                         
-                        var parsedText = msg.text
-                        if (msg.text.startsWith("{")) {
-                            try {
-                                val obj = Json.parseToJsonElement(msg.text).jsonObject
-                                parsedText = obj["text"]?.jsonPrimitive?.content ?: msg.text
-                            } catch (e: Exception) {}
+                        val parentMsg = msg.replyToMsgId?.let { parentId ->
+                            messages.find { it.messageId == parentId }
+                        }
+                        val replyText = parentMsg?.text
+                        val replySender = parentMsg?.let {
+                            val parentSenderMember = members.find { m -> m.userId == it.senderUserId }
+                            parentSenderMember?.let { m ->
+                                m.name.ifEmpty { m.nickname.ifEmpty { "#${m.userId}" } }
+                            } ?: "#${it.senderUserId}"
                         }
 
                         MessageBubble(
@@ -257,10 +260,13 @@ fun GroupChatScreen(
                             delivered = if (isOwn) msg.delivered else false,
                             senderName = displayName,
                             senderUserId = msg.senderUserId,
+                            replyToMsgId = msg.replyToMsgId,
+                            replySender = replySender,
+                            replyText = replyText,
                             onReply = {
                                 activeReply = ReplyInfo(
                                     msgId = msg.messageId,
-                                    text = parsedText,
+                                    text = msg.text,
                                     sender = displayName
                                 )
                             },
@@ -377,19 +383,7 @@ fun GroupChatScreen(
                             if (inputText.isNotBlank()) {
                                 val currentReply = activeReply
                                 activeReply = null
-                                val finalPayload = if (currentReply != null) {
-                                    buildJsonObject {
-                                        put("text", inputText)
-                                        put("reply_to", buildJsonObject {
-                                            put("msg_id", currentReply.msgId)
-                                            put("text", currentReply.text)
-                                            put("sender", currentReply.sender)
-                                        })
-                                    }.toString()
-                                } else {
-                                    inputText
-                                }
-                                viewModel.send(finalPayload)
+                                viewModel.send(inputText, currentReply?.msgId)
                                 inputText = ""
                             }
                         },

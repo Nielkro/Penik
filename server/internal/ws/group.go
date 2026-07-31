@@ -94,9 +94,9 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 	}
 
 	res, err := tx.ExecContext(ctx,
-		`INSERT INTO group_messages(group_id,message_id,sender_user_id,sender_device_id,key_version,ciphertext,encryption_salt,encryption_nonce,created_at)
-		 VALUES(?,?,?,?,?,?,?,?,?)`,
-		msg.GroupID, msg.MessageID, c.userID, c.deviceID, msg.KeyVersion,
+		`INSERT INTO group_messages(group_id,message_id,reply_to_msg_id,sender_user_id,sender_device_id,key_version,ciphertext,encryption_salt,encryption_nonce,created_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		msg.GroupID, msg.MessageID, msg.ReplyToMsgID, c.userID, c.deviceID, msg.KeyVersion,
 		msg.Ciphertext, msg.Salt, msg.Nonce, now)
 	if err != nil {
 		return fmt.Errorf("group message: insert: %w", err)
@@ -135,16 +135,17 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 	}
 
 	recv := GroupMessageRecv{
-		GroupID:        msg.GroupID,
-		ID:             rowID,
-		MessageID:      msg.MessageID,
-		SenderUserID:   c.userID,
+		GroupID:      msg.GroupID,
+		ID:           rowID,
+		MessageID:    msg.MessageID,
+		ReplyToMsgID: msg.ReplyToMsgID,
+		SenderUserID: c.userID,
 		SenderDeviceID: c.deviceID,
-		KeyVersion:     msg.KeyVersion,
-		Ciphertext:     msg.Ciphertext,
-		Salt:           msg.Salt,
-		Nonce:          msg.Nonce,
-		CreatedAt:      now,
+		KeyVersion:   msg.KeyVersion,
+		Ciphertext:   msg.Ciphertext,
+		Salt:         msg.Salt,
+		Nonce:        msg.Nonce,
+		CreatedAt:    now,
 	}
 	if frame, err := encodeFrame(OpGroupMessageRecv, recv); err == nil {
 		for _, did := range recipients {
@@ -175,7 +176,7 @@ func (c *Client) handleGroupMessageReceipt(ctx context.Context, messageID int64,
 // sendGroupOfflineBatch delivers group messages the device has not yet received.
 func (c *Client) sendGroupOfflineBatch(ctx context.Context) error {
 	rows, err := c.db.QueryContext(ctx,
-		`SELECT gm.id, gm.group_id, gm.message_id, gm.sender_user_id, gm.sender_device_id,
+		`SELECT gm.id, gm.group_id, gm.message_id, gm.reply_to_msg_id, gm.sender_user_id, gm.sender_device_id,
 		        gm.key_version, gm.ciphertext, gm.encryption_salt, gm.encryption_nonce, gm.created_at
 		 FROM group_message_devices gmd
 		 JOIN group_messages gm ON gm.id = gmd.message_id
@@ -188,7 +189,7 @@ func (c *Client) sendGroupOfflineBatch(ctx context.Context) error {
 
 	for rows.Next() {
 		var m GroupMessageRecv
-		if err := rows.Scan(&m.ID, &m.GroupID, &m.MessageID, &m.SenderUserID, &m.SenderDeviceID,
+		if err := rows.Scan(&m.ID, &m.GroupID, &m.MessageID, &m.ReplyToMsgID, &m.SenderUserID, &m.SenderDeviceID,
 			&m.KeyVersion, &m.Ciphertext, &m.Salt, &m.Nonce, &m.CreatedAt); err != nil {
 			continue
 		}
