@@ -392,6 +392,7 @@ export function renderProfile(container) {
         if (state.public_key) {
           const secret = await deriveSharedSecret(kp.privateKey, decodeB64Url(state.public_key));
           const messages = await getAllMessages();
+          const contacts = await getAllContacts();
           const groups = await getAllGroups();
           const groupMembers = await getAllGroupMembers();
           const rawGroupKeys = await getAllGroupKeys();
@@ -403,6 +404,7 @@ export function renderProfile(container) {
 
           const blob = await encryptPairingHistory({
             messages,
+            contacts,
             groups,
             group_members: groupMembers,
             group_keys: groupKeys,
