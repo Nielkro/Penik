@@ -548,7 +548,7 @@ async function onMsgAckGlobal(payload) {
   } catch (e) {}
 
   if (_activeChatCallback) {
-    _activeChatCallback.onAck(payload.msg_id);
+    _activeChatCallback.onAck(payload.msg_id, payload.client_msg_id);
   }
 }
 
