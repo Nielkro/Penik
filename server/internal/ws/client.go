@@ -210,13 +210,6 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 		if err := msgpack.Unmarshal(payload, &msg); err != nil {
 			return fmt.Errorf("unmarshal MsgSendEncrypted: %w", err)
 		}
-		var rStr string
-		if msg.ReplyToMsgID != nil {
-			rStr = *msg.ReplyToMsgID
-		} else {
-			rStr = "<nil>"
-		}
-		log.Printf("[WS] MsgSend parsed: ToUserID=%d, MsgID=%s, ReplyToMsgID=%s", msg.ToUserID, msg.MsgID, rStr)
 		return c.handleMsgSend(ctx, &msg)
 
 	case OpMsgDelivered:

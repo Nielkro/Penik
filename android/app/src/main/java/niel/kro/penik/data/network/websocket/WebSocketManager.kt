@@ -220,6 +220,7 @@ class WebSocketManager @Inject constructor(
      */
     fun notifyRestSuccess() {
         if (manualDisconnect) return
+        if (connectHost.isEmpty() || connectPort == 0) return
         if (_connectionState.value != ConnectionState.DISCONNECTED) return
         reconnectJob?.cancel()
         reconnectAttempt = 0
