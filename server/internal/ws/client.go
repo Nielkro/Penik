@@ -531,15 +531,42 @@ func (c *Client) handleMsgDelivered(ctx context.Context, msg *MsgDelivered) erro
 
 	// Fan-out creates a separate row per device. Notify each sender device using its own row ID.
 	if clientMsgID.Valid {
-		rows, err := c.db.QueryContext(ctx, `SELECT recipient_device_id, id FROM messages WHERE sender_user_id=? AND client_msg_id=?`, senderUserID, clientMsgID.String)
+		rows, err := c.db.QueryContext(ctx, `SELECT recipient_device_id, id, sender_device_id FROM messages WHERE sender_user_id=? AND client_msg_id=? ORDER BY id ASC`, senderUserID, clientMsgID.String)
 		if err == nil {
 			defer rows.Close()
+			var firstMsgID int64
+			var senderDeviceID int64
+			type targetDevice struct {
+				devID int64
+				msgID int64
+			}
+			var targets []targetDevice
+			isFirst := true
 			for rows.Next() {
-				var devID, mID int64
-				if err := rows.Scan(&devID, &mID); err == nil {
-					payload, err := msgpack.Marshal(MsgDelivered{MsgID: mID, ClientMsgID: clientMsgID.String})
+				var recDevID, mID, sendDevID int64
+				if err := rows.Scan(&recDevID, &mID, &sendDevID); err == nil {
+					if isFirst {
+						firstMsgID = mID
+						senderDeviceID = sendDevID
+						isFirst = false
+					}
+					var ownerID int64
+					_ = c.db.QueryRowContext(ctx, `SELECT user_id FROM devices WHERE id=?`, recDevID).Scan(&ownerID)
+					if ownerID == senderUserID {
+						targets = append(targets, targetDevice{recDevID, mID})
+					}
+				}
+			}
+			if senderDeviceID != 0 {
+				targets = append(targets, targetDevice{senderDeviceID, firstMsgID})
+			}
+			sentDevices := make(map[int64]bool)
+			for _, t := range targets {
+				if !sentDevices[t.devID] {
+					sentDevices[t.devID] = true
+					payload, err := msgpack.Marshal(MsgDelivered{MsgID: t.msgID, ClientMsgID: clientMsgID.String})
 					if err == nil {
-						c.hub.SendToDeviceFrame(devID, OpMsgDelivered, payload)
+						c.hub.SendToDeviceFrame(t.devID, OpMsgDelivered, payload)
 					}
 				}
 			}
@@ -569,15 +596,42 @@ func (c *Client) handleMsgRead(ctx context.Context, msg *MsgRead) error {
 	}
 	// Fan-out creates a separate row per device. Notify each sender device using its own row ID.
 	if clientMsgID.Valid {
-		rows, err := c.db.QueryContext(ctx, `SELECT recipient_device_id, id FROM messages WHERE sender_user_id=? AND client_msg_id=?`, senderUserID, clientMsgID.String)
+		rows, err := c.db.QueryContext(ctx, `SELECT recipient_device_id, id, sender_device_id FROM messages WHERE sender_user_id=? AND client_msg_id=? ORDER BY id ASC`, senderUserID, clientMsgID.String)
 		if err == nil {
 			defer rows.Close()
+			var firstMsgID int64
+			var senderDeviceID int64
+			type targetDevice struct {
+				devID int64
+				msgID int64
+			}
+			var targets []targetDevice
+			isFirst := true
 			for rows.Next() {
-				var devID, mID int64
-				if err := rows.Scan(&devID, &mID); err == nil {
-					payload, err := msgpack.Marshal(MsgRead{MsgID: mID, ClientMsgID: clientMsgID.String})
+				var recDevID, mID, sendDevID int64
+				if err := rows.Scan(&recDevID, &mID, &sendDevID); err == nil {
+					if isFirst {
+						firstMsgID = mID
+						senderDeviceID = sendDevID
+						isFirst = false
+					}
+					var ownerID int64
+					_ = c.db.QueryRowContext(ctx, `SELECT user_id FROM devices WHERE id=?`, recDevID).Scan(&ownerID)
+					if ownerID == senderUserID {
+						targets = append(targets, targetDevice{recDevID, mID})
+					}
+				}
+			}
+			if senderDeviceID != 0 {
+				targets = append(targets, targetDevice{senderDeviceID, firstMsgID})
+			}
+			sentDevices := make(map[int64]bool)
+			for _, t := range targets {
+				if !sentDevices[t.devID] {
+					sentDevices[t.devID] = true
+					payload, err := msgpack.Marshal(MsgRead{MsgID: t.msgID, ClientMsgID: clientMsgID.String})
 					if err == nil {
-						c.hub.SendToDeviceFrame(devID, OpMsgRead, payload)
+						c.hub.SendToDeviceFrame(t.devID, OpMsgRead, payload)
 					}
 				}
 			}
