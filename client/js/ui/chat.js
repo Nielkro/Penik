@@ -638,7 +638,6 @@ export async function renderChat(container, userId) {
 
       let sent = false;
       try {
-        showToast("[Отладка] Отправка ответа: " + (currentReply ? currentReply.msg_id : "нет"));
         sent = ws.send(0x01, {
           to_user_id: Number(userId),
           devices: ciphertexts,
