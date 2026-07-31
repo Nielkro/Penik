@@ -58,6 +58,13 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -502,13 +509,35 @@ fun MessageBubble(
     senderName: String? = null,
     senderUserId: Long? = null,
     isSelfChat: Boolean = false,
+    onReply: (() -> Unit)? = null,
+    onReplyClick: ((String) -> Unit)? = null,
     onDelete: (() -> Unit)? = null
 ) {
     val isFailed = text.startsWith("[Ошибка расшифрования") || text.startsWith("[Сообщение не расшифровано")
     var isExpanded by remember { mutableStateOf(false) }
     var showFullTime by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+
+    var parsedText = text
+    var replySender: String? = null
+    var replyText: String? = null
+    var replyMsgId: String? = null
+
+    if (text.startsWith("{")) {
+        try {
+            val obj = Json.parseToJsonElement(text).jsonObject
+            parsedText = obj["text"]?.jsonPrimitive?.content ?: text
+            obj["reply_to"]?.jsonObject?.let { replyObj ->
+                replySender = replyObj["sender"]?.jsonPrimitive?.content
+                replyText = replyObj["text"]?.jsonPrimitive?.content
+                replyMsgId = replyObj["msg_id"]?.jsonPrimitive?.content
+            }
+        } catch (e: Exception) {
+            // Fallback to original text
+        }
+    }
 
     val bgColor = if (isFailed) {
         Color(0x26EF5350)
@@ -536,7 +565,7 @@ fun MessageBubble(
 
     val doCopy: () -> Unit = {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("message", text)
+        val clip = ClipData.newPlainText("message", parsedText)
         clipboard.setPrimaryClip(clip)
         Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
     }
@@ -560,11 +589,42 @@ fun MessageBubble(
                     onClick = {},
                     onLongClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        doCopy()
+                        showMenu = true
                     }
                 )
                 .padding(start = startPadding, top = 8.dp, end = endPadding, bottom = 8.dp)
         ) {
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+                modifier = Modifier.background(PanelSecondary)
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Копировать", color = TextPrimary) },
+                    onClick = {
+                        doCopy()
+                        showMenu = false
+                    }
+                )
+                if (onReply != null && !isFailed) {
+                    DropdownMenuItem(
+                        text = { Text("Ответить", color = TextPrimary) },
+                        onClick = {
+                            onReply()
+                            showMenu = false
+                        }
+                    )
+                }
+                if (onDelete != null) {
+                    DropdownMenuItem(
+                        text = { Text("Удалить", color = Color(0xFFEF5350)) },
+                        onClick = {
+                            onDelete()
+                            showMenu = false
+                        }
+                    )
+                }
+            }
             Column {
                 if (!isSentByMe && senderName != null) {
                     val hue = if (senderUserId != null && senderUserId > 0) (senderUserId * 137) % 360 else 0L
@@ -577,6 +637,44 @@ fun MessageBubble(
                         modifier = Modifier.padding(bottom = 2.dp)
                     )
                 }
+
+                // Reply preview inside message bubble
+                if (replySender != null && replyText != null) {
+                    Row(
+                        modifier = Modifier
+                            .padding(bottom = 6.dp)
+                            .background(Color(0x0DFFFFFF), shape = RoundedCornerShape(4.dp))
+                            .height(IntrinsicSize.Max)
+                            .fillMaxWidth()
+                            .clickable(enabled = onReplyClick != null && replyMsgId != null) {
+                                replyMsgId?.let { onReplyClick?.invoke(it) }
+                            }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(3.dp)
+                                .fillMaxHeight()
+                                .background(Accent)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp)) {
+                            Text(
+                                text = replySender!!,
+                                color = if (isSentByMe) Color(0xFFB8D4FF) else Accent,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = replyText!!,
+                                color = TextMuted,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
                 if (isFailed) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -604,7 +702,7 @@ fun MessageBubble(
                     if (isExpanded) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = text,
+                            text = parsedText,
                             color = TextPrimary,
                             fontSize = 13.sp
                         )
@@ -620,7 +718,7 @@ fun MessageBubble(
                             .padding(vertical = 2.dp)
                     )
                 } else {
-                    val annotated = remember(text) { buildLinkedText(text, linkColor) }
+                    val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
                     Text(
                         text = annotated,
                         color = textColor,
@@ -631,7 +729,7 @@ fun MessageBubble(
                             onClick = {},
                             onLongClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                doCopy()
+                                showMenu = true
                             }
                         )
                     )

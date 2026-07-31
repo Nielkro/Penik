@@ -58,6 +58,13 @@ import niel.kro.penik.ui.theme.Accent
 import niel.kro.penik.ui.theme.Background
 import niel.kro.penik.ui.theme.Border
 import niel.kro.penik.ui.theme.InputBg
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import niel.kro.penik.ui.theme.Panel
 import niel.kro.penik.ui.theme.PanelSecondary
 import niel.kro.penik.ui.theme.Success
@@ -94,6 +101,7 @@ fun ChatRoomScreen(
     }
 
     var previousSize by remember { mutableStateOf(0) }
+    var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
     LaunchedEffect(messages.size) {
         if (messages.size > previousSize && previousSize > 0) {
             // Auto-scroll when user is at the bottom or within 5 messages from the bottom.
@@ -297,6 +305,14 @@ fun ChatRoomScreen(
                     verticalArrangement = Arrangement.Bottom
                 ) {
                     items(messages, key = { it.localId }) { message ->
+                        var parsedText = message.text
+                        if (message.text.startsWith("{")) {
+                            try {
+                                val obj = Json.parseToJsonElement(message.text).jsonObject
+                                parsedText = obj["text"]?.jsonPrimitive?.content ?: message.text
+                            } catch (e: Exception) {}
+                        }
+
                         MessageBubble(
                             text = message.text,
                             timestamp = message.timestamp,
@@ -305,6 +321,21 @@ fun ChatRoomScreen(
                             deliveredAt = message.deliveredAt,
                             read = message.read,
                             isSelfChat = isSelfChat,
+                            onReply = {
+                                activeReply = ReplyInfo(
+                                    msgId = message.localId,
+                                    text = parsedText,
+                                    sender = if (message.sentByMe) "Вы" else chatName
+                                )
+                            },
+                            onReplyClick = { parentId ->
+                                val index = messages.indexOfFirst { it.localId == parentId || it.serverId?.toString() == parentId }
+                                if (index >= 0) {
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(index)
+                                    }
+                                }
+                            },
                             onDelete = { viewModel.deleteMessage(message.localId) }
                         )
                     }
@@ -339,47 +370,111 @@ fun ChatRoomScreen(
                 }
             }
 
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Panel)
                     .imePadding()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.Bottom
             ) {
-                OutlinedTextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp)),
-                    placeholder = { Text("Сообщение...", color = TextMuted) },
-                    maxLines = 5,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = InputBg,
-                        unfocusedContainerColor = InputBg,
-                        focusedBorderColor = Border,
-                        unfocusedBorderColor = Border,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    )
-                )
-
-                IconButton(
-                    onClick = {
-                        if (inputText.isNotBlank()) {
-                            viewModel.sendMessage(inputText)
-                            inputText = ""
+                activeReply?.let { reply ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(3.dp)
+                                .height(36.dp)
+                                .background(Accent)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = reply.sender,
+                                color = Accent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = reply.text,
+                                color = TextMuted,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(onClick = { activeReply = null }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Закрыть",
+                                tint = TextMuted
+                            )
                         }
                     }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.Bottom
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Отправить",
-                        tint = Accent
+                    OutlinedTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(14.dp)),
+                        placeholder = { Text("Сообщение...", color = TextMuted) },
+                        maxLines = 5,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = InputBg,
+                            unfocusedContainerColor = InputBg,
+                            focusedBorderColor = Border,
+                            unfocusedBorderColor = Border,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
                     )
+
+                    IconButton(
+                        onClick = {
+                            if (inputText.isNotBlank()) {
+                                val currentReply = activeReply
+                                activeReply = null
+                                val finalPayload = if (currentReply != null) {
+                                    buildJsonObject {
+                                        put("text", inputText)
+                                        put("reply_to", buildJsonObject {
+                                            put("msg_id", currentReply.msgId)
+                                            put("text", currentReply.text)
+                                            put("sender", currentReply.sender)
+                                        })
+                                    }.toString()
+                                } else {
+                                    inputText
+                                }
+                                viewModel.sendMessage(finalPayload)
+                                inputText = ""
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Отправить",
+                            tint = Accent
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+data class ReplyInfo(
+    val msgId: String,
+    val text: String,
+    val sender: String
+)

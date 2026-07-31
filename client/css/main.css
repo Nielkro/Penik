@@ -1121,3 +1121,82 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 
   .toast-container { bottom: 24px; }
 }
+
+/* Reply Preview Bar above input */
+.reply-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  border-left: 4px solid var(--accent);
+}
+
+.reply-preview-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reply-preview-sender {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.reply-preview-text {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reply-preview-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+}
+
+/* Reply Reference inside message bubble */
+.msg-reply-ref {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.msg-out .msg-reply-ref {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.reply-ref-sender {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.msg-out .reply-ref-sender {
+  color: #aaccff;
+}
+
+.reply-ref-text {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 250px;
+}
+

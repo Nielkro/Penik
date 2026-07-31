@@ -291,7 +291,7 @@ export function wireMsgTime(timeEl, ts) {
  * Right-click / long-press on a message bubble → mini menu with "Копировать".
  * `getText` is a string or a function returning the plaintext to copy.
  */
-export function wireMsgCopy(bubble, getText) {
+export function wireMsgCopy(bubble, getText, onReply) {
   const resolveText = () => {
     const t = typeof getText === "function" ? getText() : getText;
     return (t == null ? "" : String(t)).trim();
@@ -323,7 +323,7 @@ export function wireMsgCopy(bubble, getText) {
     if (e.target.closest?.("a.msg-link")) return;
     e.preventDefault();
     e.stopPropagation();
-    showMsgActionMenu(e.clientX, e.clientY, doCopy);
+    showMsgActionMenu(e.clientX, e.clientY, doCopy, onReply);
   });
 
   // Long-press for touch devices.
@@ -345,7 +345,7 @@ export function wireMsgCopy(bubble, getText) {
     clearPress();
     pressTimer = setTimeout(() => {
       pressTimer = null;
-      showMsgActionMenu(pressX, pressY, doCopy);
+      showMsgActionMenu(pressX, pressY, doCopy, onReply);
     }, 480);
   }, { passive: true });
   bubble.addEventListener("touchmove", (e) => {
@@ -357,21 +357,33 @@ export function wireMsgCopy(bubble, getText) {
   bubble.addEventListener("touchcancel", clearPress, { passive: true });
 }
 
-function showMsgActionMenu(x, y, onCopy) {
+function showMsgActionMenu(x, y, onCopy, onReply) {
   document.getElementById("msg-action-menu")?.remove();
   const menu = el("div", {
     id: "msg-action-menu",
     class: "msg-action-menu",
     style: `left:${x}px;top:${y}px;`,
   });
-  const item = el("button", { type: "button", class: "msg-action-item" }, "Копировать");
-  item.addEventListener("click", (e) => {
+  const copyItem = el("button", { type: "button", class: "msg-action-item" }, "Копировать");
+  copyItem.addEventListener("click", (e) => {
     e.stopPropagation();
     menu.remove();
     onCopy();
   });
-  menu.appendChild(item);
+  menu.appendChild(copyItem);
+
+  if (onReply) {
+    const replyItem = el("button", { type: "button", class: "msg-action-item" }, "Ответить");
+    replyItem.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.remove();
+      onReply();
+    });
+    menu.appendChild(replyItem);
+  }
+
   document.body.appendChild(menu);
+
 
   // Keep menu inside the viewport.
   requestAnimationFrame(() => {
