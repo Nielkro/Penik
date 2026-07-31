@@ -93,6 +93,14 @@ function getAll(store) {
 
 export async function getMessage(msgId) {
   await openDB();
+  if (typeof msgId === "string" && msgId.startsWith("server-")) {
+    const raw = msgId.substring(7);
+    if (!isNaN(Number(raw))) {
+      msgId = Number(raw);
+    } else {
+      msgId = raw;
+    }
+  }
   let res = await get(tx("messages"), msgId);
   if (!res) {
     if (typeof msgId === "number") {
