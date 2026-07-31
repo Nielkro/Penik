@@ -1,6 +1,6 @@
 import { apiGet, apiDelete } from "../api.js";
 import {
-  saveMessage, getMessages,
+  saveMessage, getMessages, getMessage,
   updateMessageDelivered, getContact, saveContact, getAllContacts,
   deleteChatData, deleteMessage
 } from "../storage.js";
@@ -407,9 +407,11 @@ export async function renderChat(container, userId) {
   messagesEl.appendChild(loadEl);
   let messages = [];
   try { messages = await getMessages(userId, 50); } catch { messages = []; }
+  messages = messages.filter(m => m.plaintext !== "[DELETED]");
   loadEl.remove();
 
   function appendMessage(msg, prepend = false) {
+    if (msg.plaintext === "[DELETED]") return;
     if (msg.msg_id) {
       const existing = messagesEl.querySelector(`[data-msg-id="${msg.msg_id}"]`);
       if (existing) {
