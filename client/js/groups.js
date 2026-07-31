@@ -449,9 +449,12 @@ async function currentVersion(groupId) {
     const g = await apiGetGroup(groupId);
     await saveGroup(g);
     return Number(g.current_key_version);
-  } catch {
+  } catch (e) {
     const { versions } = await listGroupKeyVersions(groupId);
-    return versions.length ? Math.max(...versions) : 1;
+    if (versions && versions.length) {
+      return Math.max(...versions);
+    }
+    throw new Error("No group key versions available");
   }
 }
 
