@@ -642,7 +642,7 @@ export async function renderChat(container, userId) {
           to_user_id: Number(userId),
           devices: ciphertexts,
           msg_id: msgId,
-          reply_to_msg_id: currentReply ? currentReply.msg_id : undefined
+          reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined
         });
       } catch (sendErr) {
         console.warn("WebSocket send threw an error:", sendErr);
