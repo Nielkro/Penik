@@ -64,7 +64,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import niel.kro.penik.ui.theme.Panel
 import niel.kro.penik.ui.theme.PanelSecondary
 import niel.kro.penik.ui.theme.Success
