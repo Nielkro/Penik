@@ -685,10 +685,15 @@ export async function renderChat(container, userId) {
       if (stick) scrollDown.scrollToBottom();
       else scrollDown.update();
     },
-    (msgId) => {
-      const statusEl = messagesEl.querySelector(`.msg-status[data-msg-id="${msgId}"]`);
+    (msgId, clientMsgId) => {
+      const targetId = clientMsgId || msgId;
+      const statusEl = messagesEl.querySelector(`.msg-status[data-msg-id="${targetId}"]`);
       if (statusEl) {
         statusEl.textContent = "✓✓";
+      }
+      const bubble = messagesEl.querySelector(`[data-msg-id="${targetId}"]`);
+      if (bubble) {
+        bubble.dataset.msgId = msgId;
       }
     },
     (msgId, status) => {
