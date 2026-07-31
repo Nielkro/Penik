@@ -251,13 +251,13 @@ class WebSocketManager @Inject constructor(
 
     private fun doConnect() {
         _connectionState.value = ConnectionState.CONNECTING
-        val scheme = if (connectPort == 443) "wss" else "ws"
-        val request = Request.Builder()
-            .url("$scheme://$connectHost:$connectPort/api/v1/ws")
-            .header("Sec-WebSocket-Protocol", "access_token, $token")
-            .build()
-
         try {
+            val scheme = if (connectPort == 443) "wss" else "ws"
+            val request = Request.Builder()
+                .url("$scheme://$connectHost:$connectPort/api/v1/ws")
+                .header("Sec-WebSocket-Protocol", "access_token, $token")
+                .build()
+
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     Log.d("WS", "Connected")
