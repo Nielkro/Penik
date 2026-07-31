@@ -409,17 +409,28 @@ async function onMsgRecvGlobal(payload) {
   }
   const fromUserId = Number(payload.from_user_id);
 
+  const myId = localStorage.getItem("user_id");
+  const isMine = String(fromUserId) === String(myId);
+
   // Prevent duplicate rendering of messages sent by this device
-  const existingByClient = payload.client_msg_id ? await getMessageByClientId(payload.client_msg_id) : null;
   const existingByServer = payload.msg_id ? await getMessage(payload.msg_id) : null;
-  if (existingByClient || existingByServer) {
-    if (existingByClient && String(existingByClient.msg_id) !== String(payload.msg_id)) {
-      await updateMsgIdAndDelivered(existingByClient.msg_id, payload.msg_id, 0);
-      pendingAcks.delete(String(payload.client_msg_id));
+  if (existingByServer) return;
+
+  if (isMine) {
+    const chatPartnerId = payload.chat_user_id || fromUserId;
+    const resolvedOldId = await findAndResolvePendingSentMessage(chatPartnerId, payload.ts * 1000, payload.msg_id);
+    if (resolvedOldId) {
+      // Find DOM temporary ID mapping if it exists in pendingAcks
+      let domId = resolvedOldId;
+      const pending = pendingAcks.get(String(resolvedOldId));
+      if (pending?.tempId) {
+        domId = pending.tempId;
+      }
+      pendingAcks.delete(String(resolvedOldId));
       
       // Update DOM dataset ID of the message bubble
       if (_activeChatCallback) {
-        const bubble = document.querySelector(`[data-msg-id="${existingByClient.msg_id}"]`);
+        const bubble = document.querySelector(`[data-msg-id="${domId}"]`) || document.querySelector(`[data-msg-id="${resolvedOldId}"]`);
         if (bubble) {
           bubble.dataset.msgId = payload.msg_id;
           const statusEl = bubble.querySelector(".msg-status");
@@ -428,8 +439,8 @@ async function onMsgRecvGlobal(payload) {
           }
         }
       }
+      return;
     }
-    return;
   }
   
   let decryptSuccess = true;
