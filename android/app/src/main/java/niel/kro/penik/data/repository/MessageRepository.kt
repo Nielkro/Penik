@@ -171,6 +171,24 @@ class MessageRepository @Inject constructor(
         }
         messageDao.insertMessages(imported)
 
+        // 1.5 Import Contacts (Chats)
+        val contacts = decodedJson["contacts"]?.jsonArray
+        contacts?.forEach {
+            val o = it.jsonObject
+            val userId = o["user_id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["userId"]!!.jsonPrimitive.content.toLong()
+            val nickname = o["nickname"]?.jsonPrimitive?.content ?: ""
+            val name = o["name"]?.jsonPrimitive?.content ?: ""
+            val avatarUrl = o["avatarUrl"]?.jsonPrimitive?.content ?: o["avatar_url"]?.jsonPrimitive?.content
+            
+            chatRepository.getOrCreateChat(userId, nickname, name, avatarUrl)
+            
+            val lastMsg = o["last_message"]?.jsonPrimitive?.content ?: o["lastMessage"]?.jsonPrimitive?.content
+            val lastTs = o["last_ts"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["lastMessageTimestamp"]?.jsonPrimitive?.content?.toLongOrNull()
+            if (lastMsg != null && lastTs != null) {
+                chatRepository.updateLastMessage(userId, lastMsg, lastTs, name, nickname)
+            }
+        }
+
         // 2. Import Groups
         val groups = decodedJson["groups"]?.jsonArray
         val importedGroups = groups?.map {
