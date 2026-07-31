@@ -13,6 +13,7 @@ import {
   setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton,
 } from "./components.js";
 import { onPresenceUpdate } from "../presence.js";
+import { getMessagePreview } from "./chat.js";
 
 // Role labels in Russian for the members UI.
 const ROLE_LABEL = { owner: "владелец", admin: "админ", member: "участник" };
@@ -340,19 +341,60 @@ export async function renderGroup(container, groupId) {
       }).catch(() => {});
     }
 
+    let parsed = null;
+    let actualText = msg.plaintext || "";
+    if (actualText.startsWith("{")) {
+      try {
+        parsed = JSON.parse(actualText);
+        actualText = parsed.text;
+      } catch (e) {}
+    }
+
     const textEl = el("span", { class: "msg-text" });
-    setMsgTextContent(textEl, msg.plaintext || "");
+    setMsgTextContent(textEl, actualText);
+
+    let replyRefEl = null;
+    if (parsed && parsed.reply_to) {
+      replyRefEl = el("div", { class: "msg-reply-ref" },
+        el("span", { class: "reply-ref-sender" }, parsed.reply_to.sender || "Пользователь"),
+        el("span", { class: "reply-ref-text" }, parsed.reply_to.text || "")
+      );
+      replyRefEl.addEventListener("click", () => {
+        const targetBubble = messagesEl.querySelector(`[data-mid="${cssEscape(parsed.reply_to.msg_id)}"]`);
+        if (targetBubble) {
+          targetBubble.scrollIntoView({ behavior: "smooth", block: "center" });
+          targetBubble.style.transition = "background-color 0.5s";
+          const originalBg = targetBubble.style.backgroundColor;
+          targetBubble.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
+          setTimeout(() => {
+            targetBubble.style.backgroundColor = originalBg;
+          }, 1000);
+        }
+      });
+    }
+
     const timeEl = el("span", { class: "msg-time" });
     wireMsgTime(timeEl, msg.created_at);
+
+    const bubbleChildren = [];
+    if (senderNameSpan) bubbleChildren.push(senderNameSpan);
+    if (replyRefEl) bubbleChildren.push(replyRefEl);
+    bubbleChildren.push(textEl);
+    bubbleChildren.push(el("div", { class: "msg-meta" },
+      timeEl,
+      mine ? el("span", { class: "msg-status" }, msg.delivered ? "✓" : "…") : null,
+    ));
+
     const bubble = el("div", { class: `msg-bubble ${mine ? "msg-out" : "msg-in"}`, "data-mid": key },
-      senderNameSpan,
-      textEl,
-      el("div", { class: "msg-meta" },
-        timeEl,
-        mine ? el("span", { class: "msg-status" }, msg.delivered ? "✓" : "…") : null,
-      ),
+      ...bubbleChildren
     );
-    wireMsgCopy(bubble, () => msg.plaintext || textEl.innerText || "");
+    wireMsgCopy(bubble, () => actualText, () => {
+      setActiveReply({
+        msg_id: msg.message_id,
+        text: actualText,
+        sender: mine ? "Вы" : (nameById.get(senderId) || msg.sender_name || `#${senderId}`)
+      });
+    });
     const stick = scrollDown.isNearBottom();
     messagesEl.appendChild(bubble);
     if (stick) scrollDown.scrollToBottom();
@@ -379,18 +421,49 @@ export async function renderGroup(container, groupId) {
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
+  let activeReply = null;
+  const replyBarContainer = el("div", { style: "display: contents;" });
+  chatWrap.insertBefore(replyBarContainer, inputRow);
+
+  function setActiveReply(reply) {
+    activeReply = reply;
+    replyBarContainer.innerHTML = "";
+    if (reply) {
+      const bar = el("div", { class: "reply-preview-bar" },
+        el("div", { class: "reply-preview-content" },
+          el("span", { class: "reply-preview-sender" }, reply.sender),
+          el("span", { class: "reply-preview-text" }, reply.text)
+        ),
+        el("button", { class: "reply-preview-close" }, "✕")
+      );
+      bar.querySelector(".reply-preview-close").addEventListener("click", () => {
+        setActiveReply(null);
+      });
+      replyBarContainer.appendChild(bar);
+      inputEl.focus();
+    }
+  }
+
   async function doSend() {
     const text = inputEl.value.trim();
     if (!text) return;
     inputEl.value = "";
+
+    const currentReply = activeReply;
+    setActiveReply(null);
+
+    const messagePayloadText = currentReply
+      ? JSON.stringify({ text: text, reply_to: currentReply })
+      : text;
+
     const createdAt = Date.now();
     try {
       // sendGroupMessage persists the optimistic copy and returns its real
       // message_id; render under that id so the later ACK updates it in place.
-      const messageId = await sendGroupMessage(groupId, text);
+      const messageId = await sendGroupMessage(groupId, messagePayloadText);
       appendMessage({
         message_id: messageId, sender_user_id: myId,
-        plaintext: text, created_at: createdAt, delivered: 0,
+        plaintext: messagePayloadText, created_at: createdAt, delivered: 0,
       });
     } catch (e) {
       showToast(e.message || "Не удалось отправить", "error");

@@ -62,12 +62,23 @@ export async function renderChatList(container) {
     last_ts: 0
   } : null;
 
+export function getMessagePreview(plaintext) {
+  if (!plaintext) return "";
+  if (plaintext.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(plaintext);
+      return parsed.text || plaintext;
+    } catch (e) {}
+  }
+  return plaintext;
+}
+
   async function loadSelfChat() {
     if (!selfChatEntry) return;
     try {
       const messages = await getMessages(myId);
       const last = messages[messages.length - 1];
-      selfChatEntry.last_message = last?.plaintext || "";
+      selfChatEntry.last_message = getMessagePreview(last?.plaintext || "");
       selfChatEntry.last_ts = last?.created_at || 0;
     } catch {
       selfChatEntry.last_message = "";
@@ -186,7 +197,7 @@ async function loadGroupEntries() {
       const last = msgs[msgs.length - 1];
       if (last) {
         last_ts = last.created_at || 0;
-        last_message = last.plaintext || "";
+        last_message = getMessagePreview(last.plaintext || "");
       }
     } catch { /* preview falls back to role/empty */ }
     return { ...g, _kind: "group", last_ts, last_message };
@@ -410,7 +421,7 @@ export async function renderChat(container, userId) {
           if (isFailed) {
             txt.textContent = "🔒 Сообщение не расшифровано";
           } else {
-            setMsgTextContent(txt, msg.plaintext || "");
+            setMsgTextContent(txt, getMessagePreview(msg.plaintext || ""));
           }
         }
         return;
@@ -463,20 +474,59 @@ export async function renderChat(container, userId) {
       (msg.plaintext.startsWith("[Сообщение не расшифровано") ||
        msg.plaintext.startsWith("[Ошибка расшифрован"));
 
+    let parsed = null;
+    let actualText = msg.plaintext || "";
+    if (actualText.startsWith("{")) {
+      try {
+        parsed = JSON.parse(actualText);
+        actualText = parsed.text;
+      } catch (e) {}
+    }
+
     const textEl = el("span", { class: "msg-text" });
     if (isFailed) {
       textEl.textContent = "🔒 Сообщение не расшифровано";
     } else {
-      setMsgTextContent(textEl, msg.plaintext || "");
+      setMsgTextContent(textEl, actualText);
     }
 
+    let replyRefEl = null;
+    if (parsed && parsed.reply_to) {
+      replyRefEl = el("div", { class: "msg-reply-ref" },
+        el("span", { class: "reply-ref-sender" }, parsed.reply_to.sender || "Пользователь"),
+        el("span", { class: "reply-ref-text" }, parsed.reply_to.text || "")
+      );
+      replyRefEl.addEventListener("click", () => {
+        const targetBubble = messagesEl.querySelector(`[data-msg-id="${parsed.reply_to.msg_id}"]`);
+        if (targetBubble) {
+          targetBubble.scrollIntoView({ behavior: "smooth", block: "center" });
+          targetBubble.style.transition = "background-color 0.5s";
+          const originalBg = targetBubble.style.backgroundColor;
+          targetBubble.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
+          setTimeout(() => {
+            targetBubble.style.backgroundColor = originalBg;
+          }, 1000);
+        }
+      });
+    }
+
+    const bubbleChildren = [];
+    if (replyRefEl) bubbleChildren.push(replyRefEl);
+    bubbleChildren.push(textEl);
+    bubbleChildren.push(metaEl);
+
     const bubble = el("div", { class: `msg-bubble ${isMine ? "msg-out" : "msg-in"}${isFailed ? " msg-failed" : ""}` },
-      textEl,
-      metaEl
+      ...bubbleChildren
     );
     bubble.dataset.msgId = msg.msg_id;
     if (!isFailed) {
-      wireMsgCopy(bubble, () => msg.plaintext || textEl.innerText || "");
+      wireMsgCopy(bubble, () => actualText, () => {
+        setActiveReply({
+          msg_id: msg.msg_id || msg.client_msg_id,
+          text: actualText,
+          sender: isMine ? "Вы" : (contact.name || contact.nickname || "Собеседник")
+        });
+      });
     }
 
     if (isFailed) {
@@ -507,16 +557,46 @@ export async function renderChat(container, userId) {
 
   // ── Send ──────────────────────────────────────────────────────────────────
 
+  let activeReply = null;
+  const replyBarContainer = el("div", { style: "display: contents;" });
+  chatWrap.insertBefore(replyBarContainer, inputRow);
+
+  function setActiveReply(reply) {
+    activeReply = reply;
+    replyBarContainer.innerHTML = "";
+    if (reply) {
+      const bar = el("div", { class: "reply-preview-bar" },
+        el("div", { class: "reply-preview-content" },
+          el("span", { class: "reply-preview-sender" }, reply.sender),
+          el("span", { class: "reply-preview-text" }, reply.text)
+        ),
+        el("button", { class: "reply-preview-close" }, "✕")
+      );
+      bar.querySelector(".reply-preview-close").addEventListener("click", () => {
+        setActiveReply(null);
+      });
+      replyBarContainer.appendChild(bar);
+      inputEl.focus();
+    }
+  }
+
   async function sendMessage() {
     const text = inputEl.value.trim();
     if (!text) return;
     inputEl.value = "";
     inputEl.style.height = "auto";
 
+    const currentReply = activeReply;
+    setActiveReply(null);
+
+    const messagePayloadText = currentReply
+      ? JSON.stringify({ text: text, reply_to: currentReply })
+      : text;
+
     const tempId = `tmp-${Date.now()}`;
     const now = Date.now();
     const myId = me && (me.id || me.user_id);
-    appendMessage({ msg_id: tempId, sender_id: myId, plaintext: text, created_at: now });
+    appendMessage({ msg_id: tempId, sender_id: myId, plaintext: messagePayloadText, created_at: now });
     scrollDown.scrollToBottom();
 
     const sendFn = async () => {
@@ -526,14 +606,14 @@ export async function renderChat(container, userId) {
       const msgId = crypto.randomUUID();
 
       // Encrypt payload for all target devices
-      const ciphertexts = await encryptMessagePayload(text, userId);
+      const ciphertexts = await encryptMessagePayload(messagePayloadText, userId);
 
       const storedMsg = {
         msg_id: msgId,
         client_msg_id: msgId,
         chat_id: userId,
         sender_id: myId,
-        plaintext: text,
+        plaintext: messagePayloadText,
         created_at: now,
         delivered: 0,
         ciphertexts: ciphertexts

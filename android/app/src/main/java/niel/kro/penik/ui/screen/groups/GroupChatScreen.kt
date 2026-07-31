@@ -58,6 +58,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import niel.kro.penik.ui.screen.chatroom.ReplyInfo
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
@@ -93,6 +104,7 @@ fun GroupChatScreen(
     var showMembersDialog by remember { mutableStateOf(false) }
     var showInviteDialog by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -228,6 +240,14 @@ fun GroupChatScreen(
                             it.name.ifEmpty { it.nickname.ifEmpty { "#${it.userId}" } }
                         } ?: "#${msg.senderUserId}"
                         
+                        var parsedText = msg.text
+                        if (msg.text.startsWith("{")) {
+                            try {
+                                val obj = Json.parseToJsonElement(msg.text).jsonObject
+                                parsedText = obj["text"]?.jsonPrimitive?.content ?: msg.text
+                            } catch (e: Exception) {}
+                        }
+
                         MessageBubble(
                             text = msg.text,
                             isSentByMe = isOwn,
@@ -236,7 +256,22 @@ fun GroupChatScreen(
                             timestamp = msg.createdAt * 1000,
                             delivered = if (isOwn) msg.delivered else false,
                             senderName = displayName,
-                            senderUserId = msg.senderUserId
+                            senderUserId = msg.senderUserId,
+                            onReply = {
+                                activeReply = ReplyInfo(
+                                    msgId = msg.messageId,
+                                    text = parsedText,
+                                    sender = displayName
+                                )
+                            },
+                            onReplyClick = { parentId ->
+                                val index = messages.indexOfFirst { it.messageId == parentId }
+                                if (index >= 0) {
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(index)
+                                    }
+                                }
+                            }
                         )
                     }
                 }
@@ -271,43 +306,101 @@ fun GroupChatScreen(
             }
 
             HorizontalDivider(color = Border, thickness = 1.dp)
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Panel)
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    placeholder = { Text("Сообщение", color = TextMuted) },
-                    modifier = Modifier.weight(1f),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = InputBg,
-                        unfocusedContainerColor = InputBg,
-                        focusedBorderColor = Accent,
-                        unfocusedBorderColor = Border,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    ),
-                    shape = RoundedCornerShape(24.dp),
-                    maxLines = 4
-                )
-                IconButton(
-                    onClick = {
-                        if (inputText.isNotBlank()) {
-                            viewModel.send(inputText)
-                            inputText = ""
+                activeReply?.let { reply ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(3.dp)
+                                .height(36.dp)
+                                .background(Accent)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = reply.sender,
+                                color = Accent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = reply.text,
+                                color = TextMuted,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
-                    },
-                    enabled = inputText.isNotBlank()
+                        IconButton(onClick = { activeReply = null }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Закрыть",
+                                tint = TextMuted
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Отправить",
-                        tint = if (inputText.isNotBlank()) Accent else TextMuted
+                    OutlinedTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        placeholder = { Text("Сообщение", color = TextMuted) },
+                        modifier = Modifier.weight(1f),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = InputBg,
+                            unfocusedContainerColor = InputBg,
+                            focusedBorderColor = Accent,
+                            unfocusedBorderColor = Border,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        shape = RoundedCornerShape(24.dp),
+                        maxLines = 4
                     )
+                    IconButton(
+                        onClick = {
+                            if (inputText.isNotBlank()) {
+                                val currentReply = activeReply
+                                activeReply = null
+                                val finalPayload = if (currentReply != null) {
+                                    buildJsonObject {
+                                        put("text", inputText)
+                                        put("reply_to", buildJsonObject {
+                                            put("msg_id", currentReply.msgId)
+                                            put("text", currentReply.text)
+                                            put("sender", currentReply.sender)
+                                        })
+                                    }.toString()
+                                } else {
+                                    inputText
+                                }
+                                viewModel.send(finalPayload)
+                                inputText = ""
+                            }
+                        },
+                        enabled = inputText.isNotBlank()
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Отправить",
+                            tint = if (inputText.isNotBlank()) Accent else TextMuted
+                        )
+                    }
                 }
             }
         }
