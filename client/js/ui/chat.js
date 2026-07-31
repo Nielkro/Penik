@@ -541,7 +541,7 @@ export async function renderChat(container, userId) {
       await saveMessage(storedMsg);
       await saveContact({ ...contact, last_message: text, last_ts: now });
 
-      pendingAcks.set(String(msgId), { tempId: msgId, userId: userId });
+      pendingAcks.set(String(msgId), { tempId: tempId, userId: userId });
 
       let sent = false;
       try {

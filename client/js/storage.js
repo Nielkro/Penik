@@ -360,11 +360,11 @@ export async function findAndResolvePendingSentMessage(chatId, timestamp, server
               oldestMsg.client_msg_id = oldId;
             }
             store.put(oldestMsg).onsuccess = () => {
-              resolve(true);
+              resolve(oldId);
             };
           };
         } else {
-          resolve(false);
+          resolve(null);
         }
       }
     };
