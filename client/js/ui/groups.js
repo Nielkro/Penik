@@ -232,7 +232,25 @@ export async function renderGroup(container, groupId) {
   });
 
   const nameEl = el("span", { class: "chat-header-name" }, `Группа ${groupId}`);
+
+  const sidebarToggle = el("button", {
+    class: "icon-btn sidebar-toggle",
+    title: "Toggle Sidebar"
+  }, "◀");
+  const wrapEl = document.getElementById("screens-wrap");
+  if (wrapEl && wrapEl.classList.contains("sidebar-collapsed")) {
+    sidebarToggle.textContent = "▶";
+  }
+  sidebarToggle.addEventListener("click", () => {
+    const wrap = document.getElementById("screens-wrap");
+    if (wrap) {
+      const isCollapsed = wrap.classList.toggle("sidebar-collapsed");
+      sidebarToggle.textContent = isCollapsed ? "▶" : "◀";
+    }
+  });
+
   const header = el("div", { class: "chat-header" },
+    sidebarToggle,
     el("button", { class: "icon-btn chat-back" }, "←"),
     avatarContainer,
     el("div", { class: "chat-header-info" },
