@@ -439,9 +439,10 @@ export async function renderChat(container, userId) {
     const isMine = String(msg.sender_id) === String(me && (me.id || me.user_id));
     const ts = msg.created_at || Date.now();
 
+    const isSelfChat = Number(userId) === Number(myId);
     const statusText = msg.read ? "✓✓" : (msg.delivered ? "✓✓" : "✓");
     const statusClass = "msg-status" + (msg.read ? " msg-status-read" : "");
-    const statusEl = isMine
+    const statusEl = (isMine && !isSelfChat)
       ? el("span", { class: statusClass }, statusText)
       : null;
     if (statusEl) statusEl.dataset.msgId = msg.msg_id;
