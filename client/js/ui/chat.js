@@ -532,7 +532,7 @@ export async function renderChat(container, userId) {
     if (!isFailed) {
       wireMsgCopy(bubble, () => msg.plaintext || "", () => {
         setActiveReply({
-          msg_id: msg.msg_id || msg.client_msg_id,
+          msg_id: bubble.dataset.msgId || msg.msg_id || msg.client_msg_id,
           text: getMessagePreview(msg.plaintext || ""),
           sender: isMine ? "Вы" : (contact.name || contact.nickname || "Собеседник")
         });
