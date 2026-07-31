@@ -408,6 +408,29 @@ async function onMsgRecvGlobal(payload) {
     return;
   }
   const fromUserId = Number(payload.from_user_id);
+
+  // Prevent duplicate rendering of messages sent by this device
+  const existingByClient = payload.client_msg_id ? await getMessageByClientId(payload.client_msg_id) : null;
+  const existingByServer = payload.msg_id ? await getMessage(payload.msg_id) : null;
+  if (existingByClient || existingByServer) {
+    if (existingByClient && String(existingByClient.msg_id) !== String(payload.msg_id)) {
+      await updateMsgIdAndDelivered(existingByClient.msg_id, payload.msg_id, 0);
+      pendingAcks.delete(String(payload.client_msg_id));
+      
+      // Update DOM dataset ID of the message bubble
+      if (_activeChatCallback) {
+        const bubble = document.querySelector(`[data-msg-id="${existingByClient.msg_id}"]`);
+        if (bubble) {
+          bubble.dataset.msgId = payload.msg_id;
+          const statusEl = bubble.querySelector(".msg-status");
+          if (statusEl) {
+            statusEl.dataset.msgId = payload.msg_id;
+          }
+        }
+      }
+    }
+    return;
+  }
   
   let decryptSuccess = true;
   let plaintext = "";
