@@ -345,27 +345,31 @@ class GroupRepository @Inject constructor(
     /* ── Offline history sync (ciphertext) ── */
 
     suspend fun syncHistory(groupId: Long) {
-        // Decrypting envelopes needs the sender's identity key, resolved via the
-        // member list. If members haven't been fetched yet, do it now so history
-        // isn't silently dropped as undecryptable.
-        if (dao.getMembers(groupId).isEmpty()) {
-            runCatching { refreshMembers(groupId) }
-        }
-        var cursor: Long? = null
-        do {
-            val page = api.getGroupHistory(groupId, 100, cursor).body() ?: return
-            for (m in page.messages) {
-                dao.getMessage(groupId, m.messageId)?.let { if (it.serverId != 0L) return@let }
-                handleIncoming(
-                    groupId, m.id, m.messageId, m.senderUserId, m.senderDeviceId, m.keyVersion,
-                    Base64.decode(m.ciphertext, urlB64Flags),
-                    Base64.decode(m.salt, urlB64Flags),
-                    Base64.decode(m.nonce, urlB64Flags),
-                    m.createdAt,
-                )
+        try {
+            // Decrypting envelopes needs the sender's identity key, resolved via the
+            // member list. If members haven't been fetched yet, do it now so history
+            // isn't silently dropped as undecryptable.
+            if (dao.getMembers(groupId).isEmpty()) {
+                runCatching { refreshMembers(groupId) }
             }
-            cursor = page.nextCursor?.toLongOrNull()
-        } while (cursor != null)
+            var cursor: Long? = null
+            do {
+                val page = api.getGroupHistory(groupId, 100, cursor).body() ?: return
+                for (m in page.messages) {
+                    dao.getMessage(groupId, m.messageId)?.let { if (it.serverId != 0L) return@let }
+                    handleIncoming(
+                        groupId, m.id, m.messageId, m.senderUserId, m.senderDeviceId, m.keyVersion,
+                        Base64.decode(m.ciphertext, urlB64Flags),
+                        Base64.decode(m.salt, urlB64Flags),
+                        Base64.decode(m.nonce, urlB64Flags),
+                        m.createdAt,
+                    )
+                }
+                cursor = page.nextCursor?.toLongOrNull()
+            } while (cursor != null)
+        } catch (e: Exception) {
+            Log.e("GroupRepository", "Failed to sync group history", e)
+        }
     }
 
     private suspend fun pullHistoryPacket(groupId: Long) {

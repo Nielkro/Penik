@@ -254,39 +254,44 @@ class WebSocketManager @Inject constructor(
             .header("Sec-WebSocket-Protocol", "access_token, $token")
             .build()
 
-        webSocket = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.d("WS", "Connected")
-                _connectionState.value = ConnectionState.CONNECTED
-                reconnectAttempt = 0
-                
-                // Publish current local public identity key
-                tokenStorage.getPublicKey()?.let { pubKey ->
-                    sendKeyPublish(pubKey)
+        try {
+            webSocket = client.newWebSocket(request, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    Log.d("WS", "Connected")
+                    _connectionState.value = ConnectionState.CONNECTED
+                    reconnectAttempt = 0
+                    
+                    // Publish current local public identity key
+                    tokenStorage.getPublicKey()?.let { pubKey ->
+                        sendKeyPublish(pubKey)
+                    }
+
+                    scope.launch { _events.emit(WebSocketEvent.Connected) }
+                    startPingLoop()
                 }
 
-                scope.launch { _events.emit(WebSocketEvent.Connected) }
-                startPingLoop()
-            }
+                override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                    handleBinaryFrame(bytes.toByteArray())
+                }
 
-            override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                handleBinaryFrame(bytes.toByteArray())
-            }
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    webSocket.close(code, reason)
+                }
 
-            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                webSocket.close(code, reason)
-            }
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    Log.d("WS", "Closed: $reason")
+                    handleDisconnect()
+                }
 
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.d("WS", "Closed: $reason")
-                handleDisconnect()
-            }
-
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e("WS", "Failure: ${t.message}")
-                handleDisconnect()
-            }
-        })
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    Log.e("WS", "Failure: ${t.message}")
+                    handleDisconnect()
+                }
+            })
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to construct WebSocket", e)
+            handleDisconnect()
+        }
     }
 
     private fun handleDisconnect() {
