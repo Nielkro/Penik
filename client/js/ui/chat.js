@@ -18,6 +18,17 @@ import { onPresenceUpdate } from "../presence.js";
 
 export const avatarUpdateTimestamps = new Map();
 
+export function getMessagePreview(plaintext) {
+  if (!plaintext) return "";
+  if (plaintext.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(plaintext);
+      return parsed.text || plaintext;
+    } catch (e) {}
+  }
+  return plaintext;
+}
+
 // ── Chat list ────────────────────────────────────────────────────────────────
 
 export async function renderChatList(container) {
@@ -61,17 +72,6 @@ export async function renderChatList(container) {
     last_message: "",
     last_ts: 0
   } : null;
-
-export function getMessagePreview(plaintext) {
-  if (!plaintext) return "";
-  if (plaintext.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(plaintext);
-      return parsed.text || plaintext;
-    } catch (e) {}
-  }
-  return plaintext;
-}
 
   async function loadSelfChat() {
     if (!selfChatEntry) return;
