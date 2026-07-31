@@ -304,6 +304,7 @@ fun ChatRoomScreen(
                             delivered = message.delivered,
                             deliveredAt = message.deliveredAt,
                             read = message.read,
+                            isSelfChat = isSelfChat,
                             onDelete = { viewModel.deleteMessage(message.localId) }
                         )
                     }

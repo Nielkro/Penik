@@ -501,6 +501,7 @@ fun MessageBubble(
     read: Boolean = false,
     senderName: String? = null,
     senderUserId: Long? = null,
+    isSelfChat: Boolean = false,
     onDelete: (() -> Unit)? = null
 ) {
     val isFailed = text.startsWith("[Ошибка расшифрования") || text.startsWith("[Сообщение не расшифровано")
@@ -640,7 +641,7 @@ fun MessageBubble(
                     modifier = Modifier.align(Alignment.End),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (isSentByMe && !isFailed) {
+                    if (isSentByMe && !isFailed && !isSelfChat) {
                         val statusText = if (read || delivered) "✓✓" else "✓"
                         val statusColor = if (read) Accent else TextMuted
                         Text(
