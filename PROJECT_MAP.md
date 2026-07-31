@@ -30,6 +30,7 @@ Map of core source files for the Penik project. Paths are relative to the projec
 ### Browser client transport
 
 - `client/js/api.js` — Unified browser REST client: attaches tokens, serializes JSON, parses errors, and exports APIs for users, messages, pairing, and groups.
+- `client/js/pairing.js` — Decrypts and imports history transferred from Android into the browser IndexedDB stores.
 - `client/js/ws.js` — Manages the browser WebSocket connection: encodes/decodes MsgPack frames, supports opcodes, ping/pong, request queuing, and exponential backoff reconnection.
 - `client/js/presence.js` — Publishes user presence events and provides handlers for online status updates.
 

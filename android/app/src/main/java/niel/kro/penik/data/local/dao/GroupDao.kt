@@ -20,6 +20,18 @@ interface GroupDao {
     @Query("SELECT * FROM groups ORDER BY id")
     fun observeGroups(): Flow<List<GroupEntity>>
 
+    @Query("SELECT * FROM groups ORDER BY id")
+    suspend fun getAllGroups(): List<GroupEntity>
+
+    @Query("SELECT * FROM group_members ORDER BY groupId, userId")
+    suspend fun getAllMembers(): List<GroupMemberEntity>
+
+    @Query("SELECT * FROM group_keys ORDER BY groupId, keyVersion")
+    suspend fun getAllKeys(): List<GroupKeyEntity>
+
+    @Query("SELECT * FROM group_messages ORDER BY groupId, createdAt")
+    suspend fun getAllMessages(): List<GroupMessageEntity>
+
     @Query("SELECT * FROM groups WHERE id = :groupId")
     suspend fun getGroup(groupId: Long): GroupEntity?
 
@@ -77,4 +89,3 @@ interface GroupDao {
     @Query("SELECT * FROM group_members WHERE groupId = :groupId AND userId = :userId LIMIT 1")
     fun observeMember(groupId: Long, userId: Long): Flow<GroupMemberEntity?>
 }
-

@@ -1,6 +1,7 @@
 import { apiPatch, apiGet, createPairingSession, getPairingSession, uploadPairingHistory, uploadAvatar } from "../api.js";
 import { getAllMessages, getAllGroups, getAllGroupMembers, getAllGroupKeys, getAllGroupMessages } from "../storage.js";
 import { deriveSharedSecret, encryptPairingHistory, generateKeyPair } from "../crypto.js";
+import { importPairingHistory } from "../pairing.js";
 const decodeB64Url = s => {
   const normalized = String(s).trim().replaceAll("-", "+").replaceAll("_", "/");
   const padded = normalized + "=".repeat((4 - normalized.length % 4) % 4);
@@ -420,7 +421,67 @@ export function renderProfile(container) {
     } catch (err) { showToast(err.message || "Не удалось создать сессию", "error"); }
     finally { pairingBtn.disabled = false; }
   });
-  const pairingSection = el("div", { style: "margin-top:16px;border-top:1px solid rgba(255,255,255,.1);padding-top:16px;width:100%;" }, el("h3", { style: "font-size:14px;color:#aaa;" }, "Устройства"), pairingBtn);
+  const receiveHistoryBtn = el("button", { class: "btn-secondary", style: "width:100%;margin-top:8px;cursor:pointer;" }, "Получить историю с телефона");
+  receiveHistoryBtn.addEventListener("click", async () => {
+    receiveHistoryBtn.disabled = true;
+    try {
+      const kp = await generateKeyPair();
+      const session = await createPairingSession({
+        ephemeral_public_key: encodeB64Url(kp.publicKey),
+        transfer_direction: "phone_to_web"
+      });
+      const payload = `penik-pair-v1:${session.session_id}:${session.token}:${session.ephemeral_public_key}`;
+      const canvas = document.createElement("canvas");
+      await QRCode.toCanvas(canvas, payload, { width: 280, margin: 2 });
+      const modal = el("div", { style: "position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;" });
+      const close = () => modal.remove();
+      modal.appendChild(el("div", { style: "width:min(360px,100%);background:#202024;border-radius:16px;padding:24px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.45);" },
+        el("h3", { style: "margin:0 0 10px;color:#fff;" }, "Получение истории"),
+        el("p", { style: "margin:0 0 16px;color:#aaa;font-size:13px;line-height:1.4;" }, "Отсканируйте QR-код телефоном. После подтверждения история будет передана сюда."),
+        canvas,
+        el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;", onclick: close }, "Закрыть")
+      ));
+      document.body.appendChild(modal);
+
+      await new Promise((resolve, reject) => {
+        let finished = false;
+        const finish = value => { if (finished) return; finished = true; clearTimeout(timer); clearInterval(poller); unsubscribe(); resolve(value); };
+        const unsubscribe = ws.on(OP.PAIRING_CLAIMED, event => {
+          if (event.session_id === session.session_id) finish(event);
+        });
+        const poller = setInterval(async () => {
+          try {
+            const current = await getPairingSession(session.session_id);
+            if (current.claimed && current.public_key) finish(current);
+          } catch (_) { /* The timeout reports a failed transfer. */ }
+        }, 1000);
+        const timer = setTimeout(() => {
+          if (finished) return;
+          finished = true;
+          clearInterval(poller);
+          unsubscribe();
+          reject(new Error("Телефон не подтвердил передачу"));
+        }, 5 * 60 * 1000);
+      });
+
+      let state = await getPairingSession(session.session_id);
+      const deadline = Date.now() + 5 * 60 * 1000;
+      while (!state.encrypted_history && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        state = await getPairingSession(session.session_id);
+      }
+      if (!state.encrypted_history) throw new Error("Телефон не передал историю");
+      const secret = await deriveSharedSecret(kp.privateKey, decodeB64Url(state.public_key));
+      await importPairingHistory(state.encrypted_history, secret);
+      close();
+      showToast("История получена с телефона", "success");
+    } catch (err) {
+      showToast(err.message || "Не удалось получить историю", "error");
+    } finally {
+      receiveHistoryBtn.disabled = false;
+    }
+  });
+  const pairingSection = el("div", { style: "margin-top:16px;border-top:1px solid rgba(255,255,255,.1);padding-top:16px;width:100%;" }, el("h3", { style: "font-size:14px;color:#aaa;" }, "Устройства"), pairingBtn, receiveHistoryBtn);
 
   const infoSection = el("div", { class: "profile-info" },
     el("div", { class: "profile-name-row" }, nameDisplay, nameInput),

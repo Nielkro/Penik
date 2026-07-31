@@ -31,6 +31,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.PairingClaimRequest
+import niel.kro.penik.data.network.api.PairingHistoryUploadRequest
 import niel.kro.penik.data.crypto.E2EECrypto
 import niel.kro.penik.data.repository.MessageRepository
 import niel.kro.penik.data.repository.SecureTokenStorage
@@ -74,7 +75,20 @@ class PairingScannerViewModel @Inject constructor(private val api: ApiService, p
                 val kp = crypto.generateX25519KeyPair()
                 val response = api.claimPairingSession(PairingClaimRequest(payload.session, payload.token, java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(kp.second)))
                 if (response.isSuccessful) {
-                    var transfer = response.body()?.encryptedHistory.orEmpty()
+                    val pairing = response.body() ?: throw IllegalStateException("Пустой ответ pairing-сессии")
+                    if (pairing.transferDirection == "phone_to_web") {
+                        val secret = crypto.deriveSharedSecret(kp.first, decodeUrlBase64(pairing.ephemeralPublicKey))
+                        val encryptedHistory = messageRepository.exportPairingHistory(secret)
+                        val upload = api.uploadPairingHistory(
+                            payload.session,
+                            PairingHistoryUploadRequest(encryptedHistory)
+                        )
+                        if (!upload.isSuccessful) throw IllegalStateException("Не удалось передать историю (${upload.code()})")
+                        success = true
+                        message = "История передана в веб-клиент"
+                        return@launch
+                    }
+                    var transfer = pairing.encryptedHistory
                     if (transfer.isBlank()) {
                         transfer = kotlinx.coroutines.withTimeoutOrNull(300_000) {
                             while (true) {

@@ -90,14 +90,21 @@ data class PairingClaimRequest(
 )
 
 @Serializable
+data class PairingHistoryUploadRequest(
+    @SerialName("encrypted_history") val encryptedHistory: String,
+    @SerialName("message_ids") val messageIds: List<Long> = emptyList()
+)
+
+@Serializable
 data class PairingClaimResponse(
     @SerialName("session_id") val sessionId: String,
     @SerialName("ephemeral_public_key") val ephemeralPublicKey: String,
     @SerialName("encrypted_history") val encryptedHistory: String = "",
     @SerialName("owner_user_id") val ownerUserId: Long,
+    @SerialName("transfer_direction") val transferDirection: String = "web_to_phone",
     @SerialName("expires_at") val expiresAt: Long
 )
-@Serializable data class PairingStateResponse(@SerialName("claimed") val claimed: Boolean, @SerialName("public_key") val publicKey: String = "", @SerialName("encrypted_history") val encryptedHistory: String = "")
+@Serializable data class PairingStateResponse(@SerialName("claimed") val claimed: Boolean, @SerialName("public_key") val publicKey: String = "", @SerialName("encrypted_history") val encryptedHistory: String = "", @SerialName("transfer_direction") val transferDirection: String = "web_to_phone")
 
 /* ── Groups ── */
 
