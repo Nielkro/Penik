@@ -593,20 +593,18 @@ async function showMembersModal(groupId, myId) {
     showActionSheet(memberName(m), actions, renderMembers);
   }
 
-  async function renderMembers() {
+  function displayMembersList(membersList) {
     listEl.innerHTML = "";
-    let members = [];
-    try { members = await refreshMembers(groupId); } catch { members = await getGroupMembers(groupId); }
     // Never show removed members.
-    members = members.filter(m => m.status !== "removed");
-    const meRow = members.find(m => Number(m.user_id) === Number(myId));
+    const activeMembers = (membersList || []).filter(m => m.status !== "removed");
+    const meRow = activeMembers.find(m => Number(m.user_id) === Number(myId));
     myRole = meRow ? meRow.role : "member";
 
     // Owner first, then admins, then members; stable within each group.
     const order = { owner: 0, admin: 1, member: 2 };
-    members.sort((a, b) => (order[a.role] ?? 3) - (order[b.role] ?? 3));
+    activeMembers.sort((a, b) => (order[a.role] ?? 3) - (order[b.role] ?? 3));
 
-    for (const m of members) {
+    for (const m of activeMembers) {
       listEl.appendChild(buildMemberRow(m, { myRole, myId, onAction, onProfile: showMemberProfileModal }));
     }
     // Only owner/admin may add members: hide the add row otherwise.
@@ -614,7 +612,26 @@ async function showMembersModal(groupId, myId) {
     renameBtn.style.display = isPrivileged(myRole) ? "inline-block" : "none";
     editAvatarBtn.style.display = isPrivileged(myRole) ? "flex" : "none";
   }
-  await renderMembers();
+
+  async function renderMembers() {
+    // 1. Show cached members immediately
+    let cachedMembers = [];
+    try {
+      cachedMembers = await getGroupMembers(groupId);
+    } catch (e) {
+      console.warn("Failed to read cached members", e);
+    }
+    displayMembersList(cachedMembers);
+
+    // 2. Fetch fresh members from network and update
+    try {
+      const freshMembers = await refreshMembers(groupId);
+      displayMembersList(freshMembers);
+    } catch (e) {
+      console.warn("Failed to refresh members from network", e);
+    }
+  }
+  renderMembers();
 
   addRow.addEventListener("click", async () => {
     let members = [];
