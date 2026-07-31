@@ -430,6 +430,7 @@ class MessageRepository @Inject constructor(
                 val messages = response.body() ?: emptyList()
                 val myId = tokenStorage.getUserId()
                 val newMessages = mutableListOf<HistoryMsgDecrypted>()
+                val bundleCache = mutableMapOf<Long, niel.kro.penik.data.network.api.KeyBundleResponse?>()
                 val entities = buildList {
                     messages.forEach { msg ->
                         if (msg.senderId == myId && msg.clientMsgId != null) {
@@ -445,7 +446,9 @@ class MessageRepository @Inject constructor(
                                     val saltBytes = java.util.Base64.getDecoder().decode(msg.encryptionSalt)
                                     val nonceBytes = java.util.Base64.getDecoder().decode(msg.encryptionNonce)
                                     
-                                    val senderBundle = apiService.getKeyBundle(msg.senderId).body()
+                                    val senderBundle = bundleCache.getOrPut(msg.senderId) {
+                                        apiService.getKeyBundle(msg.senderId).body()
+                                    }
                                     val senderDevice = senderBundle?.devices?.find { it.deviceId == msg.senderDeviceId }
                                     val senderIK = java.util.Base64.getDecoder().decode(senderDevice?.identityKey ?: "")
                                     
