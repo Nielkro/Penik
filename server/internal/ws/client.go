@@ -529,17 +529,28 @@ func (c *Client) handleMsgDelivered(ctx context.Context, msg *MsgDelivered) erro
 		return nil
 	}
 
-	// Fan-out creates a separate row per device. Notify the sender using the
-	// sender's own row id, not the recipient-device row id.
-	senderMsgID := msg.MsgID
+	// Fan-out creates a separate row per device. Notify each sender device using its own row ID.
 	if clientMsgID.Valid {
-		_ = c.db.QueryRowContext(ctx, `SELECT id FROM messages WHERE sender_user_id=? AND client_msg_id=? ORDER BY id ASC LIMIT 1`, senderUserID, clientMsgID.String).Scan(&senderMsgID)
+		rows, err := c.db.QueryContext(ctx, `SELECT recipient_device_id, id FROM messages WHERE sender_user_id=? AND client_msg_id=?`, senderUserID, clientMsgID.String)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var devID, mID int64
+				if err := rows.Scan(&devID, &mID); err == nil {
+					payload, err := msgpack.Marshal(MsgDelivered{MsgID: mID, ClientMsgID: clientMsgID.String})
+					if err == nil {
+						c.hub.SendToDeviceFrame(devID, OpMsgDelivered, payload)
+					}
+				}
+			}
+		}
+	} else {
+		senderMsgID := msg.MsgID
+		frame, err := encodeFrame(OpMsgDelivered, MsgDelivered{MsgID: senderMsgID, ClientMsgID: clientMsgID.String})
+		if err == nil {
+			c.sendToUserDevices(ctx, senderUserID, 0, frame)
+		}
 	}
-	frame, err := encodeFrame(OpMsgDelivered, MsgDelivered{MsgID: senderMsgID, ClientMsgID: clientMsgID.String})
-	if err != nil {
-		return nil
-	}
-	c.sendToUserDevices(ctx, senderUserID, 0, frame)
 	return nil
 }
 
@@ -556,13 +567,27 @@ func (c *Client) handleMsgRead(ctx context.Context, msg *MsgRead) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return nil
 	}
-	senderMsgID := msg.MsgID
+	// Fan-out creates a separate row per device. Notify each sender device using its own row ID.
 	if clientMsgID.Valid {
-		_ = c.db.QueryRowContext(ctx, `SELECT id FROM messages WHERE sender_user_id=? AND client_msg_id=? ORDER BY id ASC LIMIT 1`, senderUserID, clientMsgID.String).Scan(&senderMsgID)
-	}
-	frame, err := encodeFrame(OpMsgRead, MsgRead{MsgID: senderMsgID, ClientMsgID: clientMsgID.String})
-	if err == nil {
-		c.sendToUserDevices(ctx, senderUserID, 0, frame)
+		rows, err := c.db.QueryContext(ctx, `SELECT recipient_device_id, id FROM messages WHERE sender_user_id=? AND client_msg_id=?`, senderUserID, clientMsgID.String)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var devID, mID int64
+				if err := rows.Scan(&devID, &mID); err == nil {
+					payload, err := msgpack.Marshal(MsgRead{MsgID: mID, ClientMsgID: clientMsgID.String})
+					if err == nil {
+						c.hub.SendToDeviceFrame(devID, OpMsgRead, payload)
+					}
+				}
+			}
+		}
+	} else {
+		senderMsgID := msg.MsgID
+		frame, err := encodeFrame(OpMsgRead, MsgRead{MsgID: senderMsgID, ClientMsgID: clientMsgID.String})
+		if err == nil {
+			c.sendToUserDevices(ctx, senderUserID, 0, frame)
+		}
 	}
 	return nil
 }
