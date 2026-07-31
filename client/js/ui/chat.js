@@ -474,30 +474,21 @@ export async function renderChat(container, userId) {
       (msg.plaintext.startsWith("[Сообщение не расшифровано") ||
        msg.plaintext.startsWith("[Ошибка расшифрован"));
 
-    let parsed = null;
-    let actualText = msg.plaintext || "";
-    if (actualText.startsWith("{")) {
-      try {
-        parsed = JSON.parse(actualText);
-        actualText = parsed.text;
-      } catch (e) {}
-    }
-
     const textEl = el("span", { class: "msg-text" });
     if (isFailed) {
       textEl.textContent = "🔒 Сообщение не расшифровано";
     } else {
-      setMsgTextContent(textEl, actualText);
+      setMsgTextContent(textEl, msg.plaintext || "");
     }
 
     let replyRefEl = null;
-    if (parsed && parsed.reply_to) {
+    if (msg.reply_to_msg_id) {
       replyRefEl = el("div", { class: "msg-reply-ref" },
-        el("span", { class: "reply-ref-sender" }, parsed.reply_to.sender || "Пользователь"),
-        el("span", { class: "reply-ref-text" }, parsed.reply_to.text || "")
+        el("span", { class: "reply-ref-sender" }, "Загрузка..."),
+        el("span", { class: "reply-ref-text" }, "...")
       );
       replyRefEl.addEventListener("click", () => {
-        const targetBubble = messagesEl.querySelector(`[data-msg-id="${parsed.reply_to.msg_id}"]`);
+        const targetBubble = messagesEl.querySelector(`[data-msg-id="${msg.reply_to_msg_id}"]`);
         if (targetBubble) {
           targetBubble.scrollIntoView({ behavior: "smooth", block: "center" });
           targetBubble.style.transition = "background-color 0.5s";
@@ -508,6 +499,23 @@ export async function renderChat(container, userId) {
           }, 1000);
         }
       });
+      // Asynchronously resolve parent message text
+      (async () => {
+        try {
+          const parent = await getMessage(msg.reply_to_msg_id);
+          if (parent) {
+            const isParentMine = String(parent.sender_id) === String(me && (me.id || me.user_id));
+            const senderName = isParentMine ? "Вы" : (contact.name || contact.nickname || "Собеседник");
+            replyRefEl.querySelector(".reply-ref-sender").textContent = senderName;
+            replyRefEl.querySelector(".reply-ref-text").textContent = getMessagePreview(parent.plaintext || "");
+          } else {
+            replyRefEl.querySelector(".reply-ref-sender").textContent = "Сообщение";
+            replyRefEl.querySelector(".reply-ref-text").textContent = "Исходное сообщение удалено или недоступно";
+          }
+        } catch (e) {
+          replyRefEl.remove();
+        }
+      })();
     }
 
     const bubbleChildren = [];
@@ -520,10 +528,10 @@ export async function renderChat(container, userId) {
     );
     bubble.dataset.msgId = msg.msg_id;
     if (!isFailed) {
-      wireMsgCopy(bubble, () => actualText, () => {
+      wireMsgCopy(bubble, () => msg.plaintext || "", () => {
         setActiveReply({
           msg_id: msg.msg_id || msg.client_msg_id,
-          text: actualText,
+          text: getMessagePreview(msg.plaintext || ""),
           sender: isMine ? "Вы" : (contact.name || contact.nickname || "Собеседник")
         });
       });
@@ -589,14 +597,16 @@ export async function renderChat(container, userId) {
     const currentReply = activeReply;
     setActiveReply(null);
 
-    const messagePayloadText = currentReply
-      ? JSON.stringify({ text: text, reply_to: currentReply })
-      : text;
-
     const tempId = `tmp-${Date.now()}`;
     const now = Date.now();
     const myId = me && (me.id || me.user_id);
-    appendMessage({ msg_id: tempId, sender_id: myId, plaintext: messagePayloadText, created_at: now });
+    appendMessage({
+      msg_id: tempId,
+      sender_id: myId,
+      plaintext: text,
+      created_at: now,
+      reply_to_msg_id: currentReply ? currentReply.msg_id : null
+    });
     scrollDown.scrollToBottom();
 
     const sendFn = async () => {
@@ -606,17 +616,18 @@ export async function renderChat(container, userId) {
       const msgId = crypto.randomUUID();
 
       // Encrypt payload for all target devices
-      const ciphertexts = await encryptMessagePayload(messagePayloadText, userId);
+      const ciphertexts = await encryptMessagePayload(text, userId);
 
       const storedMsg = {
         msg_id: msgId,
         client_msg_id: msgId,
         chat_id: userId,
         sender_id: myId,
-        plaintext: messagePayloadText,
+        plaintext: text,
         created_at: now,
         delivered: 0,
-        ciphertexts: ciphertexts
+        ciphertexts: ciphertexts,
+        reply_to_msg_id: currentReply ? currentReply.msg_id : null
       };
       await saveMessage(storedMsg);
       await saveContact({ ...contact, last_message: text, last_ts: now });
@@ -629,6 +640,7 @@ export async function renderChat(container, userId) {
           to_user_id: Number(userId),
           devices: ciphertexts,
           msg_id: msgId,
+          reply_to_msg_id: currentReply ? currentReply.msg_id : undefined
         });
       } catch (sendErr) {
         console.warn("WebSocket send threw an error:", sendErr);

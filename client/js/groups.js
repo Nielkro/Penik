@@ -447,7 +447,7 @@ export async function backfillCurrentKey(groupId) {
   return missing.length;
 }
 
-export async function sendGroupMessage(groupId, text) {
+export async function sendGroupMessage(groupId, text, replyToMsgId = null) {
   const group = await dbGetGroup(groupId);
   let version = group ? Number(group.current_key_version) : await currentVersion(groupId);
   let groupKey;
@@ -476,12 +476,15 @@ export async function sendGroupMessage(groupId, text) {
   // Persist an optimistic local copy (pending until ACK assigns a server id).
   await saveGroupMessage({
     group_id: groupId, message_id: messageId, id: 0,
+    reply_to_msg_id: replyToMsgId,
     sender_user_id: myUserId(), sender_device_id: myDeviceId(),
     key_version: version, plaintext: text, created_at: createdAt, delivered: 0,
   });
 
   ws.send(OP.GROUP_MESSAGE_SEND, {
-    group_id: groupId, message_id: messageId, key_version: version,
+    group_id: groupId, message_id: messageId,
+    reply_to_msg_id: replyToMsgId || undefined,
+    key_version: version,
     ciphertext, salt, nonce, created_at: createdAt,
   });
   return messageId;
@@ -540,6 +543,7 @@ export async function decryptIncoming(frame) {
 
   const record = {
     group_id: groupId, message_id: messageId, id: Number(frame.id),
+    reply_to_msg_id: frame.reply_to_msg_id || null,
     sender_user_id: Number(frame.sender_user_id), sender_device_id: Number(frame.sender_device_id),
     key_version: version, plaintext: text, created_at: Number(frame.created_at), delivered: 1,
   };
@@ -610,6 +614,7 @@ export async function syncHistory(groupId) {
       }
       await decryptIncoming({
         group_id: groupId, id: m.id, message_id: m.message_id,
+        reply_to_msg_id: m.reply_to_msg_id || null,
         sender_user_id: m.sender_user_id, sender_device_id: m.sender_device_id,
         key_version: m.key_version, ciphertext: b64uDecode(m.ciphertext),
         salt: b64uDecode(m.salt), nonce: b64uDecode(m.nonce), created_at: m.created_at,

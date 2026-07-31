@@ -509,6 +509,9 @@ fun MessageBubble(
     senderName: String? = null,
     senderUserId: Long? = null,
     isSelfChat: Boolean = false,
+    replyToMsgId: String? = null,
+    replySender: String? = null,
+    replyText: String? = null,
     onReply: (() -> Unit)? = null,
     onReplyClick: ((String) -> Unit)? = null,
     onDelete: (() -> Unit)? = null
@@ -520,24 +523,7 @@ fun MessageBubble(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
-    var parsedText = text
-    var replySender: String? = null
-    var replyText: String? = null
-    var replyMsgId: String? = null
-
-    if (text.startsWith("{")) {
-        try {
-            val obj = Json.parseToJsonElement(text).jsonObject
-            parsedText = obj["text"]?.jsonPrimitive?.content ?: text
-            obj["reply_to"]?.jsonObject?.let { replyObj ->
-                replySender = replyObj["sender"]?.jsonPrimitive?.content
-                replyText = replyObj["text"]?.jsonPrimitive?.content
-                replyMsgId = replyObj["msg_id"]?.jsonPrimitive?.content
-            }
-        } catch (e: Exception) {
-            // Fallback to original text
-        }
-    }
+    val parsedText = text
 
     val bgColor = if (isFailed) {
         Color(0x26EF5350)
@@ -646,8 +632,8 @@ fun MessageBubble(
                             .background(Color(0x0DFFFFFF), shape = RoundedCornerShape(4.dp))
                             .height(IntrinsicSize.Max)
                             .fillMaxWidth()
-                            .clickable(enabled = onReplyClick != null && replyMsgId != null) {
-                                replyMsgId?.let { onReplyClick?.invoke(it) }
+                            .clickable(enabled = onReplyClick != null && replyToMsgId != null) {
+                                replyToMsgId?.let { onReplyClick?.invoke(it) }
                             }
                     ) {
                         Box(

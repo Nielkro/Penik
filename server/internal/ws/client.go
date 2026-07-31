@@ -456,11 +456,11 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 
 		res, err := tx.ExecContext(ctx,
 			`INSERT INTO messages(
-				chat_id, sender_user_id, recipient_user_id, client_msg_id,
+				chat_id, sender_user_id, recipient_user_id, client_msg_id, reply_to_msg_id,
 				plaintext, ciphertext, encryption_salt, encryption_nonce,
 				sender_device_id, recipient_device_id, prekey_id, timestamp, delivered
-			 ) VALUES(?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, 0)`,
-			chatID, senderUserID, recipientID, msg.MsgID,
+			 ) VALUES(?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, 0)`,
+			chatID, senderUserID, recipientID, msg.MsgID, msg.ReplyToMsgID,
 			dev.Ciphertext, dev.Salt, dev.Nonce,
 			c.deviceID, dev.DeviceID, now)
 		if err != nil {
@@ -480,6 +480,7 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 				FromIdentityKey:   senderIKPub,
 				ChatUserID:        chatUserID,
 				MsgID:             messageID,
+				ReplyToMsgID:      msg.ReplyToMsgID,
 				Ciphertext:        dev.Ciphertext,
 				Salt:              dev.Salt,
 				Nonce:             dev.Nonce,
@@ -724,7 +725,7 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 		`SELECT m.id, m.sender_user_id, m.sender_device_id, m.recipient_device_id,
 		        COALESCE(dpk.x25519_pub, ''),
 		        CASE WHEN ch.user1_id = ? THEN ch.user2_id ELSE ch.user1_id END as chat_user_id,
-		        m.ciphertext, m.encryption_salt, m.encryption_nonce, m.timestamp
+		        m.ciphertext, m.encryption_salt, m.encryption_nonce, m.timestamp, m.reply_to_msg_id
 		 FROM messages m
 		 JOIN chats ch ON m.chat_id = ch.id
 		 LEFT JOIN device_public_keys dpk ON m.sender_device_id = dpk.device_id
@@ -758,7 +759,7 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 		var senderIK []byte
 		if err := rows.Scan(
 			&m.MsgID, &m.FromUserID, &m.FromDeviceID, &m.RecipientDeviceID, &senderIK,
-			&m.ChatUserID, &m.Ciphertext, &m.Salt, &m.Nonce, &m.TS,
+			&m.ChatUserID, &m.Ciphertext, &m.Salt, &m.Nonce, &m.TS, &m.ReplyToMsgID,
 		); err != nil {
 			continue
 		}

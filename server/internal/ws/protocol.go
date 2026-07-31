@@ -121,22 +121,24 @@ type E2EPayload struct {
 }
 
 type MsgSendEncrypted struct {
-	ToUserID int64        `msgpack:"to_user_id"`
-	MsgID    string       `msgpack:"msg_id"`
-	Devices  []E2EPayload `msgpack:"devices"`
+	ToUserID     int64        `msgpack:"to_user_id"`
+	MsgID        string       `msgpack:"msg_id"`
+	ReplyToMsgID *string      `msgpack:"reply_to_msg_id,omitempty"`
+	Devices      []E2EPayload `msgpack:"devices"`
 }
 
 type MsgRecvEncrypted struct {
-	FromUserID        int64  `msgpack:"from_user_id"`
-	FromDeviceID      int64  `msgpack:"from_device_id"`
-	RecipientDeviceID int64  `msgpack:"recipient_device_id"`
-	FromIdentityKey   []byte `msgpack:"from_identity_key"`
-	ChatUserID        int64  `msgpack:"chat_user_id"`
-	MsgID             int64  `msgpack:"msg_id"`
-	Ciphertext        []byte `msgpack:"ciphertext"`
-	Salt              []byte `msgpack:"salt"`
-	Nonce             []byte `msgpack:"nonce"`
-	TS                int64  `msgpack:"ts"`
+	FromUserID        int64   `msgpack:"from_user_id"`
+	FromDeviceID      int64   `msgpack:"from_device_id"`
+	RecipientDeviceID int64   `msgpack:"recipient_device_id"`
+	FromIdentityKey   []byte  `msgpack:"from_identity_key"`
+	ChatUserID        int64   `msgpack:"chat_user_id"`
+	MsgID             int64   `msgpack:"msg_id"`
+	ReplyToMsgID      *string `msgpack:"reply_to_msg_id,omitempty"`
+	Ciphertext        []byte  `msgpack:"ciphertext"`
+	Salt              []byte  `msgpack:"salt"`
+	Nonce             []byte  `msgpack:"nonce"`
+	TS                int64   `msgpack:"ts"`
 }
 
 type OfflineBatchEncrypted struct {
@@ -196,27 +198,28 @@ type GroupMemberChanged struct {
 // GroupMessageSend is sent client→server to post an encrypted group message.
 // Sender identity is taken from the authenticated connection, never the payload.
 type GroupMessageSend struct {
-	GroupID    int64  `msgpack:"group_id"`
-	MessageID  string `msgpack:"message_id"`
-	KeyVersion int64  `msgpack:"key_version"`
-	Ciphertext []byte `msgpack:"ciphertext"`
-	Salt       []byte `msgpack:"salt"`
-	Nonce      []byte `msgpack:"nonce"`
-	CreatedAt  int64  `msgpack:"created_at"`
+	GroupID      int64   `msgpack:"group_id"`
+	MessageID    string  `msgpack:"message_id"`
+	ReplyToMsgID *string `msgpack:"reply_to_msg_id,omitempty"`
+	KeyVersion   int64   `msgpack:"key_version"`
+	Ciphertext   []byte  `msgpack:"ciphertext"`
+	Salt         []byte  `msgpack:"salt"`
+	Nonce        []byte  `msgpack:"nonce"`
+	CreatedAt    int64   `msgpack:"created_at"`
 }
 
-// GroupMessageRecv is pushed server→client to deliver a group message.
 type GroupMessageRecv struct {
-	GroupID        int64  `msgpack:"group_id"`
-	ID             int64  `msgpack:"id"`
-	MessageID      string `msgpack:"message_id"`
-	SenderUserID   int64  `msgpack:"sender_user_id"`
-	SenderDeviceID int64  `msgpack:"sender_device_id"`
-	KeyVersion     int64  `msgpack:"key_version"`
-	Ciphertext     []byte `msgpack:"ciphertext"`
-	Salt           []byte `msgpack:"salt"`
-	Nonce          []byte `msgpack:"nonce"`
-	CreatedAt      int64  `msgpack:"created_at"`
+	GroupID        int64   `msgpack:"group_id"`
+	ID             int64   `msgpack:"id"`
+	MessageID      string  `msgpack:"message_id"`
+	ReplyToMsgID   *string `msgpack:"reply_to_msg_id,omitempty"`
+	SenderUserID   int64   `msgpack:"sender_user_id"`
+	SenderDeviceID int64   `msgpack:"sender_device_id"`
+	KeyVersion     int64   `msgpack:"key_version"`
+	Ciphertext     []byte  `msgpack:"ciphertext"`
+	Salt           []byte  `msgpack:"salt"`
+	Nonce          []byte  `msgpack:"nonce"`
+	CreatedAt      int64   `msgpack:"created_at"`
 }
 
 // GroupMessageAck confirms server-side persistence of a GroupMessageSend.

@@ -487,6 +487,7 @@ async function onMsgRecvGlobal(payload) {
     created_at: payload.ts ? payload.ts * 1000 : Date.now(),
     delivered: 1,
     client_msg_id: payload.client_msg_id,
+    reply_to_msg_id: payload.reply_to_msg_id || null,
   };
 
   await saveMessage(inMsg);
@@ -804,6 +805,7 @@ export async function syncMessageHistory() {
         created_at: item.timestamp * 1000,
         delivered: 1,
         client_msg_id: item.client_msg_id,
+        reply_to_msg_id: item.reply_to_msg_id || null,
       };
       await saveMessage(storedMsg);
     }

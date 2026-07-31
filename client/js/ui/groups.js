@@ -341,26 +341,17 @@ export async function renderGroup(container, groupId) {
       }).catch(() => {});
     }
 
-    let parsed = null;
-    let actualText = msg.plaintext || "";
-    if (actualText.startsWith("{")) {
-      try {
-        parsed = JSON.parse(actualText);
-        actualText = parsed.text;
-      } catch (e) {}
-    }
-
     const textEl = el("span", { class: "msg-text" });
-    setMsgTextContent(textEl, actualText);
+    setMsgTextContent(textEl, msg.plaintext || "");
 
     let replyRefEl = null;
-    if (parsed && parsed.reply_to) {
+    if (msg.reply_to_msg_id) {
       replyRefEl = el("div", { class: "msg-reply-ref" },
-        el("span", { class: "reply-ref-sender" }, parsed.reply_to.sender || "Пользователь"),
-        el("span", { class: "reply-ref-text" }, parsed.reply_to.text || "")
+        el("span", { class: "reply-ref-sender" }, "Загрузка..."),
+        el("span", { class: "reply-ref-text" }, "...")
       );
       replyRefEl.addEventListener("click", () => {
-        const targetBubble = messagesEl.querySelector(`[data-mid="${cssEscape(parsed.reply_to.msg_id)}"]`);
+        const targetBubble = messagesEl.querySelector(`[data-mid="${cssEscape(msg.reply_to_msg_id)}"]`);
         if (targetBubble) {
           targetBubble.scrollIntoView({ behavior: "smooth", block: "center" });
           targetBubble.style.transition = "background-color 0.5s";
@@ -371,6 +362,24 @@ export async function renderGroup(container, groupId) {
           }, 1000);
         }
       });
+      // Asynchronously resolve parent message text
+      (async () => {
+        try {
+          const parent = await getGroupMessage(groupId, msg.reply_to_msg_id);
+          if (parent) {
+            const isParentMine = Number(parent.sender_user_id) === Number(myId);
+            const parentSenderId = Number(parent.sender_user_id);
+            const senderName = isParentMine ? "Вы" : (nameById.get(parentSenderId) || parent.sender_name || `#${parentSenderId}`);
+            replyRefEl.querySelector(".reply-ref-sender").textContent = senderName;
+            replyRefEl.querySelector(".reply-ref-text").textContent = getMessagePreview(parent.plaintext || "");
+          } else {
+            replyRefEl.querySelector(".reply-ref-sender").textContent = "Сообщение";
+            replyRefEl.querySelector(".reply-ref-text").textContent = "Исходное сообщение удалено или недоступно";
+          }
+        } catch (e) {
+          replyRefEl.remove();
+        }
+      })();
     }
 
     const timeEl = el("span", { class: "msg-time" });
@@ -388,10 +397,10 @@ export async function renderGroup(container, groupId) {
     const bubble = el("div", { class: `msg-bubble ${mine ? "msg-out" : "msg-in"}`, "data-mid": key },
       ...bubbleChildren
     );
-    wireMsgCopy(bubble, () => actualText, () => {
+    wireMsgCopy(bubble, () => msg.plaintext || "", () => {
       setActiveReply({
         msg_id: msg.message_id,
-        text: actualText,
+        text: getMessagePreview(msg.plaintext || ""),
         sender: mine ? "Вы" : (nameById.get(senderId) || msg.sender_name || `#${senderId}`)
       });
     });
@@ -452,18 +461,15 @@ export async function renderGroup(container, groupId) {
     const currentReply = activeReply;
     setActiveReply(null);
 
-    const messagePayloadText = currentReply
-      ? JSON.stringify({ text: text, reply_to: currentReply })
-      : text;
-
     const createdAt = Date.now();
     try {
       // sendGroupMessage persists the optimistic copy and returns its real
       // message_id; render under that id so the later ACK updates it in place.
-      const messageId = await sendGroupMessage(groupId, messagePayloadText);
+      const messageId = await sendGroupMessage(groupId, text, currentReply ? currentReply.msg_id : null);
       appendMessage({
         message_id: messageId, sender_user_id: myId,
-        plaintext: messagePayloadText, created_at: createdAt, delivered: 0,
+        plaintext: text, created_at: createdAt, delivered: 0,
+        reply_to_msg_id: currentReply ? currentReply.msg_id : null
       });
     } catch (e) {
       showToast(e.message || "Не удалось отправить", "error");

@@ -47,8 +47,8 @@ class SendMessageUseCase @Inject constructor(
     private val messageRepository: MessageRepository,
     private val chatRepository: ChatRepository
 ) {
-    suspend operator fun invoke(toUserId: Long, text: String, chatName: String = "") {
-        messageRepository.sendMessage(toUserId, text)
+    suspend operator fun invoke(toUserId: Long, text: String, chatName: String = "", replyToMsgId: String? = null) {
+        messageRepository.sendMessage(toUserId, text, replyToMsgId)
         chatRepository.updateLastMessage(toUserId, text, System.currentTimeMillis(), name = chatName)
     }
 }
@@ -132,6 +132,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 groupRepository.handleIncoming(
                     event.groupId, event.id, event.messageId, event.senderUserId, event.senderDeviceId,
                     event.keyVersion, event.ciphertext, event.salt, event.nonce, event.createdAt,
+                    event.replyToMsgId
                 )
             }
             is WebSocketEvent.GroupMessageAck -> {

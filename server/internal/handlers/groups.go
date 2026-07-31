@@ -637,7 +637,7 @@ func GetGroupHistory(database *db.DB) http.HandlerFunc {
 			beforeID = b
 		}
 		rows, err := database.QueryContext(r.Context(),
-			`SELECT id,message_id,sender_user_id,sender_device_id,key_version,ciphertext,encryption_salt,encryption_nonce,created_at
+			`SELECT id,message_id,reply_to_msg_id,sender_user_id,sender_device_id,key_version,ciphertext,encryption_salt,encryption_nonce,created_at
 			 FROM group_messages WHERE group_id=? AND id<? ORDER BY id DESC LIMIT ?`,
 			groupID, beforeID, limit)
 		if err != nil {
@@ -650,20 +650,25 @@ func GetGroupHistory(database *db.DB) http.HandlerFunc {
 		for rows.Next() {
 			var id, senderU, senderD, kv, created int64
 			var msgID string
+			var replyTo sql.NullString
 			var ct, salt, nonce []byte
-			if err := rows.Scan(&id, &msgID, &senderU, &senderD, &kv, &ct, &salt, &nonce, &created); err != nil {
+			if err := rows.Scan(&id, &msgID, &replyTo, &senderU, &senderD, &kv, &ct, &salt, &nonce, &created); err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}
 			minID = id
-			out = append(out, map[string]any{
+			m := map[string]any{
 				"id": id, "message_id": msgID, "sender_user_id": senderU, "sender_device_id": senderD,
 				"key_version": kv,
 				"ciphertext":  base64.RawURLEncoding.EncodeToString(ct),
 				"salt":        base64.RawURLEncoding.EncodeToString(salt),
 				"nonce":       base64.RawURLEncoding.EncodeToString(nonce),
 				"created_at":  created,
-			})
+			}
+			if replyTo.Valid {
+				m["reply_to_msg_id"] = replyTo.String
+			}
+			out = append(out, m)
 		}
 		resp := map[string]any{"messages": out}
 		if len(out) == limit {

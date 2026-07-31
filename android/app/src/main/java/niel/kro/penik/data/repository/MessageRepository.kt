@@ -265,7 +265,7 @@ class MessageRepository @Inject constructor(
 
     fun observeLastMessageForChat(chatUserId: Long) = messageDao.observeLastMessageForChat(chatUserId)
 
-    suspend fun sendMessage(toUserId: Long, text: String): String {
+    suspend fun sendMessage(toUserId: Long, text: String, replyToMsgId: String? = null): String {
         val clientMsgId = UUID.randomUUID().toString()
         val myId = tokenStorage.getUserId()
         val isSelfChat = toUserId == myId
@@ -277,7 +277,8 @@ class MessageRepository @Inject constructor(
             text = text,
             timestamp = System.currentTimeMillis(),
             sentByMe = true,
-            delivered = false
+            delivered = false,
+            replyToMsgId = replyToMsgId
         )
         messageDao.insertMessage(entity)
 
@@ -324,7 +325,7 @@ class MessageRepository @Inject constructor(
             )
         }
 
-        webSocketManager.sendEncryptedMessage(toUserId, clientMsgId, payloads)
+        webSocketManager.sendEncryptedMessage(toUserId, clientMsgId, payloads, replyToMsgId)
         return clientMsgId
     }
 
@@ -429,7 +430,8 @@ class MessageRepository @Inject constructor(
             text = decryptedText,
             timestamp = event.ts,
             sentByMe = sentByMe,
-            delivered = true
+            delivered = true,
+            replyToMsgId = event.replyToMsgId
         )
         messageDao.insertMessage(entity)
         if (!sentByMe) {
@@ -501,7 +503,8 @@ class MessageRepository @Inject constructor(
                         text = decryptedText,
                         timestamp = msg.ts,
                         sentByMe = msg.fromUserId == myId,
-                        delivered = true
+                        delivered = true,
+                        replyToMsgId = msg.replyToMsgId
                     ))
                 } else {
                     val text = existing.text

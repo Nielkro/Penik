@@ -14,7 +14,8 @@ data class MessageEntity(
     val sentByMe: Boolean,
     val delivered: Boolean = false,
     val deliveredAt: Long? = null,
-    val read: Boolean = false
+    val read: Boolean = false,
+    val replyToMsgId: String? = null
 )
 
 @Entity(tableName = "chats")
@@ -87,5 +88,6 @@ data class GroupMessageEntity(
     val text: String,
     val createdAt: Long,
     val sentByMe: Boolean = false,
-    val delivered: Boolean = false
+    val delivered: Boolean = false,
+    val replyToMsgId: String? = null
 )

@@ -97,10 +97,10 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    fun sendMessage(text: String) {
+    fun sendMessage(text: String, replyToMsgId: String? = null) {
         if (text.isBlank()) return
         viewModelScope.launch {
-            sendMessageUseCase(chatUserId, text, chatName)
+            sendMessageUseCase(chatUserId, text, chatName, replyToMsgId)
         }
     }
 

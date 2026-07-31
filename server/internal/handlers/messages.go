@@ -19,6 +19,7 @@ type historyMessageResponse struct {
 	RecipientID       int64   `json:"recipient_id"`
 	ChatUserID        int64   `json:"chat_user_id"` // Owner of the other side of the chat
 	ClientMsgID       *string `json:"client_msg_id,omitempty"`
+	ReplyToMsgID      *string `json:"reply_to_msg_id,omitempty"`
 	Plaintext         *string `json:"plaintext,omitempty"`
 	Timestamp         int64   `json:"timestamp"`
 	Delivered         int     `json:"delivered"`
@@ -62,6 +63,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				m.recipient_user_id,
 				CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END,
 				m.client_msg_id,
+				m.reply_to_msg_id,
 				m.plaintext,
 				m.timestamp,
 				m.delivered,
@@ -102,6 +104,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				&m.RecipientID,
 				&m.ChatUserID,
 				&m.ClientMsgID,
+				&m.ReplyToMsgID,
 				&m.Plaintext,
 				&m.Timestamp,
 				&m.Delivered,
