@@ -134,6 +134,7 @@ type MsgRecvEncrypted struct {
 	FromIdentityKey   []byte  `msgpack:"from_identity_key"`
 	ChatUserID        int64   `msgpack:"chat_user_id"`
 	MsgID             int64   `msgpack:"msg_id"`
+	ClientMsgID       string  `msgpack:"client_msg_id"`
 	ReplyToMsgID      *string `msgpack:"reply_to_msg_id"`
 	Ciphertext        []byte  `msgpack:"ciphertext"`
 	Salt              []byte  `msgpack:"salt"`
