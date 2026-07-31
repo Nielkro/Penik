@@ -893,7 +893,13 @@ export async function flushOutbox() {
   const myId = Number(me.id || me.user_id);
   try {
     const allMsgs = await getAllMessages();
-    const unsent = allMsgs.filter(m => String(m.sender_id) === String(myId) && m.delivered === 0 && m.ciphertexts);
+    const unsent = allMsgs.filter(m => {
+      const isMine = String(m.sender_id) === String(myId);
+      const isUnsent = m.delivered === 0;
+      const hasCiphertexts = !!m.ciphertexts;
+      const isRecent = (Date.now() - (m.created_at || 0)) < 30 * 60 * 1000;
+      return isMine && isUnsent && hasCiphertexts && isRecent;
+    });
     for (const msg of unsent) {
       const clientMsgId = msg.client_msg_id || String(msg.msg_id);
       addPendingAck(clientMsgId, { tempId: msg.msg_id, userId: msg.chat_id });
