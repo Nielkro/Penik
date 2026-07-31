@@ -119,27 +119,43 @@ async function wrapKeyForDevices(groupKey, devices, groupId, version) {
 
 /* ── Key acquisition ── */
 
+const activeKeyFetches = new Map();
+
 // ensureGroupKey returns the plaintext group key for a version, fetching and
 // unwrapping the device envelope if it is not cached locally.
 export async function ensureGroupKey(groupId, version) {
   const cached = await getGroupKey(groupId, version);
   if (cached) return cached;
 
-  const env = await getGroupEnvelope(groupId, version);
-  // The envelope was wrapped by sender_device_id using our device's pairwise
-  // secret. We derive the same secret from our private IK and the sender's IK.
-  const senderDeviceId = Number(env.sender_device_id);
-  const senderIK = await fetchDeviceIK(groupId, senderDeviceId);
-  if (!senderIK) throw new Error(`sender device ${senderDeviceId} identity key not found`);
+  const cacheKey = `${groupId}:${version}`;
+  if (activeKeyFetches.has(cacheKey)) {
+    return activeKeyFetches.get(cacheKey);
+  }
 
-  const myPriv = await resolvePrivateIK();
-  const secret = await deriveSharedSecret(myPriv, senderIK);
-  const groupKey = await unwrapGroupKey(
-    b64uDecode(env.encrypted_key), secret, b64uDecode(env.salt), b64uDecode(env.nonce),
-    groupId, version
-  );
-  await saveGroupKey(groupId, version, groupKey);
-  return groupKey;
+  const promise = (async () => {
+    try {
+      const env = await getGroupEnvelope(groupId, version);
+      // The envelope was wrapped by sender_device_id using our device's pairwise
+      // secret. We derive the same secret from our private IK and the sender's IK.
+      const senderDeviceId = Number(env.sender_device_id);
+      const senderIK = await fetchDeviceIK(groupId, senderDeviceId);
+      if (!senderIK) throw new Error(`sender device ${senderDeviceId} identity key not found`);
+
+      const myPriv = await resolvePrivateIK();
+      const secret = await deriveSharedSecret(myPriv, senderIK);
+      const groupKey = await unwrapGroupKey(
+        b64uDecode(env.encrypted_key), secret, b64uDecode(env.salt), b64uDecode(env.nonce),
+        groupId, version
+      );
+      await saveGroupKey(groupId, version, groupKey);
+      return groupKey;
+    } finally {
+      activeKeyFetches.delete(cacheKey);
+    }
+  })();
+
+  activeKeyFetches.set(cacheKey, promise);
+  return promise;
 }
 
 // fetchDeviceIK returns one device's public identity key by scanning the given
