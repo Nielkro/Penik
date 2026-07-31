@@ -908,11 +908,14 @@ export async function flushOutbox() {
         to_user_id: Number(msg.chat_id),
         devices: uniqueDevices,
         msg_id: clientMsgId,
+        reply_to_msg_id: msg.reply_to_msg_id || undefined
       });
       if (!sent) {
         pendingAcks.delete(clientMsgId);
         break;
       }
+      // Introduce a small delay to avoid triggering WebSocket rate limiting on the server
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
   } catch (e) {
     console.warn("Failed to flush outbox:", e);
