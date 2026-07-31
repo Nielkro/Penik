@@ -120,6 +120,7 @@ async function wrapKeyForDevices(groupKey, devices, groupId, version) {
 /* ── Key acquisition ── */
 
 const activeKeyFetches = new Map();
+const failedKeyVersionsGlobal = new Set();
 
 // ensureGroupKey returns the plaintext group key for a version, fetching and
 // unwrapping the device envelope if it is not cached locally.
@@ -128,6 +129,10 @@ export async function ensureGroupKey(groupId, version) {
   if (cached) return cached;
 
   const cacheKey = `${groupId}:${version}`;
+  if (failedKeyVersionsGlobal.has(cacheKey)) {
+    throw new Error(`Key envelope permanently missing (cached 404)`);
+  }
+
   if (activeKeyFetches.has(cacheKey)) {
     return activeKeyFetches.get(cacheKey);
   }
@@ -149,6 +154,11 @@ export async function ensureGroupKey(groupId, version) {
       );
       await saveGroupKey(groupId, version, groupKey);
       return groupKey;
+    } catch (e) {
+      if (e.status === 404) {
+        failedKeyVersionsGlobal.add(cacheKey);
+      }
+      throw e;
     } finally {
       activeKeyFetches.delete(cacheKey);
     }
