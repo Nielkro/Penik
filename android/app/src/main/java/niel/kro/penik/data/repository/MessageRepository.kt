@@ -424,109 +424,113 @@ class MessageRepository @Inject constructor(
     }
 
     suspend fun syncHistory() {
-        val response = apiService.getMessageHistory(limit = 100)
-        if (response.isSuccessful) {
-            val messages = response.body() ?: emptyList()
-            val myId = tokenStorage.getUserId()
-            val newMessages = mutableListOf<HistoryMsgDecrypted>()
-            val entities = buildList {
-                messages.forEach { msg ->
-                    if (msg.senderId == myId && msg.clientMsgId != null) {
-                        messageDao.acknowledgeMessage(msg.clientMsgId, msg.msgId)
-                    }
-                    val existing = messageDao.findMessageByServerId(msg.msgId)
-                    if (existing == null) {
-                        val text = if (msg.plaintext != null) {
-                            msg.plaintext
-                        } else if (msg.ciphertext != null && msg.encryptionSalt != null && msg.encryptionNonce != null) {
-                            try {
-                                val ciphertextBytes = java.util.Base64.getDecoder().decode(msg.ciphertext)
-                                val saltBytes = java.util.Base64.getDecoder().decode(msg.encryptionSalt)
-                                val nonceBytes = java.util.Base64.getDecoder().decode(msg.encryptionNonce)
-                                
-                                val senderBundle = apiService.getKeyBundle(msg.senderId).body()
-                                val senderDevice = senderBundle?.devices?.find { it.deviceId == msg.senderDeviceId }
-                                val senderIK = java.util.Base64.getDecoder().decode(senderDevice?.identityKey ?: "")
-                                
-                                decryptMessagePayload(
-                                    myDeviceId = tokenStorage.getDeviceId(),
-                                    fromIdentityKey = senderIK,
-                                    ciphertext = ciphertextBytes,
-                                    salt = saltBytes,
-                                    nonce = nonceBytes
-                                )
-                            } catch (e: Exception) {
-                                "[Ошибка расшифрования: ${e.message}]"
+        try {
+            val response = apiService.getMessageHistory(limit = 100)
+            if (response.isSuccessful) {
+                val messages = response.body() ?: emptyList()
+                val myId = tokenStorage.getUserId()
+                val newMessages = mutableListOf<HistoryMsgDecrypted>()
+                val entities = buildList {
+                    messages.forEach { msg ->
+                        if (msg.senderId == myId && msg.clientMsgId != null) {
+                            messageDao.acknowledgeMessage(msg.clientMsgId, msg.msgId)
+                        }
+                        val existing = messageDao.findMessageByServerId(msg.msgId)
+                        if (existing == null) {
+                            val text = if (msg.plaintext != null) {
+                                msg.plaintext
+                            } else if (msg.ciphertext != null && msg.encryptionSalt != null && msg.encryptionNonce != null) {
+                                try {
+                                    val ciphertextBytes = java.util.Base64.getDecoder().decode(msg.ciphertext)
+                                    val saltBytes = java.util.Base64.getDecoder().decode(msg.encryptionSalt)
+                                    val nonceBytes = java.util.Base64.getDecoder().decode(msg.encryptionNonce)
+                                    
+                                    val senderBundle = apiService.getKeyBundle(msg.senderId).body()
+                                    val senderDevice = senderBundle?.devices?.find { it.deviceId == msg.senderDeviceId }
+                                    val senderIK = java.util.Base64.getDecoder().decode(senderDevice?.identityKey ?: "")
+                                    
+                                    decryptMessagePayload(
+                                        myDeviceId = tokenStorage.getDeviceId(),
+                                        fromIdentityKey = senderIK,
+                                        ciphertext = ciphertextBytes,
+                                        salt = saltBytes,
+                                        nonce = nonceBytes
+                                    )
+                                } catch (e: Exception) {
+                                    "[Ошибка расшифрования: ${e.message}]"
+                                }
+                            } else {
+                                ""
                             }
-                        } else {
-                            ""
-                        }
-                        
-                        newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
-                        add(MessageEntity(
-                            localId = "server-${msg.msgId}",
-                            serverId = msg.msgId,
-                            chatUserId = msg.chatUserId,
-                            senderId = msg.senderId,
-                            text = text,
-                            timestamp = msg.createdAt * 1000,
-                            sentByMe = msg.senderId == myId,
-                            delivered = msg.delivered == 1,
-                            deliveredAt = msg.deliveredAt,
-                            read = msg.read == 1
-                        ))
-                    } else {
-                        // Update existing message status if changed
-                        if (existing.delivered != (msg.delivered == 1) || existing.read != (msg.read == 1)) {
-                            messageDao.updateStatus(
-                                serverId = msg.msgId,
-                                delivered = msg.delivered == 1,
-                                read = msg.read == 1,
-                                deliveredAt = msg.deliveredAt ?: System.currentTimeMillis()
-                            )
-                        }
-                        val text = existing.text
-                        val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
-                        if (!isFailed) {
+                            
                             newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
+                            add(MessageEntity(
+                                localId = "server-${msg.msgId}",
+                                serverId = msg.msgId,
+                                chatUserId = msg.chatUserId,
+                                senderId = msg.senderId,
+                                text = text,
+                                timestamp = msg.createdAt * 1000,
+                                sentByMe = msg.senderId == myId,
+                                delivered = msg.delivered == 1,
+                                deliveredAt = msg.deliveredAt,
+                                read = msg.read == 1
+                            ))
+                        } else {
+                            // Update existing message status if changed
+                            if (existing.delivered != (msg.delivered == 1) || existing.read != (msg.read == 1)) {
+                                messageDao.updateStatus(
+                                    serverId = msg.msgId,
+                                    delivered = msg.delivered == 1,
+                                    read = msg.read == 1,
+                                    deliveredAt = msg.deliveredAt ?: System.currentTimeMillis()
+                                )
+                            }
+                            val text = existing.text
+                            val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
+                            if (!isFailed) {
+                                newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
+                            }
                         }
                     }
                 }
-            }
-            messageDao.insertMessages(entities)
+                messageDao.insertMessages(entities)
 
-            // WebSocket delivery notifications can be missed while Android is
-            // offline. Reconcile sent-message state from the REST endpoint.
-            messages.filter { it.senderId == myId }
-                .map { it.chatUserId }
-                .distinct()
-                .forEach { peerId ->
-                    val statusResponse = apiService.getMessageStatuses(peerId)
-                    if (statusResponse.isSuccessful) {
-                        statusResponse.body().orEmpty().forEach { status ->
-                            messageDao.updateStatus(status.msgId, status.delivered, status.read)
+                // WebSocket delivery notifications can be missed while Android is
+                // offline. Reconcile sent-message state from the REST endpoint.
+                messages.filter { it.senderId == myId }
+                    .map { it.chatUserId }
+                    .distinct()
+                    .forEach { peerId ->
+                        val statusResponse = apiService.getMessageStatuses(peerId)
+                        if (statusResponse.isSuccessful) {
+                            statusResponse.body().orEmpty().forEach { status ->
+                                messageDao.updateStatus(status.msgId, status.delivered, status.read)
+                            }
                         }
                     }
-                }
 
-            newMessages.groupBy { it.chatUserId }.forEach { (chatUserId, chatMessages) ->
-                val latest = chatMessages.maxBy { it.createdAt }
-                val profile = try {
-                    apiService.getUserProfile(chatUserId).body()
-                } catch (_: Exception) {
-                    null
-                }
-                chatRepository.updateLastMessage(
-                    userId = chatUserId,
-                    text = latest.text,
-                    timestamp = latest.createdAt,
-                    name = profile?.name.orEmpty(),
-                    nickname = profile?.nickname.orEmpty()
-                )
-                repeat(chatMessages.count { it.senderId != myId }) {
-                    chatRepository.incrementUnread(chatUserId)
+                newMessages.groupBy { it.chatUserId }.forEach { (chatUserId, chatMessages) ->
+                    val latest = chatMessages.maxBy { it.createdAt }
+                    val profile = try {
+                        apiService.getUserProfile(chatUserId).body()
+                    } catch (_: Exception) {
+                        null
+                    }
+                    chatRepository.updateLastMessage(
+                        userId = chatUserId,
+                        text = latest.text,
+                        timestamp = latest.createdAt,
+                        name = profile?.name.orEmpty(),
+                        nickname = profile?.nickname.orEmpty()
+                    )
+                    repeat(chatMessages.count { it.senderId != myId }) {
+                        chatRepository.incrementUnread(chatUserId)
+                    }
                 }
             }
+        } catch (e: Exception) {
+            android.util.Log.e("MessageRepository", "Failed to sync history", e)
         }
     }
 
