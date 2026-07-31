@@ -80,16 +80,26 @@ function myDeviceId() { return Number(localStorage.getItem('device_id')); }
 
 /* ── Device enumeration + key wrapping ── */
 
+const bundleCache = new Map();
+
 // activeDeviceKeys returns [{ device_id, ik_pub }] for every device of the given
 // user ids, using the existing pairwise key-bundle endpoint.
 async function fetchDeviceKeys(userIds) {
   const result = [];
+  const now = Date.now();
   for (const uid of userIds) {
     let bundle;
-    try {
-      bundle = await apiGet(`/keys/bundle/${uid}`);
-    } catch {
-      continue;
+    const cached = bundleCache.get(uid);
+    if (cached && now - cached.ts < 10000) { // cache for 10 seconds
+      bundle = cached.bundle;
+    } else {
+      try {
+        bundle = await apiGet(`/keys/bundle/${uid}`);
+        bundleCache.set(uid, { bundle, ts: now });
+      } catch (e) {
+        if (cached) bundle = cached.bundle;
+        else continue;
+      }
     }
     for (const d of bundle?.devices || []) {
       if (!d.identity_key) continue;
@@ -168,15 +178,22 @@ export async function ensureGroupKey(groupId, version) {
   return promise;
 }
 
+const deviceIKCache = new Map();
+
 // fetchDeviceIK returns one device's public identity key by scanning the given
 // group's members' key bundles. groupId is passed explicitly so concurrent
 // lookups for different groups cannot race on shared state.
 async function fetchDeviceIK(groupId, deviceId) {
+  if (deviceIKCache.has(deviceId)) {
+    return deviceIKCache.get(deviceId);
+  }
   const members = await getGroupMembers(groupId).catch(() => []);
   const userIds = members.map(m => m.user_id);
   const devices = await fetchDeviceKeys(userIds.length ? userIds : [myUserId()]);
-  const found = devices.find(d => d.device_id === deviceId);
-  return found ? found.ik_pub : null;
+  for (const d of devices) {
+    deviceIKCache.set(d.device_id, d.ik_pub);
+  }
+  return deviceIKCache.get(deviceId) || null;
 }
 
 /* ── Public API: group lifecycle ── */
