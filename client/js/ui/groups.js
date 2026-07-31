@@ -498,7 +498,7 @@ async function showMembersModal(groupId, myId) {
 
   // "+ Добавить участника" row lives below a divider, styled after the sketch.
   const addRow = el("button", {
-    style: "display:flex;align-items:center;gap:12px;width:100%;background:none;border:none;padding:12px 4px;cursor:pointer;color:#00e676;font-size:16px;text-align:left;",
+    style: "display:none;align-items:center;gap:12px;width:100%;background:none;border:none;padding:12px 4px;cursor:pointer;color:#00e676;font-size:16px;text-align:left;",
   },
     el("span", { style: "width:44px;height:44px;border-radius:50%;background:rgba(0,230,118,0.12);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;" }, "＋"),
     el("span", {}, "Добавить участника"),
