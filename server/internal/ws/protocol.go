@@ -67,12 +67,12 @@ type MsgAck struct {
 // MsgDelivered is sent client→server when the recipient has received a message.
 type MsgDelivered struct {
 	MsgID       int64  `msgpack:"msg_id"`
-	ClientMsgID string `msgpack:"client_msg_id,omitempty"`
+	ClientMsgID string `msgpack:"client_msg_id"`
 }
 
 type MsgRead struct {
 	MsgID       int64  `msgpack:"msg_id"`
-	ClientMsgID string `msgpack:"client_msg_id,omitempty"`
+	ClientMsgID string `msgpack:"client_msg_id"`
 }
 
 // OfflineBatch is pushed on connect with all undelivered messages.
@@ -123,7 +123,7 @@ type E2EPayload struct {
 type MsgSendEncrypted struct {
 	ToUserID     int64        `msgpack:"to_user_id"`
 	MsgID        string       `msgpack:"msg_id"`
-	ReplyToMsgID *string      `msgpack:"reply_to_msg_id,omitempty"`
+	ReplyToMsgID *string      `msgpack:"reply_to_msg_id"`
 	Devices      []E2EPayload `msgpack:"devices"`
 }
 
@@ -134,7 +134,7 @@ type MsgRecvEncrypted struct {
 	FromIdentityKey   []byte  `msgpack:"from_identity_key"`
 	ChatUserID        int64   `msgpack:"chat_user_id"`
 	MsgID             int64   `msgpack:"msg_id"`
-	ReplyToMsgID      *string `msgpack:"reply_to_msg_id,omitempty"`
+	ReplyToMsgID      *string `msgpack:"reply_to_msg_id"`
 	Ciphertext        []byte  `msgpack:"ciphertext"`
 	Salt              []byte  `msgpack:"salt"`
 	Nonce             []byte  `msgpack:"nonce"`
@@ -200,7 +200,7 @@ type GroupMemberChanged struct {
 type GroupMessageSend struct {
 	GroupID      int64   `msgpack:"group_id"`
 	MessageID    string  `msgpack:"message_id"`
-	ReplyToMsgID *string `msgpack:"reply_to_msg_id,omitempty"`
+	ReplyToMsgID *string `msgpack:"reply_to_msg_id"`
 	KeyVersion   int64   `msgpack:"key_version"`
 	Ciphertext   []byte  `msgpack:"ciphertext"`
 	Salt         []byte  `msgpack:"salt"`
@@ -212,7 +212,7 @@ type GroupMessageRecv struct {
 	GroupID        int64   `msgpack:"group_id"`
 	ID             int64   `msgpack:"id"`
 	MessageID      string  `msgpack:"message_id"`
-	ReplyToMsgID   *string `msgpack:"reply_to_msg_id,omitempty"`
+	ReplyToMsgID   *string `msgpack:"reply_to_msg_id"`
 	SenderUserID   int64   `msgpack:"sender_user_id"`
 	SenderDeviceID int64   `msgpack:"sender_device_id"`
 	KeyVersion     int64   `msgpack:"key_version"`
@@ -240,9 +240,9 @@ type GroupMessageRead struct {
 
 type MsgStatusItem struct {
 	MsgID       int64  `msgpack:"msg_id"`
-	ClientMsgID string `msgpack:"client_msg_id,omitempty"`
+	ClientMsgID string `msgpack:"client_msg_id"`
 	Delivered   bool   `msgpack:"delivered"`
-	DeliveredAt *int64 `msgpack:"delivered_at,omitempty"`
+	DeliveredAt *int64 `msgpack:"delivered_at"`
 	Read        bool   `msgpack:"read"`
 }
 
