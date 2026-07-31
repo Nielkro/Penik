@@ -1115,9 +1115,10 @@ func (c *Client) handleMsgRetryResp(ctx context.Context, req *MsgRetryResp) erro
 	// 1. Verify message in database
 	var senderUserID, recipientUserID, senderDeviceID, recipientDeviceID int64
 	var timestamp int64
+	var replyToMsgID *string
 	err = tx.QueryRowContext(ctx,
-		`SELECT sender_user_id, recipient_user_id, sender_device_id, recipient_device_id, timestamp
-		 FROM messages WHERE id=?`, req.MsgID).Scan(&senderUserID, &recipientUserID, &senderDeviceID, &recipientDeviceID, &timestamp)
+		`SELECT sender_user_id, recipient_user_id, sender_device_id, recipient_device_id, timestamp, reply_to_msg_id
+		 FROM messages WHERE id=?`, req.MsgID).Scan(&senderUserID, &recipientUserID, &senderDeviceID, &recipientDeviceID, &timestamp, &replyToMsgID)
 	if err == sql.ErrNoRows {
 		return fmt.Errorf("retry response: message %d not found", req.MsgID)
 	} else if err != nil {
@@ -1158,6 +1159,7 @@ func (c *Client) handleMsgRetryResp(ctx context.Context, req *MsgRetryResp) erro
 		FromIdentityKey:   senderIKPub,
 		ChatUserID:        senderUserID,
 		MsgID:             req.MsgID,
+		ReplyToMsgID:      replyToMsgID,
 		Ciphertext:        req.Ciphertext,
 		Salt:              req.Salt,
 		Nonce:             req.Nonce,
