@@ -5,7 +5,7 @@ import {
   renameGroup, uploadGroupAvatar, rotateAndDistribute
 } from "../groups.js";
 import { apiGet, getUserById } from "../api.js";
-import { getGroupMembers, getAllContacts, getContact, saveContact } from "../storage.js";
+import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessage } from "../storage.js";
 import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
 import {
   el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence,
@@ -316,6 +316,7 @@ export async function renderGroup(container, groupId) {
 
   const seen = new Set();
   function appendMessage(msg) {
+    if (msg.plaintext === "[DELETED]") return;
     const key = msg.message_id;
     if (seen.has(key)) {
       const existing = messagesEl.querySelector(`[data-mid="${cssEscape(key)}"]`);
@@ -414,6 +415,7 @@ export async function renderGroup(container, groupId) {
   messagesEl.appendChild(loadEl);
   let messages = [];
   try { messages = await getGroupMessages(groupId, 100); } catch { messages = []; }
+  messages = messages.filter(m => m.plaintext !== "[DELETED]");
   loadEl.remove();
   for (const m of messages) appendMessage(m);
   scrollDown.scrollToBottom();
