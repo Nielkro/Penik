@@ -760,16 +760,6 @@ fun MessageBubble(
                     modifier = Modifier.align(Alignment.End),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (isSentByMe && !isFailed && !isSelfChat) {
-                        val statusText = if (read || delivered) "✓✓" else "✓"
-                        val statusColor = if (read) Accent else TextMuted
-                        Text(
-                            text = statusText,
-                            color = statusColor,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(end = 4.dp)
-                        )
-                    }
                     val timeLabel = if (showFullTime) formatFullTime(timestamp) else formatTime(timestamp)
                     Text(
                         text = timeLabel,
@@ -777,9 +767,38 @@ fun MessageBubble(
                         fontSize = if (showFullTime) 9.sp else 10.sp,
                         modifier = Modifier
                             .clickable { showFullTime = !showFullTime }
-                            .padding(horizontal = 2.dp),
+                            .padding(end = 4.dp),
                         maxLines = 1
                     )
+                    if (isSentByMe && !isFailed && !isSelfChat) {
+                        val statusColor = if (read) Accent else TextMuted
+                        if (read || delivered) {
+                            // Telegram/WhatsApp style overlapping double checkmarks
+                            Box(modifier = Modifier.width(16.dp)) {
+                                Text(
+                                    text = "✓",
+                                    color = statusColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.offset(x = 0.dp)
+                                )
+                                Text(
+                                    text = "✓",
+                                    color = statusColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.offset(x = 5.dp)
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = "✓",
+                                color = statusColor,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
         }
