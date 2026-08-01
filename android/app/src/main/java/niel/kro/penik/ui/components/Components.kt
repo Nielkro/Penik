@@ -660,6 +660,7 @@ fun MessageBubble(
                 if (replySender != null && replyText != null) {
                     Row(
                         modifier = Modifier
+                            .widthIn(min = 100.dp)
                             .padding(bottom = 6.dp)
                             .background(Color(0x0DFFFFFF), shape = RoundedCornerShape(4.dp))
                             .height(IntrinsicSize.Max)
@@ -673,10 +674,10 @@ fun MessageBubble(
                                 .fillMaxHeight()
                                 .background(Accent)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Column(
                             modifier = Modifier
-                                .padding(vertical = 4.dp, horizontal = 6.dp)
+                                .padding(vertical = 5.dp, horizontal = 8.dp)
                         ) {
                             Text(
                                 text = replySender!!,
