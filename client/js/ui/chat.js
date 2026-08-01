@@ -524,13 +524,18 @@ export async function renderChat(container, userId) {
       })();
     }
 
-    const isSingleLine = !isFailed && !replyRefEl && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 25;
+    const isSingleLine = !isFailed && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 25;
     const bubbleChildren = [];
     if (replyRefEl) bubbleChildren.push(replyRefEl);
-    bubbleChildren.push(textEl);
-    bubbleChildren.push(metaEl);
+    if (isSingleLine) {
+      const inlineRow = el("div", { class: "msg-single-line-row" }, textEl, metaEl);
+      bubbleChildren.push(inlineRow);
+    } else {
+      bubbleChildren.push(textEl);
+      bubbleChildren.push(metaEl);
+    }
 
-    const bubbleClass = `msg-bubble ${isMine ? "msg-out" : "msg-in"}${isFailed ? " msg-failed" : ""}${isSingleLine ? " msg-single-line" : ""}`;
+    const bubbleClass = `msg-bubble ${isMine ? "msg-out" : "msg-in"}${isFailed ? " msg-failed" : ""}`;
     const bubble = el("div", { class: bubbleClass },
       ...bubbleChildren
     );
