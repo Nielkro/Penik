@@ -540,6 +540,8 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 /* Message bubbles */
 .msg-bubble {
   max-width: 76%;
+  width: fit-content;
+  box-sizing: border-box;
   padding: 9px 13px;
   border-radius: 18px;
   word-break: break-word;
@@ -1177,6 +1179,8 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   margin-bottom: 6px;
   font-size: 13px;
   cursor: pointer;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .msg-out .msg-reply-ref {
@@ -1197,6 +1201,6 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 250px;
+  max-width: 100%;
 }
 
