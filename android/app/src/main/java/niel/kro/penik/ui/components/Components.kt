@@ -598,7 +598,7 @@ fun MessageBubble(
                         }
                     )
                 }
-                .widthIn(min = 120.dp, max = 280.dp)
+                .widthIn(max = 280.dp)
                 .clip(BubbleShape(isSentByMe))
                 .background(bgColor)
                 .combinedClickable(
@@ -643,7 +643,7 @@ fun MessageBubble(
                     )
                 }
             }
-            Column(modifier = Modifier.width(IntrinsicSize.Max)) {
+            Column {
                 if (!isSentByMe && senderName != null) {
                     val hue = if (senderUserId != null && senderUserId > 0) (senderUserId * 137) % 360 else 0L
                     val nameColor = Color.hsl(hue.toFloat(), 0.65f, 0.65f)
