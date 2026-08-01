@@ -441,7 +441,7 @@ class MessageRepository @Inject constructor(
         }
 
         val entity = MessageEntity(
-            localId = "server-${event.msgId}",
+            localId = if (!event.clientMsgId.isNullOrBlank()) event.clientMsgId else "server-${event.msgId}",
             serverId = event.msgId,
             chatUserId = event.chatUserId,
             senderId = event.fromUserId,

@@ -109,8 +109,8 @@ export async function getMessage(msgId) {
       res = await get(tx("messages"), Number(msgId));
     }
   }
-  if (!res && typeof msgId === "string") {
-    res = await getMessageByClientId(msgId);
+  if (!res) {
+    res = await getMessageByClientId(String(msgId));
   }
   return res;
 }
