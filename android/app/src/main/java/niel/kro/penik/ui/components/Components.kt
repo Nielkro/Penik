@@ -723,8 +723,8 @@ fun MessageBubble(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Row(
-                            verticalAlignment = Alignment.Bottom,
-                            modifier = Modifier.padding(bottom = 0.dp)
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 3.dp)
                         ) {
                             val timeLabel = if (showFullTime) formatFullTime(timestamp) else formatTime(timestamp)
                             Text(
