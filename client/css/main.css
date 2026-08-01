@@ -714,8 +714,51 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   line-height: 1;
 }
 
+.msg-status-wrapper {
+  display: inline-flex;
+  position: relative;
+  width: 15px;
+  height: 12px;
+  vertical-align: middle;
+}
+
+.msg-status-wrapper .chk {
+  position: absolute;
+  top: 0;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 1;
+  color: rgba(200, 210, 255, 0.5);
+}
+
+.msg-status-wrapper .chk-1 {
+  left: 0;
+}
+
+.msg-status-wrapper .chk-2 {
+  left: 4px;
+}
+
+.msg-status-wrapper.msg-status-read .chk {
+  color: var(--accent) !important;
+}
+
 .msg-status-read {
   color: var(--accent) !important;
+}
+
+.msg-single-line {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-end !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+}
+
+.msg-single-line .msg-meta {
+  margin-top: 0 !important;
+  flex-shrink: 0 !important;
+  margin-bottom: 1px !important;
 }
 
 .msg-system {
