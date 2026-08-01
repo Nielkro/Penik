@@ -326,35 +326,89 @@ export function wireMsgCopy(bubble, getText, onReply) {
     showMsgActionMenu(e.clientX, e.clientY, doCopy, onReply);
   });
 
-  // Long-press for touch devices.
+  // Touch handlers for long-press & swipe-to-reply.
   let pressTimer = null;
-  let pressX = 0;
-  let pressY = 0;
+  let startX = 0;
+  let startY = 0;
+  let currentOffsetX = 0;
+  let isSwiping = false;
+  let triggered = false;
+
   const clearPress = () => {
     if (pressTimer != null) {
       clearTimeout(pressTimer);
       pressTimer = null;
     }
   };
+
+  const resetSwipe = () => {
+    bubble.style.transition = "transform 0.2s ease-out";
+    bubble.style.transform = "";
+    setTimeout(() => { bubble.style.transition = ""; }, 200);
+    currentOffsetX = 0;
+    isSwiping = false;
+    triggered = false;
+  };
+
   bubble.addEventListener("touchstart", (e) => {
     if (e.target.closest?.("a.msg-link")) return;
     const t = e.touches[0];
     if (!t) return;
-    pressX = t.clientX;
-    pressY = t.clientY;
+    startX = t.clientX;
+    startY = t.clientY;
+    currentOffsetX = 0;
+    isSwiping = false;
+    triggered = false;
     clearPress();
     pressTimer = setTimeout(() => {
       pressTimer = null;
-      showMsgActionMenu(pressX, pressY, doCopy, onReply);
+      if (!isSwiping) {
+        showMsgActionMenu(startX, startY, doCopy, onReply);
+      }
     }, 480);
   }, { passive: true });
+
   bubble.addEventListener("touchmove", (e) => {
     const t = e.touches[0];
-    if (!t || pressTimer == null) return;
-    if (Math.abs(t.clientX - pressX) > 10 || Math.abs(t.clientY - pressY) > 10) clearPress();
+    if (!t) return;
+    const diffX = t.clientX - startX;
+    const diffY = t.clientY - startY;
+
+    if (pressTimer != null && (Math.abs(diffX) > 10 || Math.abs(diffY) > 10)) {
+      clearPress();
+    }
+
+    // Swipe horizontally (rightwards for reply)
+    if (!isSwiping && Math.abs(diffX) > Math.abs(diffY) * 1.5 && diffX > 8) {
+      isSwiping = true;
+    }
+
+    if (isSwiping && diffX > 0) {
+      // Resistance dragging formula
+      const maxDrag = 80;
+      const drag = Math.min(diffX * 0.5, maxDrag);
+      currentOffsetX = drag;
+      bubble.style.transform = `translateX(${drag}px)`;
+
+      if (drag >= 50 && !triggered) {
+        triggered = true;
+        if (navigator.vibrate) navigator.vibrate(25);
+      }
+    }
   }, { passive: true });
-  bubble.addEventListener("touchend", clearPress, { passive: true });
-  bubble.addEventListener("touchcancel", clearPress, { passive: true });
+
+  const handleTouchEnd = () => {
+    clearPress();
+    if (isSwiping) {
+      if (triggered && typeof onReply === "function") {
+        onReply();
+      }
+      resetSwipe();
+    }
+  };
+
+  bubble.addEventListener("touchend", handleTouchEnd, { passive: true });
+  bubble.addEventListener("touchcancel", () => { clearPress(); resetSwipe(); }, { passive: true });
 }
 
 function showMsgActionMenu(x, y, onCopy, onReply) {
