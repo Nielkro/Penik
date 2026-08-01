@@ -673,8 +673,8 @@ fun MessageBubble(
                                 .fillMaxHeight()
                                 .background(Accent)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column(modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp)) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column(modifier = Modifier.padding(top = 4.dp, bottom = 4.dp, end = 8.dp)) {
                             Text(
                                 text = replySender!!,
                                 color = if (isSentByMe) Color(0xFFB8D4FF) else Accent,
