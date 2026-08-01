@@ -557,7 +557,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   background: var(--sent-bg);
   color: var(--sent-text);
   border-bottom-right-radius: 4px;
-  padding-right: 17px;
+  padding-right: 12px;
 }
 
 .msg-out::after {
