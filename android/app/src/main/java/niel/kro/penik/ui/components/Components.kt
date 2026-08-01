@@ -610,7 +610,7 @@ fun MessageBubble(
                         showMenu = true
                     }
                 )
-                .padding(start = startPadding, top = 8.dp, end = endPadding, bottom = 8.dp)
+                .padding(start = startPadding, top = 7.dp, end = endPadding, bottom = 5.dp)
         ) {
             DropdownMenu(
                 expanded = showMenu,
