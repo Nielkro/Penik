@@ -663,7 +663,6 @@ fun MessageBubble(
                             .padding(bottom = 6.dp)
                             .background(Color(0x0DFFFFFF), shape = RoundedCornerShape(4.dp))
                             .height(IntrinsicSize.Max)
-                            .fillMaxWidth()
                             .clickable(enabled = onReplyClick != null && replyToMsgId != null) {
                                 replyToMsgId?.let { onReplyClick?.invoke(it) }
                             }
