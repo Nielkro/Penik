@@ -643,7 +643,7 @@ fun MessageBubble(
                     )
                 }
             }
-            Column {
+            Column(modifier = Modifier.width(IntrinsicSize.Max)) {
                 if (!isSentByMe && senderName != null) {
                     val hue = if (senderUserId != null && senderUserId > 0) (senderUserId * 137) % 360 else 0L
                     val nameColor = Color.hsl(hue.toFloat(), 0.65f, 0.65f)
@@ -661,7 +661,6 @@ fun MessageBubble(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .widthIn(min = 70.dp)
                             .padding(bottom = 6.dp)
                             .background(Color(0x0DFFFFFF), shape = RoundedCornerShape(4.dp))
                             .height(IntrinsicSize.Max)
