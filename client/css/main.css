@@ -747,18 +747,19 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   color: var(--accent) !important;
 }
 
-.msg-single-line {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: flex-end !important;
-  justify-content: space-between !important;
-  gap: 8px !important;
+.msg-single-line-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
 }
 
-.msg-single-line .msg-meta {
-  margin-top: 0 !important;
-  flex-shrink: 0 !important;
-  margin-bottom: 1px !important;
+.msg-single-line-row .msg-meta {
+  margin-top: 0;
+  flex-shrink: 0;
+  margin-bottom: 1px;
 }
 
 .msg-system {
