@@ -568,8 +568,8 @@ fun MessageBubble(
             .padding(horizontal = 12.dp, vertical = 2.dp),
         horizontalAlignment = alignment
     ) {
-        val startPadding = if (isSentByMe) 12.dp else 18.dp
-        val endPadding = if (isSentByMe) 18.dp else 12.dp
+        val startPadding = if (isSentByMe) 10.dp else 14.dp
+        val endPadding = if (isSentByMe) 10.dp else 10.dp
         Box(
             modifier = Modifier
                 .offset { androidx.compose.ui.unit.IntOffset(offsetX.toInt(), 0) }
