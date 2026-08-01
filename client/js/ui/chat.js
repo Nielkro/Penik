@@ -453,25 +453,29 @@ export async function renderChat(container, userId) {
     const ts = msg.created_at || Date.now();
 
     const isSelfChat = Number(userId) === Number(myId);
-    const statusText = msg.read ? "✓✓" : (msg.delivered ? "✓✓" : "✓");
-    const statusClass = "msg-status" + (msg.read ? " msg-status-read" : "");
-    const statusEl = (isMine && !isSelfChat)
-      ? el("span", { class: statusClass }, statusText)
-      : null;
-    if (statusEl) statusEl.dataset.msgId = msg.msg_id;
+    let statusEl = null;
+    if (isMine && !isSelfChat) {
+      const isDouble = Boolean(msg.read || msg.delivered);
+      const isRead = Boolean(msg.read);
+      const statusClass = "msg-status-wrapper" + (isRead ? " msg-status-read" : "");
+      if (isDouble) {
+        statusEl = el("span", { class: statusClass },
+          el("span", { class: "chk chk-1" }, "✓"),
+          el("span", { class: "chk chk-2" }, "✓")
+        );
+      } else {
+        statusEl = el("span", { class: statusClass },
+          el("span", { class: "chk chk-1" }, "✓")
+        );
+      }
+      statusEl.dataset.msgId = msg.msg_id;
+    }
 
-    // `delivered_at` is the server acknowledgement time, not the message
-    // creation time. Using it here makes an old message jump to the time it
-    // was delivered/replayed (and can look like it appeared hours later).
-    // Chat bubbles must always show when the message was sent/created.
     const displayTime = ts;
     const timeEl = el("span", { class: "msg-time" });
     wireMsgTime(timeEl, displayTime);
     const metaEl = el("div", { class: "msg-meta" }, timeEl, statusEl);
 
-    // A message that only exists locally as an undecryptable placeholder is
-    // dead weight: it can never be recovered, so mark it visually and let the
-    // user delete it from their local store.
     const isFailed = typeof msg.plaintext === "string" &&
       (msg.plaintext.startsWith("[Сообщение не расшифровано") ||
        msg.plaintext.startsWith("[Ошибка расшифрован"));
@@ -520,12 +524,14 @@ export async function renderChat(container, userId) {
       })();
     }
 
+    const isSingleLine = !isFailed && !replyRefEl && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 25;
     const bubbleChildren = [];
     if (replyRefEl) bubbleChildren.push(replyRefEl);
     bubbleChildren.push(textEl);
     bubbleChildren.push(metaEl);
 
-    const bubble = el("div", { class: `msg-bubble ${isMine ? "msg-out" : "msg-in"}${isFailed ? " msg-failed" : ""}` },
+    const bubbleClass = `msg-bubble ${isMine ? "msg-out" : "msg-in"}${isFailed ? " msg-failed" : ""}${isSingleLine ? " msg-single-line" : ""}`;
+    const bubble = el("div", { class: bubbleClass },
       ...bubbleChildren
     );
     bubble.dataset.msgId = msg.msg_id;
