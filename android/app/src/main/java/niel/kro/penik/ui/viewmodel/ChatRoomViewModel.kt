@@ -86,6 +86,11 @@ class ChatRoomViewModel @Inject constructor(
             val profile = apiService.getUserProfile(chatUserId).body() ?: return
             _online.value = profile.online
             _lastSeen.value = profile.lastSeen
+            // Update name/nickname in case the contact was imported without it
+            val existing = chatRepository.getChat(chatUserId)
+            if (existing != null && (existing.name.isBlank() && existing.nickname.isBlank())) {
+                chatRepository.upsertContact(chatUserId, profile.nickname, profile.name, null)
+            }
         } catch (_: Exception) {
             // Keep showing whatever was last known.
         }
