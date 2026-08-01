@@ -49,6 +49,17 @@ class ChatRepository @Inject constructor(
         chatDao.clearUnread(userId)
     }
 
+    suspend fun getChat(userId: Long): ChatEntity? = chatDao.getChat(userId)
+
+    suspend fun upsertContact(userId: Long, nickname: String, name: String, avatarUrl: String?) {
+        val existing = chatDao.getChat(userId)
+        if (existing == null) {
+            chatDao.insertChat(ChatEntity(userId = userId, nickname = nickname, name = name, avatarUrl = avatarUrl))
+        } else {
+            chatDao.insertChat(existing.copy(nickname = nickname, name = name, avatarUrl = avatarUrl ?: existing.avatarUrl))
+        }
+    }
+
     suspend fun deleteChat(userId: Long) {
         chatDao.deleteChat(userId)
     }

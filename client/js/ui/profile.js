@@ -348,10 +348,10 @@ export function renderProfile(container) {
 
   apiGet("/keys/backup").then(backup => {
     if (!backup || !backup.encrypted_blob) {
-      backupSection.style.display = "none";
+      doRestoreBtn.style.display = "none";
     }
   }).catch(() => {
-    backupSection.style.display = "none";
+    doRestoreBtn.style.display = "none";
   });
 
   const pairingBtn = el("button", { class: "btn-secondary", style: "width:100%;margin-top:8px;cursor:pointer;" }, "Подключить устройство");
