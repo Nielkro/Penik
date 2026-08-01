@@ -514,7 +514,7 @@ class MessageRepository @Inject constructor(
                         decryptedList.add(DecryptedOfflineMsg(msg.chatUserId, decryptedText, msg.ts))
                     }
                     add(MessageEntity(
-                        localId = "server-${msg.msgId}",
+                        localId = if (!msg.clientMsgId.isNullOrBlank()) msg.clientMsgId else "server-${msg.msgId}",
                         serverId = msg.msgId,
                         chatUserId = msg.chatUserId,
                         senderId = msg.fromUserId,
