@@ -46,6 +46,7 @@ sealed class WebSocketEvent {
         val fromIdentityKey: ByteArray,
         val chatUserId: Long,
         val msgId: Long,
+        val clientMsgId: String? = null,
         val ciphertext: ByteArray,
         val salt: ByteArray,
         val nonce: ByteArray,
@@ -667,6 +668,7 @@ class WebSocketManager @Inject constructor(
         var fromIdentityKey = ByteArray(0)
         var chatUserId = 0L
         var msgId = 0L
+        var clientMsgId: String? = null
         var ciphertext = ByteArray(0)
         var salt = ByteArray(0)
         var nonce = ByteArray(0)
@@ -689,6 +691,7 @@ class WebSocketManager @Inject constructor(
                 }
                 "chat_user_id" -> chatUserId = unpackLong()
                 "msg_id" -> msgId = unpackLong()
+                "client_msg_id" -> clientMsgId = unpackString()
                 "reply_to_msg_id" -> replyToMsgId = unpackString()
                 "ciphertext" -> {
                     val len = unpackBinaryHeader()
@@ -713,6 +716,7 @@ class WebSocketManager @Inject constructor(
             fromIdentityKey = fromIdentityKey,
             chatUserId = chatUserId,
             msgId = msgId,
+            clientMsgId = clientMsgId,
             ciphertext = ciphertext,
             salt = salt,
             nonce = nonce,
