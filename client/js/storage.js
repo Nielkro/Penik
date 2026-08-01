@@ -314,6 +314,9 @@ export async function updateMsgId(oldId, newId) {
   const msg = await get(store, oldId);
   if (msg) {
     await del(store, oldId);
+    if (!msg.client_msg_id) {
+      msg.client_msg_id = String(oldId);
+    }
     msg.msg_id = newId;
     await put(store, msg);
     return true;
@@ -328,6 +331,9 @@ export async function updateMsgIdAndDelivered(oldId, newId, deliveredStatus) {
   const msg = await get(store, oldId);
   if (msg) {
     await del(store, oldId);
+    if (!msg.client_msg_id) {
+      msg.client_msg_id = String(oldId);
+    }
     msg.msg_id = newId;
     msg.delivered = deliveredStatus;
     if (deliveredStatus) {
