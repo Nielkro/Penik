@@ -610,7 +610,7 @@ fun MessageBubble(
                         showMenu = true
                     }
                 )
-                .padding(start = startPadding, top = 7.dp, end = endPadding, bottom = 5.dp)
+                .padding(start = startPadding, top = 5.dp, end = endPadding, bottom = 5.dp)
         ) {
             DropdownMenu(
                 expanded = showMenu,
@@ -660,6 +660,7 @@ fun MessageBubble(
                 if (replySender != null && replyText != null) {
                     Row(
                         modifier = Modifier
+                            .fillMaxWidth()
                             .widthIn(min = 70.dp)
                             .padding(bottom = 6.dp)
                             .background(Color(0x0DFFFFFF), shape = RoundedCornerShape(4.dp))
