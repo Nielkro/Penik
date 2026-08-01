@@ -45,6 +45,7 @@ data class HistoryMessageResponse(
     @SerialName("recipient_id") val recipientId: Long,
     @SerialName("chat_user_id") val chatUserId: Long,
     @SerialName("client_msg_id") val clientMsgId: String? = null,
+    @SerialName("reply_to_msg_id") val replyToMsgId: String? = null,
     val plaintext: String? = null,
     @SerialName("timestamp") val createdAt: Long,
     val delivered: Int,

@@ -588,7 +588,7 @@ class MessageRepository @Inject constructor(
                             
                             newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
                             add(MessageEntity(
-                                localId = "server-${msg.msgId}",
+                                localId = msg.clientMsgId ?: "server-${msg.msgId}",
                                 serverId = msg.msgId,
                                 chatUserId = msg.chatUserId,
                                 senderId = msg.senderId,
@@ -597,7 +597,8 @@ class MessageRepository @Inject constructor(
                                 sentByMe = msg.senderId == myId,
                                 delivered = msg.delivered == 1,
                                 deliveredAt = msg.deliveredAt,
-                                read = msg.read == 1
+                                read = msg.read == 1,
+                                replyToMsgId = msg.replyToMsgId
                             ))
                         } else {
                             // Update existing message status if changed
