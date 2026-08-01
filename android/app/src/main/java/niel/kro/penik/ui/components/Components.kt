@@ -701,7 +701,7 @@ fun MessageBubble(
                 if (isSingleLineShort) {
                     val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
                     Row(
-                        verticalAlignment = Alignment.Bottom,
+                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.padding(top = 1.dp)
                     ) {
@@ -724,7 +724,7 @@ fun MessageBubble(
                         Spacer(modifier = Modifier.width(8.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(top = 3.dp)
+                            modifier = Modifier.padding(top = 4.dp)
                         ) {
                             val timeLabel = if (showFullTime) formatFullTime(timestamp) else formatTime(timestamp)
                             Text(
