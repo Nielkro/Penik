@@ -696,107 +696,178 @@ fun MessageBubble(
                     }
                 }
 
-                if (isFailed) {
+                val isSingleLineShort = !isFailed && replySender == null && !parsedText.contains('\n') && parsedText.length <= 25
+
+                if (isSingleLineShort) {
+                    val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Bottom,
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.padding(top = 1.dp)
                     ) {
                         Text(
-                            text = "🔒 Не удалось расшифровать",
+                            text = annotated,
                             color = textColor,
                             fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .combinedClickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = {},
+                                    onLongClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        showMenu = true
+                                    }
+                                )
                         )
-                        if (onDelete != null) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(bottom = 1.dp)
+                        ) {
+                            val timeLabel = if (showFullTime) formatFullTime(timestamp) else formatTime(timestamp)
                             Text(
-                                text = "🗑",
-                                color = Color(0xFFEF5350),
-                                fontSize = 16.sp,
+                                text = timeLabel,
+                                color = TextMuted,
+                                fontSize = if (showFullTime) 9.sp else 10.sp,
                                 modifier = Modifier
-                                    .clickable { onDelete() }
-                                    .padding(start = 8.dp, end = 4.dp)
+                                    .clickable { showFullTime = !showFullTime }
+                                    .padding(end = 4.dp),
+                                maxLines = 1
                             )
+                            if (isSentByMe && !isFailed && !isSelfChat) {
+                                val statusColor = if (read) Accent else TextMuted
+                                if (read || delivered) {
+                                    Box(modifier = Modifier.width(16.dp)) {
+                                        Text(
+                                            text = "✓",
+                                            color = statusColor,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.offset(x = 0.dp)
+                                        )
+                                        Text(
+                                            text = "✓",
+                                            color = statusColor,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.offset(x = 5.dp)
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = "✓",
+                                        color = statusColor,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
-                    if (isExpanded) {
+                } else {
+                    if (isFailed) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "🔒 Не удалось расшифровать",
+                                color = textColor,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (onDelete != null) {
+                                Text(
+                                    text = "🗑",
+                                    color = Color(0xFFEF5350),
+                                    fontSize = 16.sp,
+                                    modifier = Modifier
+                                        .clickable { onDelete() }
+                                        .padding(start = 8.dp, end = 4.dp)
+                                )
+                            }
+                        }
+                        if (isExpanded) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = parsedText,
+                                color = TextPrimary,
+                                fontSize = 13.sp
+                            )
+                        }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = parsedText,
-                            color = TextPrimary,
-                            fontSize = 13.sp
+                            text = if (isExpanded) "Свернуть" else "Раскрыть",
+                            color = Accent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clickable { isExpanded = !isExpanded }
+                                .padding(vertical = 2.dp)
+                        )
+                    } else {
+                        val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
+                        Text(
+                            text = annotated,
+                            color = textColor,
+                            fontSize = 15.sp,
+                            modifier = Modifier.combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {},
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showMenu = true
+                                }
+                            )
                         )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (isExpanded) "Свернуть" else "Раскрыть",
-                        color = Accent,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .clickable { isExpanded = !isExpanded }
-                            .padding(vertical = 2.dp)
-                    )
-                } else {
-                    val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
-                    Text(
-                        text = annotated,
-                        color = textColor,
-                        fontSize = 15.sp,
-                        modifier = Modifier.combinedClickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = {},
-                            onLongClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                showMenu = true
-                            }
-                        )
-                    )
-                }
 
-                Row(
-                    modifier = Modifier.align(Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val timeLabel = if (showFullTime) formatFullTime(timestamp) else formatTime(timestamp)
-                    Text(
-                        text = timeLabel,
-                        color = TextMuted,
-                        fontSize = if (showFullTime) 9.sp else 10.sp,
-                        modifier = Modifier
-                            .clickable { showFullTime = !showFullTime }
-                            .padding(end = 4.dp),
-                        maxLines = 1
-                    )
-                    if (isSentByMe && !isFailed && !isSelfChat) {
-                        val statusColor = if (read) Accent else TextMuted
-                        if (read || delivered) {
-                            // Telegram/WhatsApp style overlapping double checkmarks
-                            Box(modifier = Modifier.width(16.dp)) {
+                    Row(
+                        modifier = Modifier.align(Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val timeLabel = if (showFullTime) formatFullTime(timestamp) else formatTime(timestamp)
+                        Text(
+                            text = timeLabel,
+                            color = TextMuted,
+                            fontSize = if (showFullTime) 9.sp else 10.sp,
+                            modifier = Modifier
+                                .clickable { showFullTime = !showFullTime }
+                                .padding(end = 4.dp),
+                            maxLines = 1
+                        )
+                        if (isSentByMe && !isFailed && !isSelfChat) {
+                            val statusColor = if (read) Accent else TextMuted
+                            if (read || delivered) {
+                                Box(modifier = Modifier.width(16.dp)) {
+                                    Text(
+                                        text = "✓",
+                                        color = statusColor,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.offset(x = 0.dp)
+                                    )
+                                    Text(
+                                        text = "✓",
+                                        color = statusColor,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.offset(x = 5.dp)
+                                    )
+                                }
+                            } else {
                                 Text(
                                     text = "✓",
                                     color = statusColor,
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.offset(x = 0.dp)
-                                )
-                                Text(
-                                    text = "✓",
-                                    color = statusColor,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.offset(x = 5.dp)
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
-                        } else {
-                            Text(
-                                text = "✓",
-                                color = statusColor,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
                         }
                     }
                 }
