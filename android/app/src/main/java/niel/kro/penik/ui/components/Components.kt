@@ -5,6 +5,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -556,6 +559,9 @@ fun MessageBubble(
         Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
     }
 
+    var offsetX by remember { mutableStateOf(0f) }
+    var triggered by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -566,6 +572,32 @@ fun MessageBubble(
         val endPadding = if (isSentByMe) 18.dp else 12.dp
         Box(
             modifier = Modifier
+                .offset { androidx.compose.ui.unit.IntOffset(offsetX.toInt(), 0) }
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            if (triggered && onReply != null) {
+                                onReply()
+                            }
+                            offsetX = 0f
+                            triggered = false
+                        },
+                        onDragCancel = {
+                            offsetX = 0f
+                            triggered = false
+                        },
+                        onHorizontalDrag = { _, dragAmount ->
+                            if (dragAmount > 0 || offsetX > 0) {
+                                val newOffset = (offsetX + dragAmount * 0.5f).coerceIn(0f, 160f)
+                                offsetX = newOffset
+                                if (newOffset >= 100f && !triggered) {
+                                    triggered = true
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                }
+                            }
+                        }
+                    )
+                }
                 .widthIn(max = 280.dp)
                 .clip(BubbleShape(isSentByMe))
                 .background(bgColor)
