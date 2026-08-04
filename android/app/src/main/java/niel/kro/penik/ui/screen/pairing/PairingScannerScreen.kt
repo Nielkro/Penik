@@ -123,7 +123,7 @@ private fun decodeUrlBase64(value: String): ByteArray {
     return java.util.Base64.getUrlDecoder().decode(normalized)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.camera.core.ExperimentalGetImage::class)
 @Composable
 fun PairingScannerScreen(
     onBack: () -> Unit,
