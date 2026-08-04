@@ -730,7 +730,21 @@ export async function renderChat(container, userId) {
 
   sendBtn.addEventListener("click", sendMessage);
   inputEl.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    if (e.key !== "Enter") return;
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl/Cmd+Enter inserts a newline at the caret instead of sending.
+      e.preventDefault();
+      const start = inputEl.selectionStart;
+      const end = inputEl.selectionEnd;
+      const v = inputEl.value;
+      inputEl.value = v.slice(0, start) + "\n" + v.slice(end);
+      inputEl.selectionStart = inputEl.selectionEnd = start + 1;
+      inputEl.style.height = "auto";
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+    } else if (!e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
   });
   inputEl.addEventListener("input", () => {
     inputEl.style.height = "auto";
