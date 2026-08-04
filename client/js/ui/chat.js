@@ -457,7 +457,7 @@ export async function renderChat(container, userId) {
     // Force reflow so re-adding the class restarts the animation on repeat taps.
     void target.offsetWidth;
     target.classList.add("msg-highlight");
-    setTimeout(() => target.classList.remove("msg-highlight"), 1600);
+    setTimeout(() => target.classList.remove("msg-highlight"), 1800);
   }
 
   function appendMessage(msg, prepend = false) {
