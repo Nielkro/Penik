@@ -6,7 +6,7 @@ import {
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, encryptMessagePayload } from "../app.js";
 import {
-  avatar, formatTime, formatDate, formatPresence, el, showToast, spinner,
+  avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon,
   showDeleteChatConfirmModal, showFullscreenImage,
   setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton,
 } from "./components.js";
@@ -284,8 +284,8 @@ export async function renderChat(container, userId) {
   const safetyBtn = isSelfChat ? null : el("button", {
     class: "icon-btn chat-safety",
     title: "Код безопасности E2EE",
-    style: "margin-left: auto; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
-  }, "\uD83D\uDEE1\uFE0F");
+    style: "margin-left: auto; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; padding: 4px;"
+  }, svgIcon("M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", 20, "var(--text-muted)"));
   
   if (safetyBtn) {
     safetyBtn.addEventListener("mouseenter", () => { safetyBtn.style.opacity = "1"; });
@@ -296,8 +296,8 @@ export async function renderChat(container, userId) {
   const deleteBtn = isSelfChat ? null : el("button", {
     class: "icon-btn chat-delete",
     title: "Удалить чат",
-    style: "margin-left: 12px; font-size: 18px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s;"
-  }, "\uD83D\uDDD1\uFE0F");
+    style: "margin-left: 12px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; padding: 4px;"
+  }, svgIcon("M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2", 20, "var(--text-muted)"));
   
   if (deleteBtn) {
     deleteBtn.addEventListener("mouseenter", () => { deleteBtn.style.opacity = "1"; });
@@ -561,7 +561,7 @@ export async function renderChat(container, userId) {
     }
 
     if (isFailed) {
-      const delBtn = el("button", { class: "msg-del-btn", title: "Удалить локально" }, "🗑");
+      const delBtn = el("button", { class: "msg-del-btn", title: "Удалить локально" }, svgIcon("M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2", 14, "var(--danger)"));
       delBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
         try {
