@@ -90,6 +90,7 @@ fun ChatRoomScreen(
     val showDialog by viewModel.showSafetyDialog.collectAsState()
     val showE2eeDialog by viewModel.showE2eeDialog.collectAsState()
     val isSelfChat = viewModel.isSelfChat
+    var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
 
     // Show the button when the last message is not fully visible.
     val showScrollDown by remember {
@@ -244,35 +245,54 @@ fun ChatRoomScreen(
                 title = {
                     val online by viewModel.online.collectAsState()
                     val lastSeen by viewModel.lastSeen.collectAsState()
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = chatName,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            if (!isSelfChat) {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = "Код безопасности E2EE",
-                                    tint = Success,
-                                    modifier = Modifier
-                                        .padding(start = 8.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(Success.copy(alpha = 0.15f))
-                                        .clickable { viewModel.onSafetyClick() }
-                                        .padding(4.dp)
-                                        .size(16.dp)
-                                )
-                            }
-                        }
-                        if (!isSelfChat) {
-                            val presence = niel.kro.penik.ui.util.formatPresence(online, lastSeen)
-                            if (presence.isNotEmpty()) {
+                    val userAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.userAvatarKeys.collectAsState()
+                    val avatarKey = userAvatarKeys[chatUserId]
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        niel.kro.penik.ui.components.UserAvatar(
+                            userId = chatUserId,
+                            name = chatName,
+                            size = 36.dp,
+                            avatarKey = avatarKey,
+                            modifier = Modifier
+                                .padding(end = 12.dp)
+                                .clickable {
+                                    fullscreenAvatarUrl = niel.kro.penik.ui.components.avatarUrlFor(
+                                        isGroup = false,
+                                        id = chatUserId,
+                                        avatarKey = avatarKey
+                                    )
+                                }
+                        )
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = presence,
-                                    fontSize = 12.sp,
-                                    color = if (online) Accent else TextMuted
+                                    text = chatName,
+                                    fontWeight = FontWeight.SemiBold
                                 )
+                                if (!isSelfChat) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = "Код безопасности E2EE",
+                                        tint = Success,
+                                        modifier = Modifier
+                                            .padding(start = 8.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(Success.copy(alpha = 0.15f))
+                                            .clickable { viewModel.onSafetyClick() }
+                                            .padding(4.dp)
+                                            .size(16.dp)
+                                    )
+                                }
+                            }
+                            if (!isSelfChat) {
+                                val presence = niel.kro.penik.ui.util.formatPresence(online, lastSeen)
+                                if (presence.isNotEmpty()) {
+                                    Text(
+                                        text = presence,
+                                        fontSize = 12.sp,
+                                        color = if (online) Accent else TextMuted
+                                    )
+                                }
                             }
                         }
                     }
@@ -464,6 +484,11 @@ fun ChatRoomScreen(
             }
         }
     }
+
+    niel.kro.penik.ui.components.FullscreenImageViewer(
+        url = fullscreenAvatarUrl,
+        onDismiss = { fullscreenAvatarUrl = null }
+    )
 }
 
 data class ReplyInfo(
