@@ -218,8 +218,9 @@ function showMain(screen, userId) {
   const layout = buildMainLayout();
 
   /* Update nav */
+  const activeNavScreen = (screen === 'chat' || screen === 'group') ? 'chats' : screen;
   layout.nav.querySelectorAll('.nav-item').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.screen === screen);
+    btn.classList.toggle('active', btn.dataset.screen === activeNavScreen);
   });
 
   /* Hide all screens */

@@ -391,6 +391,11 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 
 .chatlist-item:hover { background: var(--panel); }
 .chatlist-item:active { background: var(--panel2); }
+.chatlist-item.active {
+  background: var(--accent-dim);
+  border-left: 3px solid var(--accent);
+  padding-left: 13px;
+}
 
 .chatlist-item-info {
   flex: 1;
