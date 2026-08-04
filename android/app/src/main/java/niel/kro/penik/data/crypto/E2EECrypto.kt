@@ -118,7 +118,11 @@ class E2EECrypto {
         val nonce = ByteArray(12).also { SecureRandom().nextBytes(it) }
         val derivedKey = SecretKeySpec(derivedKeyBytes, "ChaCha20")
         
-        val cipher = Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
+        val cipher = try {
+            Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
+        } catch (e: Exception) {
+            Cipher.getInstance("ChaCha20-Poly1305")
+        }
         val spec = IvParameterSpec(nonce)
         cipher.init(Cipher.ENCRYPT_MODE, derivedKey, spec)
         if (aad != null) {
@@ -134,7 +138,11 @@ class E2EECrypto {
             val derivedKeyBytes = hkdfDerive(salt, sharedSecret, info.toByteArray(Charsets.UTF_8), 32)
             val derivedKey = SecretKeySpec(derivedKeyBytes, "ChaCha20")
             
-            val cipher = Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
+            val cipher = try {
+            Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
+        } catch (e: Exception) {
+            Cipher.getInstance("ChaCha20-Poly1305")
+        }
             val spec = IvParameterSpec(nonce)
             cipher.init(Cipher.DECRYPT_MODE, derivedKey, spec)
             if (aad != null) {
