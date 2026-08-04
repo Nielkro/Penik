@@ -110,14 +110,12 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 messageRepository.handleOfflineBatch(event)
                 event.msgs.forEach { msg ->
                     chatRepository.updateLastMessage(msg.chatUserId, msg.text, msg.ts)
-                    chatRepository.incrementUnread(msg.chatUserId)
                 }
             }
             is WebSocketEvent.OfflineBatchEncrypted -> {
                 val decrypted = messageRepository.handleOfflineBatchEncrypted(event)
                 decrypted.forEach { msg ->
                     chatRepository.updateLastMessage(msg.chatUserId, msg.text, msg.ts)
-                    chatRepository.incrementUnread(msg.chatUserId)
                 }
             }
             is WebSocketEvent.ChatPurge -> {

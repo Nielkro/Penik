@@ -648,9 +648,13 @@ class MessageRepository @Inject constructor(
                         name = profile?.name.orEmpty(),
                         nickname = profile?.nickname.orEmpty()
                     )
-                    repeat(chatMessages.count { it.senderId != myId }) {
-                        chatRepository.incrementUnread(chatUserId)
-                    }
+                }
+
+                // Recalculate unread counts strictly from actual unread incoming messages in DB
+                val allEntities = messageDao.getAllMessages()
+                allEntities.groupBy { it.chatUserId }.forEach { (chatUserId, msgs) ->
+                    val unreadCount = msgs.count { !it.sentByMe && !it.read && it.text != "[DELETED]" }
+                    chatDao.updateUnreadCount(chatUserId, unreadCount)
                 }
             }
         } catch (e: Exception) {
