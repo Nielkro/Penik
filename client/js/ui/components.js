@@ -22,7 +22,21 @@ export function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-// Avatar
+export function svgIcon(pathD, size = 20, color = "currentColor", strokeWidth = 2, viewBox = "0 0 24 24") {
+  const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svgEl.setAttribute("viewBox", viewBox);
+  svgEl.setAttribute("width", String(size));
+  svgEl.setAttribute("height", String(size));
+  svgEl.setAttribute("fill", "none");
+  svgEl.setAttribute("stroke", color);
+  svgEl.setAttribute("stroke-width", String(strokeWidth));
+  svgEl.setAttribute("stroke-linecap", "round");
+  svgEl.setAttribute("stroke-linejoin", "round");
+  svgEl.style.display = "block";
+  svgEl.style.flexShrink = "0";
+  svgEl.innerHTML = `<path d="${pathD}"></path>`;
+  return svgEl;
+}
 
 export function avatar(user, size = 40, forceTimestamp = null) {
   if (user && user.name === "Избранное") {

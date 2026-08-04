@@ -156,15 +156,15 @@ function buildMainLayout() {
   nav.className = 'nav-bar';
   nav.innerHTML = `
     <button class="nav-item" data-screen="chats">
-      <span class="nav-icon">💬</span>
+      <span class="nav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg></span>
       <span>Чаты</span>
     </button>
     <button class="nav-item" data-screen="search">
-      <span class="nav-icon">🔍</span>
+      <span class="nav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
       <span>Поиск</span>
     </button>
     <button class="nav-item" data-screen="profile">
-      <span class="nav-icon">👤</span>
+      <span class="nav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></span>
       <span>Профиль</span>
     </button>
   `;
