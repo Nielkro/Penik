@@ -316,6 +316,12 @@ fun InitialsAvatar(
     }
 }
 
+// Collapse newlines and runs of whitespace into single spaces so a multiline
+// message renders as one flowing line in a maxLines=1 preview. Without this a
+// hard line break truncates the preview at the first line (e.g. "Те…").
+private val WHITESPACE_RUN = Regex("\\s+")
+fun messagePreview(text: String): String = text.replace(WHITESPACE_RUN, " ").trim()
+
 @Composable
 fun ChatListItem(
     name: String,
@@ -362,7 +368,7 @@ fun ChatListItem(
             if (lastMessage != null) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = lastMessage,
+                    text = messagePreview(lastMessage),
                     color = TextMuted,
                     fontSize = 14.sp,
                     maxLines = 1,
@@ -423,7 +429,7 @@ fun SearchUserItem(
             if (lastMessage != null) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = lastMessage,
+                    text = messagePreview(lastMessage),
                     color = TextMuted,
                     fontSize = 14.sp,
                     maxLines = 1,
