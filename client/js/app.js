@@ -419,7 +419,7 @@ async function onMsgRecvGlobal(payload) {
 
   if (isMine) {
     const chatPartnerId = payload.chat_user_id || fromUserId;
-    const resolvedOldId = await findAndResolvePendingSentMessage(chatPartnerId, payload.ts * 1000, payload.msg_id);
+    const resolvedOldId = await findAndResolvePendingSentMessage(chatPartnerId, payload.ts * 1000, payload.msg_id, payload.client_msg_id);
     if (resolvedOldId) {
       // Find DOM temporary ID mapping if it exists in pendingAcks
       let domId = resolvedOldId;
@@ -638,7 +638,10 @@ async function onMsgAckReceivedGlobal(payload) {
   try {
     // Server stored the message (single check). Real delivery (double check)
     // arrives later via MSG_DELIVERED once the recipient's device receives it.
-    await updateMsgIdAndDelivered(pending.tempId, serverMsgId, 0);
+    // Resolve by the record's own key (client_msg_id / UUID), NOT pending.tempId
+    // — the latter is only the DOM placeholder id and never matches the stored
+    // key, so the DB record would otherwise stay unresolved with a string id.
+    await updateMsgIdAndDelivered(clientMsgId, serverMsgId, 0);
 
     if (_activeChatCallback && String(_activeChatCallback.userId) === String(pending.userId)) {
       const bubble = document.querySelector(`[data-msg-id="${pending.tempId}"]`);

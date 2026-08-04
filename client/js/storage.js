@@ -144,27 +144,25 @@ export async function getMessages(chatId, limit = 50, before = null) {
     const list = [];
 
     const keyRange = IDBKeyRange.only(String(chatId));
-    const req = index.openCursor(keyRange, "prev");
+    const beforeTime = before == null ? null : (typeof before === "number" ? before : Number(before));
+    const req = index.openCursor(keyRange);
 
     req.onsuccess = (e) => {
       const cursor = e.target.result;
       if (cursor) {
         const msg = cursor.value;
-        if (before) {
-          const beforeTime = typeof before === "number" ? before : Number(before);
-          if (msg.created_at >= beforeTime) {
-            cursor.continue();
-            return;
-          }
+        if (beforeTime == null || msg.created_at < beforeTime) {
+          list.push(msg);
         }
-        list.push(msg);
-        if (list.length < limit) {
-          cursor.continue();
-        } else {
-          resolve(list.reverse());
-        }
+        cursor.continue();
       } else {
-        resolve(list.reverse());
+        // Order strictly by wall-clock time. The cursor yields messages in
+        // primary-key (msg_id / server id) order, which is NOT a reliable proxy
+        // for send time: a pending message can be resolved to a fresh, larger
+        // server id and would otherwise jump to the bottom despite an old
+        // created_at. Sort here and return the newest `limit` messages.
+        list.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+        resolve(list.slice(-limit));
       }
     };
     req.onerror = () => reject(req.error);
@@ -345,44 +343,61 @@ export async function updateMsgIdAndDelivered(oldId, newId, deliveredStatus) {
   return false;
 }
 
-export async function findAndResolvePendingSentMessage(chatId, timestamp, serverId) {
+export async function findAndResolvePendingSentMessage(chatId, timestamp, serverId, clientMsgId = null) {
   await openDB();
   return new Promise((resolve) => {
     const transaction = _db.transaction(["messages"], "readwrite");
     const store = transaction.objectStore("messages");
-    
-    let oldestMsg = null;
-    let oldestKey = null;
+
+    let done = false;
+    let target = null;
+    let targetKey = null;
+
+    const finalize = () => {
+      if (done) return;
+      done = true;
+      if (target) {
+        store.delete(targetKey).onsuccess = () => {
+          const oldId = target.msg_id;
+          target.msg_id = serverId;
+          target.delivered = 1;
+          if (!target.client_msg_id) {
+            target.client_msg_id = oldId;
+          }
+          store.put(target).onsuccess = () => resolve(oldId);
+        };
+      } else {
+        resolve(null);
+      }
+    };
 
     store.openCursor().onsuccess = (e) => {
       const cursor = e.target.result;
       if (cursor) {
         const msg = cursor.value;
         const isTemp = typeof msg.msg_id === "string" && (msg.msg_id.startsWith("tmp-") || msg.msg_id.includes("-"));
-        
+
         if (String(msg.chat_id) === String(chatId) && isTemp) {
-          if (!oldestMsg || msg.created_at < oldestMsg.created_at) {
-            oldestMsg = msg;
-            oldestKey = cursor.key;
+          // Prefer an exact identity match on client_msg_id: this is the only
+          // safe way to map an ACK/echo to the message that produced it. The
+          // old "oldest temp in chat" heuristic could stamp an unrelated
+          // lingering message with a fresh (larger) server id, sending it to
+          // the bottom of the list while keeping its original created_at.
+          if (clientMsgId && String(msg.client_msg_id) === String(clientMsgId)) {
+            target = msg;
+            targetKey = cursor.key;
+            finalize();
+            return;
+          }
+          // Legacy fallback only when we have no client id to match on.
+          if (!clientMsgId && (!target || msg.created_at < target.created_at)) {
+            target = msg;
+            targetKey = cursor.key;
           }
         }
         cursor.continue();
       } else {
-        if (oldestMsg) {
-          store.delete(oldestKey).onsuccess = () => {
-            const oldId = oldestMsg.msg_id;
-            oldestMsg.msg_id = serverId;
-            oldestMsg.delivered = 1;
-            if (!oldestMsg.client_msg_id) {
-              oldestMsg.client_msg_id = oldId;
-            }
-            store.put(oldestMsg).onsuccess = () => {
-              resolve(oldId);
-            };
-          };
-        } else {
-          resolve(null);
-        }
+        finalize();
       }
     };
   });
