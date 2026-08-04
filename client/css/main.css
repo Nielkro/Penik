@@ -1253,3 +1253,29 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   max-width: 100%;
 }
 
+.msg-date-divider {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+}
+
+.msg-date-divider span {
+  padding: 3px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  backdrop-filter: blur(2px);
+}
+
+@keyframes msg-highlight-flash {
+  0%   { box-shadow: 0 0 0 3px rgba(120, 170, 255, 0.6); }
+  100% { box-shadow: 0 0 0 3px rgba(120, 170, 255, 0); }
+}
+
+.msg-bubble.msg-highlight {
+  animation: msg-highlight-flash 1.6s ease-out;
+}
+
+

@@ -420,6 +420,46 @@ export async function renderChat(container, userId) {
   messages = messages.filter(m => m.plaintext !== "[DELETED]");
   loadEl.remove();
 
+  // Tracks the day label of the last message rendered at the bottom so a date
+  // divider can be inserted whenever the day changes.
+  let lastRenderedDay = null;
+
+  function makeDateDivider(ts) {
+    return el("div", { class: "msg-date-divider" },
+      el("span", {}, formatDate(ts))
+    );
+  }
+
+  // Locate a bubble by any id the reply might reference (server id or the
+  // original client_msg_id/UUID), scroll to it and flash a highlight.
+  async function scrollToMessage(refId) {
+    const candidates = [refId];
+    try {
+      const parent = await getMessage(refId);
+      if (parent) {
+        if (parent.msg_id != null) candidates.push(parent.msg_id);
+        if (parent.client_msg_id != null) candidates.push(parent.client_msg_id);
+      }
+    } catch { /* fall back to the raw ref id */ }
+
+    let target = null;
+    for (const cand of candidates) {
+      if (cand == null) continue;
+      target = messagesEl.querySelector(`[data-msg-id="${CSS.escape(String(cand))}"]`);
+      if (target) break;
+    }
+    if (!target) {
+      showToast("Исходное сообщение не найдено", "error");
+      return;
+    }
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.classList.remove("msg-highlight");
+    // Force reflow so re-adding the class restarts the animation on repeat taps.
+    void target.offsetWidth;
+    target.classList.add("msg-highlight");
+    setTimeout(() => target.classList.remove("msg-highlight"), 1600);
+  }
+
   function appendMessage(msg, prepend = false) {
     if (msg.plaintext === "[DELETED]") return;
     if (msg.msg_id) {
@@ -504,16 +544,7 @@ export async function renderChat(container, userId) {
         el("span", { class: "reply-ref-text" }, "...")
       );
       replyRefEl.addEventListener("click", () => {
-        const targetBubble = messagesEl.querySelector(`[data-msg-id="${msg.reply_to_msg_id}"]`);
-        if (targetBubble) {
-          targetBubble.scrollIntoView({ behavior: "smooth", block: "center" });
-          targetBubble.style.transition = "background-color 0.5s";
-          const originalBg = targetBubble.style.backgroundColor;
-          targetBubble.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
-          setTimeout(() => {
-            targetBubble.style.backgroundColor = originalBg;
-          }, 1000);
-        }
+        scrollToMessage(msg.reply_to_msg_id);
       });
       // Asynchronously resolve parent message text
       (async () => {
@@ -575,7 +606,16 @@ export async function renderChat(container, userId) {
       bubble.appendChild(delBtn);
     }
 
-    prepend ? messagesEl.prepend(bubble) : messagesEl.appendChild(bubble);
+    if (prepend) {
+      messagesEl.prepend(bubble);
+    } else {
+      const day = formatDate(ts);
+      if (day && day !== lastRenderedDay) {
+        messagesEl.appendChild(makeDateDivider(ts));
+        lastRenderedDay = day;
+      }
+      messagesEl.appendChild(bubble);
+    }
     scrollDown.update();
     if (!isMine && msg.msg_id) {
       const socket = getWS();
