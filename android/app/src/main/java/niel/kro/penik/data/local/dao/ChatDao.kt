@@ -22,6 +22,9 @@ interface ChatDao {
     @Query("UPDATE chats SET unreadCount = unreadCount + 1 WHERE userId = :userId")
     suspend fun incrementUnread(userId: Long)
 
+    @Query("UPDATE chats SET unreadCount = :unreadCount WHERE userId = :userId")
+    suspend fun updateUnreadCount(userId: Long, unreadCount: Int)
+
     @Query("UPDATE chats SET unreadCount = 0 WHERE userId = :userId")
     suspend fun clearUnread(userId: Long)
 
