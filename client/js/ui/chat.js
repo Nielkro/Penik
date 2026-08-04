@@ -330,6 +330,11 @@ export async function renderChat(container, userId) {
   }
 
   let avatarEl = avatar(contact, 40, avatarUpdateTimestamps.get(String(userId)));
+  avatarEl.style.cursor = "zoom-in";
+  avatarEl.addEventListener("click", () => {
+    const img = avatarEl.querySelector("img");
+    if (img) showFullscreenImage(img.src, contact.name || contact.nickname || "");
+  });
   const nameEl = el("span", { class: "chat-header-name" }, contact.name || contact.nickname);
   // Subtitle: nickname until presence resolves, then "в сети" / "был(а) в сети …".
   const nickEl = el("span", { class: "chat-header-nick" }, contact.nickname ? `@${contact.nickname}` : "");
@@ -376,6 +381,11 @@ export async function renderChat(container, userId) {
       // Leave nickEl to refreshPresence() below — it owns the subtitle once
       // presence resolves, so it doesn't get clobbered by the nickname here.
       const newAvatar = avatar(resolved, 40, avatarUpdateTimestamps.get(String(userId)));
+      newAvatar.style.cursor = "zoom-in";
+      newAvatar.addEventListener("click", () => {
+        const img = newAvatar.querySelector("img");
+        if (img) showFullscreenImage(img.src, resolved.name || resolved.nickname || "");
+      });
       avatarEl.replaceWith(newAvatar);
       avatarEl = newAvatar;
     })();
