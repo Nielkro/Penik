@@ -45,6 +45,10 @@ class ChatRepository @Inject constructor(
         chatDao.incrementUnread(userId)
     }
 
+    suspend fun updateUnreadCount(userId: Long, unreadCount: Int) {
+        chatDao.updateUnreadCount(userId, unreadCount)
+    }
+
     suspend fun clearUnread(userId: Long) {
         chatDao.clearUnread(userId)
     }

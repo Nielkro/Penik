@@ -654,7 +654,7 @@ class MessageRepository @Inject constructor(
                 val allEntities = messageDao.getAllMessages()
                 allEntities.groupBy { it.chatUserId }.forEach { (chatUserId, msgs) ->
                     val unreadCount = msgs.count { !it.sentByMe && !it.read && it.text != "[DELETED]" }
-                    chatDao.updateUnreadCount(chatUserId, unreadCount)
+                    chatRepository.updateUnreadCount(chatUserId, unreadCount)
                 }
             }
         } catch (e: Exception) {
