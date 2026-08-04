@@ -1,9 +1,21 @@
 package niel.kro.penik.data.crypto
 
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.junit.Assert.*
+import org.junit.BeforeClass
 import org.junit.Test
+import java.security.Security
 
 class E2EECryptoTest {
+
+    companion object {
+        @BeforeClass
+        @JvmStatic
+        fun setup() {
+            Security.removeProvider("BC")
+            Security.addProvider(BouncyCastleProvider())
+        }
+    }
 
     private val crypto = E2EECrypto()
 
