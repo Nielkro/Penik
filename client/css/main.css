@@ -1269,13 +1269,30 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   backdrop-filter: blur(2px);
 }
 
-@keyframes msg-highlight-flash {
-  0%   { box-shadow: 0 0 0 3px rgba(120, 170, 255, 0.6); }
-  100% { box-shadow: 0 0 0 3px rgba(120, 170, 255, 0); }
+@keyframes msg-row-flash {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
 }
 
+/* Telegram-style highlight: a full-row band behind the message rather than an
+   outline. z-index:0 turns the bubble into a stacking context so the ::before
+   band (z-index:-1) sits behind the text; the huge negative left/right make it
+   span the whole row and get clipped by .chat-messages' overflow-x:hidden. */
 .msg-bubble.msg-highlight {
-  animation: msg-highlight-flash 1.6s ease-out;
+  z-index: 0;
+}
+
+.msg-bubble.msg-highlight::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: -100vw;
+  right: -100vw;
+  z-index: -1;
+  pointer-events: none;
+  background: rgba(120, 170, 255, 0.22);
+  animation: msg-row-flash 1.8s ease-out forwards;
 }
 
 
