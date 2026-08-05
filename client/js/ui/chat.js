@@ -20,9 +20,14 @@ export const avatarUpdateTimestamps = new Map();
 
 export function getMessagePreview(plaintext) {
   if (!plaintext) return "";
-  if (plaintext.startsWith("{")) {
+  if (typeof plaintext === "string" && plaintext.startsWith("{")) {
     try {
       const parsed = JSON.parse(plaintext);
+      if (parsed.type === "file" && parsed.file) {
+        const isImage = (parsed.file.mime || "").startsWith("image/");
+        const icon = isImage ? "📷 " : "📎 ";
+        return icon + (parsed.text || parsed.file.name || "Файл");
+      }
       return parsed.text || plaintext;
     } catch (e) {}
   }
@@ -353,7 +358,22 @@ export async function renderChat(container, userId) {
   const messagesEl = el("div", { class: "chat-messages", "data-user-id": userId });
   const inputEl    = el("textarea", { class: "chat-input", placeholder: "Сообщение…", rows: "1" });
   const sendBtn    = el("button", { class: "chat-send-btn" }, "➤");
-  const inputRow   = el("div", { class: "chat-input-row" }, inputEl, sendBtn);
+  const fileInput  = el("input", { type: "file", style: "display:none;" });
+  const attachBtn  = el("button", {
+    class: "icon-btn chat-attach-btn",
+    title: "Прикрепить файл",
+    style: "background:transparent;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
+  }, "📎");
+
+  attachBtn.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files && fileInput.files[0]) {
+      handleFileUpload(fileInput.files[0]);
+      fileInput.value = "";
+    }
+  });
+
+  const inputRow   = el("div", { class: "chat-input-row" }, attachBtn, fileInput, inputEl, sendBtn);
   // messagesEl is mounted first so attachScrollDownButton can wrap it in place.
   const chatWrap   = el("div", { class: "chat-wrap" }, header, messagesEl, inputRow);
   container.appendChild(chatWrap);
@@ -651,6 +671,111 @@ export async function renderChat(container, userId) {
     }
   }
 
+  async function handleFileUpload(file) {
+    const textCaption = inputEl.value.trim();
+    inputEl.value = "";
+    inputEl.style.height = "auto";
+    showToast("Загрузка и шифрование файла...", "info");
+
+    try {
+      const fileBuffer = new Uint8Array(await file.arrayBuffer());
+      const { encryptFileChaCha20, encodeKey } = await import("../crypto.js");
+      const { uploadVKAttachment } = await import("../api.js");
+
+      // 1. Encrypt file with ChaCha20-Poly1305
+      const { encryptedBytes, key } = await encryptFileChaCha20(fileBuffer);
+      const encryptedBlob = new Blob([encryptedBytes], { type: "application/octet-stream" });
+
+      // 2. Upload to VK CDN via Go server
+      const cdnUrl = await uploadVKAttachment(encryptedBlob, file.name);
+
+      // 3. Generate thumbnail if image
+      let thumbBase64 = null;
+      if (file.type.startsWith("image/")) {
+        try {
+          thumbBase64 = await createThumbnailBase64(file);
+        } catch (e) {}
+      }
+
+      // 4. Construct file payload
+      const filePayload = {
+        v: 1,
+        type: "file",
+        text: textCaption,
+        file: {
+          url: cdnUrl,
+          name: file.name,
+          size: file.size,
+          mime: file.type || "application/octet-stream",
+          key: encodeKey(key),
+          thumb: thumbBase64
+        }
+      };
+
+      const payloadStr = JSON.stringify(filePayload);
+      const currentReply = activeReply;
+      setActiveReply(null);
+
+      const tempId = `tmp-${Date.now()}`;
+      const now = Date.now();
+      const myId = me && (me.id || me.user_id);
+      appendMessage({
+        msg_id: tempId,
+        sender_id: myId,
+        plaintext: payloadStr,
+        created_at: now,
+        reply_to_msg_id: currentReply ? currentReply.msg_id : null
+      });
+      scrollDown.scrollToBottom();
+
+      const ws = getWS();
+      if (!ws || !ws.isConnected()) throw new Error("Нет соединения");
+
+      const msgId = crypto.randomUUID();
+      const ciphertexts = await encryptMessagePayload(payloadStr, userId);
+
+      const storedMsg = {
+        msg_id: msgId,
+        client_msg_id: msgId,
+        chat_id: userId,
+        sender_id: myId,
+        plaintext: payloadStr,
+        created_at: now,
+        delivered: 0,
+        ciphertexts: ciphertexts,
+        reply_to_msg_id: currentReply ? currentReply.msg_id : null
+      };
+      await saveMessage(storedMsg);
+      await saveContact({ ...contact, last_message: getMessagePreview(payloadStr), last_ts: now });
+
+      pendingAcks.set(String(msgId), { tempId: tempId, userId: userId });
+
+      let sent = false;
+      try {
+        sent = ws.send(0x01, {
+          to_user_id: Number(userId),
+          devices: ciphertexts,
+          msg_id: msgId,
+          reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined
+        });
+      } catch (sendErr) {
+        console.warn("WebSocket send threw an error:", sendErr);
+      }
+
+      if (!sent) {
+        pendingAcks.delete(String(msgId));
+        throw new Error("Не удалось отправить файл (ошибка сокета)");
+      }
+
+      const oldBubble = messagesEl.querySelector(`[data-msg-id="${tempId}"]`);
+      if (oldBubble) oldBubble.dataset.msgId = msgId;
+      showToast("Файл отправлен!", "success");
+    } catch (err) {
+      console.error("handleFileUpload error:", err);
+      showToast("Ошибка при отправке файла: " + (err.message || err), "error");
+    }
+  }
+
   async function sendMessage() {
     const text = inputEl.value.trim();
     if (!text) return;
@@ -876,4 +1001,36 @@ export async function showSafetyExplanationModal(peerId) {
     numberEl.textContent = "Ошибка загрузки";
     console.error("Error calculating safety number:", err);
   }
+}
+
+async function createThumbnailBase64(file, maxSide = 320) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let w = img.width;
+      let h = img.height;
+      if (w > maxSide || h > maxSide) {
+        if (w > h) {
+          h = Math.round((h * maxSide) / w);
+          w = maxSide;
+        } else {
+          w = Math.round((w * maxSide) / h);
+          h = maxSide;
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/webp", 0.6));
+    };
+    img.onerror = (err) => {
+      URL.revokeObjectURL(url);
+      reject(err);
+    };
+    img.src = url;
+  });
 }

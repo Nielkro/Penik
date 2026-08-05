@@ -279,7 +279,22 @@ export async function renderGroup(container, groupId) {
   const messagesEl = el("div", { class: "chat-messages", "data-group-id": groupId });
   const inputEl = el("textarea", { class: "chat-input", placeholder: "Сообщение…", rows: "1" });
   const sendBtn = el("button", { class: "chat-send-btn" }, "➤");
-  const inputRow = el("div", { class: "chat-input-row" }, inputEl, sendBtn);
+  const fileInput = el("input", { type: "file", style: "display:none;" });
+  const attachBtn = el("button", {
+    class: "icon-btn chat-attach-btn",
+    title: "Прикрепить файл",
+    style: "background:transparent;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
+  }, "📎");
+
+  attachBtn.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files && fileInput.files[0]) {
+      handleGroupFileUpload(fileInput.files[0]);
+      fileInput.value = "";
+    }
+  });
+
+  const inputRow = el("div", { class: "chat-input-row" }, attachBtn, fileInput, inputEl, sendBtn);
   const chatWrap = el("div", { class: "chat-wrap" }, header, messagesEl, inputRow);
   container.appendChild(chatWrap);
   const scrollDown = attachScrollDownButton(messagesEl);
@@ -452,6 +467,81 @@ export async function renderGroup(container, groupId) {
       });
       replyBarContainer.appendChild(bar);
       inputEl.focus();
+    }
+  }
+
+  async function handleGroupFileUpload(file) {
+    const textCaption = inputEl.value.trim();
+    inputEl.value = "";
+    showToast("Загрузка и шифрование файла...", "info");
+
+    try {
+      const fileBuffer = new Uint8Array(await file.arrayBuffer());
+      const { encryptFileChaCha20, encodeKey } = await import("../crypto.js");
+      const { uploadVKAttachment } = await import("../api.js");
+
+      // 1. Encrypt file with ChaCha20-Poly1305
+      const { encryptedBytes, key } = await encryptFileChaCha20(fileBuffer);
+      const encryptedBlob = new Blob([encryptedBytes], { type: "application/octet-stream" });
+
+      // 2. Upload to VK CDN via Go server
+      const cdnUrl = await uploadVKAttachment(encryptedBlob, file.name);
+
+      // 3. Generate thumbnail if image
+      let thumbBase64 = null;
+      if (file.type.startsWith("image/")) {
+        try {
+          const img = new Image();
+          const url = URL.createObjectURL(file);
+          thumbBase64 = await new Promise((resolve, reject) => {
+            img.onload = () => {
+              URL.revokeObjectURL(url);
+              let w = img.width, h = img.height, maxSide = 320;
+              if (w > maxSide || h > maxSide) {
+                if (w > h) { h = Math.round((h * maxSide) / w); w = maxSide; }
+                else { w = Math.round((w * maxSide) / h); h = maxSide; }
+              }
+              const canvas = document.createElement("canvas");
+              canvas.width = w; canvas.height = h;
+              canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+              resolve(canvas.toDataURL("image/webp", 0.6));
+            };
+            img.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
+            img.src = url;
+          });
+        } catch (e) {}
+      }
+
+      // 4. Construct file payload
+      const filePayload = {
+        v: 1,
+        type: "file",
+        text: textCaption,
+        file: {
+          url: cdnUrl,
+          name: file.name,
+          size: file.size,
+          mime: file.type || "application/octet-stream",
+          key: encodeKey(key),
+          thumb: thumbBase64
+        }
+      };
+
+      const payloadStr = JSON.stringify(filePayload);
+      const currentReply = activeReply;
+      setActiveReply(null);
+
+      const createdAt = Date.now();
+      const messageId = await sendGroupMessage(groupId, payloadStr, currentReply ? currentReply.msg_id : null);
+      appendMessage({
+        message_id: messageId, sender_user_id: myId,
+        plaintext: payloadStr, created_at: createdAt, delivered: 0,
+        reply_to_msg_id: currentReply ? currentReply.msg_id : null
+      });
+      showToast("Файл отправлен!", "success");
+    } catch (e) {
+      console.error("handleGroupFileUpload error:", e);
+      showToast(e.message || "Не удалось отправить файл", "error");
     }
   }
 
