@@ -15,6 +15,7 @@ type Config struct {
 	MaxBodySize    int64
 	AllowedOrigins string // comma-separated list, "*" for any
 	UploadDir      string
+	VKBotToken     string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -23,9 +24,10 @@ func Load() *Config {
 		Port:           getEnv("PORT", "8143"),
 		DBPath:         getEnv("DB_PATH", "./data/messenger.db"),
 		MaxAvatarSize:  getEnvInt64("MAX_AVATAR_SIZE", 5*1024*1024),
-		MaxBodySize:    getEnvInt64("MAX_BODY_SIZE", 6*1024*1024), // must stay >= MaxAvatarSize + multipart overhead
+		MaxBodySize:    getEnvInt64("MAX_BODY_SIZE", 210*1024*1024), // supports uploads up to ~200MB
 		AllowedOrigins: getEnv("ALLOWED_ORIGINS", "*"),
 		UploadDir:      getEnv("UPLOAD_DIR", "./data/upload"),
+		VKBotToken:     getEnv("VK_BOT_TOKEN", ""),
 	}
 
 	ttlStr := getEnv("SESSION_TTL", "720h")
