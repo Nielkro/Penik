@@ -608,6 +608,17 @@ export async function renderChat(container, userId) {
           text: getMessagePreview(msg.plaintext || ""),
           sender: isMine ? "Вы" : (contact.name || contact.nickname || "Собеседник")
         });
+      }, async () => {
+        const ok = await showConfirmModal("Удалить сообщение?", "Сообщение будет удалено на вашем устройстве.");
+        if (!ok) return;
+        try {
+          await deleteMessage(msg.msg_id);
+          bubble.remove();
+          triggerChatListUpdate();
+          showToast("Сообщение удалено");
+        } catch (err) {
+          showToast("Не удалось удалить сообщение", "error");
+        }
       });
     }
 
