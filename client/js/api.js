@@ -129,6 +129,35 @@ export async function uploadAvatar(file) {
   return true;
 }
 
+export async function uploadVKAttachment(encryptedFileBlob, filename = 'encrypted.bin') {
+  const formData = new FormData();
+  formData.append('file', encryptedFileBlob, filename);
+  const token = getToken();
+  const headers = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}/attachments/vk-upload`, {
+    method: 'POST',
+    headers,
+    body: formData
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = text;
+    try {
+      const data = JSON.parse(text);
+      if (data && data.error) msg = data.error;
+    } catch {}
+    const err = new Error(msg || 'Не удалось загрузить файл на VK CDN');
+    err.status = res.status;
+    throw err;
+  }
+  window.dispatchEvent(new Event('penik:rest-success'));
+  const json = await res.json();
+  return json.url;
+}
+
 export async function searchUsers(query) {
   const encoded = encodeURIComponent(query);
   return get(`/users/search?q=${encoded}`);

@@ -216,6 +216,16 @@ export function setMsgTextContent(el, text) {
   if (!text) return;
 
   const s = String(text);
+  if (s.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(s);
+      if (parsed.type === "file" && parsed.file) {
+        renderFileCard(el, parsed);
+        return;
+      }
+    } catch (e) {}
+  }
+
   let last = 0;
   MSG_URL_RE.lastIndex = 0;
   let m;
@@ -245,6 +255,105 @@ export function setMsgTextContent(el, text) {
   if (last < s.length) {
     el.appendChild(document.createTextNode(s.slice(last)));
   }
+}
+
+function renderFileCard(container, fileMsg) {
+  const f = fileMsg.file;
+  const isImage = (f.mime || "").startsWith("image/");
+  const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:8px;max-width:320px;" });
+
+  if (isImage && f.thumb) {
+    const thumbImg = el("img", {
+      src: f.thumb,
+      alt: f.name || "Изображение",
+      style: "width:100%;max-height:220px;object-fit:cover;border-radius:8px;cursor:pointer;background:rgba(255,255,255,0.05);"
+    });
+    thumbImg.addEventListener("click", (e) => {
+      e.stopPropagation();
+      downloadAndDecryptFile(f, true);
+    });
+    fileCard.appendChild(thumbImg);
+  }
+
+  const infoRow = el("div", {
+    style: "display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.06);padding:8px 12px;border-radius:8px;"
+  });
+
+  const iconStr = isImage ? "📷" : "📎";
+  const iconNode = el("span", { style: "font-size:24px;flex-shrink:0;" }, iconStr);
+
+  const metaBox = el("div", { style: "display:flex;flex-direction:column;min-width:0;flex:1;" },
+    el("span", { style: "font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;" }, f.name || "Файл"),
+    el("span", { style: "font-size:11px;color:var(--text-muted);" }, formatFileSize(f.size || 0))
+  );
+
+  const dlBtn = el("button", {
+    class: "btn-secondary",
+    style: "padding:6px 10px;font-size:12px;border-radius:6px;cursor:pointer;flex-shrink:0;background:var(--primary);color:#fff;border:none;"
+  }, "Скачать");
+
+  dlBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    downloadAndDecryptFile(f, false, dlBtn);
+  });
+
+  infoRow.append(iconNode, metaBox, dlBtn);
+  fileCard.appendChild(infoRow);
+
+  if (fileMsg.text) {
+    const captionEl = el("div", { style: "margin-top:2px;font-size:14px;word-break:break-word;" }, fileMsg.text);
+    fileCard.appendChild(captionEl);
+  }
+
+  container.appendChild(fileCard);
+}
+
+async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = null) {
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Загрузка…";
+  }
+  try {
+    const { decodeKey, decryptFileChaCha20 } = await import("../crypto.js");
+    const resp = await fetch(fileInfo.url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const encryptedBuf = await resp.arrayBuffer();
+    const encryptedBytes = new Uint8Array(encryptedBuf);
+
+    const keyBytes = decodeKey(fileInfo.key);
+    const decryptedBytes = await decryptFileChaCha20(encryptedBytes, keyBytes);
+
+    const blob = new Blob([decryptedBytes], { type: fileInfo.mime || "application/octet-stream" });
+    const blobUrl = URL.createObjectURL(blob);
+
+    if (isPreviewClick && (fileInfo.mime || "").startsWith("image/")) {
+      showFullscreenImage(blobUrl, fileInfo.name);
+    } else {
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = fileInfo.name || "file";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    }
+  } catch (err) {
+    console.error("Failed to download or decrypt file:", err);
+    showToast("Ошибка скачивания или расшифровки файла", "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Скачать";
+    }
+  }
+}
+
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return "0 Б";
+  const k = 1024;
+  const sizes = ["Б", "КБ", "МБ", "ГБ"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
 /** Wire a .msg-time span: hover shows a floating full-time tooltip next to it. */

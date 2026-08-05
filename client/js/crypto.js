@@ -269,6 +269,26 @@ export async function chacha20Poly1305Decrypt(keyBytes, nonceBytes, ciphertextAn
   );
 }
 
+export async function encryptFileChaCha20(fileBytes) {
+  const key = crypto.getRandomValues(new Uint8Array(32));
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await chacha20Poly1305Encrypt(key, nonce, fileBytes);
+  // Prepend nonce to ciphertext so file format is [12 bytes nonce][ciphertext+tag]
+  const combined = new Uint8Array(nonce.length + ciphertext.length);
+  combined.set(nonce, 0);
+  combined.set(ciphertext, nonce.length);
+  return { encryptedBytes: combined, key };
+}
+
+export async function decryptFileChaCha20(encryptedBytes, keyBytes) {
+  if (encryptedBytes.length < 12 + 16) {
+    throw new Error("Invalid encrypted file format: missing nonce or auth tag");
+  }
+  const nonce = encryptedBytes.slice(0, 12);
+  const ciphertextAndTag = encryptedBytes.slice(12);
+  return chacha20Poly1305Decrypt(keyBytes, nonce, ciphertextAndTag);
+}
+
 export async function generateKeyPair() {
   const keyPair = await subtle.generateKey(
     { name: "X25519" },
