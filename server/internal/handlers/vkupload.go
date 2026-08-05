@@ -179,7 +179,7 @@ func uploadBytesToVK(fileBytes []byte, filename string, botToken string) (string
 
 	var uploadResult map[string]interface{}
 	if err := json.Unmarshal(uploadResponseBody, &uploadResult); err != nil {
-		return "", fmt.Errorf("unmarshal upload response: %w", err)
+		return "", fmt.Errorf("VK upload server returned non-JSON (code %d): %s", uploadResp.StatusCode, string(uploadResponseBody))
 	}
 
 	fileStr, _ := uploadResult["file"].(string)

@@ -59,6 +59,7 @@ class WSManager {
     this._disconnectListeners = [];
     this._queue = [];
     this._requestQueue = Promise.resolve();
+    this._lastConnectTime = 0;
   }
 
   connect() {
@@ -77,6 +78,8 @@ class WSManager {
   notifyRestSuccess() {
     if (this._manualClose || this._connected) return;
     if (this._ws && this._ws.readyState === WebSocket.CONNECTING) return;
+    // Throttle reconnects triggered by REST if less than 5 seconds have passed since last connect attempt
+    if (Date.now() - this._lastConnectTime < 5000) return;
     const token = getToken();
     if (!token) return;
     this._clearTimers();
@@ -208,6 +211,7 @@ class WSManager {
 
   _doConnect(token) {
     const url = WS_URL;
+    this._lastConnectTime = Date.now();
 
     try {
       this._ws = new WebSocket(url, ["access_token", token]);
