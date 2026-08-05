@@ -94,6 +94,8 @@ func main() {
 		authMW(http.HandlerFunc(handlers.UploadAvatar(database, cfg, hub))))
 	mux.Handle("POST /api/v1/attachments/vk-upload",
 		authMW(http.HandlerFunc(handlers.UploadVKAttachment(cfg))))
+	mux.Handle("GET /api/v1/attachments/proxy",
+		authMW(http.HandlerFunc(handlers.ProxyVKAttachment())))
 
 	mux.Handle("POST /api/v1/keys/init",
 		authMW(http.HandlerFunc(handlers.UploadIdentityKeys(database))))
