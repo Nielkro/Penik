@@ -414,7 +414,7 @@ export function wireMsgTime(timeEl, ts) {
  * Right-click / long-press on a message bubble → mini menu with "Копировать".
  * `getText` is a string or a function returning the plaintext to copy.
  */
-export function wireMsgCopy(bubble, getText, onReply) {
+export function wireMsgCopy(bubble, getText, onReply, onDelete) {
   const resolveText = () => {
     const t = typeof getText === "function" ? getText() : getText;
     return (t == null ? "" : String(t)).trim();
@@ -446,7 +446,7 @@ export function wireMsgCopy(bubble, getText, onReply) {
     if (e.target.closest?.("a.msg-link")) return;
     e.preventDefault();
     e.stopPropagation();
-    showMsgActionMenu(e.clientX, e.clientY, doCopy, onReply);
+    showMsgActionMenu(e.clientX, e.clientY, doCopy, onReply, onDelete);
   });
 
   // Touch handlers for long-press & swipe-to-reply.
@@ -486,7 +486,7 @@ export function wireMsgCopy(bubble, getText, onReply) {
     pressTimer = setTimeout(() => {
       pressTimer = null;
       if (!isSwiping) {
-        showMsgActionMenu(startX, startY, doCopy, onReply);
+        showMsgActionMenu(startX, startY, doCopy, onReply, onDelete);
       }
     }, 480);
   }, { passive: true });
@@ -534,7 +534,7 @@ export function wireMsgCopy(bubble, getText, onReply) {
   bubble.addEventListener("touchcancel", () => { clearPress(); resetSwipe(); }, { passive: true });
 }
 
-function showMsgActionMenu(x, y, onCopy, onReply) {
+function showMsgActionMenu(x, y, onCopy, onReply, onDelete) {
   document.getElementById("msg-action-menu")?.remove();
   const menu = el("div", {
     id: "msg-action-menu",
@@ -557,6 +557,16 @@ function showMsgActionMenu(x, y, onCopy, onReply) {
       onReply();
     });
     menu.appendChild(replyItem);
+  }
+
+  if (onDelete) {
+    const delItem = el("button", { type: "button", class: "msg-action-item", style: "color:var(--danger);" }, "Удалить");
+    delItem.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.remove();
+      onDelete();
+    });
+    menu.appendChild(delItem);
   }
 
   document.body.appendChild(menu);
