@@ -29,6 +29,36 @@ type vkuploadResponse struct {
 	URL string `json:"url"`
 }
 
+// ProxyVKAttachment fetches a file from VK CDN on behalf of the web client to bypass CORS restrictions.
+func ProxyVKAttachment() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		if userID == 0 {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+
+		targetURL := r.URL.Query().Get("url")
+		if targetURL == "" {
+			http.Error(w, `{"error":"missing url parameter"}`, http.StatusBadRequest)
+			return
+		}
+
+		resp, err := http.Get(targetURL)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.WriteHeader(resp.StatusCode)
+
+		_, _ = io.Copy(w, resp.Body)
+	}
+}
+
 // UploadVKAttachment accepts an encrypted file payload from an authenticated user,
 // uploads it to VK CDN via VK's docs API, and returns the direct CDN URL.
 func UploadVKAttachment(cfg *config.Config) http.HandlerFunc {

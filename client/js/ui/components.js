@@ -315,7 +315,13 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
   }
   try {
     const { decodeKey, decryptFileChaCha20 } = await import("../crypto.js");
-    const resp = await fetch(fileInfo.url);
+    const { getToken } = await import("../api.js");
+    const token = getToken();
+    const proxyUrl = `/api/v1/attachments/proxy?url=${encodeURIComponent(fileInfo.url)}`;
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const resp = await fetch(proxyUrl, { headers });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const encryptedBuf = await resp.arrayBuffer();
     const encryptedBytes = new Uint8Array(encryptedBuf);
