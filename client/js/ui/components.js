@@ -308,29 +308,35 @@ function renderFileCard(container, fileMsg) {
   container.appendChild(fileCard);
 }
 
+const decryptedBlobCache = new Map();
+
 async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = null) {
   if (btn) {
     btn.disabled = true;
     btn.textContent = "Загрузка…";
   }
   try {
-    const { decodeKey, decryptFileChaCha20 } = await import("../crypto.js");
-    const { getToken } = await import("../api.js");
-    const token = getToken();
-    const proxyUrl = `/api/v1/attachments/proxy?url=${encodeURIComponent(fileInfo.url)}`;
-    const headers = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    let blobUrl = decryptedBlobCache.get(fileInfo.url);
+    if (!blobUrl) {
+      const { decodeKey, decryptFileChaCha20 } = await import("../crypto.js");
+      const { getToken } = await import("../api.js");
+      const token = getToken();
+      const proxyUrl = `/api/v1/attachments/proxy?url=${encodeURIComponent(fileInfo.url)}`;
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const resp = await fetch(proxyUrl, { headers });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const encryptedBuf = await resp.arrayBuffer();
-    const encryptedBytes = new Uint8Array(encryptedBuf);
+      const resp = await fetch(proxyUrl, { headers });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const encryptedBuf = await resp.arrayBuffer();
+      const encryptedBytes = new Uint8Array(encryptedBuf);
 
-    const keyBytes = decodeKey(fileInfo.key);
-    const decryptedBytes = await decryptFileChaCha20(encryptedBytes, keyBytes);
+      const keyBytes = decodeKey(fileInfo.key);
+      const decryptedBytes = await decryptFileChaCha20(encryptedBytes, keyBytes);
 
-    const blob = new Blob([decryptedBytes], { type: fileInfo.mime || "application/octet-stream" });
-    const blobUrl = URL.createObjectURL(blob);
+      const blob = new Blob([decryptedBytes], { type: fileInfo.mime || "application/octet-stream" });
+      blobUrl = URL.createObjectURL(blob);
+      decryptedBlobCache.set(fileInfo.url, blobUrl);
+    }
 
     if (isPreviewClick && (fileInfo.mime || "").startsWith("image/")) {
       showFullscreenImage(blobUrl, fileInfo.name);
@@ -341,7 +347,6 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
     }
   } catch (err) {
     console.error("Failed to download or decrypt file:", err);
