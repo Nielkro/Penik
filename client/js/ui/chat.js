@@ -7,7 +7,7 @@ import {
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, encryptMessagePayload } from "../app.js";
 import {
   avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon,
-  showDeleteChatConfirmModal, showFullscreenImage,
+  showDeleteChatConfirmModal, showFullscreenImage, showConfirmModal,
   setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton,
 } from "./components.js";
 import { syncGroups, getAllGroups, getGroupMessages, onGroupUpdate } from "../groups.js";
