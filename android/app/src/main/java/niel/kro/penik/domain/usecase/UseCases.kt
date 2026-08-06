@@ -59,6 +59,18 @@ class LoadMessagesUseCase @Inject constructor(
     operator fun invoke(chatUserId: Long) = messageRepository.getMessagesForChat(chatUserId)
 }
 
+class DeleteMessageUseCase @Inject constructor(
+    private val messageRepository: MessageRepository,
+    private val webSocketManager: WebSocketManager
+) {
+    suspend operator fun invoke(localId: String, chatUserId: Long, deleteForEveryone: Boolean) {
+        messageRepository.deleteMessage(localId, chatUserId)
+        if (deleteForEveryone) {
+            webSocketManager.sendMsgDelete(localId, chatUserId, true)
+        }
+    }
+}
+
 class LoadChatsUseCase @Inject constructor(
     private val chatRepository: ChatRepository
 ) {
@@ -152,6 +164,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
             }
             is WebSocketEvent.UserAvatarUpdate -> {
                 niel.kro.penik.data.repository.AvatarCacheBus.bumpUser(event.userId, event.ts)
+            }
+            is WebSocketEvent.MsgDeleteNotify -> {
+                messageRepository.deleteMessageByServerOrLocalId(event.msgId, event.chatId)
             }
             is WebSocketEvent.PresenceUpdate -> {
                 niel.kro.penik.data.repository.PresenceBus.update(event.userId, event.online, event.lastSeen)
