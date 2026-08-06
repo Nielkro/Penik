@@ -43,6 +43,20 @@ func (h *Hub) run() {
 	}
 }
 
+// SendToUser delivers a pre-encoded frame to all online devices of a user.
+func (h *Hub) SendToUser(userID int64, frame []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, c := range h.clients {
+		if c.userID == userID {
+			select {
+			case c.send <- frame:
+			default:
+			}
+		}
+	}
+}
+
 // SendToDevice delivers a pre-encoded frame to the given device if it is online.
 func (h *Hub) SendToDevice(deviceID int64, frame []byte) {
 	h.mu.RLock()

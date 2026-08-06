@@ -28,6 +28,8 @@ const (
 	OpUserAvatarUpdate    Opcode = 0x1c
 	OpPresenceUpdate      Opcode = 0x1d
 	OpServerShutdown      Opcode = 0x1e
+	OpMsgDelete           Opcode = 0x0a // client→server: delete message (optionally for everyone)
+	OpMsgDeleteNotify     Opcode = 0x0b // server→client: notify peer message was deleted
 
 	OpGroupMessageSend      Opcode = 0x20
 	OpGroupMessageRecv      Opcode = 0x21
@@ -257,6 +259,20 @@ type PresenceUpdate struct {
 	UserID   int64 `msgpack:"user_id"`
 	Online   bool  `msgpack:"online"`
 	LastSeen int64 `msgpack:"last_seen"`
+}
+
+// MsgDelete carries a request to delete a message (optionally for everyone)
+type MsgDelete struct {
+	MsgID            string `msgpack:"msg_id"`
+	ChatID           int64  `msgpack:"chat_id"`
+	DeleteForEveryone bool   `msgpack:"delete_for_everyone"`
+}
+
+// MsgDeleteNotify pushes a message deletion event to the peer
+type MsgDeleteNotify struct {
+	MsgID             string `msgpack:"msg_id"`
+	ChatID            int64  `msgpack:"chat_id"`
+	DeleteForEveryone bool   `msgpack:"delete_for_everyone"`
 }
 
 // GroupAvatarUpdate notifies active devices that a group's avatar changed,

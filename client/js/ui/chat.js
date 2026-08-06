@@ -620,11 +620,21 @@ export async function renderChat(container, userId) {
           sender: isMine ? "Вы" : (contact.name || contact.nickname || "Собеседник")
         });
       }, async () => {
-        const ok = await showConfirmModal("Удалить сообщение?", "Сообщение будет удалено на вашем устройстве.");
-        if (!ok) return;
+        const { confirmed, deleteForEveryone } = await showDeleteChatConfirmModal();
+        if (!confirmed) return;
         try {
-          await deleteMessage(msg.msg_id);
+          const targetMsgId = msg.client_msg_id || msg.msg_id || bubble.dataset.msgId;
+          await deleteMessage(targetMsgId);
           bubble.remove();
+
+          if (deleteForEveryone) {
+            getWS().send(OP.MSG_DELETE, {
+              msg_id: String(targetMsgId),
+              chat_id: Number(userId),
+              delete_for_everyone: true
+            });
+          }
+
           triggerChatListUpdate();
           showToast("Сообщение удалено");
         } catch (err) {
