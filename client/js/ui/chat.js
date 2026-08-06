@@ -638,6 +638,7 @@ export async function renderChat(container, userId) {
           triggerChatListUpdate();
           showToast("Сообщение удалено");
         } catch (err) {
+          console.error("Failed to delete message error:", err);
           showToast("Не удалось удалить сообщение", "error");
         }
       });
