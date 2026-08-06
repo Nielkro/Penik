@@ -38,6 +38,8 @@ export function svgIcon(pathD, size = 20, color = "currentColor", strokeWidth = 
   return svgEl;
 }
 
+const failedAvatars = new Set();
+
 export function avatar(user, size = 40, forceTimestamp = null) {
   if (user && user.name === "Избранное") {
     const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -63,15 +65,18 @@ export function avatar(user, size = 40, forceTimestamp = null) {
   let avatarUrl = (user && user.avatar_url) || (userId ? `/api/v1/avatar/${userId}` : null);
   if (avatarUrl && forceTimestamp) {
     avatarUrl += (avatarUrl.includes("?") ? "&t=" : "?t=") + forceTimestamp;
+    failedAvatars.delete(`/api/v1/avatar/${userId}`);
   }
 
-  if (avatarUrl) {
+  const cacheKey = `/api/v1/avatar/${userId}`;
+  if (avatarUrl && !failedAvatars.has(cacheKey)) {
     const img = el("img", {
       src: avatarUrl,
       alt: user.name || user.username || "?",
       style: `width:${size}px;height:${size}px;object-fit:cover;`,
     });
     img.onerror = () => {
+      if (userId) failedAvatars.add(cacheKey);
       if (wrap.contains(img)) wrap.removeChild(img);
       wrap.appendChild(initialsNode(user, size));
     };
