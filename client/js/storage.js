@@ -1,7 +1,7 @@
 import { ws } from "./ws.js";
 
 const DB_NAME = "penik-messenger";
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 let _db = null;
 
@@ -36,6 +36,9 @@ export function openDB() {
       if (!db.objectStoreNames.contains("group_messages")) {
         const gms = db.createObjectStore("group_messages", { keyPath: ["group_id", "message_id"] });
         gms.createIndex("group_id", "group_id", { unique: false });
+      }
+      if (!db.objectStoreNames.contains("media_cache")) {
+        db.createObjectStore("media_cache", { keyPath: "url" });
       }
       // Clean up legacy object stores if they exist
       const legacyStores = ["identity", "pre_keys", "signed_pre_keys", "sessions_v2", "identities", "sessions", "opk_pool", "skipped_keys"];
@@ -595,5 +598,17 @@ export async function getAllGroupKeys() {
 export async function getAllGroupMessages() {
   await openDB();
   return getAll(tx("group_messages"));
+}
+
+export async function saveCachedMedia(url, blob, mime) {
+  await openDB();
+  return put(tx("media_cache", "readwrite"), { url, blob, mime, created_at: Date.now() });
+}
+
+export async function getCachedMedia(url) {
+  await openDB();
+  const entry = await get(tx("media_cache"), url);
+  if (!entry) return null;
+  return URL.createObjectURL(entry.blob);
 }
 

@@ -6,7 +6,7 @@ import {
 } from "../groups.js";
 import { apiGet, getUserById, uploadVKAttachment } from "../api.js";
 import { encryptFileChaCha20, encodeKey } from "../crypto.js";
-import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessage } from "../storage.js";
+import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessage, saveCachedMedia } from "../storage.js";
 import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
 import {
   el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence,
@@ -500,6 +500,7 @@ export async function renderGroup(container, groupId) {
 
       // Cache original unencrypted BlobUrl locally for sender
       decryptedBlobCache.set(cdnUrl, localBlobUrl);
+      saveCachedMedia(cdnUrl, localBlob, file.type).catch(() => {});
 
       // 3. Generate thumbnail if image
       let thumbBase64 = null;
