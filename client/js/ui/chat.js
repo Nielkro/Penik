@@ -715,11 +715,36 @@ export async function renderChat(container, userId) {
       decryptedBlobCache.set(cdnUrl, localBlobUrl);
       saveCachedMedia(cdnUrl, localBlob, file.type).catch(() => {});
 
-      // 3. Generate thumbnail if image
+      // 3. Generate thumbnail if image or video
       let thumbBase64 = null;
       if (file.type.startsWith("image/")) {
         try {
           thumbBase64 = await createThumbnailBase64(file);
+        } catch (e) {}
+      } else if (file.type.startsWith("video/")) {
+        try {
+          thumbBase64 = await new Promise((resolve) => {
+            const video = document.createElement("video");
+            const vUrl = URL.createObjectURL(file);
+            video.src = vUrl;
+            video.muted = true;
+            video.currentTime = 0.5;
+            video.onloadeddata = () => {
+              const canvas = document.createElement("canvas");
+              let w = video.videoWidth || 180;
+              let h = video.videoHeight || 180;
+              const maxSide = 180;
+              if (w > maxSide || h > maxSide) {
+                if (w > h) { h = Math.round((h * maxSide) / w); w = maxSide; }
+                else { w = Math.round((w * maxSide) / h); h = maxSide; }
+              }
+              canvas.width = w; canvas.height = h;
+              canvas.getContext("2d").drawImage(video, 0, 0, w, h);
+              URL.revokeObjectURL(vUrl);
+              resolve(canvas.toDataURL("image/webp", 0.35));
+            };
+            video.onerror = () => { URL.revokeObjectURL(vUrl); resolve(null); };
+          });
         } catch (e) {}
       }
 
