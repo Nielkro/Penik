@@ -665,13 +665,18 @@ async function onMsgReadGlobal(payload) {
 }
 
 async function onMsgDeleteNotifyGlobal(payload) {
+  console.log("[ws] Received OpMsgDeleteNotify:", payload);
   if (!payload?.msg_id) return;
   try {
     await deleteMessage(payload.msg_id);
-    const bubble = document.querySelector(`[data-msg-id="${CSS.escape(String(payload.msg_id))}"]`);
-    if (bubble) bubble.remove();
+    const escaped = CSS.escape(String(payload.msg_id));
+    const bubbles = document.querySelectorAll(`[data-msg-id="${escaped}"], [data-client-msg-id="${escaped}"]`);
+    console.log(`[ws] Found ${bubbles.length} matching bubbles to remove for msg_id: ${payload.msg_id}`);
+    bubbles.forEach(b => b.remove());
     triggerChatListUpdate();
-  } catch (e) {}
+  } catch (e) {
+    console.error("[ws] Error applying delete notify:", e);
+  }
 }
 
 async function onMsgStatusBatchGlobal(payload) {

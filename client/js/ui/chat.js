@@ -613,6 +613,9 @@ export async function renderChat(container, userId) {
       ...bubbleChildren
     );
     bubble.dataset.msgId = msg.msg_id;
+    if (msg.client_msg_id) {
+      bubble.dataset.clientMsgId = msg.client_msg_id;
+    }
     if (!isFailed) {
       wireMsgCopy(bubble, () => msg.plaintext || "", () => {
         setActiveReply({
