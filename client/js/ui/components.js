@@ -90,27 +90,8 @@ export function avatar(user, size = 40, forceTimestamp = null) {
   return wrap;
 }
 
-// showFullscreenImage opens a tap-to-close overlay showing `url` at full size.
-// Used for viewing user/group avatars full-screen instead of navigating away.
 export function showFullscreenImage(url, altText = "") {
-  const overlay = el("div", {
-    style: "position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out;",
-  });
-  const img = el("img", {
-    src: url,
-    alt: altText,
-    style: "max-width:92vw;max-height:92vh;border-radius:8px;object-fit:contain;cursor:default;",
-  });
-  img.addEventListener("click", (e) => e.stopPropagation());
-  const closeBtn = el("button", {
-    style: "position:absolute;top:16px;right:16px;background:none;border:none;color:#fff;font-size:28px;cursor:pointer;line-height:1;padding:8px;",
-  }, "✕");
-  const close = () => overlay.remove();
-  closeBtn.addEventListener("click", close);
-  overlay.addEventListener("click", close);
-  overlay.append(img, closeBtn);
-  document.body.appendChild(overlay);
-  return overlay;
+  showFullscreenMedia(url, false);
 }
 
 // Shared cache-buster for group avatars: bumped locally after a self-upload,
@@ -309,7 +290,6 @@ function renderFileCard(container, fileMsg) {
     const cachedBlobUrl = decryptedBlobCache.get(f.url);
 
     const videoEl = el("video", {
-      controls: true,
       loop: true,
       muted: true,
       playsinline: true,
@@ -322,24 +302,24 @@ function renderFileCard(container, fileMsg) {
 
     if (cachedBlobUrl) {
       videoEl.src = cachedBlobUrl;
+      videoEl.play().catch(() => {});
     } else {
       // Background progressive fetch
       downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
         if (fullBlobUrl) {
           videoEl.src = fullBlobUrl;
+          videoEl.play().catch(() => {});
         }
       }).catch((err) => {
         console.warn("[video] Progressive load failed:", err);
       });
     }
 
-    // Toggle play/pause or mute on click
+    // Single click toggles mute/unmute in bubble, double click or fullscreen button opens Telegram-style lightbox
     videoEl.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (videoEl.paused) {
-        videoEl.play().catch(() => {});
-      } else {
-        videoEl.pause();
+      if (videoEl.src) {
+        showFullscreenMedia(videoEl.src, true);
       }
     });
 
@@ -1092,11 +1072,6 @@ export function showPromptModal(title, placeholder, defaultValue = "") {
       style: "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;"
     }, modalBox);
 
-    const closeWithResult = (value) => {
-      document.body.removeChild(overlay);
-      resolve(value);
-    };
-
     confirmBtn.addEventListener("click", () => {
       closeWithResult(input.value.trim());
     });
@@ -1109,4 +1084,57 @@ export function showPromptModal(title, placeholder, defaultValue = "") {
     input.focus();
     input.select();
   });
+}
+
+export function showFullscreenMedia(src, isVideo = false) {
+  const backdrop = el("div", {
+    style: "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:10000;padding:20px;box-sizing:border-box;"
+  });
+
+  const contentWrap = el("div", {
+    style: "position:relative;max-width:90vw;max-height:90vh;display:flex;align-items:center;justify-content:center;box-sizing:border-box;"
+  });
+
+  let mediaEl;
+  if (isVideo) {
+    mediaEl = el("video", {
+      src: src,
+      controls: true,
+      autoplay: true,
+      playsinline: true,
+      style: "max-width:100%;max-height:88vh;object-fit:contain;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,0.6);"
+    });
+  } else {
+    mediaEl = el("img", {
+      src: src,
+      style: "max-width:100%;max-height:88vh;object-fit:contain;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,0.6);"
+    });
+  }
+
+  const closeBtn = el("button", {
+    style: "position:absolute;top:16px;right:20px;background:rgba(0,0,0,0.5);border:none;color:#fff;font-size:24px;width:40px;height:40px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10001;"
+  }, "✕");
+
+  const close = () => {
+    if (document.body.contains(backdrop)) {
+      document.body.removeChild(backdrop);
+    }
+  };
+
+  closeBtn.addEventListener("click", close);
+  backdrop.addEventListener("click", (e) => {
+    if (e.target === backdrop || e.target === contentWrap) close();
+  });
+
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") {
+      close();
+      document.removeEventListener("keydown", onKeyDown);
+    }
+  };
+  document.addEventListener("keydown", onKeyDown);
+
+  contentWrap.appendChild(mediaEl);
+  backdrop.append(closeBtn, contentWrap);
+  document.body.appendChild(backdrop);
 }
