@@ -1020,7 +1020,7 @@ export async function showSafetyExplanationModal(peerId) {
   }
 }
 
-async function createThumbnailBase64(file, maxSide = 640) {
+async function createThumbnailBase64(file, maxSide = 180) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -1041,10 +1041,8 @@ async function createThumbnailBase64(file, maxSide = 640) {
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext("2d");
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
       ctx.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL("image/webp", 0.85));
+      resolve(canvas.toDataURL("image/webp", 0.35));
     };
     img.onerror = (err) => {
       URL.revokeObjectURL(url);

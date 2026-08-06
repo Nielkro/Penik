@@ -502,7 +502,7 @@ export async function renderGroup(container, groupId) {
           thumbBase64 = await new Promise((resolve, reject) => {
             img.onload = () => {
               URL.revokeObjectURL(url);
-              let w = img.width, h = img.height, maxSide = 320;
+              let w = img.width, h = img.height, maxSide = 180;
               if (w > maxSide || h > maxSide) {
                 if (w > h) { h = Math.round((h * maxSide) / w); w = maxSide; }
                 else { w = Math.round((w * maxSide) / h); h = maxSide; }
@@ -510,7 +510,7 @@ export async function renderGroup(container, groupId) {
               const canvas = document.createElement("canvas");
               canvas.width = w; canvas.height = h;
               canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-              resolve(canvas.toDataURL("image/webp", 0.6));
+              resolve(canvas.toDataURL("image/webp", 0.35));
             };
             img.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
             img.src = url;
