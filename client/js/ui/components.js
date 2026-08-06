@@ -260,9 +260,9 @@ export function setMsgTextContent(el, text) {
 function renderFileCard(container, fileMsg) {
   const f = fileMsg.file;
   const isImage = (f.mime || "").startsWith("image/");
-  const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:8px;max-width:320px;" });
 
   if (isImage) {
+    const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;max-width:320px;padding:2px;" });
     const cachedBlobUrl = decryptedBlobCache.get(f.url);
     const initialSrc = cachedBlobUrl || f.thumb;
 
@@ -270,7 +270,7 @@ function renderFileCard(container, fileMsg) {
       const imgEl = el("img", {
         src: initialSrc,
         alt: f.name || "Изображение",
-        style: "width:100%;max-height:220px;object-fit:cover;border-radius:8px;cursor:pointer;background:rgba(255,255,255,0.05);transition:opacity 0.2s;"
+        style: "width:100%;max-height:260px;object-fit:cover;border-radius:12px;cursor:pointer;background:rgba(255,255,255,0.05);transition:opacity 0.2s;"
       });
       imgEl.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -278,9 +278,6 @@ function renderFileCard(container, fileMsg) {
       });
       fileCard.appendChild(imgEl);
 
-      // If not yet cached, attempt progressive background load from proxy.
-      // If full load succeeds, seamlessly swap src to full resolution image.
-      // If error occurs, keep the thumbnail displayed without breaking.
       if (!cachedBlobUrl) {
         downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
           if (fullBlobUrl && document.body.contains(imgEl)) {
@@ -289,35 +286,37 @@ function renderFileCard(container, fileMsg) {
         }).catch(() => {/* Keep thumbnail fallback */});
       }
     }
+
+    if (fileMsg.text) {
+      const captionEl = el("div", { style: "margin-top:2px;font-size:14px;word-break:break-word;padding:0 4px;" }, fileMsg.text);
+      fileCard.appendChild(captionEl);
+    }
+
+    container.appendChild(fileCard);
+    return;
   }
 
+  // Non-image files (documents, archives, etc.) keep document card UI
+  const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:8px;max-width:320px;padding:2px;" });
   const infoRow = el("div", {
-    style: "display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.06);padding:8px 12px;border-radius:8px;"
+    style: "display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.06);padding:8px 12px;border-radius:8px;cursor:pointer;"
+  });
+  infoRow.addEventListener("click", (e) => {
+    e.stopPropagation();
+    downloadAndDecryptFile(f, false);
   });
 
-  const iconStr = isImage ? "📷" : "📎";
-  const iconNode = el("span", { style: "font-size:24px;flex-shrink:0;" }, iconStr);
-
+  const iconNode = el("span", { style: "font-size:24px;flex-shrink:0;" }, "📎");
   const metaBox = el("div", { style: "display:flex;flex-direction:column;min-width:0;flex:1;" },
     el("span", { style: "font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;" }, f.name || "Файл"),
     el("span", { style: "font-size:11px;color:var(--text-muted);" }, formatFileSize(f.size || 0))
   );
 
-  const dlBtn = el("button", {
-    class: "btn-secondary",
-    style: "padding:6px 10px;font-size:12px;border-radius:6px;cursor:pointer;flex-shrink:0;background:var(--primary);color:#fff;border:none;"
-  }, "Скачать");
-
-  dlBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    downloadAndDecryptFile(f, false, dlBtn);
-  });
-
-  infoRow.append(iconNode, metaBox, dlBtn);
+  infoRow.append(iconNode, metaBox);
   fileCard.appendChild(infoRow);
 
   if (fileMsg.text) {
-    const captionEl = el("div", { style: "margin-top:2px;font-size:14px;word-break:break-word;" }, fileMsg.text);
+    const captionEl = el("div", { style: "margin-top:2px;font-size:14px;word-break:break-word;padding:0 4px;" }, fileMsg.text);
     fileCard.appendChild(captionEl);
   }
 
