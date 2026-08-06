@@ -1208,10 +1208,10 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 	var senderUserID, recipientUserID int64
 	var rawCiphertext []byte
 
-	// Look up by client_msg_id or server id
+	var clientMsgIdStr sql.NullString
 	err = tx.QueryRowContext(ctx,
-		`SELECT id, sender_user_id, recipient_user_id, ciphertext FROM messages WHERE client_msg_id=? OR id=?`,
-		req.MsgID, req.MsgID).Scan(&msgID, &senderUserID, &recipientUserID, &rawCiphertext)
+		`SELECT id, sender_user_id, recipient_user_id, ciphertext, client_msg_id FROM messages WHERE client_msg_id=? OR id=?`,
+		req.MsgID, req.MsgID).Scan(&msgID, &senderUserID, &recipientUserID, &rawCiphertext, &clientMsgIdStr)
 
 	if err == sql.ErrNoRows {
 		// Already deleted or never existed
@@ -1250,8 +1250,13 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 			peerUserID = senderUserID
 		}
 
+		clientMsgIDVal := req.MsgID
+		if clientMsgIdStr.Valid && clientMsgIdStr.String != "" {
+			clientMsgIDVal = clientMsgIdStr.String
+		}
+
 		notifyPayload, err := msgpack.Marshal(MsgDeleteNotify{
-			MsgID:             req.MsgID,
+			MsgID:             clientMsgIDVal,
 			ChatID:            c.userID,
 			DeleteForEveryone: true,
 		})
@@ -1259,6 +1264,17 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 			frame := append([]byte{byte(OpMsgDeleteNotify)}, notifyPayload...)
 			c.hub.SendToUser(peerUserID, frame)
 			c.hub.SendToUser(c.userID, frame)
+		}
+		// Also send second notification frame with server numeric ID if different
+		if fmt.Sprintf("%d", msgID) != clientMsgIDVal {
+			numPayload, _ := msgpack.Marshal(MsgDeleteNotify{
+				MsgID:             fmt.Sprintf("%d", msgID),
+				ChatID:            c.userID,
+				DeleteForEveryone: true,
+			})
+			numFrame := append([]byte{byte(OpMsgDeleteNotify)}, numPayload...)
+			c.hub.SendToUser(peerUserID, numFrame)
+			c.hub.SendToUser(c.userID, numFrame)
 		}
 	} else {
 		// Soft/Local delete logic if needed
