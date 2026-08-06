@@ -620,7 +620,7 @@ export async function renderChat(container, userId) {
           sender: isMine ? "Вы" : (contact.name || contact.nickname || "Собеседник")
         });
       }, async () => {
-        const { confirmed, deleteForEveryone } = await showDeleteChatConfirmModal();
+        const { confirmed, deleteForEveryone } = await showDeleteChatConfirmModal("Удалить сообщение?", "Вы уверены, что хотите удалить это сообщение?");
         if (!confirmed) return;
         try {
           const targetMsgId = msg.client_msg_id || msg.msg_id || bubble.dataset.msgId;

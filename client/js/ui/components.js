@@ -984,7 +984,7 @@ export function showConfirmModal(title, text, confirmText = "Подтверди�
   });
 }
 
-export function showDeleteChatConfirmModal() {
+export function showDeleteChatConfirmModal(title = "Удалить чат", text = "Вы действительно хотите удалить этот чат и все сообщения? Это также сбросит криптографическую сессию с пользователем.") {
   return new Promise((resolve) => {
     const checkboxId = "delete-for-everyone-chk";
     const checkbox = el("input", {
@@ -1015,10 +1015,8 @@ export function showDeleteChatConfirmModal() {
     const modalBox = el("div", {
       style: "background:#1e1e24;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;width:100%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.5);display:flex;flex-direction:column;"
     },
-      el("h3", { style: "font-size:18px;margin-bottom:12px;color:#fff;font-weight:600;line-height:1.4;text-align:center;" }, "Удалить чат"),
-      el("p", { style: "font-size:13px;color:#a0a0b5;margin-bottom:16px;line-height:1.5;text-align:center;" }, 
-        "Вы действительно хотите удалить этот чат и все сообщения? Это также сбросит криптографическую сессию с пользователем."
-      ),
+      el("h3", { style: "font-size:18px;margin-bottom:12px;color:#fff;font-weight:600;line-height:1.4;text-align:center;" }, title),
+      el("p", { style: "font-size:13px;color:#a0a0b5;margin-bottom:16px;line-height:1.5;text-align:center;" }, text),
       checkboxRow,
       el("div", { style: "display:flex;justify-content:space-between;" }, cancelBtn, confirmBtn)
     );

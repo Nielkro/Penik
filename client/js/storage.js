@@ -126,10 +126,11 @@ export async function getMessageByClientId(clientMsgId) {
 
 export async function deleteMessage(msgId) {
   await openDB();
-  await del(tx("messages", "readwrite"), msgId);
-  await del(tx("messages", "readwrite"), String(msgId));
+  const store = tx("messages", "readwrite");
+  await del(store, msgId);
+  await del(store, String(msgId));
   if (typeof msgId === "string" && !isNaN(Number(msgId))) {
-    await del(tx("messages", "readwrite"), Number(msgId));
+    await del(store, Number(msgId));
   }
 }
 
