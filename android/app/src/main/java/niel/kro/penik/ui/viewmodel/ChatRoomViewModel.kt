@@ -16,6 +16,7 @@ import niel.kro.penik.data.repository.ChatRepository
 import niel.kro.penik.data.repository.MessageRepository
 import niel.kro.penik.data.repository.PresenceBus
 import niel.kro.penik.data.repository.SecureTokenStorage
+import niel.kro.penik.domain.usecase.DeleteMessageUseCase
 import niel.kro.penik.domain.usecase.LoadMessagesUseCase
 import niel.kro.penik.domain.usecase.SendMessageUseCase
 import java.security.MessageDigest
@@ -26,6 +27,7 @@ class ChatRoomViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val loadMessagesUseCase: LoadMessagesUseCase,
     private val sendMessageUseCase: SendMessageUseCase,
+    private val deleteMessageUseCase: DeleteMessageUseCase,
     private val apiService: ApiService,
     private val tokenStorage: SecureTokenStorage,
     private val messageRepository: MessageRepository,
@@ -109,9 +111,9 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    fun deleteMessage(localId: String) {
+    fun deleteMessage(localId: String, deleteForEveryone: Boolean = false) {
         viewModelScope.launch {
-            messageRepository.deleteMessage(localId, chatUserId)
+            deleteMessageUseCase(localId, chatUserId, deleteForEveryone)
         }
     }
 
