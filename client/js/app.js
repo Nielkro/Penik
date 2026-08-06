@@ -3,7 +3,7 @@ import {
   openDB, saveMessage, updateMessageRead,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
-  findAndResolvePendingSentMessage, deleteChatData,
+  findAndResolvePendingSentMessage, deleteChatData, deleteMessage,
   getMessageByClientId, isMessageDeletedLocally,
   getIKPrivate, saveIKPrivate, getIKPublic, saveIKPublic
 } from './storage.js';
