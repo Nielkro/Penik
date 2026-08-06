@@ -22,6 +22,8 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
@@ -220,6 +222,72 @@ fun ChatRoomScreen(
         )
     }
 
+    var messageToDeleteLocalId by remember { mutableStateOf<String?>(null) }
+    var deleteForEveryoneChecked by remember { mutableStateOf(false) }
+
+    messageToDeleteLocalId?.let { localId ->
+        AlertDialog(
+            onDismissRequest = { messageToDeleteLocalId = null },
+            containerColor = Panel,
+            titleContentColor = TextPrimary,
+            title = {
+                Text(
+                    text = "Удалить сообщение?",
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Вы действительно хотите удалить это сообщение?",
+                        fontSize = 13.sp,
+                        color = TextMuted,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { deleteForEveryoneChecked = !deleteForEveryoneChecked }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Checkbox(
+                            checked = deleteForEveryoneChecked,
+                            onCheckedChange = { deleteForEveryoneChecked = it },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = Color(0xFFEF5350),
+                                uncheckedColor = TextMuted
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Удалить также для собеседника",
+                            fontSize = 13.sp,
+                            color = TextPrimary
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val forEveryone = deleteForEveryoneChecked
+                        messageToDeleteLocalId = null
+                        viewModel.deleteMessage(localId, forEveryone)
+                    }
+                ) {
+                    Text("Удалить", color = Color(0xFFEF5350), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { messageToDeleteLocalId = null }) {
+                    Text("Отмена", color = TextMuted)
+                }
+            }
+        )
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = Background,
@@ -344,7 +412,10 @@ fun ChatRoomScreen(
                                     }
                                 }
                             },
-                            onDelete = { viewModel.deleteMessage(message.localId) }
+                            onDelete = {
+                                deleteForEveryoneChecked = false
+                                messageToDeleteLocalId = message.localId
+                            }
                         )
                     }
                 }
