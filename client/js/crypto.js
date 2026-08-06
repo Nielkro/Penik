@@ -286,7 +286,18 @@ export async function decryptFileChaCha20(encryptedBytes, keyBytes) {
   }
   const nonce = encryptedBytes.slice(0, 12);
   const ciphertextAndTag = encryptedBytes.slice(12);
-  return chacha20Poly1305Decrypt(keyBytes, nonce, ciphertextAndTag);
+  try {
+    return await chacha20Poly1305Decrypt(keyBytes, nonce, ciphertextAndTag);
+  } catch (err) {
+    // Fallback: try standard AES-256-GCM decryption for files uploaded with previous test scripts
+    try {
+      const keyObj = await subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
+      const decryptedBuf = await subtle.decrypt({ name: 'AES-GCM', iv: nonce }, keyObj, ciphertextAndTag);
+      return new Uint8Array(decryptedBuf);
+    } catch (aesErr) {
+      throw err;
+    }
+  }
 }
 
 export async function generateKeyPair() {
