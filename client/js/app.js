@@ -10,7 +10,7 @@ import {
 import { ws, OP } from './ws.js';
 import { renderAuth } from './ui/auth.js';
 import { renderChatList, renderChat, avatarUpdateTimestamps } from './ui/chat.js';
-import { groupAvatarUpdateTimestamps } from './ui/components.js';
+import { groupAvatarUpdateTimestamps, showToast } from './ui/components.js';
 import { renderGroup } from './ui/groups.js';
 import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
