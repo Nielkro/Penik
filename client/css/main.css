@@ -557,6 +557,37 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   position: relative;
 }
 
+.msg-media-bubble {
+  padding: 1px !important;
+  max-width: 280px;
+  width: auto;
+}
+
+.msg-media-bubble .msg-meta {
+  position: absolute;
+  bottom: 6px;
+  right: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  padding: 2px 7px;
+  border-radius: 10px;
+  margin: 0;
+  pointer-events: none;
+}
+
+.msg-media-bubble .msg-time {
+  color: #fff !important;
+  font-size: 11px;
+}
+
+.msg-media-bubble .msg-status-wrapper .chk {
+  color: #fff !important;
+}
+
+.msg-media-bubble .msg-status-wrapper.msg-status-read .chk {
+  color: #4ec97a !important;
+}
+
 .msg-out {
   align-self: flex-end;
   background: var(--sent-bg);

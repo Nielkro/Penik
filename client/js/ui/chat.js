@@ -596,7 +596,17 @@ export async function renderChat(container, userId) {
       bubbleChildren.push(metaEl);
     }
 
-    const bubbleClass = `msg-bubble ${isMine ? "msg-out" : "msg-in"}${isFailed ? " msg-failed" : ""}`;
+    let isMediaMsg = false;
+    if (typeof msg.plaintext === "string" && msg.plaintext.startsWith("{")) {
+      try {
+        const p = JSON.parse(msg.plaintext);
+        if (p.type === "file" && p.file && (p.file.mime || "").startsWith("image/")) {
+          isMediaMsg = true;
+        }
+      } catch (e) {}
+    }
+
+    const bubbleClass = `msg-bubble ${isMine ? "msg-out" : "msg-in"}${isFailed ? " msg-failed" : ""}${isMediaMsg ? " msg-media-bubble" : ""}`;
     const bubble = el("div", { class: bubbleClass },
       ...bubbleChildren
     );
