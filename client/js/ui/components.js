@@ -1099,20 +1099,95 @@ export function showFullscreenMedia(src, isVideo = false) {
   if (isVideo) {
     mediaEl = el("video", {
       src: src,
-      controls: true,
       autoplay: true,
       playsinline: true,
-      style: "max-width:100%;max-height:88vh;object-fit:contain;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,0.6);"
+      style: "display:block;max-width:100%;max-height:82vh;object-fit:contain;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,0.6);cursor:pointer;"
     });
+
+    const playPauseBtn = el("button", {
+      style: "background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
+    }, "❚❚");
+
+    const timeCurrent = el("span", { style: "font-size:12px;color:#e2e2e9;font-family:monospace;min-width:38px;" }, "0:00");
+    const timeTotal = el("span", { style: "font-size:12px;color:rgba(255,255,255,0.6);font-family:monospace;min-width:38px;" }, "0:00");
+
+    const seekRange = el("input", {
+      type: "range",
+      min: "0",
+      max: "100",
+      value: "0",
+      step: "0.1",
+      style: "flex:1;height:4px;accent-color:#22c55e;cursor:pointer;margin:0 8px;"
+    });
+
+    const muteBtn = el("button", {
+      style: "background:none;border:none;color:#fff;font-size:16px;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;"
+    }, "🔊");
+
+    const formatSecs = (sec) => {
+      if (isNaN(sec) || sec < 0) return "0:00";
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${m}:${s < 10 ? "0" : ""}${s}`;
+    };
+
+    playPauseBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (mediaEl.paused) {
+        mediaEl.play();
+        playPauseBtn.textContent = "❚❚";
+      } else {
+        mediaEl.pause();
+        playPauseBtn.textContent = "▶";
+      }
+    });
+
+    mediaEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      playPauseBtn.click();
+    });
+
+    mediaEl.addEventListener("timeupdate", () => {
+      if (mediaEl.duration) {
+        const pct = (mediaEl.currentTime / mediaEl.duration) * 100;
+        seekRange.value = pct;
+        timeCurrent.textContent = formatSecs(mediaEl.currentTime);
+      }
+    });
+
+    mediaEl.addEventListener("loadedmetadata", () => {
+      timeTotal.textContent = formatSecs(mediaEl.duration);
+    });
+
+    seekRange.addEventListener("input", (e) => {
+      e.stopPropagation();
+      if (mediaEl.duration) {
+        mediaEl.currentTime = (seekRange.value / 100) * mediaEl.duration;
+      }
+    });
+
+    muteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      mediaEl.muted = !mediaEl.muted;
+      muteBtn.textContent = mediaEl.muted ? "🔇" : "🔊";
+    });
+
+    const controlsBar = el("div", {
+      style: "position:absolute;bottom:12px;left:50%;transform:translateX(-50%);width:92%;max-width:540px;background:rgba(20,20,28,0.85);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);padding:6px 14px;border-radius:24px;display:flex;align-items:center;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,0.5);z-index:10002;"
+    }, playPauseBtn, timeCurrent, seekRange, timeTotal, muteBtn);
+
+    contentWrap.appendChild(mediaEl);
+    contentWrap.appendChild(controlsBar);
   } else {
     mediaEl = el("img", {
       src: src,
       style: "max-width:100%;max-height:88vh;object-fit:contain;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,0.6);"
     });
+    contentWrap.appendChild(mediaEl);
   }
 
   const closeBtn = el("button", {
-    style: "position:absolute;top:16px;right:20px;background:rgba(0,0,0,0.5);border:none;color:#fff;font-size:24px;width:40px;height:40px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10001;"
+    style: "position:absolute;top:16px;right:20px;background:rgba(0,0,0,0.5);border:none;color:#fff;font-size:24px;width:40px;height:40px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10003;"
   }, "✕");
 
   const close = () => {
@@ -1134,7 +1209,6 @@ export function showFullscreenMedia(src, isVideo = false) {
   };
   document.addEventListener("keydown", onKeyDown);
 
-  contentWrap.appendChild(mediaEl);
   backdrop.append(closeBtn, contentWrap);
   document.body.appendChild(backdrop);
 }
