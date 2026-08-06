@@ -255,13 +255,14 @@ class WebSocketManager @Inject constructor(
 
     fun sendMsgDelete(msgId: String, chatId: Long, deleteForEveryone: Boolean) {
         try {
-            val bytes = MessagePack.newDefaultBufferPacker()
-                .packMapHeader(3)
-                .packString("msg_id").packString(msgId)
-                .packString("chat_id").packLong(chatId)
-                .packString("delete_for_everyone").packBoolean(deleteForEveryone)
-                .toByteArray()
-            sendFrame(Opcode.MSG_DELETE, bytes)
+            val bos = java.io.ByteArrayOutputStream()
+            val packer = MessagePack.newDefaultPacker(bos)
+            packer.packMapHeader(3)
+            packer.packString("msg_id"); packer.packString(msgId)
+            packer.packString("chat_id"); packer.packLong(chatId)
+            packer.packString("delete_for_everyone"); packer.packBoolean(deleteForEveryone)
+            packer.close()
+            sendFrame(Opcode.MSG_DELETE, bos.toByteArray())
         } catch (e: Exception) {
             Log.e("WS", "Failed to pack sendMsgDelete", e)
         }
