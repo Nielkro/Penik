@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"time"
 
 	"messenger/server/internal/config"
 	"messenger/server/internal/middleware"
@@ -104,6 +105,19 @@ func UploadVKAttachment(cfg *config.Config) http.HandlerFunc {
 }
 
 func uploadBytesToVK(fileBytes []byte, filename string, botToken string) (string, error) {
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		cdnURL, err := tryUploadBytesToVK(fileBytes, filename, botToken)
+		if err == nil {
+			return cdnURL, nil
+		}
+		lastErr = err
+		time.Sleep(time.Duration(attempt*300) * time.Millisecond)
+	}
+	return "", lastErr
+}
+
+func tryUploadBytesToVK(fileBytes []byte, filename string, botToken string) (string, error) {
 	// 1. Get group ID
 	groupAPI := fmt.Sprintf("https://api.vk.com/method/groups.getById?access_token=%s&v=5.131", url.QueryEscape(botToken))
 	respGroup, err := http.Get(groupAPI)
@@ -183,7 +197,7 @@ func uploadBytesToVK(fileBytes []byte, filename string, botToken string) (string
 	}
 
 	fileStr, _ := uploadResult["file"].(string)
-	if fileStr == "" {
+	if fileStr == "" || fileStr == "null" {
 		return "", fmt.Errorf("VK rejected uploaded file: %s", string(uploadResponseBody))
 	}
 
