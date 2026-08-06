@@ -44,7 +44,7 @@ func WebSocketHandler(hub *ws.Hub, database *db.DB, cfg *config.Config) http.Han
 			return
 		}
 
-		client := ws.NewClient(hub, conn, userID, deviceID, database)
+		client := ws.NewClient(hub, conn, userID, deviceID, database, cfg)
 		client.Run(r.Context())
 	}
 }

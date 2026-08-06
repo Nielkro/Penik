@@ -12,6 +12,8 @@ export const OP = {
   PONG:          0x07,
   CHAT_PURGE:     0x08,
   CHAT_PURGE_ACK: 0x09,
+  MSG_DELETE:     0x0a,
+  MSG_DELETE_NOTIFY: 0x0b,
   KEY_FETCH_REQ: 0x10,
   KEY_FETCH_RESP: 0x11,
   KEY_PUBLISH:    0x12,

@@ -664,6 +664,16 @@ async function onMsgReadGlobal(payload) {
   if (_activeChatCallback) _activeChatCallback.onStatus?.(payload.msg_id, "read");
 }
 
+async function onMsgDeleteNotifyGlobal(payload) {
+  if (!payload?.msg_id) return;
+  try {
+    await deleteMessage(payload.msg_id);
+    const bubble = document.querySelector(`[data-msg-id="${CSS.escape(String(payload.msg_id))}"]`);
+    if (bubble) bubble.remove();
+    triggerChatListUpdate();
+  } catch (e) {}
+}
+
 async function onMsgStatusBatchGlobal(payload) {
   if (!payload || !payload.statuses || !Array.isArray(payload.statuses)) return;
   for (const item of payload.statuses) {
@@ -943,6 +953,7 @@ function setupGlobalWSListeners() {
   ws.on(0x1b, onMsgStatusBatchGlobal);
   ws.on(0x05, onOfflineBatchGlobal);
   ws.on(0x08, onChatPurgeGlobal);
+  ws.on(OP.MSG_DELETE_NOTIFY, onMsgDeleteNotifyGlobal);
   ws.on(OP.USER_AVATAR_UPDATE, (payload) => {
     if (payload && payload.user_id) {
       console.log(`[ws] Received avatar update for user ${payload.user_id}`);
