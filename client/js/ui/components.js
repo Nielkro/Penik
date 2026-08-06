@@ -1104,12 +1104,20 @@ export function showFullscreenMedia(src, isVideo = false) {
       style: "display:block;max-width:100%;max-height:82vh;object-fit:contain;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,0.6);cursor:pointer;"
     });
 
-    const playPauseBtn = el("button", {
-      style: "background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
-    }, "❚❚");
+    const iconPause = svgIcon("M6 4h4v16H6zm8 0h4v16h-4z", 16, "#ffffff", 1);
+    iconPause.setAttribute("fill", "#ffffff");
+    const iconPlay = svgIcon("M5 3l14 9-14 9V3z", 16, "#ffffff", 1);
+    iconPlay.setAttribute("fill", "#ffffff");
 
-    const timeCurrent = el("span", { style: "font-size:12px;color:#e2e2e9;font-family:monospace;min-width:38px;" }, "0:00");
-    const timeTotal = el("span", { style: "font-size:12px;color:rgba(255,255,255,0.6);font-family:monospace;min-width:38px;" }, "0:00");
+    const iconVolume = svgIcon("M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 0 1 0 7.07", 18, "#ffffff", 2);
+    const iconMute = svgIcon("M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6M17 9l6 6", 18, "#ffffff", 2);
+
+    const playPauseBtn = el("button", {
+      style: "background:none;border:none;color:#fff;cursor:pointer;padding:6px;display:flex;align-items:center;justify-content:center;border-radius:50%;"
+    }, iconPause);
+
+    const timeCurrent = el("span", { style: "font-size:12px;color:#e2e2e9;font-family:monospace;min-width:36px;" }, "0:00");
+    const timeTotal = el("span", { style: "font-size:12px;color:rgba(255,255,255,0.6);font-family:monospace;min-width:36px;" }, "0:00");
 
     const seekRange = el("input", {
       type: "range",
@@ -1121,8 +1129,8 @@ export function showFullscreenMedia(src, isVideo = false) {
     });
 
     const muteBtn = el("button", {
-      style: "background:none;border:none;color:#fff;font-size:16px;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;"
-    }, "🔊");
+      style: "background:none;border:none;color:#fff;cursor:pointer;padding:6px;display:flex;align-items:center;justify-content:center;border-radius:50%;"
+    }, iconVolume);
 
     const formatSecs = (sec) => {
       if (isNaN(sec) || sec < 0) return "0:00";
@@ -1131,21 +1139,27 @@ export function showFullscreenMedia(src, isVideo = false) {
       return `${m}:${s < 10 ? "0" : ""}${s}`;
     };
 
+    const updatePlayState = () => {
+      playPauseBtn.replaceChildren(mediaEl.paused ? iconPlay : iconPause);
+    };
+
     playPauseBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (mediaEl.paused) {
         mediaEl.play();
-        playPauseBtn.textContent = "❚❚";
       } else {
         mediaEl.pause();
-        playPauseBtn.textContent = "▶";
       }
+      updatePlayState();
     });
 
     mediaEl.addEventListener("click", (e) => {
       e.stopPropagation();
       playPauseBtn.click();
     });
+
+    mediaEl.addEventListener("play", updatePlayState);
+    mediaEl.addEventListener("pause", updatePlayState);
 
     mediaEl.addEventListener("timeupdate", () => {
       if (mediaEl.duration) {
@@ -1169,13 +1183,14 @@ export function showFullscreenMedia(src, isVideo = false) {
     muteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       mediaEl.muted = !mediaEl.muted;
-      muteBtn.textContent = mediaEl.muted ? "🔇" : "🔊";
+      muteBtn.replaceChildren(mediaEl.muted ? iconMute : iconVolume);
     });
 
     const controlsBar = el("div", {
-      style: "position:absolute;bottom:12px;left:50%;transform:translateX(-50%);width:92%;max-width:540px;background:rgba(20,20,28,0.85);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);padding:6px 14px;border-radius:24px;display:flex;align-items:center;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,0.5);z-index:10002;"
+      style: "width:100%;max-width:540px;background:rgba(20,20,28,0.9);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);padding:8px 16px;border-radius:18px;display:flex;align-items:center;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,0.5);margin-top:10px;box-sizing:border-box;"
     }, playPauseBtn, timeCurrent, seekRange, timeTotal, muteBtn);
 
+    contentWrap.style.flexDirection = "column";
     contentWrap.appendChild(mediaEl);
     contentWrap.appendChild(controlsBar);
   } else {
