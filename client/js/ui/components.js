@@ -286,14 +286,14 @@ function renderFileCard(container, fileMsg) {
   }
 
   if (isVideo) {
-    const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;width:100%;padding:1px;position:relative;" });
+    const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;width:100%;padding:0;position:relative;" });
     const cachedBlobUrl = decryptedBlobCache.get(f.url);
 
     const videoEl = el("video", {
       loop: true,
       muted: true,
       playsinline: true,
-      style: "display:block;width:100%;max-height:360px;object-fit:cover;border-radius:14px;background:#000;cursor:pointer;"
+      style: "display:block;width:100%;max-height:420px;border-radius:16px;background:transparent;cursor:pointer;"
     });
 
     if (f.thumb) {
