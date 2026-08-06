@@ -255,16 +255,19 @@ function renderFileCard(container, fileMsg) {
     const cachedBlobUrl = decryptedBlobCache.get(f.url);
     const initialSrc = cachedBlobUrl || f.thumb || "";
 
+    const mediaWrap = el("div", { style: "position:relative;display:inline-block;max-width:100%;border-radius:14px;overflow:hidden;" });
+
     const imgEl = el("img", {
       src: initialSrc,
       alt: f.name || "Изображение",
-      style: "display:block;width:100%;max-width:360px;max-height:380px;object-fit:contain;border-radius:12px;cursor:pointer;background:rgba(255,255,255,0.05);transition:opacity 0.2s;"
+      style: "display:block;width:100%;max-width:360px;max-height:380px;object-fit:contain;border-radius:14px;cursor:pointer;background:rgba(255,255,255,0.05);transition:opacity 0.2s;"
     });
     imgEl.addEventListener("click", (e) => {
       e.stopPropagation();
       downloadAndDecryptFile(f, true);
     });
-    fileCard.appendChild(imgEl);
+    mediaWrap.appendChild(imgEl);
+    fileCard.appendChild(mediaWrap);
 
     if (!cachedBlobUrl) {
       downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
@@ -275,7 +278,7 @@ function renderFileCard(container, fileMsg) {
     }
 
     if (fileMsg.text) {
-      const captionEl = el("div", { style: "margin-top:2px;font-size:14px;word-break:break-word;padding:0 4px;" }, fileMsg.text);
+      const captionEl = el("div", { style: "margin-top:2px;font-size:14px;word-break:break-word;padding:4px 6px;" }, fileMsg.text);
       fileCard.appendChild(captionEl);
     }
 

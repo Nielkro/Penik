@@ -560,31 +560,36 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 .msg-media-bubble {
   padding: 0 !important;
   max-width: 380px;
-  width: auto;
-  overflow: hidden;
+  width: fit-content;
   background: transparent !important;
   border: none !important;
+  box-shadow: none !important;
 }
 
 .msg-media-bubble .msg-meta {
   position: absolute;
-  bottom: 6px;
-  right: 10px;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(4px);
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   padding: 2px 7px;
-  border-radius: 10px;
+  border-radius: 12px;
   margin: 0;
   pointer-events: none;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .msg-media-bubble .msg-time {
-  color: #fff !important;
+  color: #ffffff !important;
   font-size: 11px;
 }
 
 .msg-media-bubble .msg-status-wrapper .chk {
-  color: #fff !important;
+  color: rgba(255, 255, 255, 0.85) !important;
 }
 
 .msg-media-bubble .msg-status-wrapper.msg-status-read .chk {
