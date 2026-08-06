@@ -312,7 +312,7 @@ function renderFileCard(container, fileMsg) {
       loop: true,
       muted: true,
       playsinline: true,
-      style: "display:block;width:100%;height:auto;max-width:100%;border-radius:14px;background:#000;cursor:pointer;"
+      style: "display:block;width:100%;max-height:360px;object-fit:cover;border-radius:14px;background:#000;cursor:pointer;"
     });
 
     if (f.thumb) {
