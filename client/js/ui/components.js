@@ -1,4 +1,5 @@
-// DOM factory
+import { decodeKey, decryptFileChaCha20 } from "../crypto.js";
+import { getToken } from "../api.js";
 
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -328,7 +329,7 @@ function renderFileCard(container, fileMsg) {
   container.appendChild(fileCard);
 }
 
-const decryptedBlobCache = new Map();
+export const decryptedBlobCache = new Map();
 
 async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = null, isBackgroundFetch = false) {
   if (btn) {
@@ -338,8 +339,6 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
   try {
     let blobUrl = decryptedBlobCache.get(fileInfo.url);
     if (!blobUrl) {
-      const { decodeKey, decryptFileChaCha20 } = await import("../crypto.js");
-      const { getToken } = await import("../api.js");
       const token = getToken();
       const proxyUrl = `/api/v1/attachments/proxy?url=${encodeURIComponent(fileInfo.url)}`;
       const headers = {};

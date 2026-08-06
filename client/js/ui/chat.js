@@ -1,4 +1,5 @@
-import { apiGet, apiDelete } from "../api.js";
+import { apiGet, apiDelete, uploadVKAttachment } from "../api.js";
+import { encryptFileChaCha20, encodeKey } from "../crypto.js";
 import {
   saveMessage, getMessages, getMessage,
   updateMessageDelivered, getContact, saveContact, getAllContacts,
@@ -8,7 +9,7 @@ import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpda
 import {
   avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon,
   showDeleteChatConfirmModal, showFullscreenImage, showConfirmModal,
-  setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton,
+  setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
 import { syncGroups, getAllGroups, getGroupMessages, onGroupUpdate } from "../groups.js";
 import { buildGroupListItem, showCreateGroupModal } from "./groups.js";
@@ -700,9 +701,6 @@ export async function renderChat(container, userId) {
 
     try {
       const fileBuffer = new Uint8Array(await file.arrayBuffer());
-      const { encryptFileChaCha20, encodeKey } = await import("../crypto.js");
-      const { uploadVKAttachment } = await import("../api.js");
-      const { decryptedBlobCache } = await import("./components.js");
 
       const localBlob = new Blob([fileBuffer], { type: file.type || "application/octet-stream" });
       const localBlobUrl = URL.createObjectURL(localBlob);
