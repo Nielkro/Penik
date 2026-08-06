@@ -258,7 +258,7 @@ function renderFileCard(container, fileMsg) {
     const imgEl = el("img", {
       src: initialSrc,
       alt: f.name || "Изображение",
-      style: "display:block;width:100%;height:auto;max-width:100%;border-radius:16px;cursor:pointer;background:rgba(255,255,255,0.05);transition:opacity 0.2s;"
+      style: "display:block;width:100%;max-width:360px;max-height:380px;object-fit:contain;border-radius:12px;cursor:pointer;background:rgba(255,255,255,0.05);transition:opacity 0.2s;"
     });
     imgEl.addEventListener("click", (e) => {
       e.stopPropagation();
