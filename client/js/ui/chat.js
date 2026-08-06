@@ -494,7 +494,7 @@ export async function renderChat(container, userId) {
           if (isFailed) {
             txt.textContent = "🔒 Сообщение не расшифровано";
           } else {
-            setMsgTextContent(txt, getMessagePreview(msg.plaintext || ""));
+            setMsgTextContent(txt, msg.plaintext || "");
           }
         }
         return;
