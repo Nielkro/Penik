@@ -321,21 +321,23 @@ function renderFileCard(container, fileMsg) {
 
     if (cachedBlobUrl) {
       videoEl.src = cachedBlobUrl;
-      videoEl.play().catch(() => {});
     } else {
       // Background progressive fetch
       downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
         if (fullBlobUrl && document.body.contains(videoEl)) {
           videoEl.src = fullBlobUrl;
-          videoEl.play().catch(() => {});
         }
       }).catch(() => {});
     }
 
-    // Toggle mute/unmute on click or standard controls
+    // Toggle play/pause or mute on click
     videoEl.addEventListener("click", (e) => {
       e.stopPropagation();
-      videoEl.muted = !videoEl.muted;
+      if (videoEl.paused) {
+        videoEl.play().catch(() => {});
+      } else {
+        videoEl.pause();
+      }
     });
 
     fileCard.appendChild(videoEl);
