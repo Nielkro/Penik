@@ -1198,8 +1198,11 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 		return fmt.Errorf("msg_id required")
 	}
 
+	log.Printf("[ws] handleMsgDelete requested by userID=%d for msg_id=%s, deleteForEveryone=%v", c.userID, req.MsgID, req.DeleteForEveryone)
+
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
+		log.Printf("[ws] handleMsgDelete BeginTx error: %v", err)
 		return err
 	}
 	defer tx.Rollback()
@@ -1214,14 +1217,18 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 		req.MsgID, req.MsgID).Scan(&msgID, &senderUserID, &recipientUserID, &rawCiphertext, &clientMsgIdStr)
 
 	if err == sql.ErrNoRows {
-		// Already deleted or never existed
+		log.Printf("[ws] handleMsgDelete: message %s NOT FOUND in DB", req.MsgID)
 		return nil
 	} else if err != nil {
+		log.Printf("[ws] handleMsgDelete: DB query error: %v", err)
 		return err
 	}
 
+	log.Printf("[ws] handleMsgDelete found msg: serverID=%d, sender=%d, recipient=%d", msgID, senderUserID, recipientUserID)
+
 	// Ensure caller is either the sender or the recipient
 	if c.userID != senderUserID && c.userID != recipientUserID {
+		log.Printf("[ws] handleMsgDelete: unauthorized attempt by user %d", c.userID)
 		return fmt.Errorf("unauthorized message deletion attempt")
 	}
 
@@ -1255,6 +1262,7 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 			clientMsgIDVal = clientMsgIdStr.String
 		}
 
+		log.Printf("[ws] Sending OpMsgDeleteNotify for msgID=%s to peerUserID=%d and userID=%d", clientMsgIDVal, peerUserID, c.userID)
 		notifyPayload, err := msgpack.Marshal(MsgDeleteNotify{
 			MsgID:             clientMsgIDVal,
 			ChatID:            c.userID,
@@ -1264,9 +1272,12 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 			frame := append([]byte{byte(OpMsgDeleteNotify)}, notifyPayload...)
 			c.hub.SendToUser(peerUserID, frame)
 			c.hub.SendToUser(c.userID, frame)
+		} else {
+			log.Printf("[ws] Error marshalling MsgDeleteNotify: %v", err)
 		}
 		// Also send second notification frame with server numeric ID if different
 		if fmt.Sprintf("%d", msgID) != clientMsgIDVal {
+			log.Printf("[ws] Sending secondary OpMsgDeleteNotify for numeric msgID=%d to peerUserID=%d", msgID, peerUserID)
 			numPayload, _ := msgpack.Marshal(MsgDeleteNotify{
 				MsgID:             fmt.Sprintf("%d", msgID),
 				ChatID:            c.userID,
