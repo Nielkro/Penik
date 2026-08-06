@@ -692,13 +692,19 @@ export async function renderChat(container, userId) {
       const fileBuffer = new Uint8Array(await file.arrayBuffer());
       const { encryptFileChaCha20, encodeKey } = await import("../crypto.js");
       const { uploadVKAttachment } = await import("../api.js");
+      const { decryptedBlobCache } = await import("./components.js");
 
-      // 1. Encrypt file with ChaCha20-Poly1305
+      const localBlob = new Blob([fileBuffer], { type: file.type || "application/octet-stream" });
+      const localBlobUrl = URL.createObjectURL(localBlob);
+
       const { encryptedBytes, key } = await encryptFileChaCha20(fileBuffer);
       const encryptedBlob = new Blob([encryptedBytes], { type: "application/octet-stream" });
 
       // 2. Upload to VK CDN via Go server
       const cdnUrl = await uploadVKAttachment(encryptedBlob, file.name);
+
+      // Cache original unencrypted BlobUrl locally for sender so no redownload is needed
+      decryptedBlobCache.set(cdnUrl, localBlobUrl);
 
       // 3. Generate thumbnail if image
       let thumbBase64 = null;

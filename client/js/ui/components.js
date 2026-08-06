@@ -262,17 +262,33 @@ function renderFileCard(container, fileMsg) {
   const isImage = (f.mime || "").startsWith("image/");
   const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:8px;max-width:320px;" });
 
-  if (isImage && f.thumb) {
-    const thumbImg = el("img", {
-      src: f.thumb,
-      alt: f.name || "Изображение",
-      style: "width:100%;max-height:220px;object-fit:cover;border-radius:8px;cursor:pointer;background:rgba(255,255,255,0.05);"
-    });
-    thumbImg.addEventListener("click", (e) => {
-      e.stopPropagation();
-      downloadAndDecryptFile(f, true);
-    });
-    fileCard.appendChild(thumbImg);
+  if (isImage) {
+    const cachedBlobUrl = decryptedBlobCache.get(f.url);
+    const initialSrc = cachedBlobUrl || f.thumb;
+
+    if (initialSrc) {
+      const imgEl = el("img", {
+        src: initialSrc,
+        alt: f.name || "Изображение",
+        style: "width:100%;max-height:220px;object-fit:cover;border-radius:8px;cursor:pointer;background:rgba(255,255,255,0.05);transition:opacity 0.2s;"
+      });
+      imgEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        downloadAndDecryptFile(f, true);
+      });
+      fileCard.appendChild(imgEl);
+
+      // If not yet cached, attempt progressive background load from proxy.
+      // If full load succeeds, seamlessly swap src to full resolution image.
+      // If error occurs, keep the thumbnail displayed without breaking.
+      if (!cachedBlobUrl) {
+        downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
+          if (fullBlobUrl && document.body.contains(imgEl)) {
+            imgEl.src = fullBlobUrl;
+          }
+        }).catch(() => {/* Keep thumbnail fallback */});
+      }
+    }
   }
 
   const infoRow = el("div", {
@@ -310,7 +326,7 @@ function renderFileCard(container, fileMsg) {
 
 const decryptedBlobCache = new Map();
 
-async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = null) {
+async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = null, isBackgroundFetch = false) {
   if (btn) {
     btn.disabled = true;
     btn.textContent = "Загрузка…";
@@ -338,6 +354,10 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
       decryptedBlobCache.set(fileInfo.url, blobUrl);
     }
 
+    if (isBackgroundFetch) {
+      return blobUrl;
+    }
+
     if (isPreviewClick && (fileInfo.mime || "").startsWith("image/")) {
       showFullscreenImage(blobUrl, fileInfo.name);
     } else {
@@ -348,9 +368,13 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
       a.click();
       a.remove();
     }
+    return blobUrl;
   } catch (err) {
-    console.error("Failed to download or decrypt file:", err);
-    showToast("Ошибка скачивания или расшифровки файла", "error");
+    if (!isBackgroundFetch) {
+      console.error("Failed to download or decrypt file:", err);
+      showToast("Ошибка скачивания или расшифровки файла", "error");
+    }
+    throw err;
   } finally {
     if (btn) {
       btn.disabled = false;
