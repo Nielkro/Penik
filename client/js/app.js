@@ -4,7 +4,7 @@ import {
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
   findAndResolvePendingSentMessage, deleteChatData,
-  getMessageByClientId,
+  getMessageByClientId, isMessageDeletedLocally,
   getIKPrivate, saveIKPrivate, getIKPublic, saveIKPublic
 } from './storage.js';
 import { ws, OP } from './ws.js';
@@ -803,6 +803,11 @@ export async function syncMessageHistory() {
 
       const existingMsg = await getMessage(item.id);
       if (existingMsg) continue;
+
+      if (await isMessageDeletedLocally(item.id) || (item.client_msg_id && await isMessageDeletedLocally(item.client_msg_id))) {
+        console.log("[sync] Skipping locally deleted message:", item.id);
+        continue;
+      }
 
       if (Number(item.sender_id) === myId) {
         const resolved = item.client_msg_id

@@ -1,7 +1,7 @@
 import { ws } from "./ws.js";
 
 const DB_NAME = "penik-messenger";
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 
 let _db = null;
 
@@ -14,6 +14,9 @@ export function openDB() {
       if (!db.objectStoreNames.contains("messages")) {
         const ms = db.createObjectStore("messages", { keyPath: "msg_id" });
         ms.createIndex("chat_id", "chat_id", { unique: false });
+      }
+      if (!db.objectStoreNames.contains("deleted_messages")) {
+        db.createObjectStore("deleted_messages", { keyPath: "msg_id" });
       }
       if (!db.objectStoreNames.contains("contacts")) {
         db.createObjectStore("contacts", { keyPath: "user_id" });
@@ -124,13 +127,58 @@ export async function getMessageByClientId(clientMsgId) {
   return all.find(m => m.client_msg_id === clientMsgId);
 }
 
+export async function markMessageDeletedLocally(msgId) {
+  if (!msgId) return;
+  await openDB();
+  const idStr = String(msgId);
+  await put(tx("deleted_messages", "readwrite"), { msg_id: idStr, deleted_at: Date.now() });
+}
+
+export async function isMessageDeletedLocally(msgId) {
+  if (!msgId) return false;
+  await openDB();
+  const idStr = String(msgId);
+  const found = await get(tx("deleted_messages", "readonly"), idStr);
+  return Boolean(found);
+}
+
 export async function deleteMessage(msgId) {
   await openDB();
-  const store = tx("messages", "readwrite");
-  await del(store, msgId);
-  await del(store, String(msgId));
-  if (typeof msgId === "string" && !isNaN(Number(msgId))) {
-    await del(store, Number(msgId));
+  console.log("[storage] deleteMessage called for msgId:", msgId);
+  await markMessageDeletedLocally(msgId);
+
+  const all = await getAllMessages();
+  const targetIdStr = String(msgId);
+  const targetIdNum = Number(msgId);
+
+  const matches = all.filter(m => 
+    String(m.msg_id) === targetIdStr || 
+    m.client_msg_id === targetIdStr ||
+    (m.msg_id != null && m.msg_id === targetIdNum)
+  );
+
+  const keysToDelete = new Set();
+  keysToDelete.add(msgId);
+  keysToDelete.add(targetIdStr);
+  if (!isNaN(targetIdNum)) keysToDelete.add(targetIdNum);
+  matches.forEach(m => {
+    if (m.msg_id != null) {
+      keysToDelete.add(m.msg_id);
+      markMessageDeletedLocally(m.msg_id);
+    }
+    if (m.client_msg_id) {
+      keysToDelete.add(m.client_msg_id);
+      markMessageDeletedLocally(m.client_msg_id);
+    }
+  });
+
+  for (const key of keysToDelete) {
+    try {
+      await del(tx("messages", "readwrite"), key);
+      console.log("[storage] Successfully deleted message key from IndexedDB:", key);
+    } catch (err) {
+      console.warn("[storage] delete key warning:", key, err);
+    }
   }
 }
 
