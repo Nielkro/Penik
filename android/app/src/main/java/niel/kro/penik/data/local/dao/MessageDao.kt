@@ -52,8 +52,8 @@ interface MessageDao {
     @Query("UPDATE messages SET text = '[DELETED]' WHERE chatUserId = :chatUserId")
     suspend fun deleteChatMessages(chatUserId: Long)
 
-    @Query("UPDATE messages SET text = '[DELETED]' WHERE localId = :localId")
-    suspend fun deleteMessageByLocalId(localId: String)
+    @Query("UPDATE messages SET text = '[DELETED]' WHERE localId = :localId OR (serverId IS NOT NULL AND serverId = :serverId)")
+    suspend fun deleteMessageByServerOrLocalId(localId: String, serverId: Long?)
 
     @Query("SELECT * FROM messages WHERE chatUserId = :chatUserId AND text != '[DELETED]' ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLastMessageForChat(chatUserId: Long): MessageEntity?

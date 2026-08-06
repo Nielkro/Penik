@@ -683,7 +683,13 @@ class MessageRepository @Inject constructor(
     }
 
     suspend fun deleteMessage(localId: String, chatUserId: Long) {
-        messageDao.deleteMessageByLocalId(localId)
+        messageDao.deleteMessageByServerOrLocalId(localId, localId.toLongOrNull())
+        updateChatLastMessage(chatUserId)
+    }
+
+    suspend fun deleteMessageByServerOrLocalId(msgIdStr: String, chatUserId: Long) {
+        val serverId = msgIdStr.toLongOrNull()
+        messageDao.deleteMessageByServerOrLocalId(msgIdStr, serverId)
         updateChatLastMessage(chatUserId)
     }
 

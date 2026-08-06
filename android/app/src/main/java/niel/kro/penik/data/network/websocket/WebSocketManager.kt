@@ -110,6 +110,7 @@ sealed class WebSocketEvent {
     data class UserAvatarUpdate(val userId: Long, val ts: Long) : WebSocketEvent()
     data class PresenceUpdate(val userId: Long, val online: Boolean, val lastSeen: Long) : WebSocketEvent()
     data class GroupAvatarUpdate(val groupId: Long, val ts: Long) : WebSocketEvent()
+    data class MsgDeleteNotify(val msgId: String, val chatId: Long, val deleteForEveryone: Boolean) : WebSocketEvent()
 
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
@@ -123,6 +124,8 @@ object Opcode {
     const val MSG_ACK: Byte = 0x03
     const val MSG_DELIVERED: Byte = 0x04
     const val MSG_READ: Byte = 0x18
+    const val MSG_DELETE: Byte = 0x0a
+    const val MSG_DELETE_NOTIFY: Byte = 0x0b
     const val OFFLINE_BATCH: Byte = 0x05
     const val MSG_STATUS_BATCH: Byte = 0x1b
     const val USER_AVATAR_UPDATE: Byte = 0x1c
@@ -250,6 +253,20 @@ class WebSocketManager @Inject constructor(
         webSocket?.close(1000, "Server shutdown")
     }
 
+    fun sendMsgDelete(msgId: String, chatId: Long, deleteForEveryone: Boolean) {
+        try {
+            val bytes = MessagePack.newDefaultBufferPacker()
+                .packMapHeader(3)
+                .packString("msg_id").packString(msgId)
+                .packString("chat_id").packLong(chatId)
+                .packString("delete_for_everyone").packBoolean(deleteForEveryone)
+                .toByteArray()
+            sendFrame(Opcode.MSG_DELETE, bytes)
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to pack sendMsgDelete", e)
+        }
+    }
+
     private fun doConnect() {
         _connectionState.value = ConnectionState.CONNECTING
         try {
@@ -335,6 +352,7 @@ class WebSocketManager @Inject constructor(
             Opcode.MSG_ACK -> handleMsgAck(payload)
             Opcode.MSG_DELIVERED -> handleMsgDelivered(payload)
             Opcode.MSG_READ -> handleMsgRead(payload)
+            Opcode.MSG_DELETE_NOTIFY -> handleMsgDeleteNotify(payload)
             Opcode.OFFLINE_BATCH -> handleOfflineBatch(payload)
             Opcode.MSG_STATUS_BATCH -> handleMsgStatusBatch(payload)
             Opcode.PING -> sendPong()
@@ -448,6 +466,19 @@ class WebSocketManager @Inject constructor(
             scope.launch { _events.emit(WebSocketEvent.MsgRead((map["msg_id"] as? Number)?.toLong() ?: 0, map["client_msg_id"] as? String ?: "")) }
         } catch (e: Exception) {
             Log.e("WS", "Failed to parse MsgRead frame", e)
+        }
+    }
+    private fun handleMsgDeleteNotify(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val msgId = (map["msg_id"] as? String) ?: (map["msg_id"] as? Number)?.toString() ?: ""
+            val chatId = (map["chat_id"] as? Number)?.toLong() ?: 0L
+            val deleteForEveryone = map["delete_for_everyone"] as? Boolean ?: true
+            scope.launch { _events.emit(WebSocketEvent.MsgDeleteNotify(msgId, chatId, deleteForEveryone)) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse MsgDeleteNotify frame", e)
         }
     }
 
