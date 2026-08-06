@@ -6,6 +6,7 @@ import {
   deleteChatData, deleteMessage, saveCachedMedia
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, encryptMessagePayload } from "../app.js";
+import { OP } from "../ws.js";
 import {
   avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon,
   showDeleteChatConfirmModal, showFullscreenImage, showConfirmModal,
