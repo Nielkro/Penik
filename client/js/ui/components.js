@@ -266,6 +266,7 @@ export function setMsgTextContent(el, text) {
 function renderFileCard(container, fileMsg) {
   const f = fileMsg.file;
   const isImage = (f.mime || "").startsWith("image/");
+  const isVideo = (f.mime || "").startsWith("video/");
 
   if (isImage) {
     const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;width:100%;padding:1px;" });
@@ -291,6 +292,52 @@ function renderFileCard(container, fileMsg) {
           }
         }).catch(() => {/* Keep thumbnail fallback */});
       }
+    }
+
+    if (fileMsg.text) {
+      const captionEl = el("div", { style: "margin-top:2px;font-size:14px;word-break:break-word;padding:0 4px;" }, fileMsg.text);
+      fileCard.appendChild(captionEl);
+    }
+
+    container.appendChild(fileCard);
+    return;
+  }
+
+  if (isVideo) {
+    const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;width:100%;max-width:320px;padding:1px;" });
+    const cachedBlobUrl = decryptedBlobCache.get(f.url);
+
+    if (cachedBlobUrl) {
+      const videoEl = el("video", {
+        src: cachedBlobUrl,
+        controls: true,
+        playsinline: true,
+        style: "display:block;width:100%;max-height:300px;border-radius:14px;background:#000;"
+      });
+      fileCard.appendChild(videoEl);
+    } else {
+      const placeholder = el("div", {
+        style: "display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(255,255,255,0.08);padding:14px;border-radius:14px;cursor:pointer;color:#fff;font-size:14px;font-weight:500;"
+      }, el("span", { style: "font-size:22px;" }, "▶"), "Воспроизвести видео");
+
+      placeholder.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        placeholder.textContent = "Загрузка и расшифровка...";
+        try {
+          const videoBlobUrl = await downloadAndDecryptFile(f, false, null, true);
+          const videoEl = el("video", {
+            src: videoBlobUrl,
+            controls: true,
+            autoplay: true,
+            playsinline: true,
+            style: "display:block;width:100%;max-height:300px;border-radius:14px;background:#000;"
+          });
+          placeholder.replaceWith(videoEl);
+        } catch (err) {
+          placeholder.textContent = "Ошибка загрузки видео";
+        }
+      });
+      fileCard.appendChild(placeholder);
     }
 
     if (fileMsg.text) {
