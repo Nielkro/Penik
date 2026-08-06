@@ -324,10 +324,12 @@ function renderFileCard(container, fileMsg) {
     } else {
       // Background progressive fetch
       downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
-        if (fullBlobUrl && document.body.contains(videoEl)) {
+        if (fullBlobUrl) {
           videoEl.src = fullBlobUrl;
         }
-      }).catch(() => {});
+      }).catch((err) => {
+        console.warn("[video] Progressive load failed:", err);
+      });
     }
 
     // Toggle play/pause or mute on click
