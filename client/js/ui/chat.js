@@ -3,7 +3,7 @@ import { encryptFileChaCha20, encodeKey } from "../crypto.js";
 import {
   saveMessage, getMessages, getMessage,
   updateMessageDelivered, getContact, saveContact, getAllContacts,
-  deleteChatData, deleteMessage
+  deleteChatData, deleteMessage, saveCachedMedia
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, encryptMessagePayload } from "../app.js";
 import {
@@ -713,6 +713,7 @@ export async function renderChat(container, userId) {
 
       // Cache original unencrypted BlobUrl locally for sender so no redownload is needed
       decryptedBlobCache.set(cdnUrl, localBlobUrl);
+      saveCachedMedia(cdnUrl, localBlob, file.type).catch(() => {});
 
       // 3. Generate thumbnail if image
       let thumbBase64 = null;

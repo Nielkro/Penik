@@ -1,5 +1,6 @@
 import { decodeKey, decryptFileChaCha20 } from "../crypto.js";
 import { getToken } from "../api.js";
+import { getCachedMedia, saveCachedMedia } from "../storage.js";
 
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -390,21 +391,30 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
   try {
     let blobUrl = decryptedBlobCache.get(fileInfo.url);
     if (!blobUrl) {
-      const token = getToken();
-      const proxyUrl = `/api/v1/attachments/proxy?url=${encodeURIComponent(fileInfo.url)}`;
-      const headers = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+      // Check persistent IndexedDB media cache first
+      try {
+        blobUrl = await getCachedMedia(fileInfo.url);
+      } catch (e) {}
 
-      const resp = await fetch(proxyUrl, { headers });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const encryptedBuf = await resp.arrayBuffer();
-      const encryptedBytes = new Uint8Array(encryptedBuf);
+      if (!blobUrl) {
+        const token = getToken();
+        const proxyUrl = `/api/v1/attachments/proxy?url=${encodeURIComponent(fileInfo.url)}`;
+        const headers = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const keyBytes = decodeKey(fileInfo.key);
-      const decryptedBytes = await decryptFileChaCha20(encryptedBytes, keyBytes);
+        const resp = await fetch(proxyUrl, { headers });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const encryptedBuf = await resp.arrayBuffer();
+        const encryptedBytes = new Uint8Array(encryptedBuf);
 
-      const blob = new Blob([decryptedBytes], { type: fileInfo.mime || "application/octet-stream" });
-      blobUrl = URL.createObjectURL(blob);
+        const keyBytes = decodeKey(fileInfo.key);
+        const decryptedBytes = await decryptFileChaCha20(encryptedBytes, keyBytes);
+
+        const blob = new Blob([decryptedBytes], { type: fileInfo.mime || "application/octet-stream" });
+        blobUrl = URL.createObjectURL(blob);
+        saveCachedMedia(fileInfo.url, blob, fileInfo.mime).catch(() => {});
+      }
+
       decryptedBlobCache.set(fileInfo.url, blobUrl);
     }
 
