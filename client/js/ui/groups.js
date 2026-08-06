@@ -410,7 +410,17 @@ export async function renderGroup(container, groupId) {
       mine ? el("span", { class: "msg-status" }, msg.delivered ? "✓" : "…") : null,
     ));
 
-    const bubble = el("div", { class: `msg-bubble ${mine ? "msg-out" : "msg-in"}`, "data-mid": key },
+    let isMediaMsg = false;
+    if (typeof msg.plaintext === "string" && msg.plaintext.startsWith("{")) {
+      try {
+        const p = JSON.parse(msg.plaintext);
+        if (p.type === "file" && p.file && (p.file.mime || "").startsWith("image/")) {
+          isMediaMsg = true;
+        }
+      } catch (e) {}
+    }
+
+    const bubble = el("div", { class: `msg-bubble ${mine ? "msg-out" : "msg-in"}${isMediaMsg ? " msg-media-bubble" : ""}`, "data-mid": key },
       ...bubbleChildren
     );
     wireMsgCopy(bubble, () => msg.plaintext || "", () => {

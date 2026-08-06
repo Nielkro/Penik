@@ -262,7 +262,7 @@ function renderFileCard(container, fileMsg) {
   const isImage = (f.mime || "").startsWith("image/");
 
   if (isImage) {
-    const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;max-width:320px;padding:2px;" });
+    const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;width:100%;padding:1px;" });
     const cachedBlobUrl = decryptedBlobCache.get(f.url);
     const initialSrc = cachedBlobUrl || f.thumb;
 
@@ -270,7 +270,7 @@ function renderFileCard(container, fileMsg) {
       const imgEl = el("img", {
         src: initialSrc,
         alt: f.name || "Изображение",
-        style: "width:100%;max-height:260px;object-fit:cover;border-radius:12px;cursor:pointer;background:rgba(255,255,255,0.05);transition:opacity 0.2s;"
+        style: "display:block;width:100%;height:auto;max-width:100%;border-radius:14px;cursor:pointer;background:rgba(255,255,255,0.05);transition:opacity 0.2s;"
       });
       imgEl.addEventListener("click", (e) => {
         e.stopPropagation();
