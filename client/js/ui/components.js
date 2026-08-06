@@ -251,29 +251,27 @@ function renderFileCard(container, fileMsg) {
   const isVideo = (f.mime || "").startsWith("video/");
 
   if (isImage) {
-    const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;width:100%;padding:1px;" });
+    const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;width:100%;padding:0;" });
     const cachedBlobUrl = decryptedBlobCache.get(f.url);
-    const initialSrc = cachedBlobUrl || f.thumb;
+    const initialSrc = cachedBlobUrl || f.thumb || "";
 
-    if (initialSrc) {
-      const imgEl = el("img", {
-        src: initialSrc,
-        alt: f.name || "Изображение",
-        style: "display:block;width:100%;height:auto;max-width:100%;border-radius:14px;cursor:pointer;background:rgba(255,255,255,0.05);transition:opacity 0.2s;"
-      });
-      imgEl.addEventListener("click", (e) => {
-        e.stopPropagation();
-        downloadAndDecryptFile(f, true);
-      });
-      fileCard.appendChild(imgEl);
+    const imgEl = el("img", {
+      src: initialSrc,
+      alt: f.name || "Изображение",
+      style: "display:block;width:100%;height:auto;max-width:100%;border-radius:16px;cursor:pointer;background:rgba(255,255,255,0.05);transition:opacity 0.2s;"
+    });
+    imgEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      downloadAndDecryptFile(f, true);
+    });
+    fileCard.appendChild(imgEl);
 
-      if (!cachedBlobUrl) {
-        downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
-          if (fullBlobUrl && document.body.contains(imgEl)) {
-            imgEl.src = fullBlobUrl;
-          }
-        }).catch(() => {/* Keep thumbnail fallback */});
-      }
+    if (!cachedBlobUrl) {
+      downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
+        if (fullBlobUrl && document.body.contains(imgEl)) {
+          imgEl.src = fullBlobUrl;
+        }
+      }).catch(() => {/* Keep thumbnail fallback */});
     }
 
     if (fileMsg.text) {
