@@ -61,23 +61,32 @@ func getEnvInt64(key string, fallback int64) int64 {
 	return fallback
 }
 
-func loadDotEnv(filepath string) {
-	data, err := os.ReadFile(filepath)
-	if err != nil {
-		return
+func loadDotEnv(filename string) {
+	paths := []string{
+		filename,
+		"server/" + filename,
+		"../" + filename,
+		"../../" + filename,
 	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
+
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
 			continue
 		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) == 2 {
-			k := strings.TrimSpace(parts[0])
-			v := strings.TrimSpace(parts[1])
-			v = strings.Trim(v, `"'`)
-			if os.Getenv(k) == "" {
-				_ = os.Setenv(k, v)
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				k := strings.TrimSpace(parts[0])
+				v := strings.TrimSpace(parts[1])
+				v = strings.Trim(v, `"'` + "\r")
+				if os.Getenv(k) == "" {
+					_ = os.Setenv(k, v)
+				}
 			}
 		}
 	}
