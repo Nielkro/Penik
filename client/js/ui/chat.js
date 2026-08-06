@@ -627,13 +627,13 @@ export async function renderChat(container, userId) {
         const { confirmed, deleteForEveryone } = await showDeleteChatConfirmModal("Удалить сообщение?", "Вы уверены, что хотите удалить это сообщение?");
         if (!confirmed) return;
         try {
-          const targetMsgId = msg.client_msg_id || msg.msg_id || bubble.dataset.msgId;
-          await deleteMessage(targetMsgId);
+          const realMsgId = (bubble.dataset.msgId && !bubble.dataset.msgId.startsWith("tmp-")) ? bubble.dataset.msgId : (msg.client_msg_id || msg.msg_id || bubble.dataset.clientMsgId || bubble.dataset.msgId);
+          await deleteMessage(realMsgId);
           bubble.remove();
 
           if (deleteForEveryone) {
             getWS().send(OP.MSG_DELETE, {
-              msg_id: String(targetMsgId),
+              msg_id: String(realMsgId),
               chat_id: Number(userId),
               delete_for_everyone: true
             });
