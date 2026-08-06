@@ -304,41 +304,41 @@ function renderFileCard(container, fileMsg) {
   }
 
   if (isVideo) {
-    const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;width:100%;max-width:320px;padding:1px;" });
+    const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;width:100%;padding:1px;position:relative;" });
     const cachedBlobUrl = decryptedBlobCache.get(f.url);
 
-    if (cachedBlobUrl) {
-      const videoEl = el("video", {
-        src: cachedBlobUrl,
-        controls: true,
-        playsinline: true,
-        style: "display:block;width:100%;max-height:300px;border-radius:14px;background:#000;"
-      });
-      fileCard.appendChild(videoEl);
-    } else {
-      const placeholder = el("div", {
-        style: "display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(255,255,255,0.08);padding:14px;border-radius:14px;cursor:pointer;color:#fff;font-size:14px;font-weight:500;"
-      }, el("span", { style: "font-size:22px;" }, "▶"), "Воспроизвести видео");
+    const videoEl = el("video", {
+      controls: true,
+      loop: true,
+      muted: true,
+      playsinline: true,
+      style: "display:block;width:100%;height:auto;max-width:100%;border-radius:14px;background:#000;cursor:pointer;"
+    });
 
-      placeholder.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        placeholder.textContent = "Загрузка и расшифровка...";
-        try {
-          const videoBlobUrl = await downloadAndDecryptFile(f, false, null, true);
-          const videoEl = el("video", {
-            src: videoBlobUrl,
-            controls: true,
-            autoplay: true,
-            playsinline: true,
-            style: "display:block;width:100%;max-height:300px;border-radius:14px;background:#000;"
-          });
-          placeholder.replaceWith(videoEl);
-        } catch (err) {
-          placeholder.textContent = "Ошибка загрузки видео";
-        }
-      });
-      fileCard.appendChild(placeholder);
+    if (f.thumb) {
+      videoEl.poster = f.thumb;
     }
+
+    if (cachedBlobUrl) {
+      videoEl.src = cachedBlobUrl;
+      videoEl.play().catch(() => {});
+    } else {
+      // Background progressive fetch
+      downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
+        if (fullBlobUrl && document.body.contains(videoEl)) {
+          videoEl.src = fullBlobUrl;
+          videoEl.play().catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
+    // Toggle mute/unmute on click or standard controls
+    videoEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      videoEl.muted = !videoEl.muted;
+    });
+
+    fileCard.appendChild(videoEl);
 
     if (fileMsg.text) {
       const captionEl = el("div", { style: "margin-top:2px;font-size:14px;word-break:break-word;padding:0 4px;" }, fileMsg.text);
