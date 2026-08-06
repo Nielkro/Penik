@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -18,8 +19,11 @@ type Config struct {
 	VKBotToken     string
 }
 
-// Load reads configuration from environment variables with sensible defaults.
+// Load reads configuration from environment variables (and .env file) with sensible defaults.
 func Load() *Config {
+	loadDotEnv(".env")
+	loadDotEnv("server/.env")
+
 	cfg := &Config{
 		Port:           getEnv("PORT", "8143"),
 		DBPath:         getEnv("DB_PATH", "./data/messenger.db"),
@@ -55,4 +59,26 @@ func getEnvInt64(key string, fallback int64) int64 {
 		}
 	}
 	return fallback
+}
+
+func loadDotEnv(filepath string) {
+	data, err := os.ReadFile(filepath)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			k := strings.TrimSpace(parts[0])
+			v := strings.TrimSpace(parts[1])
+			v = strings.Trim(v, `"'`)
+			if os.Getenv(k) == "" {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}
 }
