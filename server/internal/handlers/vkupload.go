@@ -118,32 +118,33 @@ func uploadBytesToVK(fileBytes []byte, filename string, botToken string) (string
 }
 
 func tryUploadBytesToVK(fileBytes []byte, filename string, botToken string) (string, error) {
-	// 1. Get group ID
+	var groupID int
 	groupAPI := fmt.Sprintf("https://api.vk.com/method/groups.getById?access_token=%s&v=5.131", url.QueryEscape(botToken))
 	respGroup, err := http.Get(groupAPI)
-	if err != nil {
-		return "", fmt.Errorf("group lookup failed: %w", err)
-	}
-	defer respGroup.Body.Close()
-
-	var groupResp vkAPIResponse[[]struct {
-		ID int `json:"id"`
-	}]
-	if err := json.NewDecoder(respGroup.Body).Decode(&groupResp); err != nil {
-		return "", fmt.Errorf("decode group response: %w", err)
-	}
-	if groupResp.Error != nil || len(groupResp.Response) == 0 {
-		return "", fmt.Errorf("group lookup error: %v", groupResp.Error)
+	if err == nil {
+		var groupResp vkAPIResponse[[]struct {
+			ID int `json:"id"`
+		}]
+		if json.NewDecoder(respGroup.Body).Decode(&groupResp) == nil && groupResp.Error == nil && len(groupResp.Response) > 0 {
+			groupID = groupResp.Response[0].ID
+		}
+		respGroup.Body.Close()
 	}
 
-	groupID := groupResp.Response[0].ID
-
-	// 2. Get upload URL for wall docs
-	uploadServerAPI := fmt.Sprintf(
-		"https://api.vk.com/method/docs.getWallUploadServer?group_id=%d&access_token=%s&v=5.131",
-		groupID,
-		url.QueryEscape(botToken),
-	)
+	// 2. Get upload URL for docs (using group_id if available, or standard docs.getUploadServer)
+	var uploadServerAPI string
+	if groupID > 0 {
+		uploadServerAPI = fmt.Sprintf(
+			"https://api.vk.com/method/docs.getWallUploadServer?group_id=%d&access_token=%s&v=5.131",
+			groupID,
+			url.QueryEscape(botToken),
+		)
+	} else {
+		uploadServerAPI = fmt.Sprintf(
+			"https://api.vk.com/method/docs.getUploadServer?access_token=%s&v=5.131",
+			url.QueryEscape(botToken),
+		)
+	}
 
 	respUploadServer, err := http.Get(uploadServerAPI)
 	if err != nil {
