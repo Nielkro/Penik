@@ -417,6 +417,9 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
         saveCachedMedia(fileInfo.url, blob, fileInfo.mime).catch(() => {});
       }
 
+      if (!window._streamMediaCache) window._streamMediaCache = new Map();
+      window._streamMediaCache.set(fileInfo.url, blobUrl);
+
       decryptedBlobCache.set(fileInfo.url, blobUrl);
     }
 

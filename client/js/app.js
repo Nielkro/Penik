@@ -20,6 +20,43 @@ import {
 } from './crypto.js';
 import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
 import { emitPresenceUpdate } from './presence.js';
+import { getCachedMedia } from './storage.js';
+
+// Service Worker registration for HTTP 206 Partial Content Range streaming
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then((reg) => {
+    console.log('[sw] Service Worker registered for HTTP 206 streaming');
+  }).catch((err) => {
+    console.warn('[sw] Service Worker registration failed:', err);
+  });
+
+  navigator.serviceWorker.addEventListener('message', async (event) => {
+    if (event.data?.type === 'GET_STREAM_DATA') {
+      const { mediaId } = event.data;
+      const port = event.ports[0];
+      if (!port) return;
+
+      try {
+        const rawBlobUrl = window._streamMediaCache?.get(mediaId);
+        let blob = null;
+        if (rawBlobUrl) {
+          const res = await fetch(rawBlobUrl);
+          blob = await res.blob();
+        } else {
+          // Fallback to IndexedDB
+          const cachedUrl = await getCachedMedia(mediaId);
+          if (cachedUrl) {
+            const res = await fetch(cachedUrl);
+            blob = await res.blob();
+          }
+        }
+        port.postMessage({ blob, mime: blob?.type || 'video/mp4' });
+      } catch (e) {
+        port.postMessage(null);
+      }
+    }
+  });
+}
 
 function u8ToHex(arr) {
   return Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");

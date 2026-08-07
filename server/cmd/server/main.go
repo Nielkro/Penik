@@ -171,8 +171,11 @@ func main() {
 		// Vite assets are hashed (e.g. /assets/libsodium-wrappers-XXX.js), cache forever (1 year)
 		if strings.HasPrefix(r.URL.Path, "/assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		} else if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, ".html") {
-			// Always validate index.html so updates load instantly
+		} else if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, ".html") || r.URL.Path == "/sw.js" {
+			if r.URL.Path == "/sw.js" {
+				w.Header().Set("Service-Worker-Allowed", "/")
+			}
+			// Always validate index.html and sw.js so updates load instantly
 			w.Header().Set("Cache-Control", "no-cache")
 		}
 		fileServer.ServeHTTP(w, r)
