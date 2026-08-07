@@ -599,13 +599,16 @@ export async function renderChat(container, userId) {
     }
 
     let isMediaMsg = false;
-    if (typeof msg.plaintext === "string" && msg.plaintext.startsWith("{")) {
-      try {
-        const p = JSON.parse(msg.plaintext);
-        if (p.type === "file" && p.file && ((p.file.mime || "").startsWith("image/") || (p.file.mime || "").startsWith("video/"))) {
-          isMediaMsg = true;
-        }
-      } catch (e) {}
+    if (typeof msg.plaintext === "string") {
+      const trimmed = msg.plaintext.trim();
+      if (trimmed.startsWith("{")) {
+        try {
+          const p = JSON.parse(trimmed);
+          if (p.type === "file" && p.file && ((p.file.mime || "").startsWith("image/") || (p.file.mime || "").startsWith("video/"))) {
+            isMediaMsg = true;
+          }
+        } catch (e) {}
+      }
     }
 
     const bubbleClass = `msg-bubble ${isMine ? "msg-out" : "msg-in"}${isFailed ? " msg-failed" : ""}${isMediaMsg ? " msg-media-bubble" : ""}`;
