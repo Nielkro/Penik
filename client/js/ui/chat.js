@@ -681,7 +681,10 @@ export async function renderChat(container, userId) {
   }
 
   messages.forEach(m => appendMessage(m));
-  scrollDown.scrollToBottom();
+  requestAnimationFrame(() => {
+    scrollDown.scrollToBottom();
+    setTimeout(() => scrollDown.scrollToBottom(), 100);
+  });
 
   // ── Send ──────────────────────────────────────────────────────────────────
 
