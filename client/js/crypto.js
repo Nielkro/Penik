@@ -17,7 +17,9 @@ export function encodeKey(bytes) {
 }
 
 export function decodeKey(b64) {
-  const bin = atob(b64);
+  let cleanB64 = String(b64 || "").trim().replace(/ /g, "+");
+  while (cleanB64.length % 4 !== 0) cleanB64 += "=";
+  const bin = atob(cleanB64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
