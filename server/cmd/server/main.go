@@ -173,6 +173,7 @@ func main() {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, ".html") || r.URL.Path == "/sw.js" {
 			if r.URL.Path == "/sw.js" {
+				w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 				w.Header().Set("Service-Worker-Allowed", "/")
 			}
 			// Always validate index.html and sw.js so updates load instantly
