@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"messenger/server/internal/config"
@@ -148,7 +149,9 @@ func tryUploadBytesToVK(fileBytes []byte, filename string, botToken string) (str
 
 	respUploadServer, err := http.Get(uploadServerAPI)
 	if err != nil {
-		return "", fmt.Errorf("upload server lookup failed: %w", err)
+		cleanErr := strings.ReplaceAll(err.Error(), url.QueryEscape(botToken), "[REDACTED_TOKEN]")
+		cleanErr = strings.ReplaceAll(cleanErr, botToken, "[REDACTED_TOKEN]")
+		return "", fmt.Errorf("upload server lookup failed: %s", cleanErr)
 	}
 	defer respUploadServer.Body.Close()
 
@@ -212,7 +215,9 @@ func tryUploadBytesToVK(fileBytes []byte, filename string, botToken string) (str
 
 	saveResp, err := http.Get(saveAPIURL)
 	if err != nil {
-		return "", fmt.Errorf("docs.save request failed: %w", err)
+		cleanErr := strings.ReplaceAll(err.Error(), url.QueryEscape(botToken), "[REDACTED_TOKEN]")
+		cleanErr = strings.ReplaceAll(cleanErr, botToken, "[REDACTED_TOKEN]")
+		return "", fmt.Errorf("docs.save request failed: %s", cleanErr)
 	}
 	defer saveResp.Body.Close()
 

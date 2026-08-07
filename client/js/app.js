@@ -24,7 +24,7 @@ import { getCachedMedia } from './storage.js';
 
 // Service Worker registration for HTTP 206 Partial Content Range streaming
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').then((reg) => {
+  navigator.serviceWorker.register('/sw.js', { scope: '/' }).then((reg) => {
     console.log('[sw] Service Worker registered for HTTP 206 streaming');
   }).catch((err) => {
     console.warn('[sw] Service Worker registration failed:', err);
