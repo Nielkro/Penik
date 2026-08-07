@@ -293,6 +293,9 @@ function renderFileCard(container, fileMsg) {
   }
 
   if (isVideo) {
+    const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;width:100%;padding:0;position:relative;" });
+    const cachedBlobUrl = decryptedBlobCache.get(f.url);
+
     const videoEl = el("video", {
       muted: true,
       playsinline: true,
