@@ -204,15 +204,20 @@ export function setMsgTextContent(el, text) {
   if (!text) return;
 
   const s = String(text).trim();
+  console.log("[setMsgTextContent] input text:", s.slice(0, 100));
+
   if (s.startsWith("{") && s.includes('"file"')) {
     try {
       const parsed = JSON.parse(s);
+      console.log("[setMsgTextContent] parsed JSON file message:", parsed);
       if (parsed && (parsed.type === "file" || parsed.file) && (parsed.file?.url || parsed.url)) {
         if (!parsed.file) parsed.file = { ...parsed };
         renderFileCard(el, parsed);
         return;
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error("[setMsgTextContent] JSON parse error:", e);
+    }
   }
 
   let last = 0;
