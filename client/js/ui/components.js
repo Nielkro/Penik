@@ -299,7 +299,7 @@ function renderFileCard(container, fileMsg) {
     const videoEl = el("video", {
       muted: true,
       playsinline: true,
-      style: "display:block;width:100%;max-height:420px;border-radius:16px;background:transparent;cursor:pointer;"
+      style: "display:block;width:100%;min-width:220px;min-height:220px;max-height:420px;border-radius:16px;background:rgba(255,255,255,0.05);cursor:pointer;object-fit:cover;"
     });
 
     if (f.thumb) {
