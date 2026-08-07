@@ -287,11 +287,7 @@ function renderFileCard(container, fileMsg) {
   }
 
   if (isVideo) {
-    const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;width:100%;padding:0;position:relative;" });
-    const cachedBlobUrl = decryptedBlobCache.get(f.url);
-
     const videoEl = el("video", {
-      loop: true,
       muted: true,
       playsinline: true,
       style: "display:block;width:100%;max-height:420px;border-radius:16px;background:transparent;cursor:pointer;"
@@ -303,22 +299,47 @@ function renderFileCard(container, fileMsg) {
 
     if (cachedBlobUrl) {
       videoEl.src = cachedBlobUrl;
-      videoEl.play().catch(() => {});
     } else {
-      // Background progressive fetch
       downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
         if (fullBlobUrl) {
           videoEl.src = fullBlobUrl;
-          videoEl.play().catch(() => {});
         }
       }).catch((err) => {
         console.warn("[video] Progressive load failed:", err);
       });
     }
 
-    // Single click toggles mute/unmute in bubble, double click or fullscreen button opens Telegram-style lightbox
+    let hoverTimer = null;
+
+    const stopPreview = () => {
+      if (hoverTimer) {
+        clearTimeout(hoverTimer);
+        hoverTimer = null;
+      }
+      videoEl.pause();
+      try { videoEl.currentTime = 0; } catch (e) {}
+      videoEl.muted = true;
+    };
+
+    videoEl.addEventListener("mouseenter", () => {
+      if (!videoEl.src) return;
+      videoEl.muted = true;
+      try { videoEl.currentTime = 0; } catch (e) {}
+      videoEl.play().then(() => {
+        hoverTimer = setTimeout(() => {
+          stopPreview();
+        }, 5000);
+      }).catch(() => {});
+    });
+
+    videoEl.addEventListener("mouseleave", () => {
+      stopPreview();
+    });
+
+    // Click opens Telegram-style lightbox player
     videoEl.addEventListener("click", (e) => {
       e.stopPropagation();
+      stopPreview();
       if (videoEl.src) {
         showFullscreenMedia(videoEl.src, true);
       }
