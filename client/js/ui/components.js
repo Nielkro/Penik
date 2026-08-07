@@ -203,7 +203,7 @@ export function setMsgTextContent(el, text) {
   el.replaceChildren();
   if (!text) return;
 
-  const s = String(text);
+  const s = String(text).trim();
   if (s.startsWith("{")) {
     try {
       const parsed = JSON.parse(s);
