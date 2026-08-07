@@ -314,7 +314,11 @@ function renderFileCard(container, fileMsg) {
           videoEl.src = fullBlobUrl;
         }
       }).catch((err) => {
-        console.warn("[video] Progressive load failed:", err);
+        console.error("[video] Progressive load failed error details:", err);
+        const errBadge = el("div", {
+          style: "position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(239,83,80,0.85);color:#fff;padding:6px 12px;border-radius:12px;font-size:12px;pointer-events:none;white-space:nowrap;"
+        }, "⚠️ Ошибка расшифровки видео");
+        fileCard.appendChild(errBadge);
       });
     }
 
