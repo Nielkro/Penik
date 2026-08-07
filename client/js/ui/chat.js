@@ -484,8 +484,10 @@ export async function renderChat(container, userId) {
 
   function appendMessage(msg, prepend = false) {
     if (msg.plaintext === "[DELETED]") return;
-    if (msg.msg_id) {
-      const existing = messagesEl.querySelector(`[data-msg-id="${msg.msg_id}"]`);
+    const lookupId = msg.msg_id || msg.client_msg_id;
+    if (lookupId) {
+      const escaped = CSS.escape(String(lookupId));
+      const existing = messagesEl.querySelector(`[data-msg-id="${escaped}"], [data-client-msg-id="${escaped}"]`);
       if (existing) {
         const txt = existing.querySelector(".msg-text");
         if (txt) {
