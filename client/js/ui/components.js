@@ -204,10 +204,11 @@ export function setMsgTextContent(el, text) {
   if (!text) return;
 
   const s = String(text).trim();
-  if (s.startsWith("{")) {
+  if (s.startsWith("{") && s.includes('"file"')) {
     try {
       const parsed = JSON.parse(s);
-      if (parsed.type === "file" && parsed.file) {
+      if (parsed && (parsed.type === "file" || parsed.file) && (parsed.file?.url || parsed.url)) {
+        if (!parsed.file) parsed.file = { ...parsed };
         renderFileCard(el, parsed);
         return;
       }
