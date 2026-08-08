@@ -1,0 +1,5 @@
+# Add false positives here, one fingerprint per line.
+# Generate a fingerprint for an entry with: gitleaks report --format=json ...
+# plan/e2ee_plan.md: "ChaCha20-Poly1305" cipher name flagged by generic-api-key heuristic
+1e185aa3da286234947f3f6dc6e00b5348b74773:plan/e2ee_plan.md:generic-api-key:894
+1e185aa3da286234947f3f6dc6e00b5348b74773:plan/e2ee_plan.md:generic-api-key:933

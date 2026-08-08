@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "vk-service-token"
+description = "VK service access token (vk1.a.*)"
+regex = '''vk1\.a\.[A-Za-z0-9_-]{30,}'''
+secretGroup = 0
+tags = ["vk", "api"]
