@@ -299,27 +299,79 @@ function renderFileCard(container, fileMsg) {
     const videoEl = el("video", {
       muted: true,
       playsinline: true,
-      style: "display:block;width:100%;min-width:220px;min-height:220px;max-height:420px;border-radius:16px;background:rgba(255,255,255,0.05);cursor:pointer;object-fit:cover;"
+      // Without an explicit preload the element paints nothing until playback
+      // starts, so a card with no poster stays an empty rectangle.
+      preload: "metadata",
+      style: "display:block;width:100%;max-width:360px;min-height:180px;max-height:420px;border-radius:16px;background:rgba(255,255,255,0.05);cursor:pointer;object-fit:contain;"
     });
 
     if (f.thumb) {
       videoEl.poster = f.thumb;
     }
 
+    let badgeEl = null;
+    const showBadge = (text, clickable) => {
+      if (badgeEl) badgeEl.remove();
+      badgeEl = el("div", {
+        style: "position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(239,83,80,0.85);" +
+          "color:#fff;padding:6px 12px;border-radius:12px;font-size:12px;text-align:center;max-width:90%;" +
+          (clickable ? "cursor:pointer;" : "pointer-events:none;")
+      }, text);
+      if (clickable) {
+        badgeEl.addEventListener("click", (e) => {
+          e.stopPropagation();
+          downloadAndDecryptFile(f, false);
+        });
+      }
+      fileCard.appendChild(badgeEl);
+    };
+
+    // A browser without a decoder for this codec still parses the container and
+    // plays the audio track, but reports videoWidth 0 and paints black. Offer the
+    // file for download instead of leaving an empty card.
+    videoEl.addEventListener("loadeddata", () => {
+      if (!videoEl.videoWidth) {
+        showBadge("⚠️ Браузер не умеет декодировать это видео — нажмите, чтобы скачать", true);
+      } else if (badgeEl) {
+        badgeEl.remove();
+        badgeEl = null;
+      }
+    });
+    videoEl.addEventListener("error", () => {
+      showBadge("⚠️ Не удалось воспроизвести видео — нажмите, чтобы скачать", true);
+    });
+
     if (cachedBlobUrl) {
       videoEl.src = cachedBlobUrl;
     } else {
-      downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
-        if (fullBlobUrl) {
-          videoEl.src = fullBlobUrl;
-        }
-      }).catch((err) => {
-        console.error("[video] Progressive load failed error details:", err);
-        const errBadge = el("div", {
-          style: "position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(239,83,80,0.85);color:#fff;padding:6px 12px;border-radius:12px;font-size:12px;pointer-events:none;white-space:nowrap;"
-        }, "⚠️ Ошибка расшифровки видео");
-        fileCard.appendChild(errBadge);
-      });
+      // Decrypting every video in the history at once blocks the main thread and
+      // freezes the page, so the fetch is deferred until the card is scrolled to.
+      const startLoad = () => {
+        downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
+          if (fullBlobUrl) {
+            videoEl.src = fullBlobUrl;
+          }
+        }).catch((err) => {
+          console.error("[video] Progressive load failed error details:", err);
+          showBadge(
+            err && err.code === "expired"
+              ? "⚠️ Видео больше недоступно на CDN"
+              : "⚠️ Ошибка расшифровки видео",
+            false
+          );
+        });
+      };
+      if (typeof IntersectionObserver === "function") {
+        const observer = new IntersectionObserver((entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) {
+            observer.disconnect();
+            startLoad();
+          }
+        }, { rootMargin: "200px" });
+        observer.observe(videoEl);
+      } else {
+        startLoad();
+      }
     }
 
     let hoverTimer = null;
@@ -398,6 +450,17 @@ function renderFileCard(container, fileMsg) {
 
 export const decryptedBlobCache = new Map();
 
+// An encrypted payload always starts with a 12-byte random nonce, so a body that
+// begins with HTML markup is never our file — it is a VK document page the proxy
+// could not resolve to a direct link, served with 200 OK. Without this check the
+// markup is fed to decryptFileChaCha20 and surfaces as a misleading
+// "cannot be decrypted" error.
+function looksLikeHTMLPage(bytes) {
+  if (bytes.length < 14) return false;
+  const head = new TextDecoder("latin1").decode(bytes.subarray(0, 512)).trimStart().toLowerCase();
+  return head.startsWith("<!doctype html") || head.startsWith("<html");
+}
+
 async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = null, isBackgroundFetch = false) {
   if (btn) {
     btn.disabled = true;
@@ -418,9 +481,24 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
         const resp = await fetch(proxyUrl, { headers });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+          let detail = `HTTP ${resp.status}`;
+          try {
+            const errBody = await resp.json();
+            if (errBody && errBody.error) detail = errBody.error;
+          } catch (e) {/* non-JSON error body */}
+          const err = new Error(detail);
+          if (resp.status === 410) err.code = "expired";
+          throw err;
+        }
         const encryptedBuf = await resp.arrayBuffer();
         const encryptedBytes = new Uint8Array(encryptedBuf);
+
+        if (looksLikeHTMLPage(encryptedBytes)) {
+          const err = new Error("VK returned an HTML page instead of the file");
+          err.code = "expired";
+          throw err;
+        }
 
         const keyBytes = decodeKey(fileInfo.key);
         const decryptedBytes = await decryptFileChaCha20(encryptedBytes, keyBytes);
@@ -454,7 +532,12 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
   } catch (err) {
     if (!isBackgroundFetch) {
       console.error("Failed to download or decrypt file:", err);
-      showToast("Ошибка скачивания или расшифровки файла", "error");
+      showToast(
+        err && err.code === "expired"
+          ? "Файл больше недоступен на CDN — попросите отправить его заново"
+          : "Ошибка скачивания или расшифровки файла",
+        "error"
+      );
     }
     throw err;
   } finally {

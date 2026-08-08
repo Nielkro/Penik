@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -31,8 +33,96 @@ type vkuploadResponse struct {
 	URL string `json:"url"`
 }
 
+// vkAttachmentHosts are the domains the attachment proxy is allowed to reach.
+// A doc link starts on vk.com/vk.ru and ends up on a storage CDN, so every hop
+// is checked against this list — the target URL comes from the client and would
+// otherwise let an authenticated user probe internal services.
+var vkAttachmentHosts = []string{
+	"vk.com",
+	"vk.ru",
+	"userapi.com",
+	"vkuserphoto.ru",
+	"vkuseraudio.net",
+	"vkuservideo.net",
+	"vkuserlive.net",
+	"vk-cdn.net",
+}
+
+func isVKAttachmentHost(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	for _, allowed := range vkAttachmentHosts {
+		if host == allowed || strings.HasSuffix(host, "."+allowed) {
+			return true
+		}
+	}
+	return false
+}
+
+// maxVKDocPageSize caps how much of a VK preview page is buffered while looking
+// for the direct link. The pages run ~200 KB; anything larger is not one.
+const maxVKDocPageSize = 2 << 20
+
+// vkDocURLRe pulls the direct download link out of VK's document preview page.
+// Fetching a vk.com/doc<owner>_<id> link returns that HTML page rather than the
+// file itself — the real storage link sits in the Docs.initDoc({...}) payload.
+var vkDocURLRe = regexp.MustCompile(`"docUrl"\s*:\s*("(?:[^"\\]|\\.)*")`)
+
+// extractVKDocURL returns the direct file link embedded in a VK preview page,
+// or an empty string when the page carries no link (deleted or expired doc).
+func extractVKDocURL(page []byte) string {
+	m := vkDocURLRe.FindSubmatch(page)
+	if m == nil {
+		return ""
+	}
+	var link string
+	if err := json.Unmarshal(m[1], &link); err != nil {
+		return ""
+	}
+	return link
+}
+
+func isHTMLResponse(resp *http.Response) bool {
+	return strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/html")
+}
+
 // ProxyVKAttachment fetches a file from VK CDN on behalf of the web client to bypass CORS restrictions.
 func ProxyVKAttachment() http.HandlerFunc {
+	client := &http.Client{
+		Timeout: 60 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("too many redirects")
+			}
+			if !isVKAttachmentHost(req.URL.Host) {
+				return fmt.Errorf("redirect to disallowed host %q", req.URL.Host)
+			}
+			return nil
+		},
+	}
+
+	get := func(r *http.Request, target string) (*http.Response, error) {
+		parsed, err := url.Parse(target)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || !isVKAttachmentHost(parsed.Host) {
+			return nil, fmt.Errorf("url is not a VK attachment link")
+		}
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target, nil)
+		if err != nil {
+			return nil, fmt.Errorf("invalid url")
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("VK returned status %d", resp.StatusCode)
+		}
+		return resp, nil
+	}
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
 		if userID == 0 {
@@ -46,16 +136,44 @@ func ProxyVKAttachment() http.HandlerFunc {
 			return
 		}
 
-		resp, err := http.Get(targetURL)
+		resp, err := get(r, targetURL)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadGateway)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { resp.Body.Close() }()
+
+		// A doc page URL answers with the HTML preview instead of the file. Follow
+		// the direct link it embeds; forwarding the markup as octet-stream would
+		// reach the client as garbage ciphertext and surface as a decryption error.
+		if isHTMLResponse(resp) {
+			page, readErr := io.ReadAll(io.LimitReader(resp.Body, maxVKDocPageSize))
+			resp.Body.Close()
+			if readErr != nil {
+				http.Error(w, `{"error":"failed to read VK preview page"}`, http.StatusBadGateway)
+				return
+			}
+			docURL := extractVKDocURL(page)
+			if docURL == "" {
+				http.Error(w, `{"error":"attachment link expired"}`, http.StatusGone)
+				return
+			}
+			resp, err = get(r, docURL)
+			if err != nil {
+				http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadGateway)
+				return
+			}
+			if isHTMLResponse(resp) {
+				http.Error(w, `{"error":"attachment link expired"}`, http.StatusGone)
+				return
+			}
+		}
 
 		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.WriteHeader(resp.StatusCode)
+		if cl := resp.Header.Get("Content-Length"); cl != "" {
+			w.Header().Set("Content-Length", cl)
+		}
+		w.WriteHeader(http.StatusOK)
 
 		_, _ = io.Copy(w, resp.Body)
 	}
