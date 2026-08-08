@@ -146,3 +146,8 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `PROJECT_MAP.md` — This index of core source files and their purpose.
 - `SECURITY_AUDIT.md` — Security audit report with a registry of findings and their remediation status.
 - `AUDIT.md` — Review of the browser client's cryptographic implementation.
+- `Docs/README.md` — Documentation sitemap and navigation index.
+- `Docs/REST_API.md` — Full REST API reference: auth, profiles, keys, pairing, groups, attachments, and rate limits.
+- `Docs/WEBSOCKET.md` — Complete WebSocket protocol reference: connection upgrade, binary framing, opcodes (0x01-0x28), and MsgPack payloads.
+- `Docs/ARCHITECTURE.md` — Deep dive into E2EE (X3DH/ChaCha20-Poly1305), epoch-based group encryption, device pairing, VK CDN attachment proxying, and multi-tier persistence.
+
