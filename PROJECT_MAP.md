@@ -17,7 +17,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/handlers/pairing.go` — Creates, presents, and manages pairing sessions for linking new devices and transferring history.
 - `server/internal/handlers/keys.go` — REST handlers for publishing identity/key material, retrieving key bundles, and key backups.
 - `server/internal/handlers/presence.go` — Serves and broadcasts user presence states and active device information.
-- `server/internal/handlers/vkupload.go` — Accepts encrypted attachment payloads and uploads them to VK CDN via VK Docs API.
+- `server/internal/handlers/vkupload.go` — Accepts encrypted attachment payloads and uploads them to VK CDN via VK Docs API; proxies downloads through a VK host allowlist, resolving document preview pages to their direct link.
 - `server/internal/handlers/ws.go` — Authorizes WebSocket upgrades and creates server-side client sessions for real-time event exchange.
 - `server/internal/ws/client.go` — Implements the WebSocket client read/write pump, handling direct messages, key requests, receipt events, offline batching, and presence.
 - `server/internal/ws/group.go` — Receives and routes encrypted group messages, receipts, and offline delivery across group members.
