@@ -570,9 +570,10 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   position: absolute;
   bottom: 8px;
   right: 8px;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.55);
+  /* No backdrop-filter here: this badge sits on top of a <video>, and blurring
+     the backdrop over a video layer renders it black on several GPU/compositor
+     combinations and re-snapshots the backdrop on every decoded frame. */
   padding: 2px 7px;
   border-radius: 12px;
   margin: 0;
