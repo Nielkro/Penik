@@ -1,6 +1,6 @@
-# Messenger Server
+# Penik Messenger — сервер
 
-Go backend для мессенджера Penik. Мульти-девайс, бинарный WebSocket (MessagePack).
+Go backend для Penik Messenger. Мульти-девайс, бинарный WebSocket (MessagePack).
 
 ## Стек
 

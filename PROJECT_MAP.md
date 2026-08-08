@@ -1,6 +1,6 @@
 # Project Map
 
-Map of core source files for the Penik project. Paths are relative to the project root; cache, logs, vendor code, and auto-generated build artifacts are excluded.
+Map of core source files for the Penik Messenger project. Paths are relative to the project root; cache, logs, vendor code, and auto-generated build artifacts are excluded.
 
 ## Network
 
