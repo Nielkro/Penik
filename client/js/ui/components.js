@@ -543,6 +543,21 @@ function looksLikeHTMLPage(bytes) {
   return head.startsWith("<!doctype html") || head.startsWith("<html");
 }
 
+// AttachmentError marks a download failure the UI can react to specifically.
+// `code === "expired"` means VK no longer serves the file, so retrying is
+// pointless and the card should offer a plain download link instead.
+class AttachmentError extends Error {
+  /**
+   * @param {string} message
+   * @param {string} [code]
+   */
+  constructor(message, code) {
+    super(message);
+    this.name = "AttachmentError";
+    this.code = code;
+  }
+}
+
 async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = null, isBackgroundFetch = false) {
   if (btn) {
     btn.disabled = true;
@@ -559,6 +574,7 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
       if (!blobUrl) {
         const token = getToken();
         const proxyUrl = `/api/v1/attachments/proxy?url=${encodeURIComponent(fileInfo.url)}`;
+        /** @type {Record<string, string>} */
         const headers = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -569,23 +585,19 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
             const errBody = await resp.json();
             if (errBody && errBody.error) detail = errBody.error;
           } catch (e) {/* non-JSON error body */}
-          const err = new Error(detail);
-          if (resp.status === 410) err.code = "expired";
-          throw err;
+          throw new AttachmentError(detail, resp.status === 410 ? "expired" : undefined);
         }
         const encryptedBuf = await resp.arrayBuffer();
         const encryptedBytes = new Uint8Array(encryptedBuf);
 
         if (looksLikeHTMLPage(encryptedBytes)) {
-          const err = new Error("VK returned an HTML page instead of the file");
-          err.code = "expired";
-          throw err;
+          throw new AttachmentError("VK returned an HTML page instead of the file", "expired");
         }
 
         const keyBytes = decodeKey(fileInfo.key);
         const decryptedBytes = await decryptFileChaCha20(encryptedBytes, keyBytes);
 
-        const blob = new Blob([decryptedBytes], { type: fileInfo.mime || "application/octet-stream" });
+        const blob = new Blob([/** @type {BlobPart} */ (decryptedBytes)], { type: fileInfo.mime || "application/octet-stream" });
         blobUrl = URL.createObjectURL(blob);
         saveCachedMedia(fileInfo.url, blob, fileInfo.mime).catch(() => {});
       }
@@ -939,7 +951,7 @@ export function formatDate(ts) {
 
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today - 86400000);
+  const yesterday = new Date(today.getTime() - 86400000);
   const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
   if (msgDay.getTime() === today.getTime()) return "Сегодня";
@@ -963,7 +975,7 @@ export function formatPresence(presence) {
   if (now.getTime() - d.getTime() < 60_000) return "был(а) в сети только что";
 
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today - 86400000);
+  const yesterday = new Date(today.getTime() - 86400000);
   const seenDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
@@ -1272,6 +1284,11 @@ export function showPromptModal(title, placeholder, defaultValue = "") {
     const overlay = el("div", {
       style: "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;"
     }, modalBox);
+
+    const closeWithResult = (result) => {
+      document.body.removeChild(overlay);
+      resolve(result);
+    };
 
     confirmBtn.addEventListener("click", () => {
       closeWithResult(input.value.trim());

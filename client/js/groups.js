@@ -22,6 +22,7 @@ import {
   rotateGroupKey as apiRotateGroupKey,
   getGroupHistory,
   uploadGroupHistoryPackets,
+  getGroupHistoryPacket,
   renameGroup as apiRenameGroup,
   uploadGroupAvatar,
 } from './api.js';
