@@ -184,7 +184,11 @@ func EncryptAndUploadPhoto(photoPath string, secretKey []byte, uploadURL string,
 }
 
 func main() {
-	botToken := "vk1.a.oJNzJlPS5YOM0m6_aLiZeW8eEYDwm4sEAIOaKzvqioiD2mXFKMcMVYkK8_64p_zOGwdeDzh_1mu3fW110xoFx9vhGLCHN0UO-9WhC5GScs0UQ_9B1VbkQoDrAPTF5alz3pam0JvlpocVE4PEE2_ESEum7-5sn_KjDKTIJHrfbjJjfliAaLtHu7otPJISd3xxiYnM8M3MJAaloLCTIjBdng"
+	botToken := os.Getenv("VK_BOT_TOKEN")
+	if botToken == "" {
+		fmt.Println("VK_BOT_TOKEN env var is not set")
+		return
+	}
 	secretKey := []byte("12345678901234567890123456789012") // 32 байта AES-256
 	photoPath := "zip.zip"
 
