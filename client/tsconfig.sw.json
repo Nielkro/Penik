@@ -1,0 +1,19 @@
+{
+  // The service worker needs the WebWorker lib instead of DOM: `self` is a
+  // ServiceWorkerGlobalScope there, not a Window. The two libs declare
+  // conflicting globals, so the worker cannot share the main tsconfig.
+  "compilerOptions": {
+    "noEmit": true,
+    "checkJs": true,
+    "allowJs": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "WebWorker"],
+    "types": [],
+    "skipLibCheck": true,
+    "strict": false,
+    "noImplicitAny": false
+  },
+  "include": ["sw.js"]
+}

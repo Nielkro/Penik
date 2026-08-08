@@ -74,6 +74,7 @@ function convertFileToWebP(file) {
 
 async function uploadAvatarFile(file) {
   const token = getToken();
+  /** @type {Record<string, string>} */
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
 

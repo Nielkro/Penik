@@ -8,7 +8,7 @@ import {
 // Setup global crypto for older Node versions if needed
 if (typeof window === 'undefined' && typeof globalThis.crypto === 'undefined') {
   const { webcrypto } = await import('node:crypto');
-  globalThis.crypto = webcrypto;
+  globalThis.crypto = /** @type {Crypto} */ (/** @type {unknown} */ (webcrypto));
 }
 
 async function runTests() {

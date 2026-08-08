@@ -1,0 +1,22 @@
+{
+  // Type checking only. The build is Vite's job — tsc never emits here, and no
+  // source file is TypeScript. Types come from JSDoc annotations and inference.
+  "compilerOptions": {
+    "noEmit": true,
+    "checkJs": true,
+    "allowJs": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    // Kept off deliberately: turning these on in one go would bury the real
+    // findings under thousands of "implicitly any" notes. Tighten later.
+    "strict": false,
+    "noImplicitAny": false
+  },
+  "include": ["js/**/*.js", "js/**/*.d.ts"],
+  "exclude": ["js/vendor/**", "node_modules", "dist"]
+}

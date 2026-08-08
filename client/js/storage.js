@@ -10,7 +10,7 @@ export function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
-      const db = e.target.result;
+      const db = req.result;
       if (!db.objectStoreNames.contains("messages")) {
         const ms = db.createObjectStore("messages", { keyPath: "msg_id" });
         ms.createIndex("chat_id", "chat_id", { unique: false });
@@ -51,8 +51,8 @@ export function openDB() {
         }
       }
     };
-    req.onsuccess = (e) => {
-      _db = e.target.result;
+    req.onsuccess = () => {
+      _db = req.result;
       resolve(_db);
     };
     req.onerror = () => reject(req.error);

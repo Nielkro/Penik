@@ -298,8 +298,8 @@ export async function generateKeyPair() {
     ["deriveBits"]
   );
   
-  const pubRaw = new Uint8Array(await subtle.exportKey("raw", keyPair.publicKey));
-  const privPkcs8 = new Uint8Array(await subtle.exportKey("pkcs8", keyPair.privateKey));
+  const pubRaw = new Uint8Array(await subtle.exportKey("raw", /** @type {CryptoKeyPair} */ (keyPair).publicKey));
+  const privPkcs8 = new Uint8Array(await subtle.exportKey("pkcs8", /** @type {CryptoKeyPair} */ (keyPair).privateKey));
   const privRaw = privPkcs8.slice(privPkcs8.length - 32);
   
   return { publicKey: pubRaw, privateKey: privRaw };

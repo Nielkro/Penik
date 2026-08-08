@@ -1,16 +1,22 @@
 /* ── Service Worker Streamer for Encrypted Media (HTTP 206 Partial Content) ── */
 
+/// <reference lib="webworker" />
+
+// `self` is a ServiceWorkerGlobalScope here, but the default lib types it as the
+// broader WorkerGlobalScope. Narrowing it once gives correct event types below.
+const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self));
+
 const SW_VERSION = 'v1';
 
-self.addEventListener('install', () => {
-  self.skipWaiting();
+sw.addEventListener('install', () => {
+  sw.skipWaiting();
 });
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+sw.addEventListener('activate', (event) => {
+  event.waitUntil(sw.clients.claim());
 });
 
-self.addEventListener('fetch', (event) => {
+sw.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   // Intercept stream requests registered under /sw-stream/
@@ -24,7 +30,7 @@ async function handleStreamRequest(request) {
   const mediaId = url.pathname.replace('/sw-stream/', '');
 
   // Communicate with clients to retrieve blob from memory/IndexedDB cache
-  const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const clientList = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
   if (!clientList || clientList.length === 0) {
     return new Response('No client available', { status: 503 });
   }
