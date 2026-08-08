@@ -251,6 +251,18 @@ export function setMsgTextContent(el, text) {
   }
 }
 
+// describeUndecodableVideo reads back the already-decrypted blob and returns a
+// human-readable codec name, or "" when the container tells us nothing useful.
+async function describeUndecodableVideo(blobUrl) {
+  try {
+    const resp = await fetch(blobUrl);
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+    return MP4_VIDEO_CODECS[sniffMp4VideoCodec(bytes)] || "";
+  } catch (e) {
+    return "";
+  }
+}
+
 function renderFileCard(container, fileMsg) {
   const f = fileMsg.file;
   const isImage = (f.mime || "").startsWith("image/");
@@ -327,15 +339,22 @@ function renderFileCard(container, fileMsg) {
     };
 
     // A browser without a decoder for this codec still parses the container and
-    // plays the audio track, but reports videoWidth 0 and paints black. Offer the
-    // file for download instead of leaving an empty card.
+    // plays the audio track, but reports videoWidth 0 and paints black. Name the
+    // codec so the cause is obvious, and offer the file for download.
     videoEl.addEventListener("loadeddata", () => {
-      if (!videoEl.videoWidth) {
-        showBadge("⚠️ Браузер не умеет декодировать это видео — нажмите, чтобы скачать", true);
-      } else if (badgeEl) {
-        badgeEl.remove();
-        badgeEl = null;
+      if (videoEl.videoWidth) {
+        if (badgeEl) {
+          badgeEl.remove();
+          badgeEl = null;
+        }
+        return;
       }
+      showBadge("⚠️ Браузер не может декодировать это видео — нажмите, чтобы скачать", true);
+      describeUndecodableVideo(videoEl.src).then((codec) => {
+        if (codec && badgeEl) {
+          showBadge(`⚠️ Видео в ${codec} — браузер его не поддерживает. Нажмите, чтобы скачать`, true);
+        }
+      });
     });
     videoEl.addEventListener("error", () => {
       showBadge("⚠️ Не удалось воспроизвести видео — нажмите, чтобы скачать", true);
@@ -449,6 +468,56 @@ function renderFileCard(container, fileMsg) {
 }
 
 export const decryptedBlobCache = new Map();
+
+// Human-readable names for the MP4 sample entry codes a video track can carry.
+// Only avc1/avc3 (H.264) decode everywhere; HEVC needs hardware support the
+// browser may not expose, and AV1 needs a recent build.
+const MP4_VIDEO_CODECS = {
+  avc1: "H.264",
+  avc3: "H.264",
+  hvc1: "H.265 (HEVC)",
+  hev1: "H.265 (HEVC)",
+  av01: "AV1",
+  vp09: "VP9",
+  mp4v: "MPEG-4 Part 2",
+};
+
+// sniffMp4VideoCodec walks moov > trak > mdia > minf > stbl > stsd and returns
+// the first video sample entry code it finds, so a track the browser refuses to
+// decode can be named in the error message instead of failing silently.
+function sniffMp4VideoCodec(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const containers = new Set(["moov", "trak", "mdia", "minf", "stbl"]);
+
+  const walk = (start, end, depth) => {
+    let offset = start;
+    while (offset + 8 <= end && depth < 8) {
+      const size = view.getUint32(offset);
+      let type = "";
+      for (let i = 0; i < 4; i++) type += String.fromCharCode(view.getUint8(offset + 4 + i));
+      // A size of 0 means "until end of file"; 1 means a 64-bit size follows,
+      // which only appears on mdat and is never on the path to stsd.
+      const boxEnd = size === 0 ? end : offset + size;
+      if (size === 1 || boxEnd <= offset || boxEnd > end) return "";
+
+      if (type === "stsd") {
+        // FullBox header (4) + entry_count (4), then size (4) + code (4).
+        const entry = offset + 16;
+        if (entry + 8 > boxEnd) return "";
+        let code = "";
+        for (let i = 0; i < 4; i++) code += String.fromCharCode(view.getUint8(entry + 4 + i));
+        if (MP4_VIDEO_CODECS[code]) return code;
+      } else if (containers.has(type)) {
+        const found = walk(offset + 8, boxEnd, depth + 1);
+        if (found) return found;
+      }
+      offset = boxEnd;
+    }
+    return "";
+  };
+
+  return walk(0, bytes.byteLength, 0);
+}
 
 // An encrypted payload always starts with a 12-byte random nonce, so a body that
 // begins with HTML markup is never our file — it is a VK document page the proxy
