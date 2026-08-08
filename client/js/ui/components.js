@@ -321,43 +321,58 @@ function renderFileCard(container, fileMsg) {
       videoEl.poster = f.thumb;
     }
 
-    let badgeEl = null;
-    const showBadge = (text, clickable) => {
-      if (badgeEl) badgeEl.remove();
-      badgeEl = el("div", {
-        style: "position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(239,83,80,0.85);" +
-          "color:#fff;padding:6px 12px;border-radius:12px;font-size:12px;text-align:center;max-width:90%;" +
-          (clickable ? "cursor:pointer;" : "pointer-events:none;")
-      }, text);
-      if (clickable) {
-        badgeEl.addEventListener("click", (e) => {
+    // Appended up front so a fallback card replacing it later cannot be undone
+    // by a deferred append.
+    fileCard.appendChild(videoEl);
+
+    // An unplayable video element has no intrinsic size, so an overlay badge
+    // would collapse to a sliver — swap the whole element for a document card.
+    let noteEl = null;
+    const showFallbackCard = (note, downloadable) => {
+      videoEl.remove();
+      if (noteEl) {
+        noteEl.textContent = note;
+        return;
+      }
+      noteEl = el("div", { style: "font-size:11px;line-height:1.4;color:#ffb4ab;" }, note);
+      const card = el("div", {
+        style: "display:flex;flex-direction:column;gap:6px;width:260px;max-width:100%;box-sizing:border-box;" +
+          "background:rgba(255,255,255,0.06);padding:10px 12px;border-radius:14px;" +
+          (downloadable ? "cursor:pointer;" : "")
+      },
+        el("div", { style: "display:flex;align-items:center;gap:10px;min-width:0;" },
+          el("span", { style: "font-size:24px;flex-shrink:0;" }, "🎬"),
+          el("div", { style: "display:flex;flex-direction:column;min-width:0;flex:1;" },
+            el("span", { style: "font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;" }, f.name || "Видео"),
+            el("span", { style: "font-size:11px;color:var(--text-muted);" }, formatFileSize(f.size || 0))
+          )
+        ),
+        noteEl
+      );
+      if (downloadable) {
+        card.addEventListener("click", (e) => {
           e.stopPropagation();
           downloadAndDecryptFile(f, false);
         });
       }
-      fileCard.appendChild(badgeEl);
+      fileCard.insertBefore(card, fileCard.firstChild);
     };
 
     // A browser without a decoder for this codec still parses the container and
     // plays the audio track, but reports videoWidth 0 and paints black. Name the
     // codec so the cause is obvious, and offer the file for download.
     videoEl.addEventListener("loadeddata", () => {
-      if (videoEl.videoWidth) {
-        if (badgeEl) {
-          badgeEl.remove();
-          badgeEl = null;
-        }
-        return;
-      }
-      showBadge("⚠️ Браузер не может декодировать это видео — нажмите, чтобы скачать", true);
-      describeUndecodableVideo(videoEl.src).then((codec) => {
-        if (codec && badgeEl) {
-          showBadge(`⚠️ Видео в ${codec} — браузер его не поддерживает. Нажмите, чтобы скачать`, true);
+      if (videoEl.videoWidth) return;
+      const src = videoEl.src;
+      showFallbackCard("Браузер не может декодировать это видео. Нажмите, чтобы скачать.", true);
+      describeUndecodableVideo(src).then((codec) => {
+        if (codec && noteEl) {
+          noteEl.textContent = `Видео в ${codec} — браузер этот кодек не поддерживает. Нажмите, чтобы скачать.`;
         }
       });
     });
     videoEl.addEventListener("error", () => {
-      showBadge("⚠️ Не удалось воспроизвести видео — нажмите, чтобы скачать", true);
+      showFallbackCard("Не удалось воспроизвести видео. Нажмите, чтобы скачать.", true);
     });
 
     if (cachedBlobUrl) {
@@ -372,10 +387,10 @@ function renderFileCard(container, fileMsg) {
           }
         }).catch((err) => {
           console.error("[video] Progressive load failed error details:", err);
-          showBadge(
+          showFallbackCard(
             err && err.code === "expired"
-              ? "⚠️ Видео больше недоступно на CDN"
-              : "⚠️ Ошибка расшифровки видео",
+              ? "Видео больше недоступно на CDN."
+              : "Ошибка расшифровки видео.",
             false
           );
         });
@@ -428,8 +443,6 @@ function renderFileCard(container, fileMsg) {
         showFullscreenMedia(videoEl.src, true);
       }
     });
-
-    fileCard.appendChild(videoEl);
 
     if (fileMsg.text) {
       const captionEl = el("div", { style: "margin-top:2px;font-size:14px;word-break:break-word;padding:0 4px;" }, fileMsg.text);
