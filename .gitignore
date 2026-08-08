@@ -15,3 +15,7 @@ server/data/upload
 server/.env
 *.kate-swp
 .*.kate-swp
+*.jks
+*.keystore
+key.properties
+google-services.json

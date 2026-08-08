@@ -1,0 +1,15 @@
+#!/bin/sh
+# gitleaks pre-commit hook. Blocks the commit if a secret is found in staged changes.
+set -e
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "gitleaks not installed. Skipping secret scan."
+  echo "Install: sudo pacman -S gitleaks"
+  exit 0
+fi
+
+if ! gitleaks protect --staged --no-banner --no-color; then
+  echo "gitleaks found staged secrets. Commit blocked."
+  echo "If this is a false positive, add a rule to .gitleaks.toml or an entry to .gitleaksignore."
+  exit 1
+fi
