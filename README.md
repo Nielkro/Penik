@@ -24,6 +24,7 @@
 ## Структура репозитория
 
 ```
+Docs/            Подробная документация: REST API, WebSocket, Architecture
 server/          Go-бэкенд: REST + WebSocket, SQLite, встроенная раздача веб-клиента
   cmd/server/    точка входа, embed собранного фронтенда
   internal/      config, db, handlers, middleware, models, ws
@@ -167,9 +168,14 @@ go test ./...
 
 ## Документация
 
-- `PROJECT_MAP.md` — индекс исходников с назначением каждого файла
+- [`Docs/README.md`](Docs/README.md) — Главный индекс и навигация по документации
+- [`Docs/REST_API.md`](Docs/REST_API.md) — Подробная спецификация REST API
+- [`Docs/WEBSOCKET.md`](Docs/WEBSOCKET.md) — Бинарный протокол WebSocket (опкоды 0x01–0x28)
+- [`Docs/ARCHITECTURE.md`](Docs/ARCHITECTURE.md) — Архитектура E2EE, группы, устройства, VK CDN и база данных
+- `PROJECT_MAP.md` — Индекс исходников с назначением каждого файла
 - `plan/api_protocol.md` — REST и WebSocket-протокол
 - `plan/e2ee_plan.md` — схема сквозного шифрования
 - `plan/groups_plan.md` — групповая криптография и ротация ключей
 - `plan/android_client_plan.md` — архитектура Android-клиента
 - `server/README.md` — детали серверного API
+
