@@ -13,3 +13,5 @@ server/data/upload
 .env
 *.env
 server/.env
+*.kate-swp
+.*.kate-swp
