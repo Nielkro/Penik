@@ -265,7 +265,7 @@ class WSManager {
       if (bytes.length < 1) return;
 
       const opcode = bytes[0];
-      const payload = bytes.length > 1 ? decode(bytes.slice(1)) : {};
+      const payload = bytes.length > 1 ? /** @type {any} */ (decode(bytes.slice(1))) : {};
 
       /* Handle pong internally */
       if (opcode === OP.PONG) {

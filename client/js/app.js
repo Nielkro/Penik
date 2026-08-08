@@ -206,7 +206,7 @@ function buildMainLayout() {
     </button>
   `;
 
-  nav.querySelectorAll('.nav-item').forEach(btn => {
+  /** @type {NodeListOf<HTMLElement>} */ (nav.querySelectorAll('.nav-item')).forEach(btn => {
     btn.addEventListener('click', () => navigate('#' + btn.dataset.screen));
   });
 
@@ -468,10 +468,10 @@ async function onMsgRecvGlobal(payload) {
       
       // Update DOM dataset ID of the message bubble
       if (_activeChatCallback) {
-        const bubble = document.querySelector(`[data-msg-id="${domId}"]`) || document.querySelector(`[data-msg-id="${resolvedOldId}"]`);
+        const bubble = /** @type {HTMLElement} */ (document.querySelector(`[data-msg-id="${domId}"]`) || document.querySelector(`[data-msg-id="${resolvedOldId}"]`));
         if (bubble) {
           bubble.dataset.msgId = payload.msg_id;
-          const statusEl = bubble.querySelector(".msg-status");
+          const statusEl = /** @type {HTMLElement} */ (bubble.querySelector(".msg-status"));
           if (statusEl) {
             statusEl.dataset.msgId = payload.msg_id;
           }
@@ -681,10 +681,10 @@ async function onMsgAckReceivedGlobal(payload) {
     await updateMsgIdAndDelivered(clientMsgId, serverMsgId, 0);
 
     if (_activeChatCallback && String(_activeChatCallback.userId) === String(pending.userId)) {
-      const bubble = document.querySelector(`[data-msg-id="${pending.tempId}"]`);
+      const bubble = /** @type {HTMLElement} */ (document.querySelector(`[data-msg-id="${pending.tempId}"]`));
       if (bubble) {
         bubble.dataset.msgId = serverMsgId;
-        const statusEl = bubble.querySelector(".msg-status");
+        const statusEl = /** @type {HTMLElement} */ (bubble.querySelector(".msg-status"));
         if (statusEl) {
           statusEl.dataset.msgId = serverMsgId;
         }

@@ -1,5 +1,20 @@
 const BASE = `${window.location.protocol}//${window.location.host}/api/v1`;
 
+// ApiError carries the HTTP status next to the message so callers can branch on
+// it — 404 for a missing resource, 410 for an expired CDN link, 0 when the
+// request never reached the server.
+export class ApiError extends Error {
+  /**
+   * @param {string} message
+   * @param {number} status
+   */
+  constructor(message, status) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 let _token = null;
 
 export function setToken(t) {
@@ -15,11 +30,13 @@ export function getToken() {
 
 async function request(method, path, body, opts = {}) {
   const token = opts.token ?? getToken();
+  /** @type {Record<string, string>} */
   const headers = {};
 
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  let init = { method, headers };
+  /** @type {RequestInit} */
+  const init = { method, headers };
 
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
@@ -30,9 +47,7 @@ async function request(method, path, body, opts = {}) {
   try {
     res = await fetch(BASE + path, init);
   } catch (e) {
-    const err = new Error('Нет соединения с сервером (CORS или сервер недоступен)');
-    err.status = 0;
-    throw err;
+    throw new ApiError('Нет соединения с сервером (CORS или сервер недоступен)', 0);
   }
 
   if (res.ok) window.dispatchEvent(new Event('penik:rest-success'));
@@ -57,9 +72,7 @@ async function request(method, path, body, opts = {}) {
   if (!res.ok) {
     const msg = (typeof data === 'object' && data?.error) ? data.error
       : (typeof data === 'string' ? data : `HTTP ${res.status}`);
-    const err = new Error(msg);
-    err.status = res.status;
-    throw err;
+    throw new ApiError(msg, res.status);
   }
 
   return data;
@@ -105,6 +118,7 @@ export async function uploadAvatar(file) {
   const formData = new FormData();
   formData.append('avatar', file);
   const token = getToken();
+  /** @type {Record<string, string>} */
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -121,9 +135,7 @@ export async function uploadAvatar(file) {
       const data = JSON.parse(text);
       if (data && data.error) msg = data.error;
     } catch {}
-    const err = new Error(msg || 'Не удалось загрузить аватар');
-    err.status = res.status;
-    throw err;
+    throw new ApiError(msg || 'Не удалось загрузить аватар', res.status);
   }
   window.dispatchEvent(new Event('penik:rest-success'));
   return true;
@@ -133,6 +145,7 @@ export async function uploadVKAttachment(encryptedFileBlob, filename = 'encrypte
   const formData = new FormData();
   formData.append('file', encryptedFileBlob, filename);
   const token = getToken();
+  /** @type {Record<string, string>} */
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -149,9 +162,7 @@ export async function uploadVKAttachment(encryptedFileBlob, filename = 'encrypte
       const data = JSON.parse(text);
       if (data && data.error) msg = data.error;
     } catch {}
-    const err = new Error(msg || 'Не удалось загрузить файл на VK CDN');
-    err.status = res.status;
-    throw err;
+    throw new ApiError(msg || 'Не удалось загрузить файл на VK CDN', res.status);
   }
   window.dispatchEvent(new Event('penik:rest-success'));
   const json = await res.json();
@@ -191,6 +202,7 @@ export async function uploadGroupAvatar(groupId, file) {
   const formData = new FormData();
   formData.append('avatar', file);
   const token = getToken();
+  /** @type {Record<string, string>} */
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -207,9 +219,7 @@ export async function uploadGroupAvatar(groupId, file) {
       const data = JSON.parse(text);
       if (data && data.error) msg = data.error;
     } catch {}
-    const err = new Error(msg || 'Не удалось загрузить аватар группы');
-    err.status = res.status;
-    throw err;
+    throw new ApiError(msg || 'Не удалось загрузить аватар группы', res.status);
   }
   window.dispatchEvent(new Event('penik:rest-success'));
   return true;
@@ -227,6 +237,10 @@ export function getGroupEnvelope(groupId, version) { return get(`/groups/${group
 export function uploadGroupEnvelopes(groupId, version, envelopes) { return post(`/groups/${groupId}/keys/${version}/envelopes`, { envelopes }); }
 export function rotateGroupKey(groupId) { return post(`/groups/${groupId}/keys/rotate`); }
 
+/**
+ * @param {number} groupId
+ * @param {{ limit?: number, before_id?: number }} [opts]
+ */
 export function getGroupHistory(groupId, { limit = 100, before_id } = {}) {
   let path = `/groups/${groupId}/messages/history?limit=${limit}`;
   if (before_id) path += `&before_id=${before_id}`;

@@ -56,6 +56,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/js/ui/profile.js` — Profile screen for editing user data and uploading avatars.
 - `client/js/ui/search.js` — User search screen and initiator for direct chats.
 - `client/js/ui/components.js` — Shared UI components: avatars, time formatting, hover tooltip for full timestamp, message copy menu, scroll-down button, toasts, and modals.
+- `client/js/globals.d.ts` — Ambient type declarations for globals the app attaches to `window`; type-checking only, emits no JavaScript.
 
 ### Android client
 
@@ -132,6 +133,8 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/go.mod` — Describes the Go server module and its dependencies.
 - `client/package.json` — Describes npm scripts, dependencies, and build config for the web client.
 - `client/vite.config.js` — Vite configuration for development and production build of the browser client.
+- `client/tsconfig.json` — Type-check-only TypeScript config for the browser sources: `checkJs` over plain JavaScript with `noEmit`, driven by `npm run typecheck`.
+- `client/tsconfig.sw.json` — Separate type-check config for the service worker, which needs the WebWorker lib instead of DOM.
 - `android/settings.gradle.kts` — Configures the Android Gradle project and its modules.
 - `android/build.gradle.kts` — Root Gradle configuration for the Android project.
 - `android/app/build.gradle.kts` — Configuration for the Android app, SDK, Compose, Hilt, Room, SQLCipher, and network dependencies.
