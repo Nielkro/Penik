@@ -135,3 +135,11 @@ Map of core source files for the Penik project. Paths are relative to the projec
 - `android/settings.gradle.kts` — Configures the Android Gradle project and its modules.
 - `android/build.gradle.kts` — Root Gradle configuration for the Android project.
 - `android/app/build.gradle.kts` — Configuration for the Android app, SDK, Compose, Hilt, Room, SQLCipher, and network dependencies.
+
+### Documentation
+
+- `README.md` — Root project overview: stack, repository layout, build and run instructions for server/web/Android, configuration reference, architecture summary (E2EE, pairing, WebSocket transport, storage, attachments), rate limits, test commands, and known security limitations.
+- `server/README.md` — Server-side details: Go backend stack, environment configuration, REST endpoints, and WebSocket opcode table.
+- `PROJECT_MAP.md` — This index of core source files and their purpose.
+- `SECURITY_AUDIT.md` — Security audit report with a registry of findings and their remediation status.
+- `AUDIT.md` — Review of the browser client's cryptographic implementation.
