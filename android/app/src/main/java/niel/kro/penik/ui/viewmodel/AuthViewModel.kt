@@ -151,7 +151,7 @@ class AuthViewModel @Inject constructor(
                             }
                             
                             // Connect WS
-                            webSocketManager.connect("web.dev.penik.ru", 443, authResp.token)
+                            webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, authResp.token)
                             _uiState.value = _uiState.value.copy(isLoading = false)
                             onSuccess()
                         },
@@ -221,7 +221,7 @@ class AuthViewModel @Inject constructor(
                         _uiState.value = _uiState.value.copy(isLoading = false, step = 3)
                     } else {
                         authRepository.getToken()?.let { tok ->
-                            webSocketManager.connect("web.dev.penik.ru", 443, tok)
+                            webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, tok)
                         }
                         _uiState.value = _uiState.value.copy(isLoading = false)
                         onSuccess()
@@ -248,7 +248,7 @@ class AuthViewModel @Inject constructor(
                     // Sync message history and connect WS
                     messageRepository.syncHistory()
                     authRepository.getToken()?.let { tok ->
-                        webSocketManager.connect("web.dev.penik.ru", 443, tok)
+                        webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, tok)
                     }
                     _uiState.value = _uiState.value.copy(isLoading = false)
                     onSuccess()
@@ -274,7 +274,7 @@ class AuthViewModel @Inject constructor(
                     // Connect WS and synchronize
                     messageRepository.syncHistory()
                     authRepository.getToken()?.let { tok ->
-                        webSocketManager.connect("web.dev.penik.ru", 443, tok)
+                        webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, tok)
                     }
                     _uiState.value = _uiState.value.copy(isLoading = false)
                     onSuccess()
@@ -294,7 +294,7 @@ class AuthViewModel @Inject constructor(
                 authRepository.generateAndSaveKeys()
                 messageRepository.syncHistory()
                 authRepository.getToken()?.let { tok ->
-                    webSocketManager.connect("web.dev.penik.ru", 443, tok)
+                    webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, tok)
                 }
                 _uiState.value = _uiState.value.copy(isLoading = false)
                 onSuccess()

@@ -141,12 +141,11 @@ private fun initialsText(name: String): String {
 // callers (e.g. a tap-to-view-fullscreen handler) can reference the exact
 // image being displayed without duplicating the URL scheme.
 fun avatarUrlFor(isGroup: Boolean, id: Long, avatarKey: Any? = null): String {
-    val base = if (isGroup) {
-        "https://web.dev.penik.ru/api/v1/groups/$id/avatar"
+    return if (isGroup) {
+        niel.kro.penik.data.network.api.ApiConfig.getGroupAvatarUrl(id, avatarKey)
     } else {
-        "https://web.dev.penik.ru/api/v1/avatar/$id"
+        niel.kro.penik.data.network.api.ApiConfig.getUserAvatarUrl(id, avatarKey)
     }
-    return if (avatarKey != null) "$base?t=$avatarKey" else base
 }
 
 // FullscreenImageViewer shows `url` full-screen in a dialog, dismissed by

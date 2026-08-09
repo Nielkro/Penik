@@ -37,6 +37,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 ### Android client transport
 
+- `android/app/src/main/java/niel/kro/penik/data/network/api/ApiConfig.kt` — Central network configuration object holding server host, port, scheme, base URL, and avatar URL generators.
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiService.kt` — Retrofit contract for the Android client's REST API covering auth, profiles, messages, pairing, groups, keys, and avatars.
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiModels.kt` — Kotlin data models for Retrofit API requests and responses.
 - `android/app/src/main/java/niel/kro/penik/data/network/websocket/WebSocketManager.kt` — Maintains the OkHttp WebSocket connection, binary MsgPack protocol, reconnects, ping/pong, and flow of typed events.

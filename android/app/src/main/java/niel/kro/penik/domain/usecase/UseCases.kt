@@ -21,7 +21,7 @@ class LoginUseCase @Inject constructor(
         val result = authRepository.login(nickname, password, deviceName)
         return result.map {
             messageRepository.syncHistory()
-            webSocketManager.connect("web.dev.penik.ru", 443, it.token)
+            webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, it.token)
         }
     }
 }
@@ -38,7 +38,7 @@ class RegisterUseCase @Inject constructor(
     ): Result<Unit> {
         val result = authRepository.register(name, nickname, password, deviceName)
         return result.map {
-            webSocketManager.connect("web.dev.penik.ru", 443, it.token)
+            webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, it.token)
         }
     }
 }
