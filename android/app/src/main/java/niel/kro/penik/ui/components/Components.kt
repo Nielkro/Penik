@@ -625,8 +625,8 @@ private fun LocalVideoPlayer(file: File, contentDescription: String) {
         factory = {
             PlayerView(it).apply {
                 layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
                 )
                 this.player = player
                 useController = true
@@ -635,8 +635,8 @@ private fun LocalVideoPlayer(file: File, contentDescription: String) {
             }
         },
         modifier = Modifier
-            .widthIn(max = 260.dp)
-            .heightIn(max = 360.dp)
+            .fillMaxWidth()
+            .heightIn(min = 180.dp, max = 320.dp)
             .aspectRatio(aspectRatio, matchHeightConstraintsFirst = false)
             .clip(RoundedCornerShape(8.dp)),
         update = {
@@ -904,7 +904,7 @@ fun MessageBubble(
                     )
                 }
             }
-            Column(modifier = Modifier.width(IntrinsicSize.Max)) {
+            Column {
                 if (!isSentByMe && senderName != null) {
                     val hue = if (senderUserId != null && senderUserId > 0) (senderUserId * 137) % 360 else 0L
                     val nameColor = Color.hsl(hue.toFloat(), 0.65f, 0.65f)
