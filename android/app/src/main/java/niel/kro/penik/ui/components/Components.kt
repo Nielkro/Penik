@@ -732,6 +732,17 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
         }
     }
 
+    val togglePlay = {
+        if (player.playbackState == Player.STATE_ENDED) {
+            player.seekTo(0)
+            player.play()
+        } else if (player.isPlaying) {
+            player.pause()
+        } else {
+            player.play()
+        }
+    }
+
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) {
@@ -740,6 +751,8 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
                     duration = player.duration.coerceAtLeast(0L)
+                } else if (playbackState == Player.STATE_ENDED) {
+                    isPlaying = false
                 }
             }
         }
@@ -797,13 +810,7 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                if (player.isPlaying) {
-                                    player.pause()
-                                } else {
-                                    player.play()
-                                }
-                            },
+                            .clickable { togglePlay() },
                         update = {
                             it.player = player
                             it.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -824,13 +831,7 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
-                        onClick = {
-                            if (player.isPlaying) {
-                                player.pause()
-                            } else {
-                                player.play()
-                            }
-                        },
+                        onClick = { togglePlay() },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
