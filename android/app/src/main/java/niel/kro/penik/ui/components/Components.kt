@@ -964,72 +964,22 @@ fun MessageBubble(
 
                     if (isSingleLineShort) {
                     val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.padding(top = 1.dp)
-                    ) {
-                        Text(
-                            text = annotated,
-                            color = textColor,
-                            fontSize = 15.sp,
-                            modifier = Modifier
-                                .weight(1f, fill = false)
-                                .combinedClickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = {},
-                                    onLongClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        showMenu = true
-                                    }
-                                )
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(top = 7.dp)
-                        ) {
-                            val timeLabel = if (showFullTime) formatFullTime(timestamp) else formatTime(timestamp)
-                            Text(
-                                text = timeLabel,
-                                color = TextMuted,
-                                fontSize = if (showFullTime) 9.sp else 10.sp,
-                                modifier = Modifier
-                                    .clickable { showFullTime = !showFullTime }
-                                    .padding(end = 4.dp),
-                                maxLines = 1
-                            )
-                            if (isSentByMe && !isFailed && !isSelfChat) {
-                                val statusColor = if (read) Accent else TextMuted
-                                if (read || delivered) {
-                                    Box(modifier = Modifier.width(16.dp)) {
-                                        Text(
-                                            text = "✓",
-                                            color = statusColor,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.offset(x = 0.dp)
-                                        )
-                                        Text(
-                                            text = "✓",
-                                            color = statusColor,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.offset(x = 5.dp)
-                                        )
-                                    }
-                                } else {
-                                    Text(
-                                        text = "✓",
-                                        color = statusColor,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                    Text(
+                        text = annotated,
+                        color = textColor,
+                        fontSize = 15.sp,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {},
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showMenu = true
                                 }
-                            }
-                        }
-                    }
+                            )
+                    )
                     } else {
                     if (isFailed) {
                         Row(
