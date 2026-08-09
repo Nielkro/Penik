@@ -344,10 +344,18 @@ fun InitialsAvatar(
 }
 
 // Collapse newlines and runs of whitespace into single spaces so a multiline
-// message renders as one flowing line in a maxLines=1 preview. Without this a
-// hard line break truncates the preview at the first line (e.g. "Те…").
+// message renders as one flowing line in a maxLines=1 preview.
 private val WHITESPACE_RUN = Regex("\\s+")
-fun messagePreview(text: String): String = text.replace(WHITESPACE_RUN, " ").trim()
+fun messagePreview(text: String): String {
+    val attachment = parseFileAttachment(text)
+    if (attachment != null) {
+        if (attachment.caption.isNotBlank()) return attachment.caption.replace(WHITESPACE_RUN, " ").trim()
+        if (attachment.mime.startsWith("image/")) return "📷 Фото"
+        if (attachment.mime.startsWith("video/")) return "🎬 Видео"
+        return "📎 ${attachment.name}"
+    }
+    return text.replace(WHITESPACE_RUN, " ").trim()
+}
 
 @Composable
 fun ChatListItem(
@@ -643,8 +651,9 @@ private fun LocalVideoPlayer(file: File, contentDescription: String, onOpenFulls
         }
     }
 
-    val aspectRatio = (videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio /
+    val calculatedRatio = (videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio /
         videoSize.height.coerceAtLeast(1).toFloat()).takeIf { it > 0f } ?: (16f / 9f)
+    val aspectRatio = calculatedRatio.coerceIn(0.6f, 2.5f)
 
     Box(
         modifier = Modifier
