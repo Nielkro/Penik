@@ -29,6 +29,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -507,6 +509,88 @@ private fun buildLinkedText(text: String, linkColor: Color): androidx.compose.ui
     }
 }
 
+private data class FileAttachment(
+    val url: String,
+    val name: String,
+    val size: Long?,
+    val mime: String,
+    val thumb: String?,
+    val caption: String
+)
+
+private fun parseFileAttachment(text: String): FileAttachment? = runCatching {
+    val root = Json.parseToJsonElement(text).jsonObject
+    if (root["type"]?.jsonPrimitive?.content != "file") return null
+    val file = root["file"]?.jsonObject ?: return null
+    val url = file["url"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: return null
+    FileAttachment(
+        url = url,
+        name = file["name"]?.jsonPrimitive?.content.orEmpty().ifBlank { "Файл" },
+        size = file["size"]?.jsonPrimitive?.content?.toLongOrNull(),
+        mime = file["mime"]?.jsonPrimitive?.content.orEmpty(),
+        thumb = file["thumb"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() },
+        caption = root["text"]?.jsonPrimitive?.content.orEmpty()
+    )
+}.getOrNull()
+
+private fun formatFileSize(size: Long?): String = when {
+    size == null -> ""
+    size < 1024 -> "$size Б"
+    size < 1024 * 1024 -> "${size / 1024} КБ"
+    else -> String.format(Locale.getDefault(), "%.1f МБ", size / (1024f * 1024f))
+}
+
+@Composable
+private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) {
+    val context = LocalContext.current
+    val isImage = attachment.mime.startsWith("image/")
+    val isVideo = attachment.mime.startsWith("video/")
+    val openFile = {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(attachment.url)))
+    }
+    Column(modifier = Modifier.clickable(onClick = openFile)) {
+        if (isImage || isVideo) {
+            Box {
+                AsyncImage(
+                    model = if (isVideo) attachment.thumb ?: attachment.url else attachment.url,
+                    contentDescription = attachment.name,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop
+                )
+                if (isVideo) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Воспроизвести видео",
+                        tint = Color.White,
+                        modifier = Modifier.align(Alignment.Center).size(48.dp)
+                    )
+                }
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.InsertDriveFile, contentDescription = null, tint = textColor)
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(attachment.name, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val size = formatFileSize(attachment.size)
+                    if (size.isNotEmpty()) Text(size, color = TextMuted, fontSize = 12.sp)
+                }
+            }
+        }
+        if ((isImage || isVideo) && attachment.name.isNotBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(attachment.name, color = textColor, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (attachment.caption.isNotBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(attachment.caption, color = textColor, fontSize = 15.sp)
+        }
+    }
+}
+
 @Composable
 fun MessageBubble(
     text: String,
@@ -532,7 +616,8 @@ fun MessageBubble(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
-    val parsedText = text
+    val attachment = remember(text) { parseFileAttachment(text) }
+    val parsedText = attachment?.caption ?: text
 
     val bgColor = if (isFailed) {
         Color(0x26EF5350)
@@ -702,9 +787,12 @@ fun MessageBubble(
                     }
                 }
 
-                val isSingleLineShort = !isFailed && !parsedText.contains('\n') && parsedText.length <= 25
+                if (attachment != null) {
+                    FileAttachmentContent(attachment = attachment, textColor = textColor)
+                } else {
+                    val isSingleLineShort = !isFailed && !parsedText.contains('\n') && parsedText.length <= 25
 
-                if (isSingleLineShort) {
+                    if (isSingleLineShort) {
                     val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -772,7 +860,7 @@ fun MessageBubble(
                             }
                         }
                     }
-                } else {
+                    } else {
                     if (isFailed) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -832,6 +920,7 @@ fun MessageBubble(
                             )
                         )
                     }
+                }
 
                     Row(
                         modifier = Modifier.align(Alignment.End),
