@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerInput
@@ -595,8 +596,14 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
 
     val openFile: () -> Unit = {
         localFile?.let { file ->
+            val contentUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
             context.startActivity(Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(Uri.fromFile(file), attachment.mime.ifBlank { "application/octet-stream" })
+                setDataAndType(contentUri, attachment.mime.ifBlank { "application/octet-stream" })
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             })
         }
     }
