@@ -5,11 +5,15 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.view.ViewGroup
 import androidx.core.content.FileProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -27,6 +31,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -590,6 +595,7 @@ private suspend fun downloadAndDecryptAttachment(context: Context, attachment: F
 @Composable
 private fun LocalVideoPlayer(file: File, contentDescription: String) {
     val context = LocalContext.current
+    var videoSize by remember(file) { mutableStateOf(VideoSize.UNKNOWN) }
     val player = remember(file) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
@@ -598,22 +604,43 @@ private fun LocalVideoPlayer(file: File, contentDescription: String) {
     }
 
     DisposableEffect(player) {
-        onDispose { player.release() }
+        val listener = object : Player.Listener {
+            override fun onVideoSizeChanged(size: VideoSize) {
+                videoSize = size
+            }
+        }
+        player.addListener(listener)
+        videoSize = player.videoSize
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
     }
+
+    val aspectRatio = (videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio /
+        videoSize.height.coerceAtLeast(1).toFloat()).takeIf { it > 0f } ?: 1f
 
     AndroidView(
         factory = {
             PlayerView(it).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
                 this.player = player
                 useController = true
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                 this.contentDescription = contentDescription
             }
         },
         modifier = Modifier
             .fillMaxWidth()
-            .height(180.dp)
+            .aspectRatio(aspectRatio)
             .clip(RoundedCornerShape(8.dp)),
-        update = { it.player = player }
+        update = {
+            it.player = player
+            it.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+        }
     )
 }
 
@@ -715,10 +742,6 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
         if (localFile == null) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(if (loadError) "Не удалось загрузить файл" else "Загрузка…", color = TextMuted, fontSize = 12.sp)
-        }
-        if ((isImage || isVideo) && attachment.name.isNotBlank()) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(attachment.name, color = textColor, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (attachment.caption.isNotBlank()) {
             Spacer(modifier = Modifier.height(4.dp))

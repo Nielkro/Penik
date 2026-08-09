@@ -82,7 +82,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/GroupSettingsViewModel.kt` — Manages changes to group composition, roles, names, and keys.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ProfileViewModel.kt` — Manages profile data, avatars, passwords, and key backups.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/StartupViewModel.kt` — Determines the initial navigation route based on authorization state.
-- `android/app/src/main/java/niel/kro/penik/ui/components/Components.kt` — Reusable Compose UI components, including parsing and rendering encrypted file-message payloads as local images with a zoomable full-screen viewer, inline Media3 video players, or downloadable file attachments.
+- `android/app/src/main/java/niel/kro/penik/ui/components/Components.kt` — Reusable Compose UI components, including parsing and rendering encrypted file-message payloads as local images with a zoomable full-screen viewer, aspect-ratio-aware inline Media3 video players without attachment labels, or downloadable file attachments.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Theme.kt` — Material/Compose app theme and color scheme.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Color.kt` — Android UI color palette.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Type.kt` — Compose UI typography.
