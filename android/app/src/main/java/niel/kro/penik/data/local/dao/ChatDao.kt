@@ -16,7 +16,7 @@ interface ChatDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChat(chat: ChatEntity)
 
-    @Query("UPDATE chats SET lastMessage = :text, lastMessageTimestamp = :timestamp WHERE userId = :userId")
+    @Query("UPDATE chats SET lastMessage = :text, lastMessageTimestamp = :timestamp WHERE userId = :userId AND (:timestamp >= lastMessageTimestamp OR lastMessageTimestamp IS NULL)")
     suspend fun updateLastMessage(userId: Long, text: String, timestamp: Long)
 
     @Query("UPDATE chats SET unreadCount = unreadCount + 1 WHERE userId = :userId")
