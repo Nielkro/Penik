@@ -594,12 +594,16 @@ private suspend fun downloadAndDecryptAttachment(context: Context, attachment: F
     }
 
 @Composable
-private fun LocalVideoPlayer(file: File, contentDescription: String) {
+private fun LocalVideoPlayer(file: File, contentDescription: String, onOpenFullscreen: () -> Unit) {
     val context = LocalContext.current
     var videoSize by remember(file) { mutableStateOf(VideoSize.UNKNOWN) }
+    var isHovered by remember { mutableStateOf(false) }
+
     val player = remember(file) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+            volume = 0f
+            repeatMode = Player.REPEAT_MODE_OFF
             prepare()
         }
     }
@@ -608,6 +612,12 @@ private fun LocalVideoPlayer(file: File, contentDescription: String) {
         val listener = object : Player.Listener {
             override fun onVideoSizeChanged(size: VideoSize) {
                 videoSize = size
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) {
+                    player.pause()
+                    player.seekTo(0)
+                }
             }
         }
         player.addListener(listener)
@@ -618,32 +628,278 @@ private fun LocalVideoPlayer(file: File, contentDescription: String) {
         }
     }
 
-    val aspectRatio = (videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio /
-        videoSize.height.coerceAtLeast(1).toFloat()).takeIf { it > 0f } ?: 1f
+    LaunchedEffect(isHovered) {
+        if (isHovered) {
+            player.seekTo(0)
+            player.play()
+            kotlinx.coroutines.delay(5000)
+            player.pause()
+            player.seekTo(0)
+        } else {
+            player.pause()
+            player.seekTo(0)
+        }
+    }
 
-    AndroidView(
-        factory = {
-            PlayerView(it).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-                this.player = player
-                useController = true
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                this.contentDescription = contentDescription
-            }
-        },
+    val aspectRatio = (videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio /
+        videoSize.height.coerceAtLeast(1).toFloat()).takeIf { it > 0f } ?: (16f / 9f)
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 180.dp, max = 320.dp)
+            .widthIn(max = 360.dp)
             .aspectRatio(aspectRatio, matchHeightConstraintsFirst = false)
-            .clip(RoundedCornerShape(8.dp)),
-        update = {
-            it.player = player
-            it.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF14141C))
+            .clickable(onClick = onOpenFullscreen)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        when (event.type) {
+                            androidx.compose.ui.input.pointer.PointerEventType.Enter -> isHovered = true
+                            androidx.compose.ui.input.pointer.PointerEventType.Exit -> isHovered = false
+                        }
+                    }
+                }
+            }
+    ) {
+        AndroidView(
+            factory = {
+                PlayerView(it).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    this.player = player
+                    useController = false
+                    controllerAutoShow = false
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    this.contentDescription = contentDescription
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            update = {
+                it.player = player
+                it.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            }
+        )
+
+        // Overlay play icon when idle/not playing preview
+        if (!isHovered) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .align(Alignment.Center)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Воспроизвести",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
         }
-    )
+    }
+}
+
+private fun formatVideoTime(ms: Long): String {
+    if (ms <= 0) return "0:00"
+    val totalSeconds = ms / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
+}
+
+@Composable
+private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var isPlaying by remember { mutableStateOf(true) }
+    var isMuted by remember { mutableStateOf(false) }
+    var currentPosition by remember { mutableStateOf(0L) }
+    var duration by remember { mutableStateOf(0L) }
+    var isSeeking by remember { mutableStateOf(false) }
+    var seekProgress by remember { mutableStateOf(0f) }
+
+    val player = remember(file) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+            playWhenReady = true
+            prepare()
+        }
+    }
+
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) {
+                    duration = player.duration.coerceAtLeast(0L)
+                }
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
+    }
+
+    LaunchedEffect(player, isSeeking) {
+        while (!isSeeking) {
+            currentPosition = player.currentPosition.coerceAtLeast(0L)
+            duration = player.duration.coerceAtLeast(0L)
+            kotlinx.coroutines.delay(200)
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.85f))
+                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onDismiss() },
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .fillMaxHeight(0.90f)
+                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {},
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AndroidView(
+                        factory = {
+                            PlayerView(it).apply {
+                                layoutParams = ViewGroup.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                                this.player = player
+                                useController = false
+                                controllerAutoShow = false
+                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                this.contentDescription = contentDescription
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                if (player.isPlaying) {
+                                    player.pause()
+                                } else {
+                                    player.play()
+                                }
+                            },
+                        update = {
+                            it.player = player
+                            it.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Custom control bar styled like web showFullscreenMedia
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 540.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Color(0xE614141C))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (player.isPlaying) {
+                                player.pause()
+                            } else {
+                                player.play()
+                            }
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Close else Icons.Default.PlayArrow, // Fallback icon pair or custom toggle
+                            contentDescription = if (isPlaying) "Пауза" else "Воспроизвести",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Text(
+                        text = formatVideoTime(if (isSeeking) (seekProgress * duration).toLong() else currentPosition),
+                        color = Color(0xFFE2E2E9),
+                        fontSize = 12.sp,
+                        modifier = Modifier.widthIn(min = 36.dp)
+                    )
+
+                    androidx.compose.material3.Slider(
+                        value = if (isSeeking) seekProgress else (if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f),
+                        onValueChange = {
+                            isSeeking = true
+                            seekProgress = it
+                        },
+                        onValueChangeFinished = {
+                            player.seekTo((seekProgress * duration).toLong())
+                            isSeeking = false
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp),
+                        colors = androidx.compose.material3.SliderDefaults.colors(
+                            thumbColor = Color(0xFF22C55E),
+                            activeTrackColor = Color(0xFF22C55E),
+                            inactiveTrackColor = Color.White.copy(alpha = 0.24f)
+                        )
+                    )
+
+                    Text(
+                        text = formatVideoTime(duration),
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 12.sp,
+                        modifier = Modifier.widthIn(min = 36.dp)
+                    )
+
+                    IconButton(
+                        onClick = {
+                            isMuted = !isMuted
+                            player.volume = if (isMuted) 0f else 1f
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Text(
+                            text = if (isMuted) "🔇" else "🔊",
+                            fontSize = 16.sp
+                        )
+                    }
+                }
+            }
+
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp)
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "Закрыть", tint = Color.White)
+            }
+        }
+    }
 }
 
 @Composable
@@ -698,6 +954,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
     var localFile by remember(attachment.url, attachment.key) { mutableStateOf<File?>(null) }
     var loadError by remember(attachment.url, attachment.key) { mutableStateOf(false) }
     var showImageViewer by remember(attachment.url, attachment.key) { mutableStateOf(false) }
+    var showVideoViewer by remember(attachment.url, attachment.key) { mutableStateOf(false) }
 
     LaunchedEffect(attachment.url, attachment.key) {
         runCatching { downloadAndDecryptAttachment(context, attachment) }
@@ -720,7 +977,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
     }
     Column(modifier = if (isImage || isVideo) Modifier else Modifier.clickable(enabled = localFile != null, onClick = openFile)) {
         when {
-            isVideo && localFile != null -> LocalVideoPlayer(localFile!!, attachment.name)
+            isVideo && localFile != null -> LocalVideoPlayer(localFile!!, attachment.name, onOpenFullscreen = { showVideoViewer = true })
             isImage -> AsyncImage(
                 model = localFile,
                 contentDescription = attachment.name,
@@ -754,6 +1011,12 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
     if (showImageViewer && localFile != null) {
         LocalImageViewer(file = localFile!!, contentDescription = attachment.name) {
             showImageViewer = false
+        }
+    }
+
+    if (showVideoViewer && localFile != null) {
+        LocalVideoViewer(file = localFile!!, contentDescription = attachment.name) {
+            showVideoViewer = false
         }
     }
 }
@@ -969,7 +1232,6 @@ fun MessageBubble(
                         color = textColor,
                         fontSize = 15.sp,
                         modifier = Modifier
-                            .weight(1f, fill = false)
                             .combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
