@@ -988,10 +988,9 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                 contentDescription = attachment.name,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(180.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .clickable(enabled = localFile != null) { showImageViewer = true },
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.FillWidth
             )
             else -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.InsertDriveFile, contentDescription = null, tint = textColor)
@@ -1309,47 +1308,101 @@ fun MessageBubble(
                     }
                 }
 
-                    Row(
-                        modifier = Modifier.align(Alignment.End),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val timeLabel = if (showFullTime) formatFullTime(timestamp) else formatTime(timestamp)
-                        Text(
-                            text = timeLabel,
-                            color = TextMuted,
-                            fontSize = if (showFullTime) 9.sp else 10.sp,
-                            modifier = Modifier
-                                .clickable { showFullTime = !showFullTime }
-                                .padding(end = 4.dp),
-                            maxLines = 1
-                        )
-                        if (isSentByMe && !isFailed && !isSelfChat) {
-                            val statusColor = if (read) Accent else TextMuted
-                            if (read || delivered) {
-                                Box(modifier = Modifier.width(16.dp)) {
+                    if (!isMediaAttachment || attachment?.caption?.isNotBlank() == true) {
+                        Row(
+                            modifier = Modifier.align(Alignment.End),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val timeLabel = if (showFullTime) formatFullTime(timestamp) else formatTime(timestamp)
+                            Text(
+                                text = timeLabel,
+                                color = TextMuted,
+                                fontSize = if (showFullTime) 9.sp else 10.sp,
+                                modifier = Modifier
+                                    .clickable { showFullTime = !showFullTime }
+                                    .padding(end = 4.dp),
+                                maxLines = 1
+                            )
+                            if (isSentByMe && !isFailed && !isSelfChat) {
+                                val statusColor = if (read) Accent else TextMuted
+                                if (read || delivered) {
+                                    Box(modifier = Modifier.width(16.dp)) {
+                                        Text(
+                                            text = "✓",
+                                            color = statusColor,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.offset(x = 0.dp)
+                                        )
+                                        Text(
+                                            text = "✓",
+                                            color = statusColor,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.offset(x = 5.dp)
+                                        )
+                                    }
+                                } else {
                                     Text(
                                         text = "✓",
                                         color = statusColor,
                                         fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.offset(x = 0.dp)
-                                    )
-                                    Text(
-                                        text = "✓",
-                                        color = statusColor,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.offset(x = 5.dp)
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
-                            } else {
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Telegram-style overlay timestamp & status badge for media without caption
+            if (isMediaAttachment && attachment?.caption.isNullOrBlank()) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = 8.dp, end = 12.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val timeLabel = if (showFullTime) formatFullTime(timestamp) else formatTime(timestamp)
+                    Text(
+                        text = timeLabel,
+                        color = Color.White,
+                        fontSize = if (showFullTime) 9.sp else 10.sp,
+                        modifier = Modifier
+                            .clickable { showFullTime = !showFullTime }
+                            .padding(end = 4.dp),
+                        maxLines = 1
+                    )
+                    if (isSentByMe && !isFailed && !isSelfChat) {
+                        val statusColor = if (read) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.8f)
+                        if (read || delivered) {
+                            Box(modifier = Modifier.width(16.dp)) {
                                 Text(
                                     text = "✓",
                                     color = statusColor,
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.offset(x = 0.dp)
+                                )
+                                Text(
+                                    text = "✓",
+                                    color = statusColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.offset(x = 5.dp)
                                 )
                             }
+                        } else {
+                            Text(
+                                text = "✓",
+                                color = statusColor,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
