@@ -23,6 +23,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -635,7 +636,8 @@ private fun LocalVideoPlayer(file: File, contentDescription: String) {
         },
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(aspectRatio)
+            .heightIn(max = 560.dp)
+            .aspectRatio(aspectRatio, matchHeightConstraintsFirst = true)
             .clip(RoundedCornerShape(8.dp)),
         update = {
             it.player = player
@@ -818,6 +820,9 @@ fun MessageBubble(
     var offsetX by remember { mutableStateOf(0f) }
     var triggered by remember { mutableStateOf(false) }
 
+    val isMediaAttachment = attachment?.mime?.let { it.startsWith("image/") || it.startsWith("video/") } == true
+    val bubbleModifier = if (isMediaAttachment) Modifier.fillMaxWidth() else Modifier.widthIn(max = 280.dp)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -854,7 +859,7 @@ fun MessageBubble(
                         }
                     )
                 }
-                .widthIn(max = 280.dp)
+                .then(bubbleModifier)
                 .clip(BubbleShape(isSentByMe))
                 .background(bgColor)
                 .combinedClickable(
