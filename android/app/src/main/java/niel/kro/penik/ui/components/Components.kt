@@ -676,14 +676,14 @@ private fun LocalVideoPlayer(file: File, contentDescription: String, onOpenFulls
                     this.player = player
                     useController = false
                     controllerAutoShow = false
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     this.contentDescription = contentDescription
                 }
             },
             modifier = Modifier.fillMaxSize(),
             update = {
                 it.player = player
-                it.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                it.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
             }
         )
 
