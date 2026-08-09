@@ -625,8 +625,8 @@ private fun LocalVideoPlayer(file: File, contentDescription: String) {
         factory = {
             PlayerView(it).apply {
                 layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
                 )
                 this.player = player
                 useController = true
@@ -635,9 +635,9 @@ private fun LocalVideoPlayer(file: File, contentDescription: String) {
             }
         },
         modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 560.dp)
-            .aspectRatio(aspectRatio, matchHeightConstraintsFirst = true)
+            .widthIn(max = 260.dp)
+            .heightIn(max = 360.dp)
+            .aspectRatio(aspectRatio, matchHeightConstraintsFirst = false)
             .clip(RoundedCornerShape(8.dp)),
         update = {
             it.player = player
@@ -821,7 +821,7 @@ fun MessageBubble(
     var triggered by remember { mutableStateOf(false) }
 
     val isMediaAttachment = attachment?.mime?.let { it.startsWith("image/") || it.startsWith("video/") } == true
-    val bubbleModifier = if (isMediaAttachment) Modifier.fillMaxWidth() else Modifier.widthIn(max = 280.dp)
+    val bubbleModifier = Modifier.widthIn(max = 280.dp)
 
     Column(
         modifier = Modifier
