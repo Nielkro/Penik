@@ -6,6 +6,11 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerInput
@@ -581,6 +586,36 @@ private suspend fun downloadAndDecryptAttachment(context: Context, attachment: F
     }
 
 @Composable
+private fun LocalVideoPlayer(file: File, contentDescription: String) {
+    val context = LocalContext.current
+    val player = remember(file) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+            prepare()
+        }
+    }
+
+    DisposableEffect(player) {
+        onDispose { player.release() }
+    }
+
+    AndroidView(
+        factory = {
+            PlayerView(it).apply {
+                this.player = player
+                useController = true
+                this.contentDescription = contentDescription
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(180.dp)
+            .clip(RoundedCornerShape(8.dp)),
+        update = { it.player = player }
+    )
+}
+
+@Composable
 private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) {
     val context = LocalContext.current
     val isImage = attachment.mime.startsWith("image/")
@@ -607,29 +642,19 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             })
         }
     }
-    Column(modifier = Modifier.clickable(enabled = localFile != null, onClick = openFile)) {
-        if (isImage || isVideo) {
-            Box {
-                AsyncImage(
-                    model = localFile,
-                    contentDescription = attachment.name,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    contentScale = ContentScale.Crop
-                )
-                if (isVideo) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = "Воспроизвести видео",
-                        tint = Color.White,
-                        modifier = Modifier.align(Alignment.Center).size(48.dp)
-                    )
-                }
-            }
-        } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+    Column(modifier = if (isVideo) Modifier else Modifier.clickable(enabled = localFile != null, onClick = openFile)) {
+        when {
+            isVideo && localFile != null -> LocalVideoPlayer(localFile!!, attachment.name)
+            isImage -> AsyncImage(
+                model = localFile,
+                contentDescription = attachment.name,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Crop
+            )
+            else -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.InsertDriveFile, contentDescription = null, tint = textColor)
                 Spacer(modifier = Modifier.width(8.dp))
                 Column {

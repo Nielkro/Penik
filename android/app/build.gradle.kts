@@ -91,6 +91,10 @@ dependencies {
     // Coil
     implementation(libs.coil.compose)
 
+    // Media3
+    implementation("androidx.media3:media3-exoplayer:1.8.0")
+    implementation("androidx.media3:media3-ui:1.8.0")
+
     // QR scanning
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("androidx.camera:camera-camera2:1.4.2")
