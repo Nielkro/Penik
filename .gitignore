@@ -19,3 +19,5 @@ server/.env
 *.keystore
 key.properties
 google-services.json
+
+.postman/
