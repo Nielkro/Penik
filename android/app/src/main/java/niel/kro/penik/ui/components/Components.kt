@@ -40,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -88,9 +89,17 @@ import niel.kro.penik.ui.theme.TextMuted
 import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.theme.Warning
 import niel.kro.penik.data.network.websocket.ConnectionState
+import niel.kro.penik.data.crypto.E2EECrypto
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
+import java.util.Base64
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private fun initialsColor(id: Long, name: String): Color {
     val hue = if (id != 0L) {
@@ -514,6 +523,7 @@ private data class FileAttachment(
     val name: String,
     val size: Long?,
     val mime: String,
+    val key: String,
     val thumb: String?,
     val caption: String
 )
@@ -523,11 +533,13 @@ private fun parseFileAttachment(text: String): FileAttachment? = runCatching {
     if (root["type"]?.jsonPrimitive?.content != "file") return null
     val file = root["file"]?.jsonObject ?: return null
     val url = file["url"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: return null
+    val key = file["key"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: return null
     FileAttachment(
         url = url,
         name = file["name"]?.jsonPrimitive?.content.orEmpty().ifBlank { "Файл" },
         size = file["size"]?.jsonPrimitive?.content?.toLongOrNull(),
         mime = file["mime"]?.jsonPrimitive?.content.orEmpty(),
+        key = key,
         thumb = file["thumb"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() },
         caption = root["text"]?.jsonPrimitive?.content.orEmpty()
     )
@@ -540,19 +552,59 @@ private fun formatFileSize(size: Long?): String = when {
     else -> String.format(Locale.getDefault(), "%.1f МБ", size / (1024f * 1024f))
 }
 
+private suspend fun downloadAndDecryptAttachment(context: Context, attachment: FileAttachment): File =
+    withContext(Dispatchers.IO) {
+        val cacheDir = File(context.cacheDir, "attachments").apply { mkdirs() }
+        val extension = attachment.name.substringAfterLast('.', "").take(16)
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest((attachment.url + attachment.key).toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        val output = File(cacheDir, "$digest${if (extension.isBlank()) "" else ".$extension"}")
+        if (output.isFile && output.length() > 0) return@withContext output
+
+        val encrypted = (URL(attachment.url).openConnection() as HttpURLConnection).run {
+            connectTimeout = 15_000
+            readTimeout = 30_000
+            instanceFollowRedirects = true
+            inputStream.use { it.readBytes() }
+        }
+        val key = Base64.getDecoder().decode(attachment.key)
+        val plaintext = E2EECrypto().decryptFileChaCha20(encrypted, key)
+        val temporary = File(cacheDir, "${output.name}.tmp")
+        temporary.outputStream().use { it.write(plaintext) }
+        if (!temporary.renameTo(output)) {
+            temporary.delete()
+            throw IllegalStateException("Unable to cache attachment")
+        }
+        output
+    }
+
 @Composable
 private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) {
     val context = LocalContext.current
     val isImage = attachment.mime.startsWith("image/")
     val isVideo = attachment.mime.startsWith("video/")
-    val openFile = {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(attachment.url)))
+    var localFile by remember(attachment.url, attachment.key) { mutableStateOf<File?>(null) }
+    var loadError by remember(attachment.url, attachment.key) { mutableStateOf(false) }
+
+    LaunchedEffect(attachment.url, attachment.key) {
+        runCatching { downloadAndDecryptAttachment(context, attachment) }
+            .onSuccess { localFile = it }
+            .onFailure { loadError = true }
     }
-    Column(modifier = Modifier.clickable(onClick = openFile)) {
+
+    val openFile: () -> Unit = {
+        localFile?.let { file ->
+            context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(Uri.fromFile(file), attachment.mime.ifBlank { "application/octet-stream" })
+            })
+        }
+    }
+    Column(modifier = Modifier.clickable(enabled = localFile != null, onClick = openFile)) {
         if (isImage || isVideo) {
             Box {
                 AsyncImage(
-                    model = if (isVideo) attachment.thumb ?: attachment.url else attachment.url,
+                    model = localFile,
                     contentDescription = attachment.name,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -579,6 +631,10 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                     if (size.isNotEmpty()) Text(size, color = TextMuted, fontSize = 12.sp)
                 }
             }
+        }
+        if (localFile == null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(if (loadError) "Не удалось загрузить файл" else "Загрузка…", color = TextMuted, fontSize = 12.sp)
         }
         if ((isImage || isVideo) && attachment.name.isNotBlank()) {
             Spacer(modifier = Modifier.height(4.dp))
