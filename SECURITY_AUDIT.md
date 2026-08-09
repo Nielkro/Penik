@@ -60,7 +60,7 @@
 5. Усилить защиту веб-клиента от XSS: строгий CSP, минимизация сторонних скриптов, Trusted Types при применимости; не хранить долгоживущий Bearer-токен в `localStorage`.
 6. Перейти к протоколу с forward secrecy и ratchet, использовать одноразовые prekeys, добавить key transparency или надёжное предупреждение о смене ключа.
 7. Перевести загрузку вложений на потоковую обработку, ввести per-file лимиты, квоты и отдельные rate limits.
-8. Добавить в CI secret scanning, проверку зависимостей/SBOM, проверку Android release-конфигурации и тесты CORS/WebSocket origin policy.
+8. Добавить в CI проверку зависимостей/SBOM, проверку Android release-конфигурации и тесты CORS/WebSocket origin policy. Secret scanning уже выполняется через `.gitleaks`.
 
 ## 6. Заключение
 
