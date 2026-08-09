@@ -43,7 +43,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -835,7 +838,7 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            imageVector = if (isPlaying) Icons.Default.Close else Icons.Default.PlayArrow, // Fallback icon pair or custom toggle
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (isPlaying) "Пауза" else "Воспроизвести",
                             tint = Color.White,
                             modifier = Modifier.size(22.dp)
@@ -883,9 +886,11 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
                         },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Text(
-                            text = if (isMuted) "🔇" else "🔊",
-                            fontSize = 16.sp
+                        Icon(
+                            imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                            contentDescription = if (isMuted) "Включить звук" else "Выключить звук",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
