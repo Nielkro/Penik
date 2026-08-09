@@ -36,7 +36,7 @@ class ChatRepository @Inject constructor(
                 lastMessage = text,
                 lastMessageTimestamp = timestamp
             ))
-        } else {
+        } else if (timestamp >= (existing.lastMessageTimestamp ?: 0L)) {
             chatDao.updateLastMessage(userId, text, timestamp)
         }
     }
