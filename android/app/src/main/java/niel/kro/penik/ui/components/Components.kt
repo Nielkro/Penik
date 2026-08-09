@@ -12,6 +12,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
@@ -57,6 +58,7 @@ import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
@@ -616,12 +618,57 @@ private fun LocalVideoPlayer(file: File, contentDescription: String) {
 }
 
 @Composable
+private fun LocalImageViewer(file: File, contentDescription: String, onDismiss: () -> Unit) {
+    var scale by remember(file) { mutableStateOf(1f) }
+    var offsetX by remember(file) { mutableStateOf(0f) }
+    var offsetY by remember(file) { mutableStateOf(0f) }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.96f)),
+            contentAlignment = Alignment.Center
+        ) {
+            AsyncImage(
+                model = file,
+                contentDescription = contentDescription,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(file) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            scale = (scale * zoom).coerceIn(1f, 5f)
+                            if (scale == 1f) {
+                                offsetX = 0f
+                                offsetY = 0f
+                            } else {
+                                offsetX += pan.x
+                                offsetY += pan.y
+                            }
+                        }
+                    }
+                    .offset { androidx.compose.ui.unit.IntOffset(offsetX.toInt(), offsetY.toInt()) }
+                    .scale(scale),
+                contentScale = ContentScale.Fit
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "Закрыть", tint = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
 private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) {
     val context = LocalContext.current
     val isImage = attachment.mime.startsWith("image/")
     val isVideo = attachment.mime.startsWith("video/")
     var localFile by remember(attachment.url, attachment.key) { mutableStateOf<File?>(null) }
     var loadError by remember(attachment.url, attachment.key) { mutableStateOf(false) }
+    var showImageViewer by remember(attachment.url, attachment.key) { mutableStateOf(false) }
 
     LaunchedEffect(attachment.url, attachment.key) {
         runCatching { downloadAndDecryptAttachment(context, attachment) }
@@ -642,7 +689,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             })
         }
     }
-    Column(modifier = if (isVideo) Modifier else Modifier.clickable(enabled = localFile != null, onClick = openFile)) {
+    Column(modifier = if (isImage || isVideo) Modifier else Modifier.clickable(enabled = localFile != null, onClick = openFile)) {
         when {
             isVideo && localFile != null -> LocalVideoPlayer(localFile!!, attachment.name)
             isImage -> AsyncImage(
@@ -651,7 +698,8 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(180.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(enabled = localFile != null) { showImageViewer = true },
                 contentScale = ContentScale.Crop
             )
             else -> Row(verticalAlignment = Alignment.CenterVertically) {
@@ -675,6 +723,12 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
         if (attachment.caption.isNotBlank()) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(attachment.caption, color = textColor, fontSize = 15.sp)
+        }
+    }
+
+    if (showImageViewer && localFile != null) {
+        LocalImageViewer(file = localFile!!, contentDescription = attachment.name) {
+            showImageViewer = false
         }
     }
 }
