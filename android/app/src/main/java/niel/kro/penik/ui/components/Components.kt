@@ -725,6 +725,13 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
     var duration by remember { mutableStateOf(0L) }
     var isSeeking by remember { mutableStateOf(false) }
     var seekProgress by remember { mutableStateOf(0f) }
+    var controlsVisible by remember { mutableStateOf(true) }
+    var lastUserActivity by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    val showControls: () -> Unit = {
+        controlsVisible = true
+        lastUserActivity = System.currentTimeMillis()
+    }
 
     val player = remember(file) {
         ExoPlayer.Builder(context).build().apply {
@@ -735,6 +742,7 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
     }
 
     val togglePlay = {
+        showControls()
         if (player.playbackState == Player.STATE_ENDED) {
             player.seekTo(0)
             player.play()
@@ -755,6 +763,7 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
                     duration = player.duration.coerceAtLeast(0L)
                 } else if (playbackState == Player.STATE_ENDED) {
                     isPlaying = false
+                    controlsVisible = true
                 }
             }
         }
@@ -773,19 +782,39 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
         }
     }
 
+    // Auto-hide controls after 2 seconds of inactivity when playing
+    LaunchedEffect(lastUserActivity, isPlaying, isSeeking) {
+        if (isPlaying && !isSeeking) {
+            kotlinx.coroutines.delay(2000)
+            controlsVisible = false
+        }
+    }
+
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.85f))
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onDismiss() },
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) {
+                    if (!controlsVisible) {
+                        showControls()
+                    } else {
+                        onDismiss()
+                    }
+                },
             contentAlignment = Alignment.Center
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth(0.92f)
                     .fillMaxHeight(0.90f)
-                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {},
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) {},
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -812,7 +841,13 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(12.dp))
-                            .clickable { togglePlay() },
+                            .clickable {
+                                if (controlsVisible) {
+                                    togglePlay()
+                                } else {
+                                    showControls()
+                                }
+                            },
                         update = {
                             it.player = player
                             it.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -822,86 +857,100 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Custom control bar styled like web showFullscreenMedia
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .widthIn(max = 540.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(Color(0xE614141C))
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Custom control bar styled like web showFullscreenMedia with auto-hide animation
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = controlsVisible,
+                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
+                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically()
                 ) {
-                    IconButton(
-                        onClick = { togglePlay() },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Пауза" else "Воспроизвести",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-
-                    Text(
-                        text = formatVideoTime(if (isSeeking) (seekProgress * duration).toLong() else currentPosition),
-                        color = Color(0xFFE2E2E9),
-                        fontSize = 12.sp,
-                        modifier = Modifier.widthIn(min = 36.dp)
-                    )
-
-                    androidx.compose.material3.Slider(
-                        value = if (isSeeking) seekProgress else (if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f),
-                        onValueChange = {
-                            isSeeking = true
-                            seekProgress = it
-                        },
-                        onValueChangeFinished = {
-                            player.seekTo((seekProgress * duration).toLong())
-                            isSeeking = false
-                        },
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp),
-                        colors = androidx.compose.material3.SliderDefaults.colors(
-                            thumbColor = Color(0xFF22C55E),
-                            activeTrackColor = Color(0xFF22C55E),
-                            inactiveTrackColor = Color.White.copy(alpha = 0.24f)
-                        )
-                    )
-
-                    Text(
-                        text = formatVideoTime(duration),
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 12.sp,
-                        modifier = Modifier.widthIn(min = 36.dp)
-                    )
-
-                    IconButton(
-                        onClick = {
-                            isMuted = !isMuted
-                            player.volume = if (isMuted) 0f else 1f
-                        },
-                        modifier = Modifier.size(36.dp)
+                            .fillMaxWidth()
+                            .widthIn(max = 540.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(Color(0xE614141C))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
-                            contentDescription = if (isMuted) "Включить звук" else "Выключить звук",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
+                        IconButton(
+                            onClick = { togglePlay() },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "Пауза" else "Воспроизвести",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        Text(
+                            text = formatVideoTime(if (isSeeking) (seekProgress * duration).toLong() else currentPosition),
+                            color = Color(0xFFE2E2E9),
+                            fontSize = 12.sp,
+                            modifier = Modifier.widthIn(min = 36.dp)
                         )
+
+                        androidx.compose.material3.Slider(
+                            value = if (isSeeking) seekProgress else (if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f),
+                            onValueChange = {
+                                showControls()
+                                isSeeking = true
+                                seekProgress = it
+                            },
+                            onValueChangeFinished = {
+                                player.seekTo((seekProgress * duration).toLong())
+                                isSeeking = false
+                                showControls()
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 8.dp),
+                            colors = androidx.compose.material3.SliderDefaults.colors(
+                                thumbColor = Color(0xFF22C55E),
+                                activeTrackColor = Color(0xFF22C55E),
+                                inactiveTrackColor = Color.White.copy(alpha = 0.24f)
+                            )
+                        )
+
+                        Text(
+                            text = formatVideoTime(duration),
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 12.sp,
+                            modifier = Modifier.widthIn(min = 36.dp)
+                        )
+
+                        IconButton(
+                            onClick = {
+                                showControls()
+                                isMuted = !isMuted
+                                player.volume = if (isMuted) 0f else 1f
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                                contentDescription = if (isMuted) "Включить звук" else "Выключить звук",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }
 
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp)
+            androidx.compose.animation.AnimatedVisibility(
+                visible = controlsVisible,
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut(),
+                modifier = Modifier.align(Alignment.TopEnd)
             ) {
-                Icon(Icons.Default.Close, contentDescription = "Закрыть", tint = Color.White)
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.padding(12.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Закрыть", tint = Color.White)
+                }
             }
         }
     }
