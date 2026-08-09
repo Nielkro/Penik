@@ -185,7 +185,7 @@ class ChatsListViewModel @Inject constructor(
     private fun reconnectIfNeeded() {
         val token = authRepository.getToken() ?: return
         if (webSocketManager.connectionState.value == ConnectionState.DISCONNECTED) {
-            webSocketManager.connect("web.dev.penik.ru", 443, token)
+            webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, token)
         }
     }
 
