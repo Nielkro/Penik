@@ -14,6 +14,7 @@ import javax.crypto.spec.PBEKeySpec
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
 import java.util.Base64
+import java.security.GeneralSecurityException
 
 data class E2EEncrypted(
     val ciphertext: ByteArray,
@@ -155,6 +156,22 @@ class E2EECrypto {
             }
             throw e
         }
+    }
+
+    /** Decrypts the browser attachment format: nonce (12 bytes) + ciphertext + Poly1305 tag. */
+    fun decryptFileChaCha20(encryptedBytes: ByteArray, keyBytes: ByteArray): ByteArray {
+        require(keyBytes.size == 32) { "Invalid attachment key" }
+        require(encryptedBytes.size >= 28) { "Invalid encrypted attachment" }
+
+        val nonce = encryptedBytes.copyOfRange(0, 12)
+        val ciphertextAndTag = encryptedBytes.copyOfRange(12, encryptedBytes.size)
+        val cipher = try {
+            Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
+        } catch (_: GeneralSecurityException) {
+            Cipher.getInstance("ChaCha20-Poly1305")
+        }
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "ChaCha20"), IvParameterSpec(nonce))
+        return cipher.doFinal(ciphertextAndTag)
     }
 
     private fun hkdfDerive(salt: ByteArray, ikm: ByteArray, info: ByteArray, length: Int): ByteArray {
