@@ -1071,9 +1071,10 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                 contentDescription = attachment.name,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(max = 280.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .clickable(enabled = localFile != null) { showImageViewer = true },
-                contentScale = ContentScale.FillWidth
+                contentScale = ContentScale.Fit
             )
             else -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.InsertDriveFile, contentDescription = null, tint = textColor)
@@ -1282,7 +1283,6 @@ fun MessageBubble(
 
                     Row(
                         modifier = Modifier
-                            .fillMaxWidth()
                             .padding(bottom = 6.dp)
                             .background(Color(0x0DFFFFFF), shape = RoundedCornerShape(4.dp))
                             .height(IntrinsicSize.Max)
@@ -1591,53 +1591,155 @@ class BubbleShape(private val isSentByMe: Boolean) : Shape {
 fun TelegramDoodleBackground(
     modifier: Modifier = Modifier,
     backgroundColor: Color = Color(0xFF0E1621),
-    patternColor: Color = Color(0x0EFFFFFF)
+    patternColor: Color = Color(0x0CFFFFFF)
 ) {
     androidx.compose.foundation.Canvas(modifier = modifier.fillMaxSize().background(backgroundColor)) {
-        val patternSize = 140.dp.toPx()
-        val cols = (size.width / patternSize).toInt() + 2
-        val rows = (size.height / patternSize).toInt() + 2
+        val patternWidth = 160.dp.toPx()
+        val patternHeight = 160.dp.toPx()
+        val cols = (size.width / patternWidth).toInt() + 2
+        val rows = (size.height / patternHeight).toInt() + 2
+        val strokeWidth = 1.3.dp.toPx()
+        val strokeStyle = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth)
 
-        for (r in 0 until rows) {
-            for (c in 0 until cols) {
-                val x = c * patternSize
-                val y = r * patternSize
+        for (r in -1..rows) {
+            val rowOffset = if (r % 2 != 0) patternWidth / 2f else 0f
+            for (c in -1..cols) {
+                val x = c * patternWidth + rowOffset
+                val y = r * patternHeight
 
+                // 1. Paper Airplane
+                val planePath = Path().apply {
+                    moveTo(x + 20.dp.toPx(), y + 30.dp.toPx())
+                    lineTo(x + 42.dp.toPx(), y + 18.dp.toPx())
+                    lineTo(x + 32.dp.toPx(), y + 42.dp.toPx())
+                    lineTo(x + 27.dp.toPx(), y + 34.dp.toPx())
+                    close()
+                }
+                drawPath(planePath, patternColor, style = strokeStyle)
+                drawLine(patternColor, androidx.compose.ui.geometry.Offset(x + 42.dp.toPx(), y + 18.dp.toPx()), androidx.compose.ui.geometry.Offset(x + 27.dp.toPx(), y + 34.dp.toPx()), strokeWidth)
+
+                // 2. Star
+                val starCenter = androidx.compose.ui.geometry.Offset(x + 110.dp.toPx(), y + 25.dp.toPx())
+                val starRadius = 7.dp.toPx()
+                val starPath = Path().apply {
+                    for (i in 0 until 5) {
+                        val angleOuter = Math.toRadians((i * 72 - 18).toDouble())
+                        val angleInner = Math.toRadians((i * 72 + 18).toDouble())
+                        val xo = starCenter.x + starRadius * Math.cos(angleOuter).toFloat()
+                        val yo = starCenter.y + starRadius * Math.sin(angleOuter).toFloat()
+                        val xi = starCenter.x + (starRadius * 0.4f) * Math.cos(angleInner).toFloat()
+                        val yi = starCenter.y + (starRadius * 0.4f) * Math.sin(angleInner).toFloat()
+                        if (i == 0) moveTo(xo, yo) else lineTo(xo, yo)
+                        lineTo(xi, yi)
+                    }
+                    close()
+                }
+                drawPath(starPath, patternColor, style = strokeStyle)
+
+                // 3. Heart
+                val heartCenter = androidx.compose.ui.geometry.Offset(x + 45.dp.toPx(), y + 115.dp.toPx())
+                val heartPath = Path().apply {
+                    moveTo(heartCenter.x, heartCenter.y + 6.dp.toPx())
+                    cubicTo(heartCenter.x - 12.dp.toPx(), heartCenter.y - 6.dp.toPx(), heartCenter.x - 12.dp.toPx(), heartCenter.y + 12.dp.toPx(), heartCenter.x, heartCenter.y + 18.dp.toPx())
+                    cubicTo(heartCenter.x + 12.dp.toPx(), heartCenter.y + 12.dp.toPx(), heartCenter.x + 12.dp.toPx(), heartCenter.y - 6.dp.toPx(), heartCenter.x, heartCenter.y + 6.dp.toPx())
+                }
+                drawPath(heartPath, patternColor, style = strokeStyle)
+
+                // 4. Speech Bubble
+                drawRoundRect(
+                    color = patternColor,
+                    topLeft = androidx.compose.ui.geometry.Offset(x + 105.dp.toPx(), y + 95.dp.toPx()),
+                    size = androidx.compose.ui.geometry.Size(22.dp.toPx(), 14.dp.toPx()),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()),
+                    style = strokeStyle
+                )
+                val bubbleTail = Path().apply {
+                    moveTo(x + 110.dp.toPx(), y + 109.dp.toPx())
+                    lineTo(x + 106.dp.toPx(), y + 114.dp.toPx())
+                    lineTo(x + 114.dp.toPx(), y + 109.dp.toPx())
+                }
+                drawPath(bubbleTail, patternColor, style = strokeStyle)
+
+                // 5. Coffee Mug
+                drawRoundRect(
+                    color = patternColor,
+                    topLeft = androidx.compose.ui.geometry.Offset(x + 140.dp.toPx(), y + 45.dp.toPx()),
+                    size = androidx.compose.ui.geometry.Size(12.dp.toPx(), 14.dp.toPx()),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+                    style = strokeStyle
+                )
+                drawArc(
+                    color = patternColor,
+                    startAngle = -90f,
+                    sweepAngle = 180f,
+                    useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(x + 149.dp.toPx(), y + 48.dp.toPx()),
+                    size = androidx.compose.ui.geometry.Size(6.dp.toPx(), 8.dp.toPx()),
+                    style = strokeStyle
+                )
+
+                // 6. Lightning Bolt
+                val lightningPath = Path().apply {
+                    moveTo(x + 80.dp.toPx(), y + 65.dp.toPx())
+                    lineTo(x + 72.dp.toPx(), y + 77.dp.toPx())
+                    lineTo(x + 77.dp.toPx(), y + 77.dp.toPx())
+                    lineTo(x + 70.dp.toPx(), y + 90.dp.toPx())
+                    lineTo(x + 82.dp.toPx(), y + 75.dp.toPx())
+                    lineTo(x + 77.dp.toPx(), y + 75.dp.toPx())
+                    close()
+                }
+                drawPath(lightningPath, patternColor, style = strokeStyle)
+
+                // 7. Planet with Ring
                 drawCircle(
                     color = patternColor,
                     radius = 6.dp.toPx(),
-                    center = androidx.compose.ui.geometry.Offset(x + 30.dp.toPx(), y + 30.dp.toPx()),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx())
+                    center = androidx.compose.ui.geometry.Offset(x + 30.dp.toPx(), y + 70.dp.toPx()),
+                    style = strokeStyle
                 )
+                drawOval(
+                    color = patternColor,
+                    topLeft = androidx.compose.ui.geometry.Offset(x + 20.dp.toPx(), y + 67.dp.toPx()),
+                    size = androidx.compose.ui.geometry.Size(20.dp.toPx(), 6.dp.toPx()),
+                    style = strokeStyle
+                )
+
+                // 8. Music Note
                 drawCircle(
                     color = patternColor,
-                    radius = 4.dp.toPx(),
-                    center = androidx.compose.ui.geometry.Offset(x + 90.dp.toPx(), y + 80.dp.toPx()),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx())
+                    radius = 3.dp.toPx(),
+                    center = androidx.compose.ui.geometry.Offset(x + 140.dp.toPx(), y + 130.dp.toPx()),
+                    style = strokeStyle
                 )
                 drawLine(
                     color = patternColor,
-                    start = androidx.compose.ui.geometry.Offset(x + 85.dp.toPx(), y + 25.dp.toPx()),
-                    end = androidx.compose.ui.geometry.Offset(x + 95.dp.toPx(), y + 25.dp.toPx()),
-                    strokeWidth = 1.5.dp.toPx()
+                    start = androidx.compose.ui.geometry.Offset(x + 143.dp.toPx(), y + 130.dp.toPx()),
+                    end = androidx.compose.ui.geometry.Offset(x + 143.dp.toPx(), y + 118.dp.toPx()),
+                    strokeWidth = strokeWidth
                 )
                 drawLine(
                     color = patternColor,
-                    start = androidx.compose.ui.geometry.Offset(x + 90.dp.toPx(), y + 20.dp.toPx()),
-                    end = androidx.compose.ui.geometry.Offset(x + 90.dp.toPx(), y + 30.dp.toPx()),
-                    strokeWidth = 1.5.dp.toPx()
+                    start = androidx.compose.ui.geometry.Offset(x + 143.dp.toPx(), y + 118.dp.toPx()),
+                    end = androidx.compose.ui.geometry.Offset(x + 148.dp.toPx(), y + 120.dp.toPx()),
+                    strokeWidth = strokeWidth
                 )
-                drawLine(
+
+                // 9. Lock / Keyhole
+                drawRoundRect(
                     color = patternColor,
-                    start = androidx.compose.ui.geometry.Offset(x + 25.dp.toPx(), y + 90.dp.toPx()),
-                    end = androidx.compose.ui.geometry.Offset(x + 40.dp.toPx(), y + 80.dp.toPx()),
-                    strokeWidth = 1.5.dp.toPx()
+                    topLeft = androidx.compose.ui.geometry.Offset(x + 80.dp.toPx(), y + 130.dp.toPx()),
+                    size = androidx.compose.ui.geometry.Size(12.dp.toPx(), 10.dp.toPx()),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+                    style = strokeStyle
                 )
-                drawLine(
+                drawArc(
                     color = patternColor,
-                    start = androidx.compose.ui.geometry.Offset(x + 40.dp.toPx(), y + 80.dp.toPx()),
-                    end = androidx.compose.ui.geometry.Offset(x + 35.dp.toPx(), y + 95.dp.toPx()),
-                    strokeWidth = 1.5.dp.toPx()
+                    startAngle = 180f,
+                    sweepAngle = 180f,
+                    useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(x + 82.dp.toPx(), y + 124.dp.toPx()),
+                    size = androidx.compose.ui.geometry.Size(8.dp.toPx(), 10.dp.toPx()),
+                    style = strokeStyle
                 )
             }
         }
