@@ -247,6 +247,13 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 		}
 		return c.handleChatPurgeAck(ctx, &msg)
 
+	case OpTyping:
+		var req TypingNotify
+		if err := msgpack.Unmarshal(payload, &req); err != nil {
+			return fmt.Errorf("unmarshal TypingNotify: %w", err)
+		}
+		return c.handleTyping(ctx, &req)
+
 	case OpKeyFetchReq:
 		var req KeyFetchReq
 		if err := msgpack.Unmarshal(payload, &req); err != nil {
@@ -520,12 +527,30 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 	if len(deliveries) > 0 {
 		firstMsgID = deliveries[0].msgRecv.MsgID
 	}
+
 	ack := MsgAck{
 		MsgID:       firstMsgID,
 		ClientMsgID: msg.MsgID,
 	}
 	c.pushFrame(OpMsgAck, ack)
 
+	return nil
+}
+
+func (c *Client) handleTyping(ctx context.Context, req *TypingNotify) error {
+	if req.ToUserID <= 0 {
+		return nil
+	}
+	notify := TypingNotify{
+		FromUserID: c.userID,
+		IsTyping:   req.IsTyping,
+	}
+	data, err := msgpack.Marshal(&notify)
+	if err != nil {
+		return err
+	}
+	frame := append([]byte{byte(OpTyping)}, data...)
+	c.hub.SendToUser(req.ToUserID, frame)
 	return nil
 }
 

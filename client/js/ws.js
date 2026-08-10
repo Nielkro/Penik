@@ -28,6 +28,7 @@ export const OP = {
   USER_AVATAR_UPDATE: 0x1c,
   PRESENCE_UPDATE: 0x1d,
   SERVER_SHUTDOWN: 0x1e,
+  TYPING:          0x1f,
   GROUP_MESSAGE_SEND:      0x20,
   GROUP_MESSAGE_RECV:      0x21,
   GROUP_MESSAGE_ACK:       0x22,

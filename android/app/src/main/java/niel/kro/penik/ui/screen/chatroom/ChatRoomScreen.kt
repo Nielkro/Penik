@@ -345,13 +345,23 @@ fun ChatRoomScreen(
                                 }
                             }
                             if (!isSelfChat) {
-                                val presence = niel.kro.penik.ui.util.formatPresence(online, lastSeen)
-                                if (presence.isNotEmpty()) {
+                                val isPeerTyping by viewModel.isPeerTyping.collectAsState()
+                                if (isPeerTyping) {
                                     Text(
-                                        text = presence,
+                                        text = "печатает...",
                                         fontSize = 12.sp,
-                                        color = if (online) Accent else TextMuted
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Accent
                                     )
+                                } else {
+                                    val presence = niel.kro.penik.ui.util.formatPresence(online, lastSeen)
+                                    if (presence.isNotEmpty()) {
+                                        Text(
+                                            text = presence,
+                                            fontSize = 12.sp,
+                                            color = if (online) Accent else TextMuted
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -379,6 +389,7 @@ fun ChatRoomScreen(
                 .padding(innerPadding)
         ) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                niel.kro.penik.ui.components.TelegramDoodleBackground()
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
@@ -533,7 +544,10 @@ fun ChatRoomScreen(
                 ) {
                     OutlinedTextField(
                         value = inputText,
-                        onValueChange = { inputText = it },
+                        onValueChange = {
+                            inputText = it
+                            viewModel.sendTyping(it.isNotBlank())
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(14.dp)),
@@ -552,6 +566,7 @@ fun ChatRoomScreen(
                     IconButton(
                         onClick = {
                             if (inputText.isNotBlank()) {
+                                viewModel.sendTyping(false)
                                 val currentReply = activeReply
                                 activeReply = null
                                 viewModel.sendMessage(inputText, currentReply?.msgId)

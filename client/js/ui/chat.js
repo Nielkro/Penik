@@ -14,7 +14,7 @@ import {
 } from "./components.js";
 import { syncGroups, getAllGroups, getGroupMessages, onGroupUpdate } from "../groups.js";
 import { buildGroupListItem, showCreateGroupModal } from "./groups.js";
-import { onPresenceUpdate } from "../presence.js";
+import { onPresenceUpdate, onTypingUpdate } from "../presence.js";
 
 
 
@@ -426,22 +426,49 @@ export async function renderChat(container, userId) {
       avatarEl = newAvatar;
     })();
 
-    // Presence isn't cached locally: fetch it once on open, then rely on
-    // PRESENCE_UPDATE websocket pushes to keep it live.
+    let currentPresenceStatus = "";
+    let typingTimer = null;
+
+    const updateStatusText = (status) => {
+      if (status) currentPresenceStatus = status;
+      if (!typingTimer) nickEl.textContent = currentPresenceStatus;
+    };
+
     (async () => {
       try {
         const res = await apiGet(`/users/${userId}`);
         const status = formatPresence(res);
-        if (status) nickEl.textContent = status;
+        updateStatusText(status);
       } catch { /* keep whatever is currently shown */ }
     })();
+
     const unsubPresence = onPresenceUpdate(userId, (presence) => {
       const status = formatPresence(presence);
-      if (status) nickEl.textContent = status;
+      updateStatusText(status);
     });
+
+    const unsubTyping = onTypingUpdate(userId, (isTyping) => {
+      if (typingTimer) clearTimeout(typingTimer);
+      if (isTyping) {
+        nickEl.textContent = "печатает...";
+        nickEl.classList.add("status-typing");
+        typingTimer = setTimeout(() => {
+          typingTimer = null;
+          nickEl.classList.remove("status-typing");
+          nickEl.textContent = currentPresenceStatus;
+        }, 4000);
+      } else {
+        typingTimer = null;
+        nickEl.classList.remove("status-typing");
+        nickEl.textContent = currentPresenceStatus;
+      }
+    });
+
     const presenceObserver = new MutationObserver(() => {
       if (!document.body.contains(chatWrap)) {
         unsubPresence();
+        unsubTyping();
+        if (typingTimer) clearTimeout(typingTimer);
         presenceObserver.disconnect();
       }
     });
@@ -975,9 +1002,28 @@ export async function renderChat(container, userId) {
       sendMessage();
     }
   });
+  let sendTypingTimer = null;
+  let isTypingActive = false;
+
   inputEl.addEventListener("input", () => {
     inputEl.style.height = "auto";
     inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+
+    if (!isTypingActive && userId) {
+      isTypingActive = true;
+      const socket = getWS();
+      if (socket?.isConnected()) {
+        socket.send(OP.TYPING, { to_user_id: Number(userId), is_typing: true });
+      }
+    }
+    if (sendTypingTimer) clearTimeout(sendTypingTimer);
+    sendTypingTimer = setTimeout(() => {
+      isTypingActive = false;
+      const socket = getWS();
+      if (socket?.isConnected()) {
+        socket.send(OP.TYPING, { to_user_id: Number(userId), is_typing: false });
+      }
+    }, 3000);
   });
 
   // Register active chat callback

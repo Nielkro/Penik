@@ -28,6 +28,7 @@ const (
 	OpUserAvatarUpdate    Opcode = 0x1c
 	OpPresenceUpdate      Opcode = 0x1d
 	OpServerShutdown      Opcode = 0x1e
+	OpTyping              Opcode = 0x1f
 	OpMsgDelete           Opcode = 0x0a // client→server: delete message (optionally for everyone)
 	OpMsgDeleteNotify     Opcode = 0x0b // server→client: notify peer message was deleted
 
@@ -80,6 +81,12 @@ type MsgRead struct {
 // OfflineBatch is pushed on connect with all undelivered messages.
 type OfflineBatch struct {
 	Msgs []MsgRecv `msgpack:"msgs"`
+}
+
+type TypingNotify struct {
+	ToUserID   int64 `msgpack:"to_user_id"`
+	FromUserID int64 `msgpack:"from_user_id"`
+	IsTyping   bool  `msgpack:"is_typing"`
 }
 
 // ChatPurge is pushed server→client to wipe a chat locally (delete-for-everyone).

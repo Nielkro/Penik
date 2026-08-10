@@ -55,6 +55,8 @@ class ChatRoomViewModel @Inject constructor(
     val online: StateFlow<Boolean> = _online
     private val _lastSeen = MutableStateFlow(0L)
     val lastSeen: StateFlow<Long> = _lastSeen
+    private val _isPeerTyping = MutableStateFlow(false)
+    val isPeerTyping: StateFlow<Boolean> = _isPeerTyping
 
     init {
         loadSafetyNumber()
@@ -80,6 +82,19 @@ class ChatRoomViewModel @Inject constructor(
                     }
                 }
             }
+            viewModelScope.launch {
+                niel.kro.penik.data.repository.TypingBus.typing.collect { map ->
+                    map[chatUserId]?.let { isTyping ->
+                        _isPeerTyping.value = isTyping
+                    }
+                }
+            }
+        }
+    }
+
+    fun sendTyping(isTyping: Boolean) {
+        if (!isSelfChat && chatUserId > 0) {
+            messageRepository.sendTyping(chatUserId, isTyping)
         }
     }
 

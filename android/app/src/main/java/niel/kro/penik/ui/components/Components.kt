@@ -1586,3 +1586,60 @@ class BubbleShape(private val isSentByMe: Boolean) : Shape {
         return Outline.Generic(path)
     }
 }
+
+@Composable
+fun TelegramDoodleBackground(
+    modifier: Modifier = Modifier,
+    backgroundColor: Color = Color(0xFF0E1621),
+    patternColor: Color = Color(0x0EFFFFFF)
+) {
+    androidx.compose.foundation.Canvas(modifier = modifier.fillMaxSize().background(backgroundColor)) {
+        val patternSize = 140.dp.toPx()
+        val cols = (size.width / patternSize).toInt() + 2
+        val rows = (size.height / patternSize).toInt() + 2
+
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val x = c * patternSize
+                val y = r * patternSize
+
+                drawCircle(
+                    color = patternColor,
+                    radius = 6.dp.toPx(),
+                    center = androidx.compose.ui.geometry.Offset(x + 30.dp.toPx(), y + 30.dp.toPx()),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx())
+                )
+                drawCircle(
+                    color = patternColor,
+                    radius = 4.dp.toPx(),
+                    center = androidx.compose.ui.geometry.Offset(x + 90.dp.toPx(), y + 80.dp.toPx()),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx())
+                )
+                drawLine(
+                    color = patternColor,
+                    start = androidx.compose.ui.geometry.Offset(x + 85.dp.toPx(), y + 25.dp.toPx()),
+                    end = androidx.compose.ui.geometry.Offset(x + 95.dp.toPx(), y + 25.dp.toPx()),
+                    strokeWidth = 1.5.dp.toPx()
+                )
+                drawLine(
+                    color = patternColor,
+                    start = androidx.compose.ui.geometry.Offset(x + 90.dp.toPx(), y + 20.dp.toPx()),
+                    end = androidx.compose.ui.geometry.Offset(x + 90.dp.toPx(), y + 30.dp.toPx()),
+                    strokeWidth = 1.5.dp.toPx()
+                )
+                drawLine(
+                    color = patternColor,
+                    start = androidx.compose.ui.geometry.Offset(x + 25.dp.toPx(), y + 90.dp.toPx()),
+                    end = androidx.compose.ui.geometry.Offset(x + 40.dp.toPx(), y + 80.dp.toPx()),
+                    strokeWidth = 1.5.dp.toPx()
+                )
+                drawLine(
+                    color = patternColor,
+                    start = androidx.compose.ui.geometry.Offset(x + 40.dp.toPx(), y + 80.dp.toPx()),
+                    end = androidx.compose.ui.geometry.Offset(x + 35.dp.toPx(), y + 95.dp.toPx()),
+                    strokeWidth = 1.5.dp.toPx()
+                )
+            }
+        }
+    }
+}

@@ -19,7 +19,7 @@ import {
   encryptKeyBackup, decryptKeyBackup, derivePublicKey, generateKeyPair
 } from './crypto.js';
 import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
-import { emitPresenceUpdate } from './presence.js';
+import { emitPresenceUpdate, emitTypingUpdate } from './presence.js';
 import { getCachedMedia } from './storage.js';
 
 // Service Worker registration for HTTP 206 Partial Content Range streaming
@@ -1018,6 +1018,11 @@ function setupGlobalWSListeners() {
   ws.on(OP.PRESENCE_UPDATE, (payload) => {
     if (payload && payload.user_id != null) {
       emitPresenceUpdate(payload.user_id, { online: payload.online, last_seen: payload.last_seen });
+    }
+  });
+  ws.on(OP.TYPING, (payload) => {
+    if (payload && payload.from_user_id != null) {
+      emitTypingUpdate(payload.from_user_id, !!payload.is_typing);
     }
   });
   ws.on(OP.SERVER_SHUTDOWN, () => {

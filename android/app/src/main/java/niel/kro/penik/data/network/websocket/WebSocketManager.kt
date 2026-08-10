@@ -109,6 +109,7 @@ sealed class WebSocketEvent {
     data class MsgStatusBatch(val statuses: List<MsgStatusItem>) : WebSocketEvent()
     data class UserAvatarUpdate(val userId: Long, val ts: Long) : WebSocketEvent()
     data class PresenceUpdate(val userId: Long, val online: Boolean, val lastSeen: Long) : WebSocketEvent()
+    data class TypingNotify(val fromUserId: Long, val isTyping: Boolean) : WebSocketEvent()
     data class GroupAvatarUpdate(val groupId: Long, val ts: Long) : WebSocketEvent()
     data class MsgDeleteNotify(val msgId: String, val chatId: Long, val deleteForEveryone: Boolean) : WebSocketEvent()
 
@@ -131,6 +132,7 @@ object Opcode {
     const val USER_AVATAR_UPDATE: Byte = 0x1c
     const val PRESENCE_UPDATE: Byte = 0x1d
     const val SERVER_SHUTDOWN: Byte = 0x1e
+    const val TYPING: Byte = 0x1f
     const val PING: Byte = 0x06
     const val PONG: Byte = 0x07
     const val CHAT_PURGE: Byte = 0x08
@@ -362,6 +364,7 @@ class WebSocketManager @Inject constructor(
             Opcode.PAIRING_HISTORY_READY -> handlePairingHistoryReady(payload)
             Opcode.USER_AVATAR_UPDATE -> handleUserAvatarUpdate(payload)
             Opcode.PRESENCE_UPDATE -> handlePresenceUpdate(payload)
+            Opcode.TYPING -> handleTyping(payload)
             Opcode.SERVER_SHUTDOWN -> scope.launch { _events.emit(WebSocketEvent.ServerShutdown) }
             Opcode.GROUP_MESSAGE_RECV -> handleGroupMessageRecv(payload)
             Opcode.GROUP_MESSAGE_ACK -> handleGroupMessageAck(payload)
@@ -396,6 +399,30 @@ class WebSocketManager @Inject constructor(
         } catch (e: Exception) {
             Log.e("WS", "Failed to parse PresenceUpdate frame", e)
         }
+    }
+
+    private fun handleTyping(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val fromUserId = (map["from_user_id"] as? Number)?.toLong() ?: return
+            val isTyping = map["is_typing"] as? Boolean ?: false
+            scope.launch { _events.emit(WebSocketEvent.TypingNotify(fromUserId, isTyping)) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse Typing frame", e)
+        }
+    }
+
+    fun sendTyping(toUserId: Long, isTyping: Boolean) {
+        if (_connectionState.value != ConnectionState.CONNECTED) return
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        packer.packMapHeader(2)
+        packer.packString("to_user_id"); packer.packLong(toUserId)
+        packer.packString("is_typing"); packer.packBoolean(isTyping)
+        packer.close()
+        sendFrame(Opcode.TYPING, bos.toByteArray())
     }
 
     private fun handleGroupAvatarUpdate(payload: ByteArray) {
