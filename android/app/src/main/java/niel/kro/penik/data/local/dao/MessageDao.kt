@@ -49,6 +49,12 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE serverId = :serverId LIMIT 1")
     suspend fun findMessageByServerId(serverId: Long): MessageEntity?
 
+    @Query("SELECT * FROM messages WHERE localId = :localId LIMIT 1")
+    suspend fun findMessageByLocalId(localId: String): MessageEntity?
+
+    @Query("SELECT * FROM messages WHERE chatUserId = :chatUserId AND senderId = :senderId AND serverId IS NULL ORDER BY ABS(timestamp - :timestamp) ASC LIMIT 1")
+    suspend fun findClosestUnacknowledgedMessage(chatUserId: Long, senderId: Long, timestamp: Long): MessageEntity?
+
     @Query("UPDATE messages SET text = '[DELETED]' WHERE chatUserId = :chatUserId")
     suspend fun deleteChatMessages(chatUserId: Long)
 
