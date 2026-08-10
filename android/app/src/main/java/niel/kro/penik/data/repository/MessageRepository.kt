@@ -22,6 +22,7 @@ import niel.kro.penik.data.network.websocket.WebSocketEvent
 import niel.kro.penik.data.network.websocket.WebSocketManager
 import niel.kro.penik.data.crypto.E2EECrypto
 import niel.kro.penik.data.network.websocket.E2EDevicePayload
+import android.util.Log
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -288,6 +289,7 @@ class MessageRepository @Inject constructor(
         val myId = tokenStorage.getUserId()
         val isSelfChat = toUserId == myId
 
+        Log.d("PenikMsg", "sendMessage: clientMsgId=$clientMsgId, toUserId=$toUserId, isSelfChat=$isSelfChat, textLength=${text.length}")
         val entity = MessageEntity(
             localId = clientMsgId,
             chatUserId = toUserId,
@@ -308,6 +310,7 @@ class MessageRepository @Inject constructor(
             }
             if (response.isSuccessful) response.body()?.devices ?: emptyList() else emptyList()
         } catch (e: Exception) {
+            Log.e("PenikMsg", "Failed to fetch recipient key bundle", e)
             emptyList()
         }
 
@@ -315,6 +318,7 @@ class MessageRepository @Inject constructor(
             val response = apiService.getKeyBundleSelf(myId)
             if (response.isSuccessful) response.body()?.devices ?: emptyList() else emptyList()
         } catch (e: Exception) {
+            Log.e("PenikMsg", "Failed to fetch sender key bundle", e)
             emptyList()
         }
 
@@ -324,6 +328,8 @@ class MessageRepository @Inject constructor(
         } else {
             (recipientBundles + senderBundles).filter { it.deviceId != myDeviceId }
         }
+
+        Log.d("PenikMsg", "sendMessage: myDeviceId=$myDeviceId, encrypted for ${allDevices.size} target devices (excluding self)")
 
         val myPrivateIK = tokenStorage.getPrivateKey()
             ?: throw Exception("Private Identity Key not found. Please log in again.")
@@ -348,6 +354,7 @@ class MessageRepository @Inject constructor(
     }
 
     suspend fun handleMsgAck(event: WebSocketEvent.MsgAck) {
+        Log.d("PenikMsg", "handleMsgAck: clientMsgId=${event.clientMsgId} -> serverMsgId=${event.serverMsgId}")
         messageDao.acknowledgeMessage(event.clientMsgId, event.serverMsgId)
     }
 
@@ -559,12 +566,14 @@ class MessageRepository @Inject constructor(
                 val myId = tokenStorage.getUserId()
                 val newMessages = mutableListOf<HistoryMsgDecrypted>()
                 val bundleCache = mutableMapOf<Long, niel.kro.penik.data.network.api.KeyBundleResponse?>()
+                Log.d("PenikMsg", "syncHistory: received ${messages.size} history items from server")
                 val entities = buildList {
                     messages.forEach { msg ->
                         if (msg.senderId == myId && msg.clientMsgId != null) {
                             messageDao.acknowledgeMessage(msg.clientMsgId, msg.msgId)
                         }
                         val existing = messageDao.findMessageByServerId(msg.msgId)
+                        Log.d("PenikMsg", "syncHistory item: msgId=${msg.msgId}, clientMsgId=${msg.clientMsgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, existingLocalId=${existing?.localId}")
                         if (existing == null) {
                             val text = if (msg.plaintext != null) {
                                 msg.plaintext
@@ -580,6 +589,10 @@ class MessageRepository @Inject constructor(
                                     val senderDevice = senderBundle?.devices?.find { it.deviceId == msg.senderDeviceId }
                                     val senderIK = java.util.Base64.getDecoder().decode(senderDevice?.identityKey ?: "")
                                     
+                                    if (msg.senderId == myId) {
+                                        Log.w("PenikMsg", "Attempting to decrypt own message from REST history (msgId=${msg.msgId}, clientMsgId=${msg.clientMsgId}) - ciphertext may be for external devices!")
+                                    }
+                                    
                                     decryptMessagePayload(
                                         myDeviceId = tokenStorage.getDeviceId(),
                                         fromIdentityKey = senderIK,
@@ -588,6 +601,7 @@ class MessageRepository @Inject constructor(
                                         nonce = nonceBytes
                                     )
                                 } catch (e: Exception) {
+                                    Log.e("PenikMsg", "FAILED TO DECRYPT HISTORY MSG msgId=${msg.msgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, clientMsgId=${msg.clientMsgId}", e)
                                     "[Ошибка расшифрования: ${e.message}]"
                                 }
                             } else {
