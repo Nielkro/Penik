@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -131,6 +134,19 @@ fun ChatRoomScreen(
             listState.scrollToItem(messages.lastIndex)
         }
         previousSize = messages.size
+    }
+
+    val imeBottomPadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    LaunchedEffect(imeBottomPadding) {
+        if (messages.isNotEmpty()) {
+            val layoutInfo = listState.layoutInfo
+            val totalItems = layoutInfo.totalItemsCount
+            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 3)
+            if (isNearBottom) {
+                listState.scrollToItem(messages.lastIndex)
+            }
+        }
     }
 
     if (showE2eeDialog) {
