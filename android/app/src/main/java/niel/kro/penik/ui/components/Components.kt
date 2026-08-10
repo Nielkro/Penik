@@ -1170,6 +1170,7 @@ fun MessageBubble(
     var triggered by remember { mutableStateOf(false) }
 
     val isMediaAttachment = attachment?.mime?.let { it.startsWith("image/") || it.startsWith("video/") } == true
+    val isMediaNoCaption = isMediaAttachment && attachment?.caption.isNullOrBlank()
     val bubbleModifier = Modifier.widthIn(max = 280.dp)
 
     Column(
@@ -1178,8 +1179,11 @@ fun MessageBubble(
             .padding(horizontal = 12.dp, vertical = 2.dp),
         horizontalAlignment = alignment
     ) {
-        val startPadding = if (isSentByMe) 10.dp else 14.dp
-        val endPadding = if (isSentByMe) 10.dp else 10.dp
+        val startPadding = if (isMediaNoCaption) 0.dp else (if (isSentByMe) 10.dp else 14.dp)
+        val topPadding = if (isMediaNoCaption) 0.dp else 5.dp
+        val endPadding = if (isMediaNoCaption) 0.dp else 10.dp
+        val bottomPadding = if (isMediaNoCaption) 0.dp else 5.dp
+
         Box(
             modifier = Modifier
                 .offset { androidx.compose.ui.unit.IntOffset(offsetX.toInt(), 0) }
@@ -1220,7 +1224,7 @@ fun MessageBubble(
                         showMenu = true
                     }
                 )
-                .padding(start = startPadding, top = 5.dp, end = endPadding, bottom = 5.dp)
+                .padding(start = startPadding, top = topPadding, end = endPadding, bottom = bottomPadding)
         ) {
             DropdownMenu(
                 expanded = showMenu,
@@ -1332,33 +1336,34 @@ fun MessageBubble(
 
                 if (attachment != null) {
                     FileAttachmentContent(attachment = attachment, textColor = textColor)
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        Text(
-                            text = formatTime(timestamp),
-                            fontSize = 10.sp,
-                            color = if (isSentByMe) SentMessageText else TextMuted
-                        )
-                        if (isSentByMe) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            val statusText = if (read) "✓✓" else if (delivered) "✓✓" else "✓"
+                    if (!isMediaNoCaption) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
                             Text(
-                                text = statusText,
+                                text = formatTime(timestamp),
                                 fontSize = 10.sp,
-                                color = if (read) Accent else TextMuted
+                                color = if (isSentByMe) SentMessageText else TextMuted
                             )
+                            if (isSentByMe) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                val statusText = if (read) "✓✓" else if (delivered) "✓✓" else "✓"
+                                Text(
+                                    text = statusText,
+                                    fontSize = 10.sp,
+                                    color = if (read) Accent else TextMuted
+                                )
+                            }
                         }
                     }
                 } else {
                     val isSingleLineShort = !isFailed && !parsedText.contains('\n') && parsedText.length <= 35
                     if (isSingleLineShort) {
                         Row(
-                            verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(top = 1.dp)
                         ) {
                             val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
@@ -1367,7 +1372,6 @@ fun MessageBubble(
                                 color = textColor,
                                 fontSize = 15.sp,
                                 modifier = Modifier
-                                    .padding(end = 8.dp)
                                     .combinedClickable(
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = null,
@@ -1378,9 +1382,9 @@ fun MessageBubble(
                                         }
                                     )
                             )
+                            Spacer(modifier = Modifier.width(6.dp))
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(bottom = 1.dp)
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = formatTime(timestamp),
@@ -1388,7 +1392,7 @@ fun MessageBubble(
                                     color = if (isSentByMe) SentMessageText else TextMuted
                                 )
                                 if (isSentByMe) {
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
                                     val statusText = if (read) "✓✓" else if (delivered) "✓✓" else "✓"
                                     Text(
                                         text = statusText,
@@ -1436,6 +1440,36 @@ fun MessageBubble(
                                 )
                             }
                         }
+                    }
+                }
+            }
+
+            // Telegram-style overlay timestamp & status badge for media without caption
+            if (isMediaNoCaption) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = 6.dp, end = 6.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = formatTime(timestamp),
+                        color = Color.White,
+                        fontSize = 10.sp
+                    )
+                    if (isSentByMe) {
+                        Spacer(modifier = Modifier.width(3.dp))
+                        val statusText = if (read) "✓✓" else if (delivered) "✓✓" else "✓"
+                        val statusColor = if (read) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.85f)
+                        Text(
+                            text = statusText,
+                            color = statusColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
