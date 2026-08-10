@@ -1655,7 +1655,7 @@ fun TelegramDoodleBackground(
                 val cx = c * cellStep + rowOffset + cellStep / 2f + randomOffsetX
                 val cy = r * cellStep + cellStep / 2f + randomOffsetY
 
-                val iconType = Math.abs((r * 7 + c + (pseudoRandom(r, c, 4) * 10).toInt())) % 12
+                val iconType = Math.abs((r * 7 + c + (pseudoRandom(r, c, 4) * 10).toInt())) % 13
                 when (iconType) {
                     0 -> {
                         val pPath = Path().apply {
@@ -1822,6 +1822,21 @@ fun TelegramDoodleBackground(
                             quadraticTo(cx, cy, cx, cy - 6.dp.toPx())
                         }
                         drawPath(sparkle, patternColor, style = strokeStyle)
+                    }
+                    12 -> {
+                        val appleBody = Path().apply {
+                            moveTo(cx, cy - 3.dp.toPx())
+                            cubicTo(cx - 3.dp.toPx(), cy - 6.dp.toPx(), cx - 7.dp.toPx(), cy - 2.dp.toPx(), cx - 6.dp.toPx(), cy + 2.dp.toPx())
+                            cubicTo(cx - 5.dp.toPx(), cy + 6.dp.toPx(), cx - 2.dp.toPx(), cy + 7.dp.toPx(), cx, cy + 5.5.dp.toPx())
+                            cubicTo(cx + 2.dp.toPx(), cy + 7.dp.toPx(), cx + 5.dp.toPx(), cy + 6.dp.toPx(), cx + 6.dp.toPx(), cy + 2.dp.toPx())
+                            cubicTo(cx + 7.dp.toPx(), cy - 2.dp.toPx(), cx + 3.dp.toPx(), cy - 6.dp.toPx(), cx, cy - 3.dp.toPx())
+                        }
+                        drawPath(appleBody, patternColor, style = strokeStyle)
+                        val leaf = Path().apply {
+                            moveTo(cx, cy - 3.dp.toPx())
+                            quadraticTo(cx + 2.dp.toPx(), cy - 6.dp.toPx(), cx + 3.dp.toPx(), cy - 7.dp.toPx())
+                        }
+                        drawPath(leaf, patternColor, style = strokeStyle)
                     }
                 }
             }
