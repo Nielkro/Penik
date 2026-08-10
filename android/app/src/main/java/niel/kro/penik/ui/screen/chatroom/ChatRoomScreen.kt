@@ -119,7 +119,7 @@ fun ChatRoomScreen(
 
     var previousSize by remember { mutableStateOf(0) }
     var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
-    var isInitialScrollDone by remember(viewModel.chatUserId) { mutableStateOf(false) }
+    var isInitialScrollDone by remember(chatUserId) { mutableStateOf(false) }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
