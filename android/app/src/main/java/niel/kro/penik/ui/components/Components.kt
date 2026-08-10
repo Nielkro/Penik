@@ -1314,65 +1314,61 @@ fun MessageBubble(
 
                 if (replySender != null && replyText != null) {
                     val replyInfo = remember(replyText) { parseReplyContent(replyText) }
-                    val thumbBitmap: ImageBitmap? = remember(replyInfo?.thumbBase64) {
-                        replyInfo?.thumbBase64?.let { b64 ->
-                            try {
-                                val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                    val replyThumbBitmap = remember(replyInfo?.thumbBase64) {
+                        replyInfo?.thumbBase64?.let { thumbStr ->
+                            runCatching {
+                                val base64Data = if (thumbStr.contains(",")) thumbStr.substringAfter(",") else thumbStr
+                                val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
                                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                            } catch (_: Exception) { null }
+                            }.getOrNull()
                         }
                     }
 
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 4.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(if (isSentByMe) Color(0x30FFFFFF) else Color(0x15FFFFFF))
-                            .combinedClickable(
-                                onClick = {
-                                    replyToMsgId?.let { onReplyClick?.invoke(it) }
-                                },
-                                onLongClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    showMenu = true
-                                }
-                            )
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                            .padding(bottom = 6.dp)
+                            .background(Color(0x0DFFFFFF), shape = RoundedCornerShape(4.dp))
+                            .height(IntrinsicSize.Max)
+                            .clickable(enabled = onReplyClick != null && replyToMsgId != null) {
+                                replyToMsgId?.let { onReplyClick?.invoke(it) }
+                            },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
                                 .width(3.dp)
-                                .height(28.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(if (isSentByMe) Color.White else Accent)
+                                .fillMaxHeight()
+                                .background(Accent)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        if (thumbBitmap != null) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        if (replyThumbBitmap != null) {
                             Image(
-                                bitmap = thumbBitmap,
+                                bitmap = replyThumbBitmap,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
-                                    .size(28.dp)
+                                    .padding(vertical = 4.dp)
+                                    .size(34.dp)
                                     .clip(RoundedCornerShape(4.dp))
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                         }
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .padding(vertical = 5.dp, horizontal = 4.dp)
+                        ) {
                             Text(
-                                text = replySender!!,
-                                fontSize = 11.sp,
+                                text = replySender,
+                                color = if (isSentByMe) Color(0xFFB8D4FF) else Accent,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isSentByMe) Color.White else Accent,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                fontSize = 11.sp
                             )
                             Text(
-                                text = replyInfo?.displayText ?: replyText!!,
-                                fontSize = 11.sp,
-                                color = if (isSentByMe) Color(0xDDFFFFFF) else TextMuted,
+                                text = replyInfo?.displayText ?: replyText,
+                                color = TextMuted,
+                                fontSize = 12.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
