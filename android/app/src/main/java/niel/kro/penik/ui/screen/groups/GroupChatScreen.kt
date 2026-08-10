@@ -236,6 +236,7 @@ fun GroupChatScreen(
                 .imePadding()
         ) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                niel.kro.penik.ui.components.TelegramDoodleBackground()
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),

@@ -19,3 +19,12 @@ object PresenceBus {
         _presence.value = _presence.value + (userId to PresenceState(online, lastSeen))
     }
 }
+
+object TypingBus {
+    private val _typing = MutableStateFlow<Map<Long, Boolean>>(emptyMap())
+    val typing: StateFlow<Map<Long, Boolean>> = _typing.asStateFlow()
+
+    fun update(userId: Long, isTyping: Boolean) {
+        _typing.value = _typing.value + (userId to isTyping)
+    }
+}

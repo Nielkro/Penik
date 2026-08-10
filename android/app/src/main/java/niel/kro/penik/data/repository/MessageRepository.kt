@@ -370,6 +370,14 @@ class MessageRepository @Inject constructor(
         webSocketManager.sendRead(serverId)
     }
 
+    fun sendRead(serverId: Long) {
+        webSocketManager.sendRead(serverId)
+    }
+
+    fun sendTyping(toUserId: Long, isTyping: Boolean) {
+        webSocketManager.sendTyping(toUserId, isTyping)
+    }
+
     suspend fun handleMsgRecv(event: WebSocketEvent.MsgRecv): Boolean {
         val sentByMe = event.fromUserId == tokenStorage.getUserId()
         if (messageDao.findLocalIdByServerId(event.msgId) != null) {

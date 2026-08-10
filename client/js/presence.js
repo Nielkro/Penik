@@ -17,3 +17,20 @@ export function emitPresenceUpdate(userId, presence) {
     try { fn(presence); } catch (e) { console.error('[presence] listener error', e); }
   }
 }
+
+const _typingListeners = new Map();
+
+export function onTypingUpdate(userId, fn) {
+  const key = String(userId);
+  if (!_typingListeners.has(key)) _typingListeners.set(key, new Set());
+  _typingListeners.get(key).add(fn);
+  return () => _typingListeners.get(key)?.delete(fn);
+}
+
+export function emitTypingUpdate(userId, isTyping) {
+  const set = _typingListeners.get(String(userId));
+  if (!set) return;
+  for (const fn of set) {
+    try { fn(isTyping); } catch (e) { console.error('[typing] listener error', e); }
+  }
+}

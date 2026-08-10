@@ -165,6 +165,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
             is WebSocketEvent.UserAvatarUpdate -> {
                 niel.kro.penik.data.repository.AvatarCacheBus.bumpUser(event.userId, event.ts)
             }
+            is WebSocketEvent.TypingNotify -> {
+                niel.kro.penik.data.repository.TypingBus.update(event.fromUserId, event.isTyping)
+            }
             is WebSocketEvent.MsgDeleteNotify -> {
                 messageRepository.deleteMessageByServerOrLocalId(event.msgId, event.chatId)
             }
