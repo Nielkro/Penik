@@ -831,14 +831,14 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   display: flex;
   flex-direction: row;
   align-items: flex-end;
-  justify-content: space-between;
   gap: 8px;
-  width: 100%;
+  max-width: 100%;
 }
 
 .msg-single-line-row .msg-meta {
   margin-top: 0;
   flex-shrink: 0;
+  margin-left: auto;
   margin-bottom: 1px;
 }
 

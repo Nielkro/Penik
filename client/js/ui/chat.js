@@ -640,7 +640,7 @@ export async function renderChat(container, userId) {
     }
 
     const isFilePayload = typeof msg.plaintext === "string" && msg.plaintext.trim().startsWith("{") && msg.plaintext.includes('"file"');
-    const isSingleLine = !isFailed && !isFilePayload && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 25;
+    const isSingleLine = !isFailed && !isFilePayload && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 35;
     const bubbleChildren = [];
     if (replyRefEl) bubbleChildren.push(replyRefEl);
     if (isSingleLine) {

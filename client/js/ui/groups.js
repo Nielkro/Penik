@@ -409,14 +409,24 @@ export async function renderGroup(container, groupId) {
     const timeEl = el("span", { class: "msg-time" });
     wireMsgTime(timeEl, msg.created_at);
 
+    const isFilePayload = typeof msg.plaintext === "string" && msg.plaintext.trim().startsWith("{") && msg.plaintext.includes('"file"');
+    const isSingleLine = !isFilePayload && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 35;
+
+    const metaEl = el("div", { class: "msg-meta" },
+      timeEl,
+      mine ? el("span", { class: "msg-status" }, msg.delivered ? "✓" : "…") : null,
+    );
+
     const bubbleChildren = [];
     if (senderNameSpan) bubbleChildren.push(senderNameSpan);
     if (replyRefEl) bubbleChildren.push(replyRefEl);
-    bubbleChildren.push(textEl);
-    bubbleChildren.push(el("div", { class: "msg-meta" },
-      timeEl,
-      mine ? el("span", { class: "msg-status" }, msg.delivered ? "✓" : "…") : null,
-    ));
+    if (isSingleLine) {
+      const inlineRow = el("div", { class: "msg-single-line-row" }, textEl, metaEl);
+      bubbleChildren.push(inlineRow);
+    } else {
+      bubbleChildren.push(textEl);
+      bubbleChildren.push(metaEl);
+    }
 
     let isMediaMsg = false;
     if (typeof msg.plaintext === "string" && msg.plaintext.startsWith("{")) {
