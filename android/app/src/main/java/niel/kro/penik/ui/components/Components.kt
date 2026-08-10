@@ -1341,7 +1341,7 @@ fun MessageBubble(
                         Text(
                             text = formatTime(timestamp),
                             fontSize = 10.sp,
-                            color = if (isSentByMe) SentTimeText else TextMuted
+                            color = if (isSentByMe) SentMessageText else TextMuted
                         )
                         if (isSentByMe) {
                             Spacer(modifier = Modifier.width(4.dp))
@@ -1349,7 +1349,7 @@ fun MessageBubble(
                             Text(
                                 text = statusText,
                                 fontSize = 10.sp,
-                                color = if (read) ReadCheckmarkColor else DeliveredCheckmarkColor
+                                color = if (read) Accent else TextMuted
                             )
                         }
                     }
@@ -1379,7 +1379,7 @@ fun MessageBubble(
                         Text(
                             text = formatTime(timestamp),
                             fontSize = 10.sp,
-                            color = if (isSentByMe) SentTimeText else TextMuted
+                            color = if (isSentByMe) SentMessageText else TextMuted
                         )
                         if (isSentByMe) {
                             Spacer(modifier = Modifier.width(4.dp))
@@ -1387,7 +1387,7 @@ fun MessageBubble(
                             Text(
                                 text = statusText,
                                 fontSize = 10.sp,
-                                color = if (read) ReadCheckmarkColor else DeliveredCheckmarkColor
+                                color = if (read) Accent else TextMuted
                             )
                         }
                     }
