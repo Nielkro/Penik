@@ -1363,8 +1363,9 @@ fun MessageBubble(
                     val isSingleLineShort = !isFailed && !parsedText.contains('\n') && parsedText.length <= 35
                     if (isSingleLineShort) {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(top = 1.dp)
+                            modifier = Modifier.padding(top = 1.dp),
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.Start
                         ) {
                             val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
                             Text(
@@ -1372,6 +1373,8 @@ fun MessageBubble(
                                 color = textColor,
                                 fontSize = 15.sp,
                                 modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .padding(end = 8.dp)
                                     .combinedClickable(
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = null,
@@ -1382,9 +1385,9 @@ fun MessageBubble(
                                         }
                                     )
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
                             Row(
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(bottom = 1.dp)
                             ) {
                                 Text(
                                     text = formatTime(timestamp),
