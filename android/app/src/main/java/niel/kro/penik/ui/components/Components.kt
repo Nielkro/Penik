@@ -1257,7 +1257,7 @@ fun MessageBubble(
                     )
                 }
             }
-            Column {
+            Column(modifier = Modifier.width(IntrinsicSize.Max)) {
                 if (!isSentByMe && senderName != null) {
                     val hue = if (senderUserId != null && senderUserId > 0) (senderUserId * 137) % 360 else 0L
                     val nameColor = Color.hsl(hue.toFloat(), 0.65f, 0.65f)
@@ -1285,6 +1285,7 @@ fun MessageBubble(
 
                     Row(
                         modifier = Modifier
+                            .fillMaxWidth()
                             .padding(bottom = 6.dp)
                             .background(Color(0x0DFFFFFF), shape = RoundedCornerShape(4.dp))
                             .height(IntrinsicSize.Max)
@@ -1363,9 +1364,11 @@ fun MessageBubble(
                     val isSingleLineShort = !isFailed && !parsedText.contains('\n') && parsedText.length <= 35
                     if (isSingleLineShort) {
                         Row(
-                            modifier = Modifier.padding(top = 1.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 1.dp),
                             verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = Arrangement.Start
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
                             Text(
