@@ -1258,8 +1258,9 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 /* Reply Reference inside message bubble */
 .msg-reply-ref {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   padding: 6px 10px;
   background: rgba(255, 255, 255, 0.05);
   border-left: 3px solid var(--accent);
@@ -1269,6 +1270,23 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   cursor: pointer;
   box-sizing: border-box;
   width: 100%;
+}
+
+.reply-ref-thumb,
+.reply-preview-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.reply-ref-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
 }
 
 .msg-out .msg-reply-ref {

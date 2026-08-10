@@ -14,7 +14,7 @@ import {
   setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
 import { onPresenceUpdate } from "../presence.js";
-import { getMessagePreview } from "./chat.js";
+import { getMessagePreview, getMessagePreviewInfo } from "./chat.js";
 
 // Role labels in Russian for the members UI.
 const ROLE_LABEL = { owner: "владелец", admin: "админ", member: "участник" };
@@ -364,8 +364,10 @@ export async function renderGroup(container, groupId) {
     let replyRefEl = null;
     if (msg.reply_to_msg_id) {
       replyRefEl = el("div", { class: "msg-reply-ref" },
-        el("span", { class: "reply-ref-sender" }, "Загрузка..."),
-        el("span", { class: "reply-ref-text" }, "...")
+        el("div", { class: "reply-ref-details" },
+          el("span", { class: "reply-ref-sender" }, "Загрузка..."),
+          el("span", { class: "reply-ref-text" }, "...")
+        )
       );
       replyRefEl.addEventListener("click", () => {
         const targetBubble = messagesEl.querySelector(`[data-mid="${cssEscape(msg.reply_to_msg_id)}"]`);
@@ -387,8 +389,13 @@ export async function renderGroup(container, groupId) {
             const isParentMine = Number(parent.sender_user_id) === Number(myId);
             const parentSenderId = Number(parent.sender_user_id);
             const senderName = isParentMine ? "Вы" : (nameById.get(parentSenderId) || parent.sender_name || `#${parentSenderId}`);
+            const info = getMessagePreviewInfo(parent.plaintext || "");
             replyRefEl.querySelector(".reply-ref-sender").textContent = senderName;
-            replyRefEl.querySelector(".reply-ref-text").textContent = getMessagePreview(parent.plaintext || "");
+            replyRefEl.querySelector(".reply-ref-text").textContent = info.text;
+            if (info.thumb) {
+              const thumbImg = el("img", { class: "reply-ref-thumb", src: info.thumb });
+              replyRefEl.insertBefore(thumbImg, replyRefEl.firstChild);
+            }
           } else {
             replyRefEl.querySelector(".reply-ref-sender").textContent = "Сообщение";
             replyRefEl.querySelector(".reply-ref-text").textContent = "Исходное сообщение удалено или недоступно";
@@ -425,9 +432,11 @@ export async function renderGroup(container, groupId) {
       ...bubbleChildren
     );
     wireMsgCopy(bubble, () => msg.plaintext || "", () => {
+      const info = getMessagePreviewInfo(msg.plaintext || "");
       setActiveReply({
         msg_id: msg.message_id,
-        text: getMessagePreview(msg.plaintext || ""),
+        text: info.text,
+        thumb: info.thumb,
         sender: mine ? "Вы" : (nameById.get(senderId) || msg.sender_name || `#${senderId}`)
       });
     });
@@ -466,13 +475,17 @@ export async function renderGroup(container, groupId) {
     activeReply = reply;
     replyBarContainer.innerHTML = "";
     if (reply) {
-      const bar = el("div", { class: "reply-preview-bar" },
-        el("div", { class: "reply-preview-content" },
-          el("span", { class: "reply-preview-sender" }, reply.sender),
-          el("span", { class: "reply-preview-text" }, reply.text)
-        ),
-        el("button", { class: "reply-preview-close" }, "✕")
-      );
+      const barChildren = [];
+      if (reply.thumb) {
+        barChildren.push(el("img", { class: "reply-preview-thumb", src: reply.thumb }));
+      }
+      barChildren.push(el("div", { class: "reply-preview-content" },
+        el("span", { class: "reply-preview-sender" }, reply.sender),
+        el("span", { class: "reply-preview-text" }, reply.text)
+      ));
+      barChildren.push(el("button", { class: "reply-preview-close" }, "✕"));
+
+      const bar = el("div", { class: "reply-preview-bar" }, ...barChildren);
       bar.querySelector(".reply-preview-close").addEventListener("click", () => {
         setActiveReply(null);
       });

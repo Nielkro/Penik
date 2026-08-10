@@ -20,20 +20,34 @@ import { onPresenceUpdate } from "../presence.js";
 
 export const avatarUpdateTimestamps = new Map();
 
-export function getMessagePreview(plaintext) {
-  if (!plaintext) return "";
+export function getMessagePreviewInfo(plaintext) {
+  if (!plaintext) return { text: "", thumb: null, isMedia: false };
   if (typeof plaintext === "string" && plaintext.startsWith("{")) {
     try {
       const parsed = JSON.parse(plaintext);
       if (parsed.type === "file" && parsed.file) {
         const isImage = (parsed.file.mime || "").startsWith("image/");
-        const icon = isImage ? "📷 " : "📎 ";
-        return icon + (parsed.text || parsed.file.name || "Файл");
+        const isVideo = (parsed.file.mime || "").startsWith("video/");
+        let text = parsed.text || "";
+        if (!text) {
+          if (isImage) text = "Фотография";
+          else if (isVideo) text = "Видео";
+          else text = parsed.file.name || "Файл";
+        }
+        let thumb = parsed.file.thumb || null;
+        if (thumb && !thumb.startsWith("data:")) {
+          thumb = "data:image/jpeg;base64," + thumb;
+        }
+        return { text, thumb, isMedia: true };
       }
-      return parsed.text || plaintext;
+      return { text: parsed.text || plaintext, thumb: null, isMedia: false };
     } catch (e) {}
   }
-  return plaintext;
+  return { text: plaintext, thumb: null, isMedia: false };
+}
+
+export function getMessagePreview(plaintext) {
+  return getMessagePreviewInfo(plaintext).text;
 }
 
 // ── Chat list ────────────────────────────────────────────────────────────────
@@ -566,8 +580,10 @@ export async function renderChat(container, userId) {
     let replyRefEl = null;
     if (msg.reply_to_msg_id) {
       replyRefEl = el("div", { class: "msg-reply-ref" },
-        el("span", { class: "reply-ref-sender" }, "Загрузка..."),
-        el("span", { class: "reply-ref-text" }, "...")
+        el("div", { class: "reply-ref-details" },
+          el("span", { class: "reply-ref-sender" }, "Загрузка..."),
+          el("span", { class: "reply-ref-text" }, "...")
+        )
       );
       replyRefEl.addEventListener("click", () => {
         scrollToMessage(msg.reply_to_msg_id);
@@ -579,8 +595,13 @@ export async function renderChat(container, userId) {
           if (parent) {
             const isParentMine = String(parent.sender_id) === String(me && (me.id || me.user_id));
             const senderName = isParentMine ? "Вы" : (contact.name || contact.nickname || "Собеседник");
+            const info = getMessagePreviewInfo(parent.plaintext || "");
             replyRefEl.querySelector(".reply-ref-sender").textContent = senderName;
-            replyRefEl.querySelector(".reply-ref-text").textContent = getMessagePreview(parent.plaintext || "");
+            replyRefEl.querySelector(".reply-ref-text").textContent = info.text;
+            if (info.thumb) {
+              const thumbImg = el("img", { class: "reply-ref-thumb", src: info.thumb });
+              replyRefEl.insertBefore(thumbImg, replyRefEl.firstChild);
+            }
           } else {
             replyRefEl.querySelector(".reply-ref-sender").textContent = "Сообщение";
             replyRefEl.querySelector(".reply-ref-text").textContent = "Исходное сообщение удалено или недоступно";
@@ -626,9 +647,11 @@ export async function renderChat(container, userId) {
     }
     if (!isFailed) {
       wireMsgCopy(bubble, () => msg.plaintext || "", () => {
+        const info = getMessagePreviewInfo(msg.plaintext || "");
         setActiveReply({
           msg_id: msg.client_msg_id || msg.msg_id || bubble.dataset.msgId,
-          text: getMessagePreview(msg.plaintext || ""),
+          text: info.text,
+          thumb: info.thumb,
           sender: isMine ? "Вы" : (contact.name || contact.nickname || "Собеседник")
         });
       }, async () => {
@@ -704,13 +727,17 @@ export async function renderChat(container, userId) {
     activeReply = reply;
     replyBarContainer.innerHTML = "";
     if (reply) {
-      const bar = el("div", { class: "reply-preview-bar" },
-        el("div", { class: "reply-preview-content" },
-          el("span", { class: "reply-preview-sender" }, reply.sender),
-          el("span", { class: "reply-preview-text" }, reply.text)
-        ),
-        el("button", { class: "reply-preview-close" }, "✕")
-      );
+      const barChildren = [];
+      if (reply.thumb) {
+        barChildren.push(el("img", { class: "reply-preview-thumb", src: reply.thumb }));
+      }
+      barChildren.push(el("div", { class: "reply-preview-content" },
+        el("span", { class: "reply-preview-sender" }, reply.sender),
+        el("span", { class: "reply-preview-text" }, reply.text)
+      ));
+      barChildren.push(el("button", { class: "reply-preview-close" }, "✕"));
+
+      const bar = el("div", { class: "reply-preview-bar" }, ...barChildren);
       bar.querySelector(".reply-preview-close").addEventListener("click", () => {
         setActiveReply(null);
       });
