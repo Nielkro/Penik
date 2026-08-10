@@ -24,6 +24,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1065,16 +1066,50 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
     }
     Column(modifier = if (isImage || isVideo) Modifier else Modifier.clickable(enabled = localFile != null, onClick = openFile)) {
         when {
-            isVideo && localFile != null -> LocalVideoPlayer(localFile!!, attachment.name, onOpenFullscreen = { showVideoViewer = true })
-            isImage -> AsyncImage(
-                model = localFile,
-                contentDescription = attachment.name,
+            isVideo -> Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 180.dp, max = 300.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable(enabled = localFile != null) { showImageViewer = true },
-                contentScale = ContentScale.FillWidth
-            )
+            ) {
+                if (localFile != null) {
+                    LocalVideoPlayer(localFile!!, attachment.name, onOpenFullscreen = { showVideoViewer = true })
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0x33000000)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(if (loadError) "Ошибка загрузки" else "Загрузка видео…", color = TextMuted, fontSize = 12.sp)
+                    }
+                }
+            }
+            isImage -> Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 180.dp, max = 300.dp)
+                    .clip(RoundedCornerShape(8.dp))
+            ) {
+                AsyncImage(
+                    model = localFile,
+                    contentDescription = attachment.name,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(enabled = localFile != null) { showImageViewer = true },
+                    contentScale = ContentScale.Crop
+                )
+                if (localFile == null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0x22FFFFFF)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(if (loadError) "Ошибка загрузки" else "Загрузка фото…", color = TextMuted, fontSize = 12.sp)
+                    }
+                }
+            }
             else -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.InsertDriveFile, contentDescription = null, tint = textColor)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -1085,7 +1120,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                 }
             }
         }
-        if (localFile == null) {
+        if (localFile == null && !isImage && !isVideo) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(if (loadError) "Не удалось загрузить файл" else "Загрузка…", color = TextMuted, fontSize = 12.sp)
         }
