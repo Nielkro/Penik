@@ -415,7 +415,19 @@ class MessageRepository @Inject constructor(
         val sentByMe = event.fromUserId == myId
         val isSelfChat = sentByMe && event.chatUserId == myId
 
-        val existing = messageDao.findMessageByServerId(event.msgId)
+        var existing = messageDao.findMessageByServerId(event.msgId)
+        if (existing == null && !event.clientMsgId.isNullOrBlank()) {
+            existing = messageDao.findMessageByLocalId(event.clientMsgId)
+            if (existing != null) {
+                messageDao.acknowledgeMessage(existing.localId, event.msgId)
+            }
+        }
+        if (existing == null && sentByMe) {
+            existing = messageDao.findClosestUnacknowledgedMessage(event.chatUserId, myId, event.ts)
+            if (existing != null) {
+                messageDao.acknowledgeMessage(existing.localId, event.msgId)
+            }
+        }
         if (existing != null) {
             val text = existing.text
             val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
@@ -569,10 +581,22 @@ class MessageRepository @Inject constructor(
                 Log.d("PenikMsg", "syncHistory: received ${messages.size} history items from server")
                 val entities = buildList {
                     messages.forEach { msg ->
-                        if (msg.senderId == myId && msg.clientMsgId != null) {
+                        if (msg.senderId == myId && !msg.clientMsgId.isNullOrBlank()) {
                             messageDao.acknowledgeMessage(msg.clientMsgId, msg.msgId)
                         }
-                        val existing = messageDao.findMessageByServerId(msg.msgId)
+                        var existing = messageDao.findMessageByServerId(msg.msgId)
+                        if (existing == null && !msg.clientMsgId.isNullOrBlank()) {
+                            existing = messageDao.findMessageByLocalId(msg.clientMsgId)
+                            if (existing != null) {
+                                messageDao.acknowledgeMessage(existing.localId, msg.msgId)
+                            }
+                        }
+                        if (existing == null && msg.senderId == myId) {
+                            existing = messageDao.findClosestUnacknowledgedMessage(msg.chatUserId, myId, msg.createdAt * 1000)
+                            if (existing != null) {
+                                messageDao.acknowledgeMessage(existing.localId, msg.msgId)
+                            }
+                        }
                         Log.d("PenikMsg", "syncHistory item: msgId=${msg.msgId}, clientMsgId=${msg.clientMsgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, existingLocalId=${existing?.localId}")
                         if (existing == null) {
                             val text = if (msg.plaintext != null) {
