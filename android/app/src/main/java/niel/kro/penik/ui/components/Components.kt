@@ -47,17 +47,14 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
-import android.widget.Toast
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.ContentScale
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
@@ -568,6 +565,27 @@ private fun parseFileAttachment(text: String): FileAttachment? = runCatching {
         caption = root["text"]?.jsonPrimitive?.content.orEmpty()
     )
 }.getOrNull()
+
+internal data class ReplyParsedInfo(
+    val displayText: String,
+    val thumbBase64: String?
+)
+
+internal fun parseReplyContent(rawText: String?): ReplyParsedInfo? {
+    if (rawText.isNullOrBlank()) return null
+    val attachment = parseFileAttachment(rawText)
+    if (attachment != null) {
+        val isImage = attachment.mime.startsWith("image/")
+        val isVideo = attachment.mime.startsWith("video/")
+        val label = when {
+            isImage -> if (attachment.caption.isNotBlank()) attachment.caption else "Фотография"
+            isVideo -> if (attachment.caption.isNotBlank()) attachment.caption else "Видео"
+            else -> if (attachment.caption.isNotBlank()) attachment.caption else attachment.name.ifBlank { "Файл" }
+        }
+        return ReplyParsedInfo(displayText = label, thumbBase64 = attachment.thumb)
+    }
+    return ReplyParsedInfo(displayText = rawText, thumbBase64 = null)
+}
 
 private fun formatFileSize(size: Long?): String = when {
     size == null -> ""
@@ -1173,10 +1191,10 @@ fun MessageBubble(
                             triggered = false
                         },
                         onHorizontalDrag = { _, dragAmount ->
-                            if (dragAmount > 0 || offsetX > 0) {
-                                val newOffset = (offsetX + dragAmount * 0.5f).coerceIn(0f, 160f)
+                            if (dragAmount < 0 || offsetX < 0) {
+                                val newOffset = (offsetX + dragAmount * 0.5f).coerceIn(-160f, 0f)
                                 offsetX = newOffset
-                                if (newOffset >= 100f && !triggered) {
+                                if (newOffset <= -100f && !triggered) {
                                     triggered = true
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 }
@@ -1244,6 +1262,17 @@ fun MessageBubble(
 
                 // Reply preview inside message bubble
                 if (replySender != null && replyText != null) {
+                    val replyInfo = remember(replyText) { parseReplyContent(replyText) }
+                    val replyThumbBitmap = remember(replyInfo?.thumbBase64) {
+                        replyInfo?.thumbBase64?.let { thumbStr ->
+                            runCatching {
+                                val base64Data = if (thumbStr.contains(",")) thumbStr.substringAfter(",") else thumbStr
+                                val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                            }.getOrNull()
+                        }
+                    }
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1252,7 +1281,8 @@ fun MessageBubble(
                             .height(IntrinsicSize.Max)
                             .clickable(enabled = onReplyClick != null && replyToMsgId != null) {
                                 replyToMsgId?.let { onReplyClick?.invoke(it) }
-                            }
+                            },
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
@@ -1261,9 +1291,22 @@ fun MessageBubble(
                                 .background(Accent)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
+                        if (replyThumbBitmap != null) {
+                            Image(
+                                bitmap = replyThumbBitmap,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .padding(vertical = 4.dp)
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
                         Column(
                             modifier = Modifier
-                                .padding(vertical = 5.dp, horizontal = 8.dp)
+                                .weight(1f)
+                                .padding(vertical = 5.dp, horizontal = 4.dp)
                         ) {
                             Text(
                                 text = replySender!!,
@@ -1272,7 +1315,7 @@ fun MessageBubble(
                                 fontSize = 11.sp
                             )
                             Text(
-                                text = replyText!!,
+                                text = replyInfo?.displayText ?: replyText!!,
                                 color = TextMuted,
                                 fontSize = 12.sp,
                                 maxLines = 1,

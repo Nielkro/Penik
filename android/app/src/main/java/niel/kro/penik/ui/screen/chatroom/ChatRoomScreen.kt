@@ -457,6 +457,17 @@ fun ChatRoomScreen(
                     .imePadding()
             ) {
                 activeReply?.let { reply ->
+                    val replyInfo = remember(reply.text) { niel.kro.penik.ui.components.parseReplyContent(reply.text) }
+                    val replyThumbBitmap = remember(replyInfo?.thumbBase64) {
+                        replyInfo?.thumbBase64?.let { thumbStr ->
+                            runCatching {
+                                val base64Data = if (thumbStr.contains(",")) thumbStr.substringAfter(",") else thumbStr
+                                val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+                                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.androidx.compose.ui.graphics.asImageBitmap()
+                            }.getOrNull()
+                        }
+                    }
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -470,6 +481,17 @@ fun ChatRoomScreen(
                                 .background(Accent)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
+                        if (replyThumbBitmap != null) {
+                            androidx.compose.foundation.Image(
+                                bitmap = replyThumbBitmap,
+                                contentDescription = null,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = reply.sender,
@@ -478,7 +500,7 @@ fun ChatRoomScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = reply.text,
+                                text = replyInfo?.displayText ?: reply.text,
                                 color = TextMuted,
                                 fontSize = 12.sp,
                                 maxLines = 1,
