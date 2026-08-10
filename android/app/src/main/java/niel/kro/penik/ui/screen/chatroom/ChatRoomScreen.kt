@@ -127,11 +127,11 @@ fun ChatRoomScreen(
             val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
             val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 5)
             if (isNearBottom && messages.isNotEmpty()) {
-                listState.animateScrollToItem(messages.lastIndex)
+                listState.animateScrollToItem(messages.lastIndex, scrollOffset = 10000)
             }
         } else if (previousSize == 0 && messages.isNotEmpty()) {
             // First load — jump to the bottom immediately.
-            listState.scrollToItem(messages.lastIndex)
+            listState.scrollToItem(messages.lastIndex, scrollOffset = 10000)
         }
         previousSize = messages.size
     }
@@ -144,7 +144,7 @@ fun ChatRoomScreen(
             val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
             val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 3)
             if (isNearBottom) {
-                listState.scrollToItem(messages.lastIndex)
+                listState.scrollToItem(messages.lastIndex, scrollOffset = 10000)
             }
         }
     }
@@ -467,7 +467,7 @@ fun ChatRoomScreen(
                     FloatingActionButton(
                         onClick = {
                             coroutineScope.launch {
-                                listState.animateScrollToItem(messages.lastIndex)
+                                listState.animateScrollToItem(messages.lastIndex, scrollOffset = 10000)
                             }
                         },
                         containerColor = Panel,
