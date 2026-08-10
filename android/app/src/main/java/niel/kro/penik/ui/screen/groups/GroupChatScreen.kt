@@ -1,5 +1,13 @@
 package niel.kro.penik.ui.screen.groups
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import android.graphics.BitmapFactory
+import android.util.Base64
+import niel.kro.penik.ui.components.parseReplyContent
+import niel.kro.penik.ui.components.ReplyParsedInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -318,13 +326,13 @@ fun GroupChatScreen(
                     .background(Panel)
             ) {
                 activeReply?.let { reply ->
-                    val replyInfo = remember(reply.text) { niel.kro.penik.ui.components.parseReplyContent(reply.text) }
-                    val replyThumbBitmap = remember(replyInfo?.thumbBase64) {
+                    val replyInfo = remember(reply.text) { parseReplyContent(reply.text) }
+                    val replyThumbBitmap: ImageBitmap? = remember(replyInfo?.thumbBase64) {
                         replyInfo?.thumbBase64?.let { thumbStr ->
                             runCatching {
                                 val base64Data = if (thumbStr.contains(",")) thumbStr.substringAfter(",") else thumbStr
                                 val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
-                                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.androidx.compose.ui.graphics.asImageBitmap()
+                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
                             }.getOrNull()
                         }
                     }
@@ -343,10 +351,10 @@ fun GroupChatScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         if (replyThumbBitmap != null) {
-                            androidx.compose.foundation.Image(
+                            Image(
                                 bitmap = replyThumbBitmap,
                                 contentDescription = null,
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                contentScale = ContentScale.Crop,
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(RoundedCornerShape(4.dp))

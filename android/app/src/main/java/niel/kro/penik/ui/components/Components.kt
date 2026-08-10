@@ -47,17 +47,26 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import android.widget.Toast
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.ContentScale
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ImageBitmap
 import android.graphics.BitmapFactory
-import android.util.Base64
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import coil.compose.AsyncImage
@@ -83,8 +92,6 @@ import androidx.compose.material3.DropdownMenuItem
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -1267,7 +1274,7 @@ fun MessageBubble(
                         replyInfo?.thumbBase64?.let { thumbStr ->
                             runCatching {
                                 val base64Data = if (thumbStr.contains(",")) thumbStr.substringAfter(",") else thumbStr
-                                val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+                                val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
                                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
                             }.getOrNull()
                         }
