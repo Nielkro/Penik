@@ -1109,6 +1109,44 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
 }
 
 @Composable
+fun MessageTicks(
+    delivered: Boolean,
+    read: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val isDouble = delivered || read
+    if (isDouble) {
+        Box(
+            modifier = modifier.width(13.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Text(
+                text = "✓",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
+            Text(
+                text = "✓",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = color,
+                modifier = Modifier.offset(x = 3.5.dp)
+            )
+        }
+    } else {
+        Text(
+            text = "✓",
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            color = color,
+            modifier = modifier
+        )
+    }
+}
+
+@Composable
 fun MessageBubble(
     text: String,
     timestamp: Long,
@@ -1169,28 +1207,25 @@ fun MessageBubble(
     var offsetX by remember { mutableStateOf(0f) }
     var triggered by remember { mutableStateOf(false) }
 
-    val isMediaAttachment = attachment?.mime?.let { it.startsWith("image/") || it.startsWith("video/") } == true
-    val isMediaNoCaption = isMediaAttachment && attachment?.caption.isNullOrBlank()
-    val bubbleModifier = Modifier.widthIn(max = 280.dp)
-
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 2.dp),
-        horizontalAlignment = alignment
+            .padding(vertical = 1.dp),
+        contentAlignment = alignment
     ) {
-        val startPadding = if (isMediaNoCaption) 0.dp else (if (isSentByMe) 10.dp else 14.dp)
-        val topPadding = if (isMediaNoCaption) 0.dp else 5.dp
-        val endPadding = if (isMediaNoCaption) 0.dp else 10.dp
-        val bottomPadding = if (isMediaNoCaption) 0.dp else 5.dp
+        val isMediaNoCaption = attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/")) && attachment.caption.isNullOrBlank()
 
         Box(
             modifier = Modifier
                 .offset { androidx.compose.ui.unit.IntOffset(offsetX.toInt(), 0) }
                 .pointerInput(Unit) {
                     detectHorizontalDragGestures(
+                        onDragStart = {
+                            offsetX = 0f
+                            triggered = false
+                        },
                         onDragEnd = {
-                            if (triggered && onReply != null) {
+                            if (triggered && onReply != null && !isFailed) {
                                 onReply()
                             }
                             offsetX = 0f
@@ -1212,8 +1247,8 @@ fun MessageBubble(
                         }
                     )
                 }
-                .then(bubbleModifier)
-                .clip(BubbleShape(isSentByMe))
+                .widthIn(max = 280.dp)
+                .clip(BubbleShape(isSentByMe = isSentByMe))
                 .background(bgColor)
                 .combinedClickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -1224,7 +1259,12 @@ fun MessageBubble(
                         showMenu = true
                     }
                 )
-                .padding(start = startPadding, top = topPadding, end = endPadding, bottom = bottomPadding)
+                .padding(
+                    start = if (isMediaNoCaption) 0.dp else 10.dp,
+                    end = if (isMediaNoCaption) 0.dp else 10.dp,
+                    top = if (isMediaNoCaption) 0.dp else 6.dp,
+                    bottom = if (isMediaNoCaption) 0.dp else 6.dp
+                )
         ) {
             DropdownMenu(
                 expanded = showMenu,
@@ -1264,71 +1304,74 @@ fun MessageBubble(
                     val nameColor = Color.hsl(hue.toFloat(), 0.65f, 0.65f)
                     Text(
                         text = senderName,
-                        color = nameColor,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
+                        color = nameColor,
                         modifier = Modifier.padding(bottom = 2.dp)
                     )
                 }
 
-                // Reply preview inside message bubble
                 if (replySender != null && replyText != null) {
                     val replyInfo = remember(replyText) { parseReplyContent(replyText) }
-                    val replyThumbBitmap = remember(replyInfo?.thumbBase64) {
-                        replyInfo?.thumbBase64?.let { thumbStr ->
-                            runCatching {
-                                val base64Data = if (thumbStr.contains(",")) thumbStr.substringAfter(",") else thumbStr
-                                val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+                    val thumbBitmap: ImageBitmap? = remember(replyInfo?.thumbBase64) {
+                        replyInfo?.thumbBase64?.let { b64 ->
+                            try {
+                                val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
                                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                            }.getOrNull()
+                            } catch (_: Exception) { null }
                         }
                     }
 
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 6.dp)
-                            .background(Color(0x0DFFFFFF), shape = RoundedCornerShape(4.dp))
-                            .height(IntrinsicSize.Max)
-                            .clickable(enabled = onReplyClick != null && replyToMsgId != null) {
-                                replyToMsgId?.let { onReplyClick?.invoke(it) }
-                            },
+                            .padding(bottom = 4.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isSentByMe) Color(0x30FFFFFF) else Color(0x15FFFFFF))
+                            .combinedClickable(
+                                onClick = {
+                                    replyToMsgId?.let { onReplyClick?.invoke(it) }
+                                },
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showMenu = true
+                                }
+                            )
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
                                 .width(3.dp)
-                                .fillMaxHeight()
-                                .background(Accent)
+                                .height(28.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(if (isSentByMe) Color.White else Accent)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        if (replyThumbBitmap != null) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        if (thumbBitmap != null) {
                             Image(
-                                bitmap = replyThumbBitmap,
+                                bitmap = thumbBitmap,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
-                                    .padding(vertical = 4.dp)
-                                    .size(34.dp)
+                                    .size(28.dp)
                                     .clip(RoundedCornerShape(4.dp))
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                         }
-                        Column(
-                            modifier = Modifier
-                                .weight(1f, fill = false)
-                                .padding(vertical = 5.dp, horizontal = 4.dp)
-                        ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = replySender!!,
-                                color = if (isSentByMe) Color(0xFFB8D4FF) else Accent,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp
+                                color = if (isSentByMe) Color.White else Accent,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = replyInfo?.displayText ?: replyText!!,
-                                color = TextMuted,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
+                                color = if (isSentByMe) Color(0xDDFFFFFF) else TextMuted,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -1352,10 +1395,9 @@ fun MessageBubble(
                             )
                             if (isSentByMe) {
                                 Spacer(modifier = Modifier.width(4.dp))
-                                val statusText = if (read) "✓✓" else if (delivered) "✓✓" else "✓"
-                                Text(
-                                    text = statusText,
-                                    fontSize = 10.sp,
+                                MessageTicks(
+                                    delivered = delivered,
+                                    read = read,
                                     color = if (read) Accent else TextMuted
                                 )
                             }
@@ -1394,7 +1436,9 @@ fun MessageBubble(
                             )
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(bottom = 1.dp)
+                                modifier = Modifier
+                                    .align(Alignment.Bottom)
+                                    .offset(y = 2.5.dp)
                             ) {
                                 Text(
                                     text = formatTime(timestamp),
@@ -1403,10 +1447,9 @@ fun MessageBubble(
                                 )
                                 if (isSentByMe) {
                                     Spacer(modifier = Modifier.width(3.dp))
-                                    val statusText = if (read) "✓✓" else if (delivered) "✓✓" else "✓"
-                                    Text(
-                                        text = statusText,
-                                        fontSize = 10.sp,
+                                    MessageTicks(
+                                        delivered = delivered,
+                                        read = read,
                                         color = if (read) Accent else TextMuted
                                     )
                                 }
@@ -1442,10 +1485,9 @@ fun MessageBubble(
                             )
                             if (isSentByMe) {
                                 Spacer(modifier = Modifier.width(4.dp))
-                                val statusText = if (read) "✓✓" else if (delivered) "✓✓" else "✓"
-                                Text(
-                                    text = statusText,
-                                    fontSize = 10.sp,
+                                MessageTicks(
+                                    delivered = delivered,
+                                    read = read,
                                     color = if (read) Accent else TextMuted
                                 )
                             }
@@ -1454,7 +1496,6 @@ fun MessageBubble(
                 }
             }
 
-            // Telegram-style overlay timestamp & status badge for media without caption
             if (isMediaNoCaption) {
                 Row(
                     modifier = Modifier
@@ -1472,13 +1513,11 @@ fun MessageBubble(
                     )
                     if (isSentByMe) {
                         Spacer(modifier = Modifier.width(3.dp))
-                        val statusText = if (read) "✓✓" else if (delivered) "✓✓" else "✓"
                         val statusColor = if (read) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.85f)
-                        Text(
-                            text = statusText,
-                            color = statusColor,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                        MessageTicks(
+                            delivered = delivered,
+                            read = read,
+                            color = statusColor
                         )
                     }
                 }
