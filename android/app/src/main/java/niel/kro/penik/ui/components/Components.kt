@@ -1633,10 +1633,10 @@ fun TelegramDoodleBackground(
     patternColor: Color = Color(0x0EFFFFFF)
 ) {
     androidx.compose.foundation.Canvas(modifier = modifier.fillMaxSize().background(backgroundColor)) {
-        val cellStep = 56.dp.toPx()
+        val cellStep = 36.dp.toPx()
         val cols = (size.width / cellStep).toInt() + 2
         val rows = (size.height / cellStep).toInt() + 2
-        val strokeWidth = 1.2.dp.toPx()
+        val strokeWidth = 1.1.dp.toPx()
         val strokeStyle = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth)
 
         fun pseudoRandom(r: Int, c: Int, seed: Int): Float {
@@ -1647,10 +1647,10 @@ fun TelegramDoodleBackground(
         for (r in -1..rows) {
             val rowOffset = if (r % 2 != 0) cellStep / 2f else 0f
             for (c in -1..cols) {
-                if (pseudoRandom(r, c, 3) < 0.18f) continue
+                if (pseudoRandom(r, c, 3) < 0.08f) continue
 
-                val randomOffsetX = (pseudoRandom(r, c, 1) - 0.5f) * cellStep * 0.45f
-                val randomOffsetY = (pseudoRandom(r, c, 2) - 0.5f) * cellStep * 0.45f
+                val randomOffsetX = (pseudoRandom(r, c, 1) - 0.5f) * cellStep * 0.28f
+                val randomOffsetY = (pseudoRandom(r, c, 2) - 0.5f) * cellStep * 0.28f
 
                 val cx = c * cellStep + rowOffset + cellStep / 2f + randomOffsetX
                 val cy = r * cellStep + cellStep / 2f + randomOffsetY
