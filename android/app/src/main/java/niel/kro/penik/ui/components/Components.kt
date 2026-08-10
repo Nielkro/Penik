@@ -1633,10 +1633,10 @@ fun TelegramDoodleBackground(
     patternColor: Color = Color(0x0EFFFFFF)
 ) {
     androidx.compose.foundation.Canvas(modifier = modifier.fillMaxSize().background(backgroundColor)) {
-        val cellStep = 25.dp.toPx()
+        val cellStep = 45.dp.toPx()
         val cols = (size.width / cellStep).toInt() + 2
         val rows = (size.height / cellStep).toInt() + 2
-        val strokeWidth = 0.95.dp.toPx()
+        val strokeWidth = 1.1.dp.toPx()
         val strokeStyle = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth)
 
         fun pseudoRandom(r: Int, c: Int, seed: Int): Float {
@@ -1647,13 +1647,15 @@ fun TelegramDoodleBackground(
         for (r in -1..rows) {
             val rowOffset = if (r % 2 != 0) cellStep / 2f else 0f
             for (c in -1..cols) {
-                val randomOffsetX = (pseudoRandom(r, c, 1) - 0.5f) * cellStep * 0.22f
-                val randomOffsetY = (pseudoRandom(r, c, 2) - 0.5f) * cellStep * 0.22f
+                if (pseudoRandom(r, c, 3) < 0.12f) continue
+
+                val randomOffsetX = (pseudoRandom(r, c, 1) - 0.5f) * cellStep * 0.35f
+                val randomOffsetY = (pseudoRandom(r, c, 2) - 0.5f) * cellStep * 0.35f
 
                 val cx = c * cellStep + rowOffset + cellStep / 2f + randomOffsetX
                 val cy = r * cellStep + cellStep / 2f + randomOffsetY
 
-                val iconType = Math.abs((r * 7 + c + (pseudoRandom(r, c, 4) * 10).toInt())) % 15
+                val iconType = Math.abs((r * 7 + c + (pseudoRandom(r, c, 4) * 10).toInt())) % 16
                 when (iconType) {
                     0 -> {
                         val pPath = Path().apply {
@@ -1853,6 +1855,21 @@ fun TelegramDoodleBackground(
                         drawLine(color = patternColor, start = androidx.compose.ui.geometry.Offset(cx - 0.5.dp.toPx(), cy + 2.5.dp.toPx()), end = androidx.compose.ui.geometry.Offset(cx - 0.5.dp.toPx(), cy - 4.dp.toPx()), strokeWidth = strokeWidth)
                         drawLine(color = patternColor, start = androidx.compose.ui.geometry.Offset(cx + 4.5.dp.toPx(), cy + 1.dp.toPx()), end = androidx.compose.ui.geometry.Offset(cx + 4.5.dp.toPx(), cy - 5.5.dp.toPx()), strokeWidth = strokeWidth)
                         drawLine(color = patternColor, start = androidx.compose.ui.geometry.Offset(cx - 0.5.dp.toPx(), cy - 4.dp.toPx()), end = androidx.compose.ui.geometry.Offset(cx + 4.5.dp.toPx(), cy - 5.5.dp.toPx()), strokeWidth = strokeWidth)
+                    }
+                    15 -> {
+                        drawCircle(
+                            color = patternColor,
+                            radius = 3.dp.toPx(),
+                            center = androidx.compose.ui.geometry.Offset(cx, cy - 3.5.dp.toPx()),
+                            style = strokeStyle
+                        )
+                        val shoulders = Path().apply {
+                            moveTo(cx - 5.5.dp.toPx(), cy + 5.dp.toPx())
+                            quadraticTo(cx - 5.5.dp.toPx(), cy + 0.5.dp.toPx(), cx - 3.dp.toPx(), cy + 0.5.dp.toPx())
+                            lineTo(cx + 3.dp.toPx(), cy + 0.5.dp.toPx())
+                            quadraticTo(cx + 5.5.dp.toPx(), cy + 0.5.dp.toPx(), cx + 5.5.dp.toPx(), cy + 5.dp.toPx())
+                        }
+                        drawPath(shoulders, patternColor, style = strokeStyle)
                     }
                 }
             }
