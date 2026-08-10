@@ -1354,41 +1354,87 @@ fun MessageBubble(
                         }
                     }
                 } else {
-                    val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
-                    Text(
-                        text = annotated,
-                        color = textColor,
-                        fontSize = 15.sp,
-                        modifier = Modifier
-                            .combinedClickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = {},
-                                onLongClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    showMenu = true
-                                }
-                            )
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        Text(
-                            text = formatTime(timestamp),
-                            fontSize = 10.sp,
-                            color = if (isSentByMe) SentMessageText else TextMuted
-                        )
-                        if (isSentByMe) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            val statusText = if (read) "✓✓" else if (delivered) "✓✓" else "✓"
+                    val isSingleLineShort = !isFailed && !parsedText.contains('\n') && parsedText.length <= 35
+                    if (isSingleLineShort) {
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.padding(top = 1.dp)
+                        ) {
+                            val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
                             Text(
-                                text = statusText,
-                                fontSize = 10.sp,
-                                color = if (read) Accent else TextMuted
+                                text = annotated,
+                                color = textColor,
+                                fontSize = 15.sp,
+                                modifier = Modifier
+                                    .padding(end = 8.dp)
+                                    .combinedClickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                        onClick = {},
+                                        onLongClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            showMenu = true
+                                        }
+                                    )
                             )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(bottom = 1.dp)
+                            ) {
+                                Text(
+                                    text = formatTime(timestamp),
+                                    fontSize = 10.sp,
+                                    color = if (isSentByMe) SentMessageText else TextMuted
+                                )
+                                if (isSentByMe) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    val statusText = if (read) "✓✓" else if (delivered) "✓✓" else "✓"
+                                    Text(
+                                        text = statusText,
+                                        fontSize = 10.sp,
+                                        color = if (read) Accent else TextMuted
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
+                        Text(
+                            text = annotated,
+                            color = textColor,
+                            fontSize = 15.sp,
+                            modifier = Modifier
+                                .combinedClickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = {},
+                                    onLongClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        showMenu = true
+                                    }
+                                )
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text(
+                                text = formatTime(timestamp),
+                                fontSize = 10.sp,
+                                color = if (isSentByMe) SentMessageText else TextMuted
+                            )
+                            if (isSentByMe) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                val statusText = if (read) "✓✓" else if (delivered) "✓✓" else "✓"
+                                Text(
+                                    text = statusText,
+                                    fontSize = 10.sp,
+                                    color = if (read) Accent else TextMuted
+                                )
+                            }
                         }
                     }
                 }
