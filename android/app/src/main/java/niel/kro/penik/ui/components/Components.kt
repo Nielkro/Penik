@@ -1607,16 +1607,16 @@ fun TelegramDoodleBackground(
                 val x = c * patternWidth + rowOffset
                 val y = r * patternHeight
 
-                // 1. Paper Airplane
-                val planePath = Path().apply {
-                    moveTo(x + 20.dp.toPx(), y + 30.dp.toPx())
-                    lineTo(x + 42.dp.toPx(), y + 18.dp.toPx())
-                    lineTo(x + 32.dp.toPx(), y + 42.dp.toPx())
-                    lineTo(x + 27.dp.toPx(), y + 34.dp.toPx())
-                    close()
+                // 1. Stylized Letter P (Penik logo)
+                val pPath = Path().apply {
+                    moveTo(x + 22.dp.toPx(), y + 42.dp.toPx())
+                    lineTo(x + 22.dp.toPx(), y + 18.dp.toPx())
+                    lineTo(x + 34.dp.toPx(), y + 18.dp.toPx())
+                    quadraticTo(x + 44.dp.toPx(), y + 18.dp.toPx(), x + 44.dp.toPx(), y + 27.dp.toPx())
+                    quadraticTo(x + 44.dp.toPx(), y + 36.dp.toPx(), x + 34.dp.toPx(), y + 36.dp.toPx())
+                    lineTo(x + 22.dp.toPx(), y + 36.dp.toPx())
                 }
-                drawPath(planePath, patternColor, style = strokeStyle)
-                drawLine(patternColor, androidx.compose.ui.geometry.Offset(x + 42.dp.toPx(), y + 18.dp.toPx()), androidx.compose.ui.geometry.Offset(x + 27.dp.toPx(), y + 34.dp.toPx()), strokeWidth)
+                drawPath(pPath, patternColor, style = strokeStyle)
 
                 // 2. Star
                 val starCenter = androidx.compose.ui.geometry.Offset(x + 110.dp.toPx(), y + 25.dp.toPx())
