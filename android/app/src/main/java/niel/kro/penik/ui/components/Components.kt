@@ -1639,13 +1639,23 @@ fun TelegramDoodleBackground(
         val strokeWidth = 1.2.dp.toPx()
         val strokeStyle = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth)
 
+        fun pseudoRandom(r: Int, c: Int, seed: Int): Float {
+            val hash = (r * 73856093) xor (c * 19349663) xor (seed * 83492791)
+            return ((hash and 0x7FFFFFFF) % 1000) / 1000f
+        }
+
         for (r in -1..rows) {
             val rowOffset = if (r % 2 != 0) cellStep / 2f else 0f
             for (c in -1..cols) {
-                val cx = c * cellStep + rowOffset + cellStep / 2f
-                val cy = r * cellStep + cellStep / 2f
+                if (pseudoRandom(r, c, 3) < 0.18f) continue
 
-                val iconType = (Math.abs(r * 7 + c)) % 12
+                val randomOffsetX = (pseudoRandom(r, c, 1) - 0.5f) * cellStep * 0.45f
+                val randomOffsetY = (pseudoRandom(r, c, 2) - 0.5f) * cellStep * 0.45f
+
+                val cx = c * cellStep + rowOffset + cellStep / 2f + randomOffsetX
+                val cy = r * cellStep + cellStep / 2f + randomOffsetY
+
+                val iconType = Math.abs((r * 7 + c + (pseudoRandom(r, c, 4) * 10).toInt())) % 12
                 when (iconType) {
                     0 -> {
                         val pPath = Path().apply {
