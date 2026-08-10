@@ -1195,6 +1195,7 @@ fun MessageBubble(
         Accent
     }
 
+    val boxAlignment = if (isSentByMe) Alignment.CenterEnd else Alignment.CenterStart
     val alignment = if (isSentByMe) Alignment.End else Alignment.Start
 
     val doCopy: () -> Unit = {
@@ -1211,7 +1212,7 @@ fun MessageBubble(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 1.dp),
-        contentAlignment = alignment
+        contentAlignment = boxAlignment
     ) {
         val isMediaNoCaption = attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/")) && attachment.caption.isNullOrBlank()
 
