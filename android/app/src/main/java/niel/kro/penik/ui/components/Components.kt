@@ -1071,10 +1071,9 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                 contentDescription = attachment.name,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 280.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .clickable(enabled = localFile != null) { showImageViewer = true },
-                contentScale = ContentScale.Fit
+                contentScale = ContentScale.FillWidth
             )
             else -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.InsertDriveFile, contentDescription = null, tint = textColor)
@@ -1129,7 +1128,6 @@ fun MessageBubble(
 ) {
     val isFailed = text.startsWith("[Ошибка расшифрования") || text.startsWith("[Сообщение не расшифровано")
     var isExpanded by remember { mutableStateOf(false) }
-    var showFullTime by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -1312,7 +1310,7 @@ fun MessageBubble(
                         }
                         Column(
                             modifier = Modifier
-                                .weight(1f)
+                                .weight(1f, fill = false)
                                 .padding(vertical = 5.dp, horizontal = 4.dp)
                         ) {
                             Text(
@@ -1334,10 +1332,28 @@ fun MessageBubble(
 
                 if (attachment != null) {
                     FileAttachmentContent(attachment = attachment, textColor = textColor)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text(
+                            text = formatTime(timestamp),
+                            fontSize = 10.sp,
+                            color = if (isSentByMe) SentTimeText else TextMuted
+                        )
+                        if (isSentByMe) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            val statusText = if (read) "✓✓" else if (delivered) "✓✓" else "✓"
+                            Text(
+                                text = statusText,
+                                fontSize = 10.sp,
+                                color = if (read) ReadCheckmarkColor else DeliveredCheckmarkColor
+                            )
+                        }
+                    }
                 } else {
-                    val isSingleLineShort = !isFailed && !parsedText.contains('\n') && parsedText.length <= 25
-
-                    if (isSingleLineShort) {
                     val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
                     Text(
                         text = annotated,
@@ -1354,162 +1370,24 @@ fun MessageBubble(
                                 }
                             )
                     )
-                    } else {
-                    if (isFailed) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "🔒 Не удалось расшифровать",
-                                color = textColor,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.weight(1f)
-                            )
-                            if (onDelete != null) {
-                                Text(
-                                    text = "🗑",
-                                    color = Color(0xFFEF5350),
-                                    fontSize = 16.sp,
-                                    modifier = Modifier
-                                        .clickable { onDelete() }
-                                        .padding(start = 8.dp, end = 4.dp)
-                                )
-                            }
-                        }
-                        if (isExpanded) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = parsedText,
-                                color = TextPrimary,
-                                fontSize = 13.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
                         Text(
-                            text = if (isExpanded) "Свернуть" else "Раскрыть",
-                            color = Accent,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .clickable { isExpanded = !isExpanded }
-                                .padding(vertical = 2.dp)
+                            text = formatTime(timestamp),
+                            fontSize = 10.sp,
+                            color = if (isSentByMe) SentTimeText else TextMuted
                         )
-                    } else {
-                        val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
-                        Text(
-                            text = annotated,
-                            color = textColor,
-                            fontSize = 15.sp,
-                            modifier = Modifier.combinedClickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = {},
-                                onLongClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    showMenu = true
-                                }
-                            )
-                        )
-                    }
-                }
-
-                    if (!isMediaAttachment || attachment?.caption?.isNotBlank() == true) {
-                        Row(
-                            modifier = Modifier.align(Alignment.End),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val timeLabel = if (showFullTime) formatFullTime(timestamp) else formatTime(timestamp)
+                        if (isSentByMe) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            val statusText = if (read) "✓✓" else if (delivered) "✓✓" else "✓"
                             Text(
-                                text = timeLabel,
-                                color = TextMuted,
-                                fontSize = if (showFullTime) 9.sp else 10.sp,
-                                modifier = Modifier
-                                    .clickable { showFullTime = !showFullTime }
-                                    .padding(end = 4.dp),
-                                maxLines = 1
-                            )
-                            if (isSentByMe && !isFailed && !isSelfChat) {
-                                val statusColor = if (read) Accent else TextMuted
-                                if (read || delivered) {
-                                    Box(modifier = Modifier.width(16.dp)) {
-                                        Text(
-                                            text = "✓",
-                                            color = statusColor,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.offset(x = 0.dp)
-                                        )
-                                        Text(
-                                            text = "✓",
-                                            color = statusColor,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.offset(x = 5.dp)
-                                        )
-                                    }
-                                } else {
-                                    Text(
-                                        text = "✓",
-                                        color = statusColor,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Telegram-style overlay timestamp & status badge for media without caption
-            if (isMediaAttachment && attachment?.caption.isNullOrBlank()) {
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(bottom = 8.dp, end = 12.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.Black.copy(alpha = 0.55f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val timeLabel = if (showFullTime) formatFullTime(timestamp) else formatTime(timestamp)
-                    Text(
-                        text = timeLabel,
-                        color = Color.White,
-                        fontSize = if (showFullTime) 9.sp else 10.sp,
-                        modifier = Modifier
-                            .clickable { showFullTime = !showFullTime }
-                            .padding(end = 4.dp),
-                        maxLines = 1
-                    )
-                    if (isSentByMe && !isFailed && !isSelfChat) {
-                        val statusColor = if (read) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.8f)
-                        if (read || delivered) {
-                            Box(modifier = Modifier.width(16.dp)) {
-                                Text(
-                                    text = "✓",
-                                    color = statusColor,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.offset(x = 0.dp)
-                                )
-                                Text(
-                                    text = "✓",
-                                    color = statusColor,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.offset(x = 5.dp)
-                                )
-                            }
-                        } else {
-                            Text(
-                                text = "✓",
-                                color = statusColor,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
+                                text = statusText,
+                                fontSize = 10.sp,
+                                color = if (read) ReadCheckmarkColor else DeliveredCheckmarkColor
                             )
                         }
                     }
@@ -1591,156 +1469,190 @@ class BubbleShape(private val isSentByMe: Boolean) : Shape {
 fun TelegramDoodleBackground(
     modifier: Modifier = Modifier,
     backgroundColor: Color = Color(0xFF0E1621),
-    patternColor: Color = Color(0x0CFFFFFF)
+    patternColor: Color = Color(0x0EFFFFFF)
 ) {
     androidx.compose.foundation.Canvas(modifier = modifier.fillMaxSize().background(backgroundColor)) {
-        val patternWidth = 160.dp.toPx()
-        val patternHeight = 160.dp.toPx()
-        val cols = (size.width / patternWidth).toInt() + 2
-        val rows = (size.height / patternHeight).toInt() + 2
-        val strokeWidth = 1.3.dp.toPx()
+        val cellStep = 56.dp.toPx()
+        val cols = (size.width / cellStep).toInt() + 2
+        val rows = (size.height / cellStep).toInt() + 2
+        val strokeWidth = 1.2.dp.toPx()
         val strokeStyle = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth)
 
         for (r in -1..rows) {
-            val rowOffset = if (r % 2 != 0) patternWidth / 2f else 0f
+            val rowOffset = if (r % 2 != 0) cellStep / 2f else 0f
             for (c in -1..cols) {
-                val x = c * patternWidth + rowOffset
-                val y = r * patternHeight
+                val cx = c * cellStep + rowOffset + cellStep / 2f
+                val cy = r * cellStep + cellStep / 2f
 
-                // 1. Stylized Letter P (Penik logo)
-                val pPath = Path().apply {
-                    moveTo(x + 22.dp.toPx(), y + 42.dp.toPx())
-                    lineTo(x + 22.dp.toPx(), y + 18.dp.toPx())
-                    lineTo(x + 34.dp.toPx(), y + 18.dp.toPx())
-                    quadraticTo(x + 44.dp.toPx(), y + 18.dp.toPx(), x + 44.dp.toPx(), y + 27.dp.toPx())
-                    quadraticTo(x + 44.dp.toPx(), y + 36.dp.toPx(), x + 34.dp.toPx(), y + 36.dp.toPx())
-                    lineTo(x + 22.dp.toPx(), y + 36.dp.toPx())
-                }
-                drawPath(pPath, patternColor, style = strokeStyle)
-
-                // 2. Star
-                val starCenter = androidx.compose.ui.geometry.Offset(x + 110.dp.toPx(), y + 25.dp.toPx())
-                val starRadius = 7.dp.toPx()
-                val starPath = Path().apply {
-                    for (i in 0 until 5) {
-                        val angleOuter = Math.toRadians((i * 72 - 18).toDouble())
-                        val angleInner = Math.toRadians((i * 72 + 18).toDouble())
-                        val xo = starCenter.x + starRadius * Math.cos(angleOuter).toFloat()
-                        val yo = starCenter.y + starRadius * Math.sin(angleOuter).toFloat()
-                        val xi = starCenter.x + (starRadius * 0.4f) * Math.cos(angleInner).toFloat()
-                        val yi = starCenter.y + (starRadius * 0.4f) * Math.sin(angleInner).toFloat()
-                        if (i == 0) moveTo(xo, yo) else lineTo(xo, yo)
-                        lineTo(xi, yi)
+                val iconType = (Math.abs(r * 7 + c)) % 12
+                when (iconType) {
+                    0 -> {
+                        val pPath = Path().apply {
+                            moveTo(cx - 5.dp.toPx(), cy + 7.dp.toPx())
+                            lineTo(cx - 5.dp.toPx(), cy - 7.dp.toPx())
+                            lineTo(cx + 1.dp.toPx(), cy - 7.dp.toPx())
+                            quadraticTo(cx + 7.dp.toPx(), cy - 7.dp.toPx(), cx + 7.dp.toPx(), cy - 2.dp.toPx())
+                            quadraticTo(cx + 7.dp.toPx(), cy + 3.dp.toPx(), cx + 1.dp.toPx(), cy + 3.dp.toPx())
+                            lineTo(cx - 5.dp.toPx(), cy + 3.dp.toPx())
+                        }
+                        drawPath(pPath, patternColor, style = strokeStyle)
                     }
-                    close()
+                    1 -> {
+                        val starPath = Path().apply {
+                            val rOuter = 6.dp.toPx()
+                            val rInner = 2.5.dp.toPx()
+                            for (i in 0 until 5) {
+                                val aOut = Math.toRadians((i * 72 - 18).toDouble())
+                                val aIn = Math.toRadians((i * 72 + 18).toDouble())
+                                val xo = cx + rOuter * Math.cos(aOut).toFloat()
+                                val yo = cy + rOuter * Math.sin(aOut).toFloat()
+                                val xi = cx + rInner * Math.cos(aIn).toFloat()
+                                val yi = cy + rInner * Math.sin(aIn).toFloat()
+                                if (i == 0) moveTo(xo, yo) else lineTo(xo, yo)
+                                lineTo(xi, yi)
+                            }
+                            close()
+                        }
+                        drawPath(starPath, patternColor, style = strokeStyle)
+                    }
+                    2 -> {
+                        val heartPath = Path().apply {
+                            moveTo(cx, cy - 3.dp.toPx())
+                            cubicTo(cx - 8.dp.toPx(), cy - 10.dp.toPx(), cx - 8.dp.toPx(), cy + 3.dp.toPx(), cx, cy + 8.dp.toPx())
+                            cubicTo(cx + 8.dp.toPx(), cy + 3.dp.toPx(), cx + 8.dp.toPx(), cy - 10.dp.toPx(), cx, cy - 3.dp.toPx())
+                        }
+                        drawPath(heartPath, patternColor, style = strokeStyle)
+                    }
+                    3 -> {
+                        drawRoundRect(
+                            color = patternColor,
+                            topLeft = androidx.compose.ui.geometry.Offset(cx - 7.dp.toPx(), cy - 5.dp.toPx()),
+                            size = androidx.compose.ui.geometry.Size(14.dp.toPx(), 9.dp.toPx()),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+                            style = strokeStyle
+                        )
+                        val tail = Path().apply {
+                            moveTo(cx - 3.dp.toPx(), cy + 4.dp.toPx())
+                            lineTo(cx - 6.dp.toPx(), cy + 7.dp.toPx())
+                            lineTo(cx, cy + 4.dp.toPx())
+                        }
+                        drawPath(tail, patternColor, style = strokeStyle)
+                    }
+                    4 -> {
+                        drawRoundRect(
+                            color = patternColor,
+                            topLeft = androidx.compose.ui.geometry.Offset(cx - 5.dp.toPx(), cy - 4.dp.toPx()),
+                            size = androidx.compose.ui.geometry.Size(10.dp.toPx(), 11.dp.toPx()),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+                            style = strokeStyle
+                        )
+                        drawArc(
+                            color = patternColor,
+                            startAngle = -90f,
+                            sweepAngle = 180f,
+                            useCenter = false,
+                            topLeft = androidx.compose.ui.geometry.Offset(cx + 5.dp.toPx(), cy - 2.dp.toPx()),
+                            size = androidx.compose.ui.geometry.Size(4.dp.toPx(), 6.dp.toPx()),
+                            style = strokeStyle
+                        )
+                    }
+                    5 -> {
+                        val bolt = Path().apply {
+                            moveTo(cx + 2.dp.toPx(), cy - 7.dp.toPx())
+                            lineTo(cx - 4.dp.toPx(), cy)
+                            lineTo(cx, cy)
+                            lineTo(cx - 3.dp.toPx(), cy + 7.dp.toPx())
+                            lineTo(cx + 4.dp.toPx(), cy - 1.dp.toPx())
+                            lineTo(cx, cy - 1.dp.toPx())
+                            close()
+                        }
+                        drawPath(bolt, patternColor, style = strokeStyle)
+                    }
+                    6 -> {
+                        drawCircle(
+                            color = patternColor,
+                            radius = 4.5.dp.toPx(),
+                            center = androidx.compose.ui.geometry.Offset(cx, cy),
+                            style = strokeStyle
+                        )
+                        drawOval(
+                            color = patternColor,
+                            topLeft = androidx.compose.ui.geometry.Offset(cx - 8.dp.toPx(), cy - 2.5.dp.toPx()),
+                            size = androidx.compose.ui.geometry.Size(16.dp.toPx(), 5.dp.toPx()),
+                            style = strokeStyle
+                        )
+                    }
+                    7 -> {
+                        drawCircle(
+                            color = patternColor,
+                            radius = 2.5.dp.toPx(),
+                            center = androidx.compose.ui.geometry.Offset(cx - 3.dp.toPx(), cy + 4.dp.toPx()),
+                            style = strokeStyle
+                        )
+                        drawLine(
+                            color = patternColor,
+                            start = androidx.compose.ui.geometry.Offset(cx - 0.5.dp.toPx(), cy + 4.dp.toPx()),
+                            end = androidx.compose.ui.geometry.Offset(cx - 0.5.dp.toPx(), cy - 5.dp.toPx()),
+                            strokeWidth = strokeWidth
+                        )
+                        drawLine(
+                            color = patternColor,
+                            start = androidx.compose.ui.geometry.Offset(cx - 0.5.dp.toPx(), cy - 5.dp.toPx()),
+                            end = androidx.compose.ui.geometry.Offset(cx + 4.dp.toPx(), cy - 3.dp.toPx()),
+                            strokeWidth = strokeWidth
+                        )
+                    }
+                    8 -> {
+                        drawRoundRect(
+                            color = patternColor,
+                            topLeft = androidx.compose.ui.geometry.Offset(cx - 5.dp.toPx(), cy - 1.dp.toPx()),
+                            size = androidx.compose.ui.geometry.Size(10.dp.toPx(), 8.dp.toPx()),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+                            style = strokeStyle
+                        )
+                        drawArc(
+                            color = patternColor,
+                            startAngle = 180f,
+                            sweepAngle = 180f,
+                            useCenter = false,
+                            topLeft = androidx.compose.ui.geometry.Offset(cx - 3.5.dp.toPx(), cy - 6.dp.toPx()),
+                            size = androidx.compose.ui.geometry.Size(7.dp.toPx(), 8.dp.toPx()),
+                            style = strokeStyle
+                        )
+                    }
+                    9 -> {
+                        val diamond = Path().apply {
+                            moveTo(cx, cy - 6.dp.toPx())
+                            lineTo(cx + 6.dp.toPx(), cy)
+                            lineTo(cx, cy + 6.dp.toPx())
+                            lineTo(cx - 6.dp.toPx(), cy)
+                            close()
+                        }
+                        drawPath(diamond, patternColor, style = strokeStyle)
+                    }
+                    10 -> {
+                        val cat = Path().apply {
+                            moveTo(cx - 5.dp.toPx(), cy - 2.dp.toPx())
+                            lineTo(cx - 6.dp.toPx(), cy - 6.dp.toPx())
+                            lineTo(cx - 2.dp.toPx(), cy - 4.dp.toPx())
+                            lineTo(cx + 2.dp.toPx(), cy - 4.dp.toPx())
+                            lineTo(cx + 6.dp.toPx(), cy - 6.dp.toPx())
+                            lineTo(cx + 5.dp.toPx(), cy - 2.dp.toPx())
+                        }
+                        drawPath(cat, patternColor, style = strokeStyle)
+                        drawCircle(color = patternColor, radius = 5.dp.toPx(), center = androidx.compose.ui.geometry.Offset(cx, cy + 1.dp.toPx()), style = strokeStyle)
+                    }
+                    11 -> {
+                        val sparkle = Path().apply {
+                            moveTo(cx, cy - 6.dp.toPx())
+                            quadraticTo(cx, cy, cx + 6.dp.toPx(), cy)
+                            quadraticTo(cx, cy, cx, cy + 6.dp.toPx())
+                            quadraticTo(cx, cy, cx - 6.dp.toPx(), cy)
+                            quadraticTo(cx, cy, cx, cy - 6.dp.toPx())
+                        }
+                        drawPath(sparkle, patternColor, style = strokeStyle)
+                    }
                 }
-                drawPath(starPath, patternColor, style = strokeStyle)
-
-                // 3. Heart
-                val heartCenter = androidx.compose.ui.geometry.Offset(x + 45.dp.toPx(), y + 115.dp.toPx())
-                val heartPath = Path().apply {
-                    moveTo(heartCenter.x, heartCenter.y + 6.dp.toPx())
-                    cubicTo(heartCenter.x - 12.dp.toPx(), heartCenter.y - 6.dp.toPx(), heartCenter.x - 12.dp.toPx(), heartCenter.y + 12.dp.toPx(), heartCenter.x, heartCenter.y + 18.dp.toPx())
-                    cubicTo(heartCenter.x + 12.dp.toPx(), heartCenter.y + 12.dp.toPx(), heartCenter.x + 12.dp.toPx(), heartCenter.y - 6.dp.toPx(), heartCenter.x, heartCenter.y + 6.dp.toPx())
-                }
-                drawPath(heartPath, patternColor, style = strokeStyle)
-
-                // 4. Speech Bubble
-                drawRoundRect(
-                    color = patternColor,
-                    topLeft = androidx.compose.ui.geometry.Offset(x + 105.dp.toPx(), y + 95.dp.toPx()),
-                    size = androidx.compose.ui.geometry.Size(22.dp.toPx(), 14.dp.toPx()),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()),
-                    style = strokeStyle
-                )
-                val bubbleTail = Path().apply {
-                    moveTo(x + 110.dp.toPx(), y + 109.dp.toPx())
-                    lineTo(x + 106.dp.toPx(), y + 114.dp.toPx())
-                    lineTo(x + 114.dp.toPx(), y + 109.dp.toPx())
-                }
-                drawPath(bubbleTail, patternColor, style = strokeStyle)
-
-                // 5. Coffee Mug
-                drawRoundRect(
-                    color = patternColor,
-                    topLeft = androidx.compose.ui.geometry.Offset(x + 140.dp.toPx(), y + 45.dp.toPx()),
-                    size = androidx.compose.ui.geometry.Size(12.dp.toPx(), 14.dp.toPx()),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
-                    style = strokeStyle
-                )
-                drawArc(
-                    color = patternColor,
-                    startAngle = -90f,
-                    sweepAngle = 180f,
-                    useCenter = false,
-                    topLeft = androidx.compose.ui.geometry.Offset(x + 149.dp.toPx(), y + 48.dp.toPx()),
-                    size = androidx.compose.ui.geometry.Size(6.dp.toPx(), 8.dp.toPx()),
-                    style = strokeStyle
-                )
-
-                // 6. Lightning Bolt
-                val lightningPath = Path().apply {
-                    moveTo(x + 80.dp.toPx(), y + 65.dp.toPx())
-                    lineTo(x + 72.dp.toPx(), y + 77.dp.toPx())
-                    lineTo(x + 77.dp.toPx(), y + 77.dp.toPx())
-                    lineTo(x + 70.dp.toPx(), y + 90.dp.toPx())
-                    lineTo(x + 82.dp.toPx(), y + 75.dp.toPx())
-                    lineTo(x + 77.dp.toPx(), y + 75.dp.toPx())
-                    close()
-                }
-                drawPath(lightningPath, patternColor, style = strokeStyle)
-
-                // 7. Planet with Ring
-                drawCircle(
-                    color = patternColor,
-                    radius = 6.dp.toPx(),
-                    center = androidx.compose.ui.geometry.Offset(x + 30.dp.toPx(), y + 70.dp.toPx()),
-                    style = strokeStyle
-                )
-                drawOval(
-                    color = patternColor,
-                    topLeft = androidx.compose.ui.geometry.Offset(x + 20.dp.toPx(), y + 67.dp.toPx()),
-                    size = androidx.compose.ui.geometry.Size(20.dp.toPx(), 6.dp.toPx()),
-                    style = strokeStyle
-                )
-
-                // 8. Music Note
-                drawCircle(
-                    color = patternColor,
-                    radius = 3.dp.toPx(),
-                    center = androidx.compose.ui.geometry.Offset(x + 140.dp.toPx(), y + 130.dp.toPx()),
-                    style = strokeStyle
-                )
-                drawLine(
-                    color = patternColor,
-                    start = androidx.compose.ui.geometry.Offset(x + 143.dp.toPx(), y + 130.dp.toPx()),
-                    end = androidx.compose.ui.geometry.Offset(x + 143.dp.toPx(), y + 118.dp.toPx()),
-                    strokeWidth = strokeWidth
-                )
-                drawLine(
-                    color = patternColor,
-                    start = androidx.compose.ui.geometry.Offset(x + 143.dp.toPx(), y + 118.dp.toPx()),
-                    end = androidx.compose.ui.geometry.Offset(x + 148.dp.toPx(), y + 120.dp.toPx()),
-                    strokeWidth = strokeWidth
-                )
-
-                // 9. Lock / Keyhole
-                drawRoundRect(
-                    color = patternColor,
-                    topLeft = androidx.compose.ui.geometry.Offset(x + 80.dp.toPx(), y + 130.dp.toPx()),
-                    size = androidx.compose.ui.geometry.Size(12.dp.toPx(), 10.dp.toPx()),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
-                    style = strokeStyle
-                )
-                drawArc(
-                    color = patternColor,
-                    startAngle = 180f,
-                    sweepAngle = 180f,
-                    useCenter = false,
-                    topLeft = androidx.compose.ui.geometry.Offset(x + 82.dp.toPx(), y + 124.dp.toPx()),
-                    size = androidx.compose.ui.geometry.Size(8.dp.toPx(), 10.dp.toPx()),
-                    style = strokeStyle
-                )
             }
         }
     }
