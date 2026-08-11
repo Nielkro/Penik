@@ -178,14 +178,23 @@ fun FullscreenImageViewer(url: String?, onDismiss: () -> Unit) {
                 .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onDismiss() },
             contentAlignment = Alignment.Center
         ) {
-            AsyncImage(
+            SubcomposeAsyncImage(
                 model = url,
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxWidth(0.92f)
                     .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {},
                 contentScale = ContentScale.Fit
-            )
+            ) {
+                val state = painter.state
+                if (state is coil.compose.AsyncImagePainter.State.Loading) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
+                } else if (state is coil.compose.AsyncImagePainter.State.Error) {
+                    Text("Не удалось загрузить изображение", color = Color.White, fontSize = 14.sp)
+                } else {
+                    SubcomposeAsyncImageContent()
+                }
+            }
             IconButton(
                 onClick = onDismiss,
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
@@ -364,21 +373,30 @@ fun InitialsAvatar(
 // message renders as one flowing line in a maxLines=1 preview.
 private val WHITESPACE_RUN = Regex("\\s+")
 fun messagePreview(text: String): String {
-    val fwdInfo = parseForwardedInfo(text)
+    if (text.isBlank()) return ""
+    val trimmed = text.trim()
+    val fwdInfo = parseForwardedInfo(trimmed)
     if (fwdInfo != null) {
         val subPreview = messagePreview(fwdInfo.text)
         return "↪ ${fwdInfo.from}: $subPreview"
     }
-    val attachment = parseFileAttachment(text)
+    val attachment = parseFileAttachment(trimmed)
     if (attachment != null) {
-        val fwdSender = parseForwardedFileSender(text)
+        val fwdSender = parseForwardedFileSender(trimmed)
         val prefix = if (!fwdSender.isNullOrBlank()) "↪ $fwdSender: " else ""
         if (attachment.caption.isNotBlank()) return prefix + attachment.caption.replace(WHITESPACE_RUN, " ").trim()
         if (attachment.mime.startsWith("image/")) return prefix + "📷 Фото"
         if (attachment.mime.startsWith("video/")) return prefix + "🎬 Видео"
         return prefix + "📎 ${attachment.name}"
     }
-    return text.replace(WHITESPACE_RUN, " ").trim()
+    if (trimmed.startsWith("{")) {
+        runCatching {
+            val root = Json.parseToJsonElement(trimmed).jsonObject
+            val innerText = root["text"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+            if (innerText != null) return messagePreview(innerText)
+        }
+    }
+    return trimmed.replace(WHITESPACE_RUN, " ").trim()
 }
 
 @Composable
