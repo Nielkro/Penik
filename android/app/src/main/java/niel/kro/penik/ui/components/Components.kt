@@ -362,12 +362,19 @@ fun InitialsAvatar(
 // message renders as one flowing line in a maxLines=1 preview.
 private val WHITESPACE_RUN = Regex("\\s+")
 fun messagePreview(text: String): String {
+    val fwdInfo = parseForwardedInfo(text)
+    if (fwdInfo != null) {
+        val subPreview = messagePreview(fwdInfo.text)
+        return "↪ ${fwdInfo.from}: $subPreview"
+    }
     val attachment = parseFileAttachment(text)
     if (attachment != null) {
-        if (attachment.caption.isNotBlank()) return attachment.caption.replace(WHITESPACE_RUN, " ").trim()
-        if (attachment.mime.startsWith("image/")) return "📷 Фото"
-        if (attachment.mime.startsWith("video/")) return "🎬 Видео"
-        return "📎 ${attachment.name}"
+        val fwdSender = parseForwardedFileSender(text)
+        val prefix = if (!fwdSender.isNullOrBlank()) "↪ $fwdSender: " else ""
+        if (attachment.caption.isNotBlank()) return prefix + attachment.caption.replace(WHITESPACE_RUN, " ").trim()
+        if (attachment.mime.startsWith("image/")) return prefix + "📷 Фото"
+        if (attachment.mime.startsWith("video/")) return prefix + "🎬 Видео"
+        return prefix + "📎 ${attachment.name}"
     }
     return text.replace(WHITESPACE_RUN, " ").trim()
 }

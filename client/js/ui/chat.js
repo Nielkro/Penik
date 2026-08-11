@@ -25,16 +25,24 @@ export function getMessagePreviewInfo(plaintext) {
   if (typeof plaintext === "string" && plaintext.startsWith("{")) {
     try {
       const parsed = JSON.parse(plaintext);
-      if (parsed.type === "file" && parsed.file) {
-        const isImage = (parsed.file.mime || "").startsWith("image/");
-        const isVideo = (parsed.file.mime || "").startsWith("video/");
+      if (parsed.type === "fwd") {
+        const fromPrefix = parsed.from ? `↪ ${parsed.from}: ` : "↪ Переслано: ";
+        return { text: fromPrefix + (parsed.text || ""), thumb: null, isMedia: false };
+      }
+      if (parsed.type === "file" && (parsed.file || parsed.url)) {
+        const fileObj = parsed.file || parsed;
+        const isImage = (fileObj.mime || "").startsWith("image/");
+        const isVideo = (fileObj.mime || "").startsWith("video/");
         let text = parsed.text || "";
         if (!text) {
           if (isImage) text = "Фотография";
           else if (isVideo) text = "Видео";
-          else text = parsed.file.name || "Файл";
+          else text = fileObj.name || "Файл";
         }
-        let thumb = parsed.file.thumb || null;
+        if (parsed.fwd_from) {
+          text = `↪ ${parsed.fwd_from}: ${text}`;
+        }
+        let thumb = fileObj.thumb || null;
         if (thumb && !thumb.startsWith("data:")) {
           thumb = "data:image/jpeg;base64," + thumb;
         }
@@ -159,7 +167,7 @@ export async function renderChatList(container) {
           avatarEl,
           el("div", { class: "chatlist-item-info" },
             el("span", { class: "chatlist-item-name" }, entry.name || entry.nickname || ""),
-            el("span", { class: "chatlist-item-preview" }, entry.last_message || "")
+            el("span", { class: "chatlist-item-preview" }, getMessagePreview(entry.last_message || ""))
           ),
           el("span", { class: "chatlist-item-time" }, entry.last_ts ? formatTime(entry.last_ts) : "")
         );
@@ -639,8 +647,8 @@ export async function renderChat(container, userId) {
       })();
     }
 
-    const isFilePayload = typeof msg.plaintext === "string" && msg.plaintext.trim().startsWith("{") && msg.plaintext.includes('"file"');
-    const isSingleLine = !isFailed && !isFilePayload && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 35;
+    const isStructuredPayload = typeof msg.plaintext === "string" && msg.plaintext.trim().startsWith("{");
+    const isSingleLine = !isFailed && !isStructuredPayload && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 35;
     const bubbleChildren = [];
     if (replyRefEl) bubbleChildren.push(replyRefEl);
     if (isSingleLine) {
@@ -1213,7 +1221,7 @@ export async function sendDirectMessageToUser(targetUserId, text) {
 
   const contact = await getContact(targetUserId);
   if (contact) {
-    await saveContact({ ...contact, last_message: text, last_ts: now });
+    await saveContact({ ...contact, last_message: getMessagePreview(text), last_ts: now });
     triggerChatListUpdate();
   }
 
