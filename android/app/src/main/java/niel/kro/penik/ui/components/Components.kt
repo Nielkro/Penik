@@ -539,7 +539,7 @@ private fun buildLinkedText(text: String, linkColor: Color): androidx.compose.ui
                     url
                 }
                 pushStringAnnotation(tag = "URL", annotation = targetUrl)
-                withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
+                withStyle(SpanStyle(color = linkColor)) {
                     append(url)
                 }
                 pop()
@@ -1180,7 +1180,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             ClickableLinkedText(
                 text = attachment.caption,
                 textColor = textColor,
-                linkColor = if (textColor == SentMessageText) Color(0xFFB8D4FF) else Accent,
+                linkColor = if (textColor == SentMessageText) Color(0xFF64B5F6) else Color(0xFF409CFF),
                 fontSize = 15.sp
             )
         }
@@ -1281,9 +1281,9 @@ fun MessageBubble(
     }
 
     val linkColor = if (isSentByMe) {
-        Color(0xFFB8D4FF)
+        Color(0xFF64B5F6)
     } else {
-        Accent
+        Color(0xFF409CFF)
     }
 
     val boxAlignment = if (isSentByMe) Alignment.CenterEnd else Alignment.CenterStart
