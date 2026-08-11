@@ -375,11 +375,24 @@ private val WHITESPACE_RUN = Regex("\\s+")
 fun messagePreview(text: String): String {
     if (text.isBlank()) return ""
     val trimmed = text.trim()
+
+    // 1. Handle "Sender: Payload" in group chats (e.g. "Тест: {"v":1,"type":"file",...}")
+    val colonIdx = trimmed.indexOf(": {")
+    if (colonIdx > 0) {
+        val sender = trimmed.substring(0, colonIdx).trim()
+        val payload = trimmed.substring(colonIdx + 2).trim()
+        val sub = messagePreview(payload)
+        return "$sender: $sub"
+    }
+
+    // 2. Handle forwarded message "↪ Sender: text"
     val fwdInfo = parseForwardedInfo(trimmed)
     if (fwdInfo != null) {
         val subPreview = messagePreview(fwdInfo.text)
         return "↪ ${fwdInfo.from}: $subPreview"
     }
+
+    // 3. Handle file attachment
     val attachment = parseFileAttachment(trimmed)
     if (attachment != null) {
         val fwdSender = parseForwardedFileSender(trimmed)
@@ -389,6 +402,8 @@ fun messagePreview(text: String): String {
         if (attachment.mime.startsWith("video/")) return prefix + "🎬 Видео"
         return prefix + "📎 ${attachment.name}"
     }
+
+    // 4. Handle JSON starting with {
     if (trimmed.startsWith("{")) {
         runCatching {
             val root = Json.parseToJsonElement(trimmed).jsonObject
@@ -396,6 +411,7 @@ fun messagePreview(text: String): String {
             if (innerText != null) return messagePreview(innerText)
         }
     }
+
     return trimmed.replace(WHITESPACE_RUN, " ").trim()
 }
 
