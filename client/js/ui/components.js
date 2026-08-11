@@ -336,8 +336,11 @@ function renderFileCard(container, fileMsg) {
     });
 
     if (f.thumb) {
-      videoEl.poster = f.thumb;
+      videoEl.poster = f.thumb.startsWith("data:") ? f.thumb : "data:image/jpeg;base64," + f.thumb;
     }
+    videoEl.addEventListener("loadedmetadata", () => {
+      if (!f.thumb && videoEl.duration) videoEl.currentTime = 0.5;
+    });
 
     // Appended up front so a fallback card replacing it later cannot be undone
     // by a deferred append.
