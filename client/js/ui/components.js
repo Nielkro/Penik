@@ -294,7 +294,7 @@ function renderFileCard(container, fileMsg) {
     const imgEl = el("img", {
       src: initialSrc,
       alt: f.name || "Изображение",
-      style: "display:block;width:100%;max-width:360px;max-height:380px;object-fit:contain;border-radius:14px;cursor:pointer;background:rgba(255,255,255,0.05);transition:opacity 0.2s;"
+      style: "display:block;width:100%;max-width:360px;max-height:560px;object-fit:contain;border-radius:14px;cursor:pointer;background:rgba(255,255,255,0.05);transition:opacity 0.2s;"
     });
     imgEl.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -330,7 +330,7 @@ function renderFileCard(container, fileMsg) {
       // Without an explicit preload the element paints nothing until playback
       // starts, so a card with no poster stays an empty rectangle.
       preload: "metadata",
-      style: "display:block;width:100%;max-width:360px;min-height:180px;max-height:420px;border-radius:16px;background:rgba(255,255,255,0.05);cursor:pointer;object-fit:contain;"
+      style: "display:block;width:100%;max-width:360px;min-height:180px;max-height:560px;border-radius:16px;background:rgba(255,255,255,0.05);cursor:pointer;object-fit:contain;"
     });
 
     if (f.thumb) {
