@@ -1202,6 +1202,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
     }
 
     val imageBitmap: ImageBitmap? = remember(attachment.thumb, localFile) {
+        // For video: prefer actual first frame from local file
         if (localFile != null && isVideo) {
             val videoFrame = runCatching {
                 val retriever = android.media.MediaMetadataRetriever()
@@ -1214,6 +1215,10 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             }.getOrNull()
             if (videoFrame != null) return@remember videoFrame
         }
+
+        // For images: if full file already downloaded, skip thumb entirely — AsyncImage will render it directly
+        // We only decode thumb for the placeholder while file is still loading
+        if (localFile != null && isImage) return@remember null
 
         if (!attachment.thumb.isNullOrBlank()) {
             runCatching {
@@ -1233,17 +1238,28 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
                 }
             }.getOrNull()
-        } else if (localFile != null && isImage) {
-            runCatching {
-                BitmapFactory.decodeFile(localFile!!.absolutePath)?.asImageBitmap()
-            }.getOrNull()
         } else {
             null
         }
     }
 
-    val aspectRatio = remember(imageBitmap) {
-        imageBitmap?.let { (it.width.toFloat() / it.height.coerceAtLeast(1).toFloat()).coerceIn(0.6f, 2.0f) } ?: (16f / 9f)
+    // Compute aspect ratio from actual file dimensions when available, fall back to thumb bitmap
+    val localFileAspectRatio = remember(localFile) {
+        if (localFile != null && isImage) {
+            runCatching {
+                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(localFile!!.absolutePath, opts)
+                if (opts.outWidth > 0 && opts.outHeight > 0) {
+                    (opts.outWidth.toFloat() / opts.outHeight.toFloat()).coerceIn(0.6f, 2.0f)
+                } else null
+            }.getOrNull()
+        } else null
+    }
+
+    val aspectRatio = remember(imageBitmap, localFileAspectRatio) {
+        localFileAspectRatio
+            ?: imageBitmap?.let { (it.width.toFloat() / it.height.coerceAtLeast(1).toFloat()).coerceIn(0.6f, 2.0f) }
+            ?: (16f / 9f)
     }
 
     val openFile: () -> Unit = {
@@ -1336,32 +1352,42 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             isImage -> Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 160.dp, max = 560.dp)
+                    .aspectRatio(aspectRatio)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color.Black)
             ) {
-                if (imageBitmap != null) {
-                    Image(
-                        bitmap = imageBitmap,
+                when {
+                    // Full file downloaded: render at full resolution via AsyncImage
+                    localFile != null -> AsyncImage(
+                        model = localFile,
                         contentDescription = attachment.name,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .wrapContentHeight()
-                            .heightIn(min = 160.dp, max = 560.dp)
-                            .clickable(enabled = localFile != null) { showImageViewer = true },
-                        contentScale = ContentScale.Crop
+                            .fillMaxSize()
+                            .clickable { showImageViewer = true },
+                        contentScale = ContentScale.Fit
                     )
-                } else {
-                    Box(
+                    // File still loading: show thumb as placeholder
+                    imageBitmap != null -> Image(
+                        bitmap = imageBitmap,
+                        contentDescription = attachment.name,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                    else -> Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(Color(0x22FFFFFF)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(if (loadError) "Ошибка загрузки" else "Загрузка фото…", color = TextMuted, fontSize = 12.sp)
+                        if (loadError) {
+                            Text("Ошибка загрузки", color = TextMuted, fontSize = 12.sp)
+                        } else {
+                            CircularProgressIndicator(color = TextMuted, modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+                        }
                     }
                 }
             }
+
             else -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.InsertDriveFile, contentDescription = null, tint = textColor)
                 Spacer(modifier = Modifier.width(8.dp))
