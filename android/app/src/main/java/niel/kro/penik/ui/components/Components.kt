@@ -434,7 +434,7 @@ fun ChatListItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Avatar: independent clickable area that does NOT propagate to the row
-        val hasAvatarClick = onAvatarClick != null && name != "Избранное"
+        val hasAvatarClick = onAvatarClick != null && name != "Избранное" && avatarKey != null
         Box(
             modifier = if (hasAvatarClick) {
                 Modifier.clickable(
