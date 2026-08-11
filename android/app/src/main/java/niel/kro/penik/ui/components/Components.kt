@@ -430,16 +430,23 @@ fun ChatListItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val avatarModifier = if (onAvatarClick != null && name != "Избранное") {
-            Modifier.clickable { onAvatarClick(avatarUrlFor(isGroup, userId, avatarKey)) }
-        } else {
-            Modifier
-        }
-        Box(modifier = avatarModifier) {
+        // Avatar: independent clickable area that does NOT propagate to the row
+        val hasAvatarClick = onAvatarClick != null && name != "Избранное"
+        Box(
+            modifier = if (hasAvatarClick) {
+                Modifier.clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) {
+                    onAvatarClick!!(avatarUrlFor(isGroup, userId, avatarKey))
+                }
+            } else {
+                Modifier
+            }
+        ) {
             if (isGroup) {
                 GroupAvatar(groupId = userId, name = name, size = 48.dp, avatarKey = avatarKey)
             } else {
@@ -449,42 +456,50 @@ fun ChatListItem(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = name,
-                color = TextPrimary,
-                fontWeight = FontWeight.Medium,
-                fontSize = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (lastMessage != null) {
-                Spacer(modifier = Modifier.height(2.dp))
+        // Text + unread area: this is the actual navigation click target
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onClick),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = messagePreview(lastMessage),
-                    color = TextMuted,
-                    fontSize = 14.sp,
+                    text = name,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 16.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (lastMessage != null) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = messagePreview(lastMessage),
+                        color = TextMuted,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
-        }
 
-        if (unreadCount > 0) {
-            Spacer(modifier = Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(Accent),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (unreadCount > 99) "99+" else unreadCount.toString(),
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            if (unreadCount > 0) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(Accent),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (unreadCount > 99) "99+" else unreadCount.toString(),
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }
