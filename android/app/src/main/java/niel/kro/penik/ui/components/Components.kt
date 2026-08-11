@@ -693,16 +693,22 @@ private suspend fun downloadAndDecryptAttachment(context: Context, attachment: F
     withContext(Dispatchers.IO) {
         val cacheDir = File(context.cacheDir, "attachments").apply { mkdirs() }
         val extension = attachment.name.substringAfterLast('.', "").take(16)
+        val fullUrl = when {
+            attachment.url.startsWith("http://") || attachment.url.startsWith("https://") -> attachment.url
+            attachment.url.startsWith("/") -> "${niel.kro.penik.data.network.api.ApiConfig.SCHEME}://${niel.kro.penik.data.network.api.ApiConfig.HOST}${attachment.url}"
+            else -> "${niel.kro.penik.data.network.api.ApiConfig.SCHEME}://${niel.kro.penik.data.network.api.ApiConfig.HOST}/${attachment.url}"
+        }
         val digest = MessageDigest.getInstance("SHA-256")
-            .digest((attachment.url + attachment.key).toByteArray())
+            .digest((fullUrl + attachment.key).toByteArray())
             .joinToString("") { "%02x".format(it) }
         val output = File(cacheDir, "$digest${if (extension.isBlank()) "" else ".$extension"}")
         if (output.isFile && output.length() > 0) return@withContext output
 
-        val encrypted = (URL(attachment.url).openConnection() as HttpURLConnection).run {
-            connectTimeout = 15_000
-            readTimeout = 30_000
+        val encrypted = (URL(fullUrl).openConnection() as HttpURLConnection).run {
+            connectTimeout = 20_000
+            readTimeout = 40_000
             instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             inputStream.use { it.readBytes() }
         }
         val key = Base64.getDecoder().decode(attachment.key)
@@ -1155,6 +1161,12 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             .onFailure { loadError = true }
     }
 
+    val thumbUri = remember(attachment.thumb) {
+        attachment.thumb?.takeIf { it.isNotBlank() }?.let { base64Str ->
+            if (base64Str.startsWith("data:")) base64Str else "data:image/jpeg;base64,$base64Str"
+        }
+    }
+
     val imageBitmap: ImageBitmap? = remember(attachment.thumb, localFile) {
         if (!attachment.thumb.isNullOrBlank()) {
             runCatching {
@@ -1204,7 +1216,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color.Black)
             ) {
-                if (imageBitmap != null || localFile != null) {
+                if (imageBitmap != null || thumbUri != null || localFile != null) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1220,6 +1232,16 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                         if (imageBitmap != null) {
                             Image(
                                 bitmap = imageBitmap,
+                                contentDescription = attachment.name,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .wrapContentHeight()
+                                    .heightIn(min = 160.dp, max = 560.dp),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else if (thumbUri != null) {
+                            AsyncImage(
+                                model = thumbUri,
                                 contentDescription = attachment.name,
                                 modifier = Modifier
                                     .fillMaxWidth()
