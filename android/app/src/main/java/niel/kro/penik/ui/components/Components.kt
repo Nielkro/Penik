@@ -70,6 +70,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.text.TextLayoutResult
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
@@ -510,7 +513,7 @@ private fun formatFullTime(timestamp: Long): String {
     return sdf.format(Date(toMs(timestamp)))
 }
 
-private val URL_REGEX = Regex("""https?://[^\s<>"']+""")
+private val URL_REGEX = Regex("""(https?://|www\.)[^\s<>"']+\.[^\s<>"']+|https?://[^\s<>"']+""")
 
 /** Build an AnnotatedString where http(s) URLs become clickable spans. */
 private fun buildLinkedText(text: String, linkColor: Color): androidx.compose.ui.text.AnnotatedString {
@@ -530,7 +533,12 @@ private fun buildLinkedText(text: String, linkColor: Color): androidx.compose.ui
                 append(text.substring(lastEnd, start))
             }
             if (url.isNotEmpty()) {
-                pushStringAnnotation(tag = "URL", annotation = url)
+                val targetUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                    "https://$url"
+                } else {
+                    url
+                }
+                pushStringAnnotation(tag = "URL", annotation = targetUrl)
                 withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
                     append(url)
                 }
@@ -545,6 +553,49 @@ private fun buildLinkedText(text: String, linkColor: Color): androidx.compose.ui
             append(text.substring(lastEnd))
         }
     }
+}
+
+@Composable
+private fun ClickableLinkedText(
+    text: String,
+    textColor: Color,
+    linkColor: Color,
+    fontSize: androidx.compose.ui.unit.TextUnit = 15.sp,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null
+) {
+    val uriHandler = LocalUriHandler.current
+    val annotated = remember(text, linkColor) { buildLinkedText(text, linkColor) }
+    var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val haptic = LocalHapticFeedback.current
+
+    Text(
+        text = annotated,
+        color = textColor,
+        fontSize = fontSize,
+        onTextLayout = { layoutResult = it },
+        modifier = modifier.pointerInput(annotated) {
+            detectTapGestures(
+                onLongPress = {
+                    if (onLongClick != null) {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongClick()
+                    }
+                },
+                onTap = { offset ->
+                    layoutResult?.let { textLayoutResult ->
+                        val position = textLayoutResult.getOffsetForPosition(offset)
+                        annotated.getStringAnnotations(tag = "URL", start = position, end = position)
+                            .firstOrNull()?.let { annotation ->
+                                try {
+                                    uriHandler.openUri(annotation.item)
+                                } catch (_: Exception) {}
+                            }
+                    }
+                }
+            )
+        }
+    )
 }
 
 private data class FileAttachment(
@@ -1126,7 +1177,12 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
         }
         if (attachment.caption.isNotBlank()) {
             Spacer(modifier = Modifier.height(4.dp))
-            Text(attachment.caption, color = textColor, fontSize = 15.sp)
+            ClickableLinkedText(
+                text = attachment.caption,
+                textColor = textColor,
+                linkColor = if (textColor == SentMessageText) Color(0xFFB8D4FF) else Accent,
+                fontSize = 15.sp
+            )
         }
     }
 
@@ -1448,23 +1504,17 @@ fun MessageBubble(
                             verticalAlignment = Alignment.Bottom,
                             horizontalArrangement = if (hasReply) Arrangement.SpaceBetween else Arrangement.Start
                         ) {
-                            val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
-                            Text(
-                                text = annotated,
-                                color = textColor,
+                            ClickableLinkedText(
+                                text = parsedText,
+                                textColor = textColor,
+                                linkColor = linkColor,
                                 fontSize = 15.sp,
                                 modifier = Modifier
                                     .weight(1f, fill = false)
-                                    .padding(end = 8.dp)
-                                    .combinedClickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null,
-                                        onClick = {},
-                                        onLongClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            showMenu = true
-                                        }
-                                    )
+                                    .padding(end = 8.dp),
+                                onLongClick = {
+                                    showMenu = true
+                                }
                             )
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1488,21 +1538,14 @@ fun MessageBubble(
                             }
                         }
                     } else {
-                        val annotated = remember(parsedText) { buildLinkedText(parsedText, linkColor) }
-                        Text(
-                            text = annotated,
-                            color = textColor,
+                        ClickableLinkedText(
+                            text = parsedText,
+                            textColor = textColor,
+                            linkColor = linkColor,
                             fontSize = 15.sp,
-                            modifier = Modifier
-                                .combinedClickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = {},
-                                    onLongClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        showMenu = true
-                                    }
-                                )
+                            onLongClick = {
+                                showMenu = true
+                            }
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Row(
