@@ -432,7 +432,7 @@ export async function renderGroup(container, groupId) {
     if (typeof msg.plaintext === "string" && msg.plaintext.startsWith("{")) {
       try {
         const p = JSON.parse(msg.plaintext);
-        if (p.type === "file" && p.file && ((p.file.mime || "").startsWith("image/") || (p.file.mime || "").startsWith("video/"))) {
+        if (p.type === "file" && p.file && ((p.file.mime || "").startsWith("image/") || (p.file.mime || "").startsWith("video/")) && mine && !p.text && !p.fwd_from) {
           isMediaMsg = true;
         }
       } catch (e) {}
