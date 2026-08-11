@@ -10,7 +10,7 @@ import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessa
 import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
 import {
   el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence,
-  showToast, spinner, showConfirmModal, showPromptModal, showFullscreenImage,
+  showToast, spinner, showConfirmModal, showPromptModal, showFullscreenImage, showForwardModal,
   setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
 import { onPresenceUpdate } from "../presence.js";
@@ -449,6 +449,9 @@ export async function renderGroup(container, groupId) {
         thumb: info.thumb,
         sender: mine ? "Вы" : (nameById.get(senderId) || msg.sender_name || `#${senderId}`)
       });
+    }, null, () => {
+      const senderName = mine ? "Вы" : (nameById.get(senderId) || msg.sender_name || `#${senderId}`);
+      showForwardModal(msg.plaintext || "", senderName);
     });
     const stick = scrollDown.isNearBottom();
     messagesEl.appendChild(bubble);

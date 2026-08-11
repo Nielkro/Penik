@@ -122,6 +122,50 @@ fun GroupChatScreen(
     var memberToRemove by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
     var selectedMemberForActions by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
+    var messageToForwardText by remember { mutableStateOf<String?>(null) }
+    var messageToForwardSender by remember { mutableStateOf<String?>(null) }
+
+    val contactsList by viewModel.contacts.collectAsState(initial = emptyList())
+    val groupsList by viewModel.groupRepository.observeGroups().collectAsState(initial = emptyList())
+
+    val forwardTargets = remember(contactsList, groupsList) {
+        val list = mutableListOf<niel.kro.penik.ui.components.ForwardTargetItem>()
+        for (c in contactsList) {
+            list.add(niel.kro.penik.ui.components.ForwardTargetItem(
+                id = c.userId,
+                name = c.name.ifBlank { c.nickname },
+                isGroup = false
+            ))
+        }
+        for (g in groupsList) {
+            list.add(niel.kro.penik.ui.components.ForwardTargetItem(
+                id = g.id,
+                name = g.name,
+                isGroup = true
+            ))
+        }
+        list
+    }
+
+    if (messageToForwardText != null) {
+        niel.kro.penik.ui.components.ForwardTargetDialog(
+            targets = forwardTargets,
+            onSelectTarget = { target ->
+                val rawText = messageToForwardText!!
+                val senderName = messageToForwardSender!!
+                messageToForwardText = null
+                messageToForwardSender = null
+
+                viewModel.forwardMessage(rawText, senderName, target) {
+                    android.widget.Toast.makeText(context, "Сообщение переслано", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDismiss = {
+                messageToForwardText = null
+                messageToForwardSender = null
+            }
+        )
+    }
 
     // Show the button only when the last message is not visible.
     val showScrollDown by remember {
@@ -307,6 +351,10 @@ fun GroupChatScreen(
                                         listState.animateScrollToItem(index)
                                     }
                                 }
+                            },
+                            onForward = {
+                                messageToForwardText = msg.text
+                                messageToForwardSender = displayName
                             }
                         )
                     }
