@@ -158,12 +158,15 @@ export async function renderChatList(container) {
         }));
       } else {
         const avatarEl = avatar(entry, 48, avatarUpdateTimestamps.get(String(entry.user_id)));
-        avatarEl.style.cursor = "zoom-in";
-        avatarEl.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const img = avatarEl.querySelector("img");
-          if (img) showFullscreenImage(img.src, entry.name || entry.nickname || "");
-        });
+        const img = avatarEl.querySelector("img");
+        if (img) {
+          avatarEl.style.cursor = "zoom-in";
+          avatarEl.addEventListener("click", (e) => {
+            if (avatarEl.querySelector(".initials-avatar") || img.style.display === "none") return;
+            e.stopPropagation();
+            showFullscreenImage(img.src, entry.name || entry.nickname || "");
+          });
+        }
         const item = el("li", { class: "chatlist-item" },
           avatarEl,
           el("div", { class: "chatlist-item-info" },
