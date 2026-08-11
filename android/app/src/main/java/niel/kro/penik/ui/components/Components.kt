@@ -1167,8 +1167,9 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             runCatching {
                 val retriever = android.media.MediaMetadataRetriever()
                 retriever.setDataSource(localFile!!.absolutePath)
-                val bmp = retriever.getFrameAtTime(500000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    ?: retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                val bmp = retriever.frameAtTime
+                    ?: retriever.getFrameAtTime(500000)
+                    ?: retriever.getFrameAtTime(0)
                 retriever.release()
                 bmp?.asImageBitmap()
             }.getOrNull()
@@ -1203,7 +1204,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color.Black)
             ) {
-                if (imageBitmap != null) {
+                if (imageBitmap != null || localFile != null) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1216,15 +1217,27 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        Image(
-                            bitmap = imageBitmap,
-                            contentDescription = attachment.name,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .wrapContentHeight()
-                                .heightIn(min = 160.dp, max = 560.dp),
-                            contentScale = ContentScale.Crop
-                        )
+                        if (imageBitmap != null) {
+                            Image(
+                                bitmap = imageBitmap,
+                                contentDescription = attachment.name,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .wrapContentHeight()
+                                    .heightIn(min = 160.dp, max = 560.dp),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else if (localFile != null) {
+                            AsyncImage(
+                                model = localFile,
+                                contentDescription = attachment.name,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .wrapContentHeight()
+                                    .heightIn(min = 160.dp, max = 560.dp),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
                         Box(
                             modifier = Modifier
                                 .size(52.dp)
@@ -1389,8 +1402,9 @@ fun MessageBubble(
     val fwdFileSender = remember(text) { parseForwardedFileSender(text) }
     val fwdSenderName = fwdInfo?.from ?: fwdFileSender
 
-    val attachment = remember(text) { parseFileAttachment(text) }
-    val parsedText = fwdInfo?.text ?: (attachment?.caption ?: text)
+    val innerText = fwdInfo?.text ?: text
+    val attachment = remember(innerText) { parseFileAttachment(innerText) }
+    val parsedText = if (attachment != null) attachment.caption else (fwdInfo?.text ?: text)
 
     val bgColor = if (isFailed) {
         Color(0x26EF5350)
