@@ -434,8 +434,7 @@ fun ChatListItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val hasCustomAvatar = avatarKey != null && avatarKey != 0 && avatarKey != 0L && name != "Избранное"
-        val avatarModifier = if (onAvatarClick != null && hasCustomAvatar) {
+        val avatarModifier = if (onAvatarClick != null && name != "Избранное") {
             Modifier.clickable { onAvatarClick(avatarUrlFor(isGroup, userId, avatarKey)) }
         } else {
             Modifier
