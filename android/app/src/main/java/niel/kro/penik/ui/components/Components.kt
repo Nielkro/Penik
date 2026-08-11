@@ -1174,7 +1174,11 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                 val cleanBase64 = if (base64Str.contains(",")) base64Str.substringAfter(",") else base64Str
                 val bytes = android.util.Base64.decode(cleanBase64, android.util.Base64.DEFAULT)
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                    val source = android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes))
+                    val directBuffer = java.nio.ByteBuffer.allocateDirect(bytes.size).apply {
+                        put(bytes)
+                        flip()
+                    }
+                    val source = android.graphics.ImageDecoder.createSource(directBuffer)
                     android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
                         decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
                     }.asImageBitmap()
