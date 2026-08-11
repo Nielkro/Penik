@@ -704,13 +704,22 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 }
 
 .msg-link {
-  color: var(--accent);
-  text-decoration: underline;
+  color: #409cff;
+  text-decoration: none;
   word-break: break-all;
 }
 
+.msg-link:hover {
+  text-decoration: underline;
+}
+
 .msg-out .msg-link {
-  color: #b8d4ff;
+  color: #64b5f6;
+  text-decoration: none;
+}
+
+.msg-out .msg-link:hover {
+  text-decoration: underline;
 }
 
 .msg-meta {
