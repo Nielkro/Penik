@@ -1195,7 +1195,14 @@ private fun LocalImageViewer(file: File, contentDescription: String, onDismiss: 
 }
 
 @Composable
-private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) {
+private fun FileAttachmentContent(
+    attachment: FileAttachment,
+    textColor: Color,
+    timestamp: Long? = null,
+    isSentByMe: Boolean = false,
+    delivered: Boolean = false,
+    read: Boolean = false
+) {
     val context = LocalContext.current
     val isImage = attachment.mime.startsWith("image/")
     val isVideo = attachment.mime.startsWith("video/")
@@ -1359,6 +1366,33 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                         Text(if (loadError) "Ошибка загрузки" else "Загрузка видео…", color = TextMuted, fontSize = 12.sp)
                     }
                 }
+
+                if (timestamp != null && attachment.caption.isBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(6.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.Black.copy(alpha = 0.55f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = formatTime(timestamp),
+                                fontSize = 10.sp,
+                                color = Color.White
+                            )
+                            if (isSentByMe) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                MessageTicks(
+                                    delivered = delivered,
+                                    read = read,
+                                    color = if (read) Accent else Color.White.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+                    }
+                }
             }
             isImage -> Box(
                 modifier = Modifier
@@ -1394,6 +1428,33 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                             Text("Ошибка загрузки", color = TextMuted, fontSize = 12.sp)
                         } else {
                             CircularProgressIndicator(color = TextMuted, modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+                        }
+                    }
+                }
+
+                if (timestamp != null && attachment.caption.isBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(6.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.Black.copy(alpha = 0.55f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = formatTime(timestamp),
+                                fontSize = 10.sp,
+                                color = Color.White
+                            )
+                            if (isSentByMe) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                MessageTicks(
+                                    delivered = delivered,
+                                    read = read,
+                                    color = if (read) Accent else Color.White.copy(alpha = 0.8f)
+                                )
+                            }
                         }
                     }
                 }
@@ -1736,8 +1797,15 @@ fun MessageBubble(
                 }
 
                 if (attachment != null) {
-                    FileAttachmentContent(attachment = attachment, textColor = textColor)
-                    if (!isMediaNoCaption) {
+                    FileAttachmentContent(
+                        attachment = attachment,
+                        textColor = textColor,
+                        timestamp = timestamp,
+                        isSentByMe = isSentByMe,
+                        delivered = delivered,
+                        read = read
+                    )
+                    if (attachment.caption.isNotBlank()) {
                         Spacer(modifier = Modifier.height(2.dp))
                         Row(
                             horizontalArrangement = Arrangement.End,
