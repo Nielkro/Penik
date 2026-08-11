@@ -27,7 +27,8 @@ export function getMessagePreviewInfo(plaintext) {
       const parsed = JSON.parse(plaintext);
       if (parsed.type === "fwd") {
         const fromPrefix = parsed.from ? `↪ ${parsed.from}: ` : "↪ Переслано: ";
-        return { text: fromPrefix + (parsed.text || ""), thumb: null, isMedia: false };
+        const inner = getMessagePreviewInfo(parsed.text || "");
+        return { text: fromPrefix + inner.text, thumb: inner.thumb, isMedia: inner.isMedia };
       }
       if (parsed.type === "file" && (parsed.file || parsed.url)) {
         const fileObj = parsed.file || parsed;
