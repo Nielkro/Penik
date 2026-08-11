@@ -1173,7 +1173,14 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                 val base64Str = attachment.thumb
                 val cleanBase64 = if (base64Str.contains(",")) base64Str.substringAfter(",") else base64Str
                 val bytes = android.util.Base64.decode(cleanBase64, android.util.Base64.DEFAULT)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    val source = android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes))
+                    android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                        decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                    }.asImageBitmap()
+                } else {
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                }
             }.getOrNull()
         } else if (localFile != null && isVideo) {
             runCatching {
