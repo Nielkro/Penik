@@ -472,11 +472,20 @@ export async function renderChat(container, userId) {
       }
     });
 
+    const onLocalSent = (e) => {
+      if (String(e.detail?.targetUserId) === String(userId) && e.detail?.storedMsg) {
+        appendMessage(e.detail.storedMsg);
+        scrollDown.scrollToBottom();
+      }
+    };
+    window.addEventListener("local-msg-sent", onLocalSent);
+
     const presenceObserver = new MutationObserver(() => {
       if (!document.body.contains(chatWrap)) {
         unsubPresence();
         unsubTyping();
         if (typingTimer) clearTimeout(typingTimer);
+        window.removeEventListener("local-msg-sent", onLocalSent);
         presenceObserver.disconnect();
       }
     });
@@ -1218,6 +1227,7 @@ export async function sendDirectMessageToUser(targetUserId, text) {
     ciphertexts: ciphertexts
   };
   await saveMessage(storedMsg);
+  window.dispatchEvent(new CustomEvent("local-msg-sent", { detail: { targetUserId: String(targetUserId), storedMsg } }));
 
   const contact = await getContact(targetUserId);
   if (contact) {
