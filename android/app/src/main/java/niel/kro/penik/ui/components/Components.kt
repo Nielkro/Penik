@@ -1362,7 +1362,8 @@ fun MessageBubble(
             .padding(vertical = 1.dp),
         contentAlignment = boxAlignment
     ) {
-        val isMediaNoCaption = attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/")) && attachment.caption.isNullOrBlank() && fwdSenderName == null
+        val hasHeader = (!isSentByMe && senderName != null) || fwdSenderName != null || (replySender != null && replyText != null)
+        val isMediaNoCaption = attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/")) && attachment.caption.isNullOrBlank() && !hasHeader
         val maxBubbleWidth = if (attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/"))) 300.dp else 280.dp
 
         Box(
