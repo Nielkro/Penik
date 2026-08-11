@@ -192,11 +192,11 @@ export function formatFullTime(ts) {
   });
 }
 
-// Match http(s) URLs; trailing punctuation is stripped from the href.
-const MSG_URL_RE = /https?:\/\/[^\s<>"']+/gi;
+// Match http(s) and www. URLs; trailing punctuation is stripped from the href.
+const MSG_URL_RE = /(?:https?:\/\/|www\.)[^\s<>"']+/gi;
 
 /**
- * Fill a .msg-text element with plain text, turning http(s) URLs into safe
+ * Fill a .msg-text element with plain text, turning http(s) and www. URLs into safe
  * <a class="msg-link"> anchors (no innerHTML — plaintext is never parsed as HTML).
  */
 export function setMsgTextContent(el, text) {
@@ -204,12 +204,10 @@ export function setMsgTextContent(el, text) {
   if (!text) return;
 
   const s = String(text).trim();
-  console.log("[setMsgTextContent] input text:", s.slice(0, 100));
 
   if (s.startsWith("{") && s.includes('"file"')) {
     try {
       const parsed = JSON.parse(s);
-      console.log("[setMsgTextContent] parsed JSON file message:", parsed);
       if (parsed && (parsed.type === "file" || parsed.file) && (parsed.file?.url || parsed.url)) {
         if (!parsed.file) parsed.file = { ...parsed };
         renderFileCard(el, parsed);
@@ -234,9 +232,10 @@ export function setMsgTextContent(el, text) {
       url = url.slice(0, -1);
     }
     if (url) {
+      const href = url.toLowerCase().startsWith("www.") ? "https://" + url : url;
       const a = document.createElement("a");
       a.className = "msg-link";
-      a.href = url;
+      a.href = href;
       a.target = "_blank";
       a.rel = "noopener noreferrer";
       a.textContent = url;
