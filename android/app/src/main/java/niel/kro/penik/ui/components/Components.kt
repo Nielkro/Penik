@@ -1156,12 +1156,24 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
     }
 
     val mediaThumbModel = remember(attachment.thumb, localFile) {
-        attachment.thumb?.takeIf { it.isNotBlank() }?.let { base64Str ->
+        if (!attachment.thumb.isNullOrBlank()) {
             runCatching {
+                val base64Str = attachment.thumb
                 val cleanBase64 = if (base64Str.startsWith("data:")) base64Str.substringAfter(",") else base64Str
                 android.util.Base64.decode(cleanBase64, android.util.Base64.DEFAULT)
             }.getOrNull()
-        } ?: localFile
+        } else if (localFile != null && isVideo) {
+            runCatching {
+                val retriever = android.media.MediaMetadataRetriever()
+                retriever.setDataSource(localFile!!.absolutePath)
+                val bmp = retriever.getFrameAtTime(500000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    ?: retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                retriever.release()
+                bmp
+            }.getOrNull() ?: localFile
+        } else {
+            localFile
+        }
     }
 
     val openFile: () -> Unit = {
