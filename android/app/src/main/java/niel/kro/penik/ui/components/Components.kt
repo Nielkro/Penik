@@ -1154,6 +1154,15 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             .onFailure { loadError = true }
     }
 
+    val mediaThumbModel = remember(attachment.thumb, localFile) {
+        attachment.thumb?.takeIf { it.isNotBlank() }?.let { base64Str ->
+            runCatching {
+                val cleanBase64 = if (base64Str.startsWith("data:")) base64Str.substringAfter(",") else base64Str
+                android.util.Base64.decode(cleanBase64, android.util.Base64.DEFAULT)
+            }.getOrNull()
+        } ?: localFile
+    }
+
     val openFile: () -> Unit = {
         localFile?.let { file ->
             val contentUri = FileProvider.getUriForFile(
@@ -1176,15 +1185,21 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color.Black)
             ) {
-                if (localFile != null) {
+                if (mediaThumbModel != null) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable { showVideoViewer = true },
+                            .clickable {
+                                if (localFile != null) {
+                                    showVideoViewer = true
+                                } else {
+                                    openFile()
+                                }
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         AsyncImage(
-                            model = localFile,
+                            model = mediaThumbModel,
                             contentDescription = attachment.name,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1199,12 +1214,16 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                                 .background(Color.Black.copy(alpha = 0.6f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Воспроизвести видео",
-                                tint = Color.White,
-                                modifier = Modifier.size(36.dp)
-                            )
+                            if (localFile == null && !loadError) {
+                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Воспроизвести видео",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
                         }
                     }
                 } else {
@@ -1226,7 +1245,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                     .background(Color.Black)
             ) {
                 AsyncImage(
-                    model = localFile,
+                    model = mediaThumbModel,
                     contentDescription = attachment.name,
                     modifier = Modifier
                         .fillMaxWidth()
