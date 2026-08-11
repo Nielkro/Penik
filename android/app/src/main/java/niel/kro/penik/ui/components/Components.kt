@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -796,15 +797,17 @@ private fun LocalVideoPlayer(file: File, contentDescription: String, onOpenFulls
                     this.player = player
                     useController = false
                     controllerAutoShow = false
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     this.contentDescription = contentDescription
                 }
             },
             modifier = Modifier.fillMaxSize(),
             update = {
                 it.player = player
-                it.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-            }
+                it.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            },
+            onReset = { view -> view.player = null },
+            onRelease = { view -> view.player = null }
         )
 
         // Overlay play icon when idle/not playing preview
@@ -873,7 +876,14 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
         }
     }
 
-    DisposableEffect(player) {
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, player) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE || event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                player.pause()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
@@ -889,7 +899,11 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
         }
         player.addListener(listener)
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
             player.removeListener(listener)
+            player.pause()
+            player.stop()
+            player.clearMediaItems()
             player.release()
         }
     }
@@ -971,7 +985,9 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
                         update = {
                             it.player = player
                             it.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        }
+                        },
+                        onReset = { view -> view.player = null },
+                        onRelease = { view -> view.player = null }
                     )
                 }
 
@@ -1154,7 +1170,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             isVideo -> Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 180.dp, max = 300.dp)
+                    .heightIn(min = 160.dp, max = 560.dp)
                     .clip(RoundedCornerShape(8.dp))
             ) {
                 if (localFile != null) {
@@ -1173,16 +1189,18 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             isImage -> Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 180.dp, max = 300.dp)
+                    .heightIn(min = 160.dp, max = 560.dp)
                     .clip(RoundedCornerShape(8.dp))
             ) {
                 AsyncImage(
                     model = localFile,
                     contentDescription = attachment.name,
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
+                        .wrapContentHeight()
+                        .heightIn(min = 160.dp, max = 560.dp)
                         .clickable(enabled = localFile != null) { showImageViewer = true },
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Fit
                 )
                 if (localFile == null) {
                     Box(
@@ -1344,7 +1362,8 @@ fun MessageBubble(
             .padding(vertical = 1.dp),
         contentAlignment = boxAlignment
     ) {
-        val isMediaNoCaption = attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/")) && attachment.caption.isNullOrBlank()
+        val isMediaNoCaption = attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/")) && attachment.caption.isNullOrBlank() && fwdSenderName == null
+        val maxBubbleWidth = if (attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/"))) 300.dp else 280.dp
 
         Box(
             modifier = Modifier
@@ -1378,7 +1397,7 @@ fun MessageBubble(
                         }
                     )
                 }
-                .widthIn(max = 280.dp)
+                .widthIn(max = maxBubbleWidth)
                 .clip(BubbleShape(isSentByMe = isSentByMe))
                 .background(bgColor)
                 .combinedClickable(
