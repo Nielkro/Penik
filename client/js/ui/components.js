@@ -205,11 +205,28 @@ export function setMsgTextContent(el, text) {
 
   const s = String(text).trim();
 
-  if (s.startsWith("{") && s.includes('"file"')) {
+  if (s.startsWith("{")) {
     try {
       const parsed = JSON.parse(s);
+      if (parsed && parsed.type === "fwd") {
+        const header = document.createElement("div");
+        header.style.cssText = "font-size:12px;font-weight:600;color:var(--accent);margin-bottom:4px;display:flex;align-items:center;gap:4px;";
+        header.textContent = "↪ Переслано от " + (parsed.from || "неизвестного");
+        el.appendChild(header);
+
+        const bodyEl = document.createElement("div");
+        setMsgTextContent(bodyEl, parsed.text || "");
+        el.appendChild(bodyEl);
+        return;
+      }
       if (parsed && (parsed.type === "file" || parsed.file) && (parsed.file?.url || parsed.url)) {
         if (!parsed.file) parsed.file = { ...parsed };
+        if (parsed.fwd_from) {
+          const header = document.createElement("div");
+          header.style.cssText = "font-size:12px;font-weight:600;color:var(--accent);margin-bottom:4px;display:flex;align-items:center;gap:4px;";
+          header.textContent = "↪ Переслано от " + parsed.fwd_from;
+          el.appendChild(header);
+        }
         renderFileCard(el, parsed);
         return;
       }
@@ -704,10 +721,10 @@ export function wireMsgTime(timeEl, ts) {
 }
 
 /**
- * Right-click / long-press on a message bubble → mini menu with "Копировать".
+ * Right-click / long-press on a message bubble → mini menu with "Копировать", "Ответить", "Переслать", "Удалить".
  * `getText` is a string or a function returning the plaintext to copy.
  */
-export function wireMsgCopy(bubble, getText, onReply, onDelete) {
+export function wireMsgCopy(bubble, getText, onReply, onDelete, onForward) {
   const resolveText = () => {
     const t = typeof getText === "function" ? getText() : getText;
     return (t == null ? "" : String(t)).trim();
@@ -739,7 +756,7 @@ export function wireMsgCopy(bubble, getText, onReply, onDelete) {
     if (e.target.closest?.("a.msg-link")) return;
     e.preventDefault();
     e.stopPropagation();
-    showMsgActionMenu(e.clientX, e.clientY, doCopy, onReply, onDelete);
+    showMsgActionMenu(e.clientX, e.clientY, doCopy, onReply, onDelete, onForward);
   });
 
   // Touch handlers for long-press & swipe-to-reply.
@@ -779,7 +796,7 @@ export function wireMsgCopy(bubble, getText, onReply, onDelete) {
     pressTimer = setTimeout(() => {
       pressTimer = null;
       if (!isSwiping) {
-        showMsgActionMenu(startX, startY, doCopy, onReply, onDelete);
+        showMsgActionMenu(startX, startY, doCopy, onReply, onDelete, onForward);
       }
     }, 480);
   }, { passive: true });
@@ -827,7 +844,7 @@ export function wireMsgCopy(bubble, getText, onReply, onDelete) {
   bubble.addEventListener("touchcancel", () => { clearPress(); resetSwipe(); }, { passive: true });
 }
 
-function showMsgActionMenu(x, y, onCopy, onReply, onDelete) {
+function showMsgActionMenu(x, y, onCopy, onReply, onDelete, onForward) {
   document.getElementById("msg-action-menu")?.remove();
   const menu = el("div", {
     id: "msg-action-menu",
@@ -852,6 +869,16 @@ function showMsgActionMenu(x, y, onCopy, onReply, onDelete) {
     menu.appendChild(replyItem);
   }
 
+  if (onForward) {
+    const fwdItem = el("button", { type: "button", class: "msg-action-item" }, "Переслать");
+    fwdItem.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.remove();
+      onForward();
+    });
+    menu.appendChild(fwdItem);
+  }
+
   if (onDelete) {
     const delItem = el("button", { type: "button", class: "msg-action-item", style: "color:var(--danger);" }, "Удалить");
     delItem.addEventListener("click", (e) => {
@@ -863,7 +890,6 @@ function showMsgActionMenu(x, y, onCopy, onReply, onDelete) {
   }
 
   document.body.appendChild(menu);
-
 
   // Keep menu inside the viewport.
   requestAnimationFrame(() => {
@@ -880,20 +906,142 @@ function showMsgActionMenu(x, y, onCopy, onReply, onDelete) {
     if (menu.contains(ev.target)) return;
     menu.remove();
     document.removeEventListener("pointerdown", close, true);
-    document.removeEventListener("keydown", onKey, true);
-  };
-  const onKey = (ev) => {
-    if (ev.key === "Escape") {
-      menu.remove();
-      document.removeEventListener("pointerdown", close, true);
-      document.removeEventListener("keydown", onKey, true);
-    }
   };
   // Defer so the opening event does not immediately close the menu.
   setTimeout(() => {
     document.addEventListener("pointerdown", close, true);
-    document.addEventListener("keydown", onKey, true);
   }, 0);
+}
+
+export async function showForwardModal(rawMsgText, senderName) {
+  const { getAllContacts, getAllGroups } = await import("../storage.js");
+  const contacts = await getAllContacts();
+  const groups = await getAllGroups();
+
+  document.getElementById("forward-modal")?.remove();
+
+  const modal = el("div", {
+    id: "forward-modal",
+    class: "modal-backdrop",
+    style: "position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10005;display:flex;align-items:center;justify-content:center;padding:16px;"
+  });
+
+  const card = el("div", {
+    class: "modal-card",
+    style: "background:var(--panel);border:1px solid var(--border);border-radius:16px;width:100%;max-width:380px;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,0.5);"
+  });
+
+  const header = el("div", {
+    style: "display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);"
+  },
+    el("span", { style: "font-size:16px;font-weight:700;color:#fff;" }, "Переслать сообщение"),
+    el("button", {
+      type: "button",
+      style: "background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:4px;",
+      onclick: () => modal.remove()
+    }, "✕")
+  );
+
+  const searchInput = el("input", {
+    type: "text",
+    placeholder: "Поиск чата...",
+    class: "search-input",
+    style: "margin:12px 16px;width:calc(100% - 32px);box-sizing:border-box;"
+  });
+
+  const listContainer = el("div", {
+    style: "flex:1;overflow-y:auto;padding:0 8px 12px;"
+  });
+
+  const renderList = (filterText = "") => {
+    listContainer.replaceChildren();
+    const query = filterText.trim().toLowerCase();
+
+    const items = [];
+    for (const c of contacts) {
+      const name = c.name || c.nickname || `Пользователь #${c.user_id}`;
+      if (!query || name.toLowerCase().includes(query)) {
+        items.push({ type: "user", id: c.user_id, name, item: c });
+      }
+    }
+    for (const g of groups) {
+      const name = g.name || `Группа #${g.id}`;
+      if (!query || name.toLowerCase().includes(query)) {
+        items.push({ type: "group", id: g.id, name, item: g });
+      }
+    }
+
+    if (items.length === 0) {
+      listContainer.appendChild(
+        el("div", { style: "padding:24px;text-align:center;color:var(--text-dim);font-size:14px;" }, "Чаты не найдены")
+      );
+      return;
+    }
+
+    for (const target of items) {
+      const itemRow = el("div", {
+        style: "display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;cursor:pointer;transition:background 0.15s;",
+        onclick: async () => {
+          modal.remove();
+          await executeForward(target, rawMsgText, senderName);
+        }
+      });
+      itemRow.addEventListener("mouseenter", () => itemRow.style.background = "rgba(255,255,255,0.06)");
+      itemRow.addEventListener("mouseleave", () => itemRow.style.background = "transparent");
+
+      const avNode = target.type === "group" ? groupAvatar(target.item, 40) : avatar(target.item, 40);
+      const nameNode = el("span", { style: "font-weight:600;font-size:15px;color:#fff;" }, target.name);
+
+      itemRow.append(avNode, nameNode);
+      listContainer.appendChild(itemRow);
+    }
+  };
+
+  searchInput.addEventListener("input", (e) => renderList(e.target.value));
+  renderList();
+
+  card.append(header, searchInput, listContainer);
+  modal.appendChild(card);
+  document.body.appendChild(modal);
+
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.remove();
+  });
+}
+
+async function executeForward(target, rawMsgText, senderName) {
+  let forwardedPayload;
+  if (rawMsgText.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(rawMsgText);
+      if (parsed.type === "file" || parsed.file) {
+        parsed.fwd_from = parsed.fwd_from || senderName;
+        forwardedPayload = JSON.stringify(parsed);
+      } else if (parsed.type === "fwd") {
+        forwardedPayload = JSON.stringify({ type: "fwd", from: parsed.from || senderName, text: parsed.text });
+      } else {
+        forwardedPayload = JSON.stringify({ type: "fwd", from: senderName, text: rawMsgText });
+      }
+    } catch {
+      forwardedPayload = JSON.stringify({ type: "fwd", from: senderName, text: rawMsgText });
+    }
+  } else {
+    forwardedPayload = JSON.stringify({ type: "fwd", from: senderName, text: rawMsgText });
+  }
+
+  try {
+    if (target.type === "group") {
+      const { sendGroupMessage } = await import("../groups.js");
+      await sendGroupMessage(target.id, forwardedPayload);
+    } else {
+      const { sendDirectMessageToUser } = await import("./chat.js");
+      await sendDirectMessageToUser(target.id, forwardedPayload);
+    }
+    showToast("Сообщение переслано");
+  } catch (err) {
+    console.error("Forward failed:", err);
+    showToast("Не удалось переслать сообщение", "error");
+  }
 }
 
 /**

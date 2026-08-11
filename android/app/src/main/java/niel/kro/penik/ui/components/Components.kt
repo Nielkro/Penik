@@ -625,6 +625,26 @@ private fun parseFileAttachment(text: String): FileAttachment? = runCatching {
     )
 }.getOrNull()
 
+internal data class ForwardedInfo(
+    val from: String,
+    val text: String
+)
+
+internal fun parseForwardedInfo(rawText: String): ForwardedInfo? = runCatching {
+    if (!rawText.startsWith("{")) return null
+    val root = Json.parseToJsonElement(rawText).jsonObject
+    if (root["type"]?.jsonPrimitive?.content != "fwd") return null
+    val from = root["from"]?.jsonPrimitive?.content.orEmpty().ifBlank { "неизвестного" }
+    val text = root["text"]?.jsonPrimitive?.content.orEmpty()
+    ForwardedInfo(from = from, text = text)
+}.getOrNull()
+
+internal fun parseForwardedFileSender(rawText: String): String? = runCatching {
+    if (!rawText.startsWith("{")) return null
+    val root = Json.parseToJsonElement(rawText).jsonObject
+    root["fwd_from"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+}.getOrNull()
+
 internal data class ReplyParsedInfo(
     val displayText: String,
     val thumbBase64: String?
@@ -1253,7 +1273,8 @@ fun MessageBubble(
     replyText: String? = null,
     onReply: (() -> Unit)? = null,
     onReplyClick: ((String) -> Unit)? = null,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    onForward: (() -> Unit)? = null
 ) {
     val isFailed = text.startsWith("[Ошибка расшифрования") || text.startsWith("[Сообщение не расшифровано")
     var isExpanded by remember { mutableStateOf(false) }
@@ -1261,8 +1282,12 @@ fun MessageBubble(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
+    val fwdInfo = remember(text) { parseForwardedInfo(text) }
+    val fwdFileSender = remember(text) { parseForwardedFileSender(text) }
+    val fwdSenderName = fwdInfo?.from ?: fwdFileSender
+
     val attachment = remember(text) { parseFileAttachment(text) }
-    val parsedText = attachment?.caption ?: text
+    val parsedText = fwdInfo?.text ?: (attachment?.caption ?: text)
 
     val bgColor = if (isFailed) {
         Color(0x26EF5350)
@@ -1379,6 +1404,15 @@ fun MessageBubble(
                         }
                     )
                 }
+                if (onForward != null && !isFailed) {
+                    DropdownMenuItem(
+                        text = { Text("Переслать", color = TextPrimary) },
+                        onClick = {
+                            onForward()
+                            showMenu = false
+                        }
+                    )
+                }
                 if (onDelete != null) {
                     DropdownMenuItem(
                         text = { Text("Удалить", color = Color(0xFFEF5350)) },
@@ -1391,6 +1425,19 @@ fun MessageBubble(
             }
             val columnModifier = if (replySender != null && replyText != null) Modifier.width(IntrinsicSize.Max) else Modifier
             Column(modifier = columnModifier) {
+                if (fwdSenderName != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 2.dp)
+                    ) {
+                        Text(
+                            text = "↪ Переслано от $fwdSenderName",
+                            color = Accent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
                 if (!isSentByMe && senderName != null) {
                     val hue = if (senderUserId != null && senderUserId > 0) (senderUserId * 137) % 360 else 0L
                     val nameColor = Color.hsl(hue.toFloat(), 0.65f, 0.65f)
@@ -1913,6 +1960,111 @@ fun TelegramDoodleBackground(
                             quadraticTo(cx + 5.5.dp.toPx(), cy + 0.5.dp.toPx(), cx + 5.5.dp.toPx(), cy + 5.dp.toPx())
                         }
                         drawPath(shoulders, patternColor, style = strokeStyle)
+                    }
+                }
+            }
+        }
+    }
+}
+
+data class ForwardTargetItem(
+    val id: Long,
+    val name: String,
+    val isGroup: Boolean,
+    val avatarKey: Any? = null
+)
+
+@Composable
+fun ForwardTargetDialog(
+    targets: List<ForwardTargetItem>,
+    onSelectTarget: (ForwardTargetItem) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filtered = remember(searchQuery, targets) {
+        if (searchQuery.isBlank()) targets
+        else targets.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .heightIn(max = 480.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Panel)
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Переслать сообщение",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = TextPrimary
+                )
+                IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Закрыть", tint = TextMuted)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Поиск чата...", color = TextMuted, fontSize = 14.sp) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = InputBg,
+                    unfocusedContainerColor = InputBg,
+                    focusedBorderColor = Accent,
+                    unfocusedBorderColor = Border,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary
+                )
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (filtered.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Чаты не найдены", color = TextMuted, fontSize = 14.sp)
+                }
+            } else {
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(filtered, key = { "${if (it.isGroup) "g" else "u"}_${it.id}" }) { item ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelectTarget(item) }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (item.isGroup) {
+                                GroupAvatar(groupId = item.id, name = item.name, size = 40.dp, avatarKey = item.avatarKey)
+                            } else {
+                                UserAvatar(userId = item.id, name = item.name, size = 40.dp, avatarKey = item.avatarKey)
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = item.name,
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 15.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }

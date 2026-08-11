@@ -9,7 +9,7 @@ import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpda
 import { OP } from "../ws.js";
 import {
   avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon,
-  showDeleteChatConfirmModal, showFullscreenImage, showConfirmModal,
+  showDeleteChatConfirmModal, showFullscreenImage, showConfirmModal, showForwardModal,
   setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
 import { syncGroups, getAllGroups, getGroupMessages, onGroupUpdate } from "../groups.js";
@@ -703,6 +703,9 @@ export async function renderChat(container, userId) {
           console.error("Failed to delete message error:", err);
           showToast("Не удалось удалить сообщение", "error");
         }
+      }, () => {
+        const senderName = isMine ? (me?.name || "Вы") : (contact.name || contact.nickname || "Собеседник");
+        showForwardModal(msg.plaintext || "", senderName);
       });
     }
 
@@ -1183,4 +1186,43 @@ async function createThumbnailBase64(file, maxSide = 180) {
     };
     img.src = url;
   });
+}
+
+export async function sendDirectMessageToUser(targetUserId, text) {
+  const ws = getWS();
+  if (!ws || !ws.isConnected()) throw new Error("Нет соединения через WebSocket");
+
+  const me = getCurrentUser();
+  const myId = me && (me.id || me.user_id);
+  const msgId = crypto.randomUUID();
+  const now = Date.now();
+
+  const ciphertexts = await encryptMessagePayload(text, targetUserId);
+
+  const storedMsg = {
+    msg_id: msgId,
+    client_msg_id: msgId,
+    chat_id: Number(targetUserId),
+    sender_id: myId,
+    plaintext: text,
+    created_at: now,
+    delivered: 0,
+    ciphertexts: ciphertexts
+  };
+  await saveMessage(storedMsg);
+
+  const contact = await getContact(targetUserId);
+  if (contact) {
+    await saveContact({ ...contact, last_message: text, last_ts: now });
+    triggerChatListUpdate();
+  }
+
+  const sent = ws.send(0x01, {
+    to_user_id: Number(targetUserId),
+    devices: ciphertexts,
+    msg_id: msgId
+  });
+
+  if (!sent) throw new Error("Не удалось отправить сообщение");
+  return msgId;
 }

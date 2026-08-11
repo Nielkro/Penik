@@ -82,12 +82,20 @@ class GroupsViewModel @Inject constructor(
     fun clearError() { _error.value = null }
 }
 
+import niel.kro.penik.data.repository.MessageRepository
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+
 @HiltViewModel
 class GroupChatViewModel @Inject constructor(
-    private val groupRepository: GroupRepository,
-    private val authRepository: AuthRepository,
-    private val apiService: ApiService,
-    private val chatRepository: ChatRepository,
+    val groupRepository: GroupRepository,
+    val authRepository: AuthRepository,
+    val apiService: ApiService,
+    val chatRepository: ChatRepository,
+    val messageRepository: MessageRepository,
     savedStateHandle: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
 
@@ -127,6 +135,53 @@ class GroupChatViewModel @Inject constructor(
         viewModelScope.launch {
             val id = runCatching { groupRepository.sendMessage(groupId, text.trim(), replyToMsgId) }.getOrNull()
             if (id == null) _error.value = "Не удалось отправить сообщение"
+        }
+    }
+
+    fun forwardMessage(rawText: String, senderName: String, target: niel.kro.penik.ui.components.ForwardTargetItem, onDone: () -> Unit) {
+        viewModelScope.launch {
+            val forwardPayload = if (rawText.startsWith("{")) {
+                runCatching {
+                    val root = Json.parseToJsonElement(rawText).jsonObject
+                    if (root["type"]?.jsonPrimitive?.content == "file") {
+                        buildJsonObject {
+                            root.forEach { (k, v) -> put(k, v) }
+                            put("fwd_from", senderName)
+                        }.toString()
+                    } else if (root["type"]?.jsonPrimitive?.content == "fwd") {
+                        buildJsonObject {
+                            put("type", "fwd")
+                            put("from", root["from"]?.jsonPrimitive?.content ?: senderName)
+                            put("text", root["text"]?.jsonPrimitive?.content ?: rawText)
+                        }.toString()
+                    } else {
+                        buildJsonObject {
+                            put("type", "fwd")
+                            put("from", senderName)
+                            put("text", rawText)
+                        }.toString()
+                    }
+                }.getOrElse {
+                    buildJsonObject {
+                        put("type", "fwd")
+                        put("from", senderName)
+                        put("text", rawText)
+                    }.toString()
+                }
+            } else {
+                buildJsonObject {
+                    put("type", "fwd")
+                    put("from", senderName)
+                    put("text", rawText)
+                }.toString()
+            }
+
+            if (target.isGroup) {
+                groupRepository.sendMessage(target.id, forwardPayload)
+            } else {
+                messageRepository.sendMessage(target.id, forwardPayload)
+            }
+            onDone()
         }
     }
 

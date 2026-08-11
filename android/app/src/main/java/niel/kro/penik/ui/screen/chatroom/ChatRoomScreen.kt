@@ -252,6 +252,51 @@ fun ChatRoomScreen(
         )
     }
 
+    var messageToForwardText by remember { mutableStateOf<String?>(null) }
+    var messageToForwardSender by remember { mutableStateOf<String?>(null) }
+
+    val contactsList by viewModel.chatRepository.getAllChats().collectAsState(initial = emptyList())
+    val groupsList by viewModel.groupRepository.observeGroups().collectAsState(initial = emptyList())
+
+    val forwardTargets = remember(contactsList, groupsList) {
+        val list = mutableListOf<niel.kro.penik.ui.components.ForwardTargetItem>()
+        for (c in contactsList) {
+            list.add(niel.kro.penik.ui.components.ForwardTargetItem(
+                id = c.userId,
+                name = c.name.ifBlank { c.nickname },
+                isGroup = false
+            ))
+        }
+        for (g in groupsList) {
+            list.add(niel.kro.penik.ui.components.ForwardTargetItem(
+                id = g.id,
+                name = g.name,
+                isGroup = true
+            ))
+        }
+        list
+    }
+
+    if (messageToForwardText != null) {
+        niel.kro.penik.ui.components.ForwardTargetDialog(
+            targets = forwardTargets,
+            onSelectTarget = { target ->
+                val rawText = messageToForwardText!!
+                val senderName = messageToForwardSender!!
+                messageToForwardText = null
+                messageToForwardSender = null
+
+                viewModel.forwardMessage(rawText, senderName, target) {
+                    android.widget.Toast.makeText(context, "Сообщение переслано", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDismiss = {
+                messageToForwardText = null
+                messageToForwardSender = null
+            }
+        )
+    }
+
     var messageToDeleteLocalId by remember { mutableStateOf<String?>(null) }
     var deleteForEveryoneChecked by remember { mutableStateOf(false) }
 
@@ -456,6 +501,10 @@ fun ChatRoomScreen(
                             onDelete = {
                                 deleteForEveryoneChecked = false
                                 messageToDeleteLocalId = message.localId
+                            },
+                            onForward = {
+                                messageToForwardText = message.text
+                                messageToForwardSender = if (message.sentByMe) "Вы" else chatName
                             }
                         )
                     }
