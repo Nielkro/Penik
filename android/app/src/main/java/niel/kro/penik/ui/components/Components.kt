@@ -1174,9 +1174,39 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                     .fillMaxWidth()
                     .heightIn(min = 160.dp, max = 560.dp)
                     .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black)
             ) {
                 if (localFile != null) {
-                    LocalVideoPlayer(localFile!!, attachment.name, onOpenFullscreen = { showVideoViewer = true })
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable { showVideoViewer = true },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = localFile,
+                            contentDescription = attachment.name,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .wrapContentHeight()
+                                .heightIn(min = 160.dp, max = 560.dp),
+                            contentScale = ContentScale.Crop
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.6f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Воспроизвести видео",
+                                tint = Color.White,
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
+                    }
                 } else {
                     Box(
                         modifier = Modifier
