@@ -1171,7 +1171,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
         if (!attachment.thumb.isNullOrBlank()) {
             runCatching {
                 val base64Str = attachment.thumb
-                val cleanBase64 = if (base64Str.startsWith("data:")) base64Str.substringAfter(",") else base64Str
+                val cleanBase64 = if (base64Str.contains(",")) base64Str.substringAfter(",") else base64Str
                 val bytes = android.util.Base64.decode(cleanBase64, android.util.Base64.DEFAULT)
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
             }.getOrNull()
@@ -1179,9 +1179,9 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             runCatching {
                 val retriever = android.media.MediaMetadataRetriever()
                 retriever.setDataSource(localFile!!.absolutePath)
-                val bmp = retriever.frameAtTime
-                    ?: retriever.getFrameAtTime(500000)
-                    ?: retriever.getFrameAtTime(0)
+                val bmp = retriever.getFrameAtTime(500_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
+                    ?: retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
+                    ?: retriever.frameAtTime
                 retriever.release()
                 bmp?.asImageBitmap()
             }.getOrNull()
@@ -1219,7 +1219,8 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                 if (imageBitmap != null || thumbUri != null || localFile != null) {
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .fillMaxWidth()
+                            .heightIn(min = 160.dp, max = 560.dp)
                             .clickable {
                                 if (localFile != null) {
                                     showVideoViewer = true
@@ -1235,7 +1236,6 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                                 contentDescription = attachment.name,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .wrapContentHeight()
                                     .heightIn(min = 160.dp, max = 560.dp),
                                 contentScale = ContentScale.Crop
                             )
@@ -1245,7 +1245,6 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                                 contentDescription = attachment.name,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .wrapContentHeight()
                                     .heightIn(min = 160.dp, max = 560.dp),
                                 contentScale = ContentScale.Crop
                             )
@@ -1255,7 +1254,6 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                                 contentDescription = attachment.name,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .wrapContentHeight()
                                     .heightIn(min = 160.dp, max = 560.dp),
                                 contentScale = ContentScale.Crop
                             )
