@@ -797,7 +797,7 @@ private fun LocalVideoPlayer(file: File, contentDescription: String, onOpenFulls
                     this.player = player
                     useController = false
                     controllerAutoShow = false
-                    surfaceType = PlayerView.SURFACE_TYPE_TEXTURE_VIEW
+                    setSurfaceType(2)
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     this.contentDescription = contentDescription
                 }
@@ -969,7 +969,7 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
                                 this.player = player
                                 useController = false
                                 controllerAutoShow = false
-                                surfaceType = PlayerView.SURFACE_TYPE_TEXTURE_VIEW
+                                setSurfaceType(2)
                                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                                 this.contentDescription = contentDescription
                             }
