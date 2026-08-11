@@ -88,6 +88,8 @@ import niel.kro.penik.ui.theme.TextMuted
 import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.ChatRoomViewModel
 
+import androidx.compose.ui.platform.LocalContext
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatRoomScreen(
@@ -96,6 +98,7 @@ fun ChatRoomScreen(
     onBack: () -> Unit,
     viewModel: ChatRoomViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val messages by viewModel.messages.collectAsState()
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()

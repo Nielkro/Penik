@@ -68,7 +68,7 @@ fun NavGraph(
             )
         ) { backStackEntry ->
             val chatUserId = backStackEntry.arguments?.getLong("chatUserId") ?: return@composable
-            val chatName = backStackEntry.arguments?.getString("chatName") ?: ""
+            val chatName = android.net.Uri.decode(backStackEntry.arguments?.getString("chatName") ?: "")
             ChatRoomScreen(
                 chatUserId = chatUserId,
                 chatName = chatName,
@@ -84,7 +84,7 @@ fun NavGraph(
             )
         ) { backStackEntry ->
             val groupId = backStackEntry.arguments?.getLong("groupId") ?: return@composable
-            val groupName = backStackEntry.arguments?.getString("groupName") ?: ""
+            val groupName = android.net.Uri.decode(backStackEntry.arguments?.getString("groupName") ?: "")
             GroupChatScreen(
                 groupId = groupId,
                 groupName = groupName,

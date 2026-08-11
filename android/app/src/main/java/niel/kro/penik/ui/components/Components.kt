@@ -104,9 +104,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import niel.kro.penik.ui.theme.Accent
 import niel.kro.penik.ui.theme.Background
+import niel.kro.penik.ui.theme.Border
 import niel.kro.penik.ui.theme.Danger
+import niel.kro.penik.ui.theme.InputBg
+import niel.kro.penik.ui.theme.Panel
 import niel.kro.penik.ui.theme.PanelSecondary
 import niel.kro.penik.ui.theme.SentMessageBg
 import niel.kro.penik.ui.theme.SentMessageText
