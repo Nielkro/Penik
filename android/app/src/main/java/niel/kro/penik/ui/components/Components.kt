@@ -190,7 +190,7 @@ fun FullscreenImageViewer(url: String?, onDismiss: () -> Unit) {
                 if (state is coil.compose.AsyncImagePainter.State.Loading) {
                     CircularProgressIndicator(color = Color.White, modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
                 } else if (state is coil.compose.AsyncImagePainter.State.Error) {
-                    Text("Не удалось загрузить изображение", color = Color.White, fontSize = 14.sp)
+                    LaunchedEffect(Unit) { onDismiss() }
                 } else {
                     SubcomposeAsyncImageContent()
                 }
@@ -418,7 +418,8 @@ fun ChatListItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val avatarModifier = if (onAvatarClick != null) {
+        val hasCustomAvatar = avatarKey != null && avatarKey != 0 && avatarKey != 0L && name != "Избранное"
+        val avatarModifier = if (onAvatarClick != null && hasCustomAvatar) {
             Modifier.clickable { onAvatarClick(avatarUrlFor(isGroup, userId, avatarKey)) }
         } else {
             Modifier
