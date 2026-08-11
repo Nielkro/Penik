@@ -209,6 +209,8 @@ export function setMsgTextContent(el, text) {
     try {
       const parsed = JSON.parse(s);
       if (parsed && parsed.type === "fwd") {
+        el.style.display = "block";
+        el.style.width = "100%";
         const header = document.createElement("div");
         header.style.cssText = "font-size:12px;font-weight:600;color:var(--accent);margin-bottom:4px;display:flex;align-items:center;gap:4px;";
         header.textContent = "↪ Переслано от " + (parsed.from || "неизвестного");

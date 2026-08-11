@@ -474,13 +474,14 @@ export async function sendGroupMessage(groupId, text, replyToMsgId = null) {
   const createdAt = Math.floor(Date.now() / 1000);
   const { ciphertext, salt, nonce } = await groupEncrypt(text, groupKey, groupId, version, messageId, createdAt);
 
-  // Persist an optimistic local copy (pending until ACK assigns a server id).
-  await saveGroupMessage({
+  const localRecord = {
     group_id: groupId, message_id: messageId, id: 0,
     reply_to_msg_id: replyToMsgId,
     sender_user_id: myUserId(), sender_device_id: myDeviceId(),
     key_version: version, plaintext: text, created_at: createdAt, delivered: 0,
-  });
+  };
+  await saveGroupMessage(localRecord);
+  window.dispatchEvent(new CustomEvent("local-group-msg-sent", { detail: { groupId: Number(groupId), record: localRecord } }));
 
   ws.send(OP.GROUP_MESSAGE_SEND, {
     group_id: groupId, message_id: messageId,

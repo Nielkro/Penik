@@ -474,9 +474,21 @@ export async function renderGroup(container, groupId) {
     if (evt.type === "message" || evt.type === "ack") appendMessage(evt.message);
     if (evt.type === "avatar") renderHeaderAvatar();
   });
+  const onLocalGroupSent = (e) => {
+    if (Number(e.detail?.groupId) === groupId && e.detail?.record) {
+      appendMessage(e.detail.record);
+      scrollDown.scrollToBottom();
+    }
+  };
+  window.addEventListener("local-group-msg-sent", onLocalGroupSent);
+
   // Detach the listener when the view is torn down (navigation replaces innerHTML).
   const observer = new MutationObserver(() => {
-    if (!document.body.contains(chatWrap)) { unsub(); observer.disconnect(); }
+    if (!document.body.contains(chatWrap)) {
+      unsub();
+      window.removeEventListener("local-group-msg-sent", onLocalGroupSent);
+      observer.disconnect();
+    }
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
