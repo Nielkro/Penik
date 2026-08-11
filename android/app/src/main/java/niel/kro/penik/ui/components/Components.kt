@@ -1168,6 +1168,19 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
     }
 
     val imageBitmap: ImageBitmap? = remember(attachment.thumb, localFile) {
+        if (localFile != null && isVideo) {
+            val videoFrame = runCatching {
+                val retriever = android.media.MediaMetadataRetriever()
+                retriever.setDataSource(localFile!!.absolutePath)
+                val bmp = retriever.getFrameAtTime(500_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
+                    ?: retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
+                    ?: retriever.frameAtTime
+                retriever.release()
+                bmp?.asImageBitmap()
+            }.getOrNull()
+            if (videoFrame != null) return@remember videoFrame
+        }
+
         if (!attachment.thumb.isNullOrBlank()) {
             runCatching {
                 val base64Str = attachment.thumb
@@ -1185,16 +1198,6 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                 } else {
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
                 }
-            }.getOrNull()
-        } else if (localFile != null && isVideo) {
-            runCatching {
-                val retriever = android.media.MediaMetadataRetriever()
-                retriever.setDataSource(localFile!!.absolutePath)
-                val bmp = retriever.getFrameAtTime(500_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
-                    ?: retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
-                    ?: retriever.frameAtTime
-                retriever.release()
-                bmp?.asImageBitmap()
             }.getOrNull()
         } else if (localFile != null && isImage) {
             runCatching {
