@@ -1205,6 +1205,10 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
         }
     }
 
+    val aspectRatio = remember(imageBitmap) {
+        imageBitmap?.let { (it.width.toFloat() / it.height.coerceAtLeast(1).toFloat()).coerceIn(0.6f, 2.0f) } ?: (16f / 9f)
+    }
+
     val openFile: () -> Unit = {
         localFile?.let { file ->
             val contentUri = FileProvider.getUriForFile(
@@ -1223,15 +1227,14 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             isVideo -> Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 160.dp, max = 560.dp)
+                    .aspectRatio(aspectRatio)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color.Black)
             ) {
                 if (imageBitmap != null || thumbUri != null || localFile != null) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 160.dp, max = 560.dp)
+                            .fillMaxSize()
                             .clickable {
                                 if (localFile != null) {
                                     showVideoViewer = true
@@ -1245,27 +1248,21 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                             Image(
                                 bitmap = imageBitmap,
                                 contentDescription = attachment.name,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 160.dp, max = 560.dp),
+                                modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
                             )
                         } else if (thumbUri != null) {
                             AsyncImage(
                                 model = thumbUri,
                                 contentDescription = attachment.name,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 160.dp, max = 560.dp),
+                                modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
                             )
                         } else if (localFile != null) {
                             AsyncImage(
                                 model = localFile,
                                 contentDescription = attachment.name,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 160.dp, max = 560.dp),
+                                modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
                             )
                         }
