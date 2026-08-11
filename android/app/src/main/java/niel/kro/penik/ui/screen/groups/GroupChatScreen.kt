@@ -17,7 +17,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
@@ -106,8 +109,10 @@ fun GroupChatScreen(
     onGroupSettingsClick: (Long) -> Unit,
     viewModel: GroupChatViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val messages by viewModel.messages.collectAsState()
     val members by viewModel.members.collectAsState()
+    val groupEntity by viewModel.groupFlow.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val error by viewModel.error.collectAsState()
     val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
@@ -390,11 +395,39 @@ fun GroupChatScreen(
             }
 
             HorizontalDivider(color = Border, thickness = 1.dp)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Panel)
-            ) {
+            if (groupEntity?.status == "pending") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(PanelSecondary)
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Вас пригласили в эту группу", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Button(
+                            onClick = { viewModel.acceptInvitation() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                        ) {
+                            Text("Принять", color = TextPrimary)
+                        }
+                        OutlinedButton(
+                            onClick = { viewModel.declineInvitation(onDone = onBack) }
+                        ) {
+                            Text("Отклонить", color = TextMuted)
+                        }
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Panel)
+                ) {
                 activeReply?.let { reply ->
                     val replyInfo = remember(reply.text) { parseReplyContent(reply.text) }
                     val replyThumbBitmap: ImageBitmap? = remember(replyInfo?.thumbBase64) {

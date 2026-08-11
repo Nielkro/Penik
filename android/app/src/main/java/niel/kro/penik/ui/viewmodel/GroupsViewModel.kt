@@ -11,12 +11,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import niel.kro.penik.data.local.entity.GroupMemberEntity
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.UserSearchResult
 import niel.kro.penik.data.repository.AuthRepository
 import niel.kro.penik.data.repository.GroupRepository
 import niel.kro.penik.data.repository.ChatRepository
+import niel.kro.penik.data.repository.MessageRepository
 import niel.kro.penik.data.local.entity.ChatEntity
 import javax.inject.Inject
 
@@ -81,13 +87,6 @@ class GroupsViewModel @Inject constructor(
 
     fun clearError() { _error.value = null }
 }
-
-import niel.kro.penik.data.repository.MessageRepository
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 @HiltViewModel
 class GroupChatViewModel @Inject constructor(
@@ -230,6 +229,33 @@ class GroupChatViewModel @Inject constructor(
                 val response = apiService.searchUsers(query)
                 if (response.isSuccessful) _searchResults.value = response.body() ?: emptyList()
             } catch (_: Exception) {}
+        }
+    }
+
+    val groupFlow = groupRepository.observeGroup(groupId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    fun acceptInvitation(onDone: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            try {
+                groupRepository.acceptInvitation(groupId)
+                groupRepository.syncGroups()
+                _members.value = groupRepository.refreshMembers(groupId)
+                onDone?.invoke()
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Не удалось принять приглашение"
+            }
+        }
+    }
+
+    fun declineInvitation(onDone: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            try {
+                groupRepository.declineInvitation(groupId)
+                onDone?.invoke()
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Не удалось отклонить приглашение"
+            }
         }
     }
 
