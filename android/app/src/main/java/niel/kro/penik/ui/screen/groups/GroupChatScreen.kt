@@ -102,6 +102,10 @@ import niel.kro.penik.ui.theme.TextMuted
 import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.GroupChatViewModel
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.AttachFile
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupChatScreen(
@@ -497,6 +501,22 @@ fun GroupChatScreen(
                         .padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Attachment picker button
+                    val attachLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.GetContent()
+                    ) { uri ->
+                        if (uri != null) {
+                            viewModel.sendMediaFile(context, uri)
+                        }
+                    }
+                    IconButton(onClick = { attachLauncher.launch("*/*") }) {
+                        Icon(
+                            imageVector = Icons.Default.AttachFile,
+                            contentDescription = "Прикрепить файл",
+                            tint = TextMuted
+                        )
+                    }
+
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },

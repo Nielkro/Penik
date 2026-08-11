@@ -19,11 +19,14 @@ import kotlinx.serialization.json.put
 import niel.kro.penik.data.local.entity.GroupMemberEntity
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.UserSearchResult
+import niel.kro.penik.data.repository.AttachmentManager
 import niel.kro.penik.data.repository.AuthRepository
 import niel.kro.penik.data.repository.GroupRepository
 import niel.kro.penik.data.repository.ChatRepository
 import niel.kro.penik.data.repository.MessageRepository
 import niel.kro.penik.data.local.entity.ChatEntity
+import android.content.Context
+import android.net.Uri
 import javax.inject.Inject
 
 @HiltViewModel
@@ -95,6 +98,7 @@ class GroupChatViewModel @Inject constructor(
     val apiService: ApiService,
     val chatRepository: ChatRepository,
     val messageRepository: MessageRepository,
+    private val attachmentManager: AttachmentManager,
     savedStateHandle: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
 
@@ -134,6 +138,20 @@ class GroupChatViewModel @Inject constructor(
         viewModelScope.launch {
             val id = runCatching { groupRepository.sendMessage(groupId, text.trim(), replyToMsgId) }.getOrNull()
             if (id == null) _error.value = "Не удалось отправить сообщение"
+        }
+    }
+
+    fun sendMediaFile(context: Context, uri: Uri, caption: String = "", onError: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            attachmentManager.uploadAndPrepareAttachment(context, uri, caption)
+                .onSuccess { jsonPayload ->
+                    // Send encrypted file JSON payload through group WebSocket pipeline
+                    val id = runCatching { groupRepository.sendMessage(groupId, jsonPayload, null) }.getOrNull()
+                    if (id == null) onError("Не удалось отправить файл")
+                }
+                .onFailure { err ->
+                    onError(err.message ?: "Ошибка отправки файла")
+                }
         }
     }
 

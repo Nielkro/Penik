@@ -270,3 +270,8 @@ data class KeyBackupResponse(
     val salt: String,
     val iv: String
 )
+
+@Serializable
+data class VkUploadResponse(
+    val url: String
+)
