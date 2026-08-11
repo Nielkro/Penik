@@ -1155,12 +1155,13 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             .onFailure { loadError = true }
     }
 
-    val mediaThumbModel = remember(attachment.thumb, localFile) {
+    val imageBitmap: ImageBitmap? = remember(attachment.thumb, localFile) {
         if (!attachment.thumb.isNullOrBlank()) {
             runCatching {
                 val base64Str = attachment.thumb
                 val cleanBase64 = if (base64Str.startsWith("data:")) base64Str.substringAfter(",") else base64Str
-                android.util.Base64.decode(cleanBase64, android.util.Base64.DEFAULT)
+                val bytes = android.util.Base64.decode(cleanBase64, android.util.Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
             }.getOrNull()
         } else if (localFile != null && isVideo) {
             runCatching {
@@ -1169,10 +1170,14 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                 val bmp = retriever.getFrameAtTime(500000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                     ?: retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 retriever.release()
-                bmp
-            }.getOrNull() ?: localFile
+                bmp?.asImageBitmap()
+            }.getOrNull()
+        } else if (localFile != null && isImage) {
+            runCatching {
+                BitmapFactory.decodeFile(localFile!!.absolutePath)?.asImageBitmap()
+            }.getOrNull()
         } else {
-            localFile
+            null
         }
     }
 
@@ -1198,7 +1203,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color.Black)
             ) {
-                if (mediaThumbModel != null) {
+                if (imageBitmap != null) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1211,8 +1216,8 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        AsyncImage(
-                            model = mediaThumbModel,
+                        Image(
+                            bitmap = imageBitmap,
                             contentDescription = attachment.name,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1257,17 +1262,18 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color.Black)
             ) {
-                AsyncImage(
-                    model = mediaThumbModel,
-                    contentDescription = attachment.name,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .wrapContentHeight()
-                        .heightIn(min = 160.dp, max = 560.dp)
-                        .clickable(enabled = localFile != null) { showImageViewer = true },
-                    contentScale = ContentScale.Crop
-                )
-                if (localFile == null) {
+                if (imageBitmap != null) {
+                    Image(
+                        bitmap = imageBitmap,
+                        contentDescription = attachment.name,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight()
+                            .heightIn(min = 160.dp, max = 560.dp)
+                            .clickable(enabled = localFile != null) { showImageViewer = true },
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
