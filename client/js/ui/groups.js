@@ -409,8 +409,8 @@ export async function renderGroup(container, groupId) {
     const timeEl = el("span", { class: "msg-time" });
     wireMsgTime(timeEl, msg.created_at);
 
-    const isFilePayload = typeof msg.plaintext === "string" && msg.plaintext.trim().startsWith("{") && msg.plaintext.includes('"file"');
-    const isSingleLine = !isFilePayload && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 35;
+    const isStructuredPayload = typeof msg.plaintext === "string" && msg.plaintext.trim().startsWith("{");
+    const isSingleLine = !isStructuredPayload && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 35;
 
     const metaEl = el("div", { class: "msg-meta" },
       timeEl,

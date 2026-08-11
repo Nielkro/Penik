@@ -797,14 +797,15 @@ private fun LocalVideoPlayer(file: File, contentDescription: String, onOpenFulls
                     this.player = player
                     useController = false
                     controllerAutoShow = false
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    useTextureView = true
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     this.contentDescription = contentDescription
                 }
             },
             modifier = Modifier.fillMaxSize(),
             update = {
                 it.player = player
-                it.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                it.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
             },
             onReset = { view -> view.player = null },
             onRelease = { view -> view.player = null }
@@ -968,6 +969,7 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
                                 this.player = player
                                 useController = false
                                 controllerAutoShow = false
+                                useTextureView = true
                                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                                 this.contentDescription = contentDescription
                             }
@@ -1191,6 +1193,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                     .fillMaxWidth()
                     .heightIn(min = 160.dp, max = 560.dp)
                     .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black)
             ) {
                 AsyncImage(
                     model = localFile,
@@ -1200,7 +1203,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                         .wrapContentHeight()
                         .heightIn(min = 160.dp, max = 560.dp)
                         .clickable(enabled = localFile != null) { showImageViewer = true },
-                    contentScale = ContentScale.Fit
+                    contentScale = ContentScale.Crop
                 )
                 if (localFile == null) {
                     Box(
