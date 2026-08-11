@@ -1172,7 +1172,7 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
             val videoFrame = runCatching {
                 val retriever = android.media.MediaMetadataRetriever()
                 retriever.setDataSource(localFile!!.absolutePath)
-                val bmp = retriever.getFrameAtTime(500_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
+                val bmp = retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                     ?: retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
                     ?: retriever.frameAtTime
                 retriever.release()
