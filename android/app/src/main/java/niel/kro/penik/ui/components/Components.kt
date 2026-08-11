@@ -1303,12 +1303,8 @@ private fun FileAttachmentContent(attachment: FileAttachment, textColor: Color) 
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable {
-                                if (localFile != null) {
-                                    showVideoViewer = true
-                                } else {
-                                    openFile()
-                                }
+                            .clickable(enabled = localFile != null) {
+                                showVideoViewer = true
                             },
                         contentAlignment = Alignment.Center
                     ) {
