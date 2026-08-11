@@ -11,7 +11,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.content.Context
+import android.net.Uri
 import niel.kro.penik.data.network.api.ApiService
+import niel.kro.penik.data.repository.AttachmentManager
 import niel.kro.penik.data.repository.ChatRepository
 import niel.kro.penik.data.repository.MessageRepository
 import niel.kro.penik.data.repository.PresenceBus
@@ -37,6 +40,7 @@ class ChatRoomViewModel @Inject constructor(
     private val deleteMessageUseCase: DeleteMessageUseCase,
     private val apiService: ApiService,
     private val tokenStorage: SecureTokenStorage,
+    private val attachmentManager: AttachmentManager,
     val messageRepository: MessageRepository,
     val chatRepository: ChatRepository,
     val groupRepository: GroupRepository
@@ -131,6 +135,19 @@ class ChatRoomViewModel @Inject constructor(
         if (text.isBlank()) return
         viewModelScope.launch {
             sendMessageUseCase(chatUserId, text, chatName, replyToMsgId)
+        }
+    }
+
+    fun sendMediaFile(context: Context, uri: Uri, caption: String = "", onError: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            attachmentManager.uploadAndPrepareAttachment(context, uri, caption)
+                .onSuccess { jsonPayload ->
+                    // Send file JSON payload as the message text via existing WebSocket pipeline
+                    sendMessageUseCase(chatUserId, jsonPayload, chatName, null)
+                }
+                .onFailure { err ->
+                    onError(err.message ?: "Ошибка отправки файла")
+                }
         }
     }
 

@@ -88,6 +88,9 @@ import niel.kro.penik.ui.theme.TextMuted
 import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.ChatRoomViewModel
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.ui.platform.LocalContext
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -615,6 +618,22 @@ fun ChatRoomScreen(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
+                    // Attachment picker button
+                    val attachLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.GetContent()
+                    ) { uri ->
+                        if (uri != null) {
+                            viewModel.sendMediaFile(context, uri)
+                        }
+                    }
+                    IconButton(onClick = { attachLauncher.launch("*/*") }) {
+                        Icon(
+                            imageVector = Icons.Default.AttachFile,
+                            contentDescription = "Прикрепить файл",
+                            tint = TextMuted
+                        )
+                    }
+
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = {

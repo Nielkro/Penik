@@ -174,6 +174,23 @@ class E2EECrypto {
         return cipher.doFinal(ciphertextAndTag)
     }
 
+    /** Encrypts file payload using ChaCha20-Poly1305 matching the browser format: nonce (12 bytes) + ciphertext + Poly1305 tag. */
+    fun encryptFileChaCha20(plaintext: ByteArray): EncryptedFileResult {
+        val keyBytes = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+        val nonce = ByteArray(12).also { java.security.SecureRandom().nextBytes(it) }
+        val cipher = try {
+            Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
+        } catch (_: GeneralSecurityException) {
+            Cipher.getInstance("ChaCha20-Poly1305")
+        }
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(keyBytes, "ChaCha20"), IvParameterSpec(nonce))
+        val ciphertextAndTag = cipher.doFinal(plaintext)
+        val encryptedBytes = ByteArray(12 + ciphertextAndTag.size)
+        System.arraycopy(nonce, 0, encryptedBytes, 0, 12)
+        System.arraycopy(ciphertextAndTag, 0, encryptedBytes, 12, ciphertextAndTag.size)
+        return EncryptedFileResult(encryptedBytes, keyBytes)
+    }
+
     private fun hkdfDerive(salt: ByteArray, ikm: ByteArray, info: ByteArray, length: Int): ByteArray {
         val macExtract = Mac.getInstance("HmacSHA256")
         val saltKey = if (salt.isEmpty()) {
@@ -246,3 +263,8 @@ class E2EECrypto {
         return SecretKeySpec(key.encoded, "AES")
     }
 }
+
+data class EncryptedFileResult(
+    val encryptedBytes: ByteArray,
+    val keyBytes: ByteArray
+)

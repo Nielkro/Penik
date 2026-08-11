@@ -15,6 +15,7 @@ import niel.kro.penik.data.local.database.DatabaseEncryption
 import niel.kro.penik.data.local.database.PenikDatabase
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.websocket.WebSocketManager
+import niel.kro.penik.data.repository.AttachmentManager
 import niel.kro.penik.data.repository.SecureTokenStorage
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -147,5 +148,9 @@ object CryptoModule {
         return GroupCrypto(e2eeCrypto)
     }
 
-
+    @Provides
+    @Singleton
+    fun provideAttachmentManager(apiService: ApiService, e2eeCrypto: E2EECrypto): AttachmentManager {
+        return AttachmentManager(apiService, e2eeCrypto)
+    }
 }

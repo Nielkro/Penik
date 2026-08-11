@@ -139,4 +139,10 @@ interface ApiService {
     suspend fun uploadAvatar(
         @Part avatar: MultipartBody.Part
     ): Response<Unit>
+
+    @Multipart
+    @POST("attachments/vk-upload")
+    suspend fun uploadVKAttachment(
+        @Part file: MultipartBody.Part
+    ): Response<VkUploadResponse>
 }
