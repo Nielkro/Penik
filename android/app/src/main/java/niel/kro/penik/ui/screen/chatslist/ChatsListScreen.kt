@@ -198,8 +198,7 @@ fun ChatsListContent(
                                 } else {
                                     onChatClick(item.id, item.name)
                                 }
-                            },
-                            onAvatarClick = { url -> fullscreenAvatarUrl = url }
+                            }
                         )
                     }
                 }
@@ -232,8 +231,7 @@ fun ChatsListContent(
                                 } else {
                                     onChatClick(item.id, item.name)
                                 }
-                            },
-                            onAvatarClick = { url -> fullscreenAvatarUrl = url }
+                            }
                         )
                     }
                 }
@@ -281,8 +279,7 @@ fun ChatsListContent(
                                 } else {
                                     onChatClick(item.id, item.name)
                                 }
-                            },
-                            onAvatarClick = { url -> fullscreenAvatarUrl = url }
+                            }
                         )
                     }
                 }
