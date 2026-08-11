@@ -339,7 +339,7 @@ function renderFileCard(container, fileMsg) {
       videoEl.poster = f.thumb.startsWith("data:") ? f.thumb : "data:image/jpeg;base64," + f.thumb;
     }
     videoEl.addEventListener("loadedmetadata", () => {
-      if (!f.thumb && videoEl.duration) videoEl.currentTime = 0.5;
+      if (!f.thumb && videoEl.duration) videoEl.currentTime = 0;
     });
 
     // Appended up front so a fallback card replacing it later cannot be undone
