@@ -105,7 +105,7 @@ object NetworkModule {
                 chain.proceed(request.build())
             }
             .addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BODY
+                level = HttpLoggingInterceptor.Level.NONE
             })
             .addInterceptor { chain ->
                 val response = chain.proceed(chain.request())
