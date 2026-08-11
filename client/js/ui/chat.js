@@ -171,12 +171,12 @@ export async function renderChatList(container) {
         }));
       } else {
         const avatarEl = avatar(entry, 48, avatarUpdateTimestamps.get(String(entry.user_id)));
-        avatarEl.style.cursor = "pointer";
         avatarEl.addEventListener("click", (e) => {
-          e.stopPropagation();
           const img = avatarEl.querySelector("img");
-          const src = (img && img.src) || `/api/v1/avatar/${entry.user_id}`;
-          showFullscreenImage(src, entry.name || entry.nickname || "");
+          if (img) {
+            e.stopPropagation();
+            showFullscreenImage(img.src, entry.name || entry.nickname || "");
+          }
         });
         const item = el("li", { class: "chatlist-item" },
           avatarEl,
