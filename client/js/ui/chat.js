@@ -22,13 +22,23 @@ export const avatarUpdateTimestamps = new Map();
 
 export function getMessagePreviewInfo(plaintext) {
   if (!plaintext) return { text: "", thumb: null, isMedia: false };
-  if (typeof plaintext === "string" && plaintext.startsWith("{")) {
+  let prefix = "";
+  let payloadStr = typeof plaintext === "string" ? plaintext.trim() : "";
+
+  // Handle "Sender: {"v":1,...}" prefix in group preview
+  const colonMatch = payloadStr.match(/^([^:]+):\s*(\{.*)$/s);
+  if (colonMatch) {
+    prefix = colonMatch[1] + ": ";
+    payloadStr = colonMatch[2];
+  }
+
+  if (payloadStr.startsWith("{")) {
     try {
-      const parsed = JSON.parse(plaintext);
+      const parsed = JSON.parse(payloadStr);
       if (parsed.type === "fwd") {
         const fromPrefix = parsed.from ? `↪ ${parsed.from}: ` : "↪ Переслано: ";
         const inner = getMessagePreviewInfo(parsed.text || "");
-        return { text: fromPrefix + inner.text, thumb: inner.thumb, isMedia: inner.isMedia };
+        return { text: prefix + fromPrefix + inner.text, thumb: inner.thumb, isMedia: inner.isMedia };
       }
       if (parsed.type === "file" && (parsed.file || parsed.url)) {
         const fileObj = parsed.file || parsed;
@@ -36,9 +46,9 @@ export function getMessagePreviewInfo(plaintext) {
         const isVideo = (fileObj.mime || "").startsWith("video/");
         let text = parsed.text || "";
         if (!text) {
-          if (isImage) text = "Фотография";
-          else if (isVideo) text = "Видео";
-          else text = fileObj.name || "Файл";
+          if (isImage) text = "📷 Фото";
+          else if (isVideo) text = "🎬 Видео";
+          else text = fileObj.name ? `📎 ${fileObj.name}` : "📎 Файл";
         }
         if (parsed.fwd_from) {
           text = `↪ ${parsed.fwd_from}: ${text}`;
@@ -47,12 +57,15 @@ export function getMessagePreviewInfo(plaintext) {
         if (thumb && !thumb.startsWith("data:")) {
           thumb = "data:image/jpeg;base64," + thumb;
         }
-        return { text, thumb, isMedia: true };
+        return { text: prefix + text, thumb, isMedia: true };
       }
-      return { text: parsed.text || plaintext, thumb: null, isMedia: false };
+      if (parsed.text) {
+        const inner = getMessagePreviewInfo(parsed.text);
+        return { text: prefix + inner.text, thumb: inner.thumb, isMedia: inner.isMedia };
+      }
     } catch (e) {}
   }
-  return { text: plaintext, thumb: null, isMedia: false };
+  return { text: prefix + payloadStr, thumb: null, isMedia: false };
 }
 
 export function getMessagePreview(plaintext) {
