@@ -533,11 +533,6 @@ export async function decryptIncoming(frame) {
       groupId, version, messageId, Number(frame.created_at),
     );
     text = new TextDecoder().decode(pt);
-    // Log details of the decrypted incoming group message
-    const grp = await dbGetGroup(groupId);
-    const groupName = grp ? grp.name : `Группа ${groupId}`;
-    const keyHex = Array.from(groupKey).map(b => b.toString(16).padStart(2, '0')).join('');
-    console.log(`[groups] Пришло новое сообщение в группу "${groupName}": "${text}" (использован ключ v${version}: ${keyHex})`);
   } catch (e) {
     console.error('[groups] decrypt/AAD failed for', groupId, messageId, e.message);
     return null;
