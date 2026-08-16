@@ -44,6 +44,7 @@ import {
 } from './storage.js';
 import { ws, OP } from './ws.js';
 import { loadPrivateIK } from './app.js';
+import { verifyPeerIdentityKey } from './pinning.js';
 import { groupAvatarUpdateTimestamps } from './ui/components.js';
 
 /* ── base64url helpers (server uses RawURLEncoding for group blobs) ── */
@@ -104,7 +105,13 @@ async function fetchDeviceKeys(userIds) {
     }
     for (const d of bundle?.devices || []) {
       if (!d.identity_key) continue;
-      result.push({ device_id: Number(d.device_id), ik_pub: stdB64Decode(d.identity_key) });
+      const ikPub = stdB64Decode(d.identity_key);
+      // TOFU pinning: devices presenting a changed identity key are skipped
+      // until the user accepts the new key, so no group key material is
+      // wrapped for an untrusted device.
+      const status = await verifyPeerIdentityKey(uid, d.device_id, ikPub);
+      if (status === 'changed') continue;
+      result.push({ device_id: Number(d.device_id), ik_pub: ikPub });
     }
   }
   return result;

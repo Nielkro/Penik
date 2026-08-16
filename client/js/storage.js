@@ -661,3 +661,20 @@ export async function getCachedMedia(url) {
   return URL.createObjectURL(entry.blob);
 }
 
+
+/* ── TOFU identity key pins ──
+   Peer devices' public identity keys are pinned on first sight in the
+   e2ee_keys store: id = `pinned_ik:{user_id}:{device_id}` → { id, ik }
+   where ik is base64. A later change must be accepted by the user before
+   messages are encrypted to / decrypted from that device again. */
+
+export async function getPinnedIK(userId, deviceId) {
+  await openDB();
+  const record = await get(tx("e2ee_keys"), `pinned_ik:${userId}:${deviceId}`);
+  return record ? record.ik : null;
+}
+
+export async function savePinnedIK(userId, deviceId, ikB64) {
+  await openDB();
+  return put(tx("e2ee_keys", "readwrite"), { id: `pinned_ik:${userId}:${deviceId}`, ik: ikB64 });
+}
