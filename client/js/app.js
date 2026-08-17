@@ -19,7 +19,7 @@ import {
   encryptKeyBackup, decryptKeyBackup, derivePublicKey, generateKeyPair
 } from './crypto.js';
 import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
-import { verifyPeerIdentityKey, IdentityKeyChangedError } from './pinning.js';
+import { verifyPeerIdentityKey } from './pinning.js';
 import { emitPresenceUpdate, emitTypingUpdate } from './presence.js';
 import { getCachedMedia } from './storage.js';
 
@@ -900,15 +900,11 @@ export async function decryptMessagePayload(payload) {
   const nonce = toUint8Array(payload.nonce);
   const fromIdentityKey = toUint8Array(payload.from_identity_key);
 
-  // TOFU pinning: refuse messages whose sender device presents a different
-  // identity key than the pinned one until the user accepts the change.
+  // TOFU pinning: verify and pin identity key; displays warning on change.
   const pinUserId = Number(payload.from_user_id ?? payload.sender_user_id);
   const pinDeviceId = Number(payload.from_device_id ?? payload.sender_device_id);
   if (pinUserId && pinDeviceId && fromIdentityKey.length) {
-    const status = await verifyPeerIdentityKey(pinUserId, pinDeviceId, fromIdentityKey);
-    if (status === 'changed') {
-      throw new IdentityKeyChangedError(pinUserId, pinDeviceId);
-    }
+    await verifyPeerIdentityKey(pinUserId, pinDeviceId, fromIdentityKey);
   }
 
   const myPrivateIK = await loadPrivateIK();
@@ -951,12 +947,8 @@ export async function encryptMessagePayload(text, recipientUserId) {
   for (const device of allDevices) {
     const recipientIKPub = new Uint8Array(atob(device.identity_key).split("").map(c => c.charCodeAt(0)));
 
-    // TOFU pinning: block sending to a device whose identity key changed
-    // without user acceptance.
-    const status = await verifyPeerIdentityKey(device.owner_user_id, device.device_id, recipientIKPub);
-    if (status === 'changed') {
-      throw new IdentityKeyChangedError(device.owner_user_id, device.device_id);
-    }
+    // TOFU pinning: verify and pin identity key; displays warning on change.
+    await verifyPeerIdentityKey(device.owner_user_id, device.device_id, recipientIKPub);
 
     const secret = await deriveSharedSecret(myPrivateIK, recipientIKPub);
     const { ciphertext, salt, nonce } = await e2eeEncrypt(text, secret, "penik-pairwise-message-v1");

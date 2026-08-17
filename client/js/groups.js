@@ -106,11 +106,8 @@ async function fetchDeviceKeys(userIds) {
     for (const d of bundle?.devices || []) {
       if (!d.identity_key) continue;
       const ikPub = stdB64Decode(d.identity_key);
-      // TOFU pinning: devices presenting a changed identity key are skipped
-      // until the user accepts the new key, so no group key material is
-      // wrapped for an untrusted device.
-      const status = await verifyPeerIdentityKey(uid, d.device_id, ikPub);
-      if (status === 'changed') continue;
+      // TOFU pinning: verify and pin identity key; displays warning on change.
+      await verifyPeerIdentityKey(uid, d.device_id, ikPub);
       result.push({ device_id: Number(d.device_id), ik_pub: ikPub });
     }
   }
