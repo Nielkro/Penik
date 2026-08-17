@@ -1,21 +1,16 @@
 // TOFU (trust-on-first-use) pinning of peer devices' public identity keys.
 //
 // The first X25519 identity key observed for a (user_id, device_id) pair is
-// pinned in IndexedDB. If the server later presents a different key for that
-// pair — a possible server-side key substitution or MITM — decryption and
-// encryption are blocked until the user explicitly accepts the new key in a
-// confirmation dialog. This turns the manual safety-number check into an
-// automatic change detector.
+// pinned in IndexedDB. If the key changes (e.g. device reinstall or re-login),
+// a warning notification is displayed to inform the user and the pin is updated,
+// without blocking message delivery or encryption.
 
 import { encodeKey } from './crypto.js';
 import { getPinnedIK, savePinnedIK } from './storage.js';
-import { showConfirmModal, showToast } from './ui/components.js';
+import { showToast } from './ui/components.js';
 
-// In-memory single-flight: concurrent checks for the same device share one
-// dialog instead of stacking modals (e.g. during history sync).
-const _inflight = new Map();
-// Keys the user already declined this session: do not re-prompt.
-const _declined = new Set();
+// Track keys we've already warned about this session to avoid repeated toast spam.
+const _warned = new Set();
 
 export class IdentityKeyChangedError extends Error {
   constructor(userId, deviceId) {
@@ -32,9 +27,8 @@ function pinId(userId, deviceId) {
 // verifyPeerIdentityKey returns one of:
 //   'new'      — key pinned (first sight)
 //   'ok'       — key matches the pin
-//   'accepted' — key differed, user accepted it, pin updated
-//   'changed'  — key differed, user declined (or non-interactive); NOT trusted
-export async function verifyPeerIdentityKey(userId, deviceId, ikPubBytes, { interactive = true } = {}) {
+//   'updated'  — key differed, warning issued, pin updated to the new key
+export async function verifyPeerIdentityKey(userId, deviceId, ikPubBytes) {
   const key = pinId(userId, deviceId);
   const presented = encodeKey(ikPubBytes);
 
@@ -45,39 +39,16 @@ export async function verifyPeerIdentityKey(userId, deviceId, ikPubBytes, { inte
   }
   if (pinned === presented) return 'ok';
 
-  if (_declined.has(key)) return 'changed';
+  // Key changed: update pin and notify the user with a warning toast
+  await savePinnedIK(userId, deviceId, presented);
 
-  if (!interactive) return 'changed';
-
-  if (_inflight.has(key)) return _inflight.get(key);
-
-  const promise = (async () => {
-    // Let listeners (chat UI) react to the change too.
+  if (!_warned.has(key)) {
+    _warned.add(key);
     window.dispatchEvent(new CustomEvent('peer-ik-changed', {
       detail: { userId: Number(userId), deviceId: Number(deviceId) },
     }));
-
-    const accepted = await showConfirmModal(
-      'Ключ устройства изменился',
-      `Публичный ключ пользователя (устройство №${Number(deviceId)}) изменился. Это может быть переустановка устройства — либо подмена ключей сервером. Рекомендуется сверить safety number лично. Принять новый ключ?`,
-      'Принять новый ключ',
-      'Отклонить',
-      true,
-    );
-    if (accepted) {
-      await savePinnedIK(userId, deviceId, presented);
-      showToast('Новый ключ устройства принят', 'warning');
-      return 'accepted';
-    }
-    _declined.add(key);
-    showToast('Сообщения с этим устройством заблокированы: ключ не принят', 'error');
-    return 'changed';
-  })();
-
-  _inflight.set(key, promise);
-  try {
-    return await promise;
-  } finally {
-    _inflight.delete(key);
+    showToast(`Ключ безопасности пользователя (устройство №${Number(deviceId)}) изменился`, 'warning');
   }
+
+  return 'updated';
 }
