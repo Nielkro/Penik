@@ -11,6 +11,8 @@ import (
 type deviceResponse struct {
 	ID          int64  `json:"id"`
 	DeviceName  string `json:"device_name"`
+	Platform    string `json:"platform"`
+	Location    string `json:"location"`
 	CreatedAt   int64  `json:"created_at"`
 	LastSeen    int64  `json:"last_seen"`
 	IsCurrent   bool   `json:"is_current"`
@@ -30,7 +32,7 @@ func ListDevices(database *db.DB) http.HandlerFunc {
 		}
 
 		rows, err := database.QueryContext(r.Context(),
-			`SELECT d.id, d.device_name, d.created_at, d.last_seen,
+			`SELECT d.id, d.device_name, d.platform, d.location, d.created_at, d.last_seen,
 			        COUNT(s.token) AS sessions_count
 			   FROM devices d
 			   LEFT JOIN sessions s ON s.device_id = d.id
@@ -46,7 +48,7 @@ func ListDevices(database *db.DB) http.HandlerFunc {
 		list := make([]deviceResponse, 0)
 		for rows.Next() {
 			var d deviceResponse
-			if err := rows.Scan(&d.ID, &d.DeviceName, &d.CreatedAt, &d.LastSeen, &d.SessionsCnt); err != nil {
+			if err := rows.Scan(&d.ID, &d.DeviceName, &d.Platform, &d.Location, &d.CreatedAt, &d.LastSeen, &d.SessionsCnt); err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}

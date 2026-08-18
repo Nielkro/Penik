@@ -22,6 +22,8 @@ type registerRequest struct {
 	Nickname       string   `json:"nickname"`
 	Password       string   `json:"password"`
 	DeviceName     string   `json:"device_name"`
+	Platform       string   `json:"platform"`
+	Location       string   `json:"location"`
 	RegistrationID int64    `json:"registration_id"`
 	IKPub          []byte   `json:"ik_pub"`
 	SPKPub         []byte   `json:"spk_pub"`
@@ -32,6 +34,8 @@ type loginRequest struct {
 	Nickname       string   `json:"nickname"`
 	Password       string   `json:"password"`
 	DeviceName     string   `json:"device_name"`
+	Platform       string   `json:"platform"`
+	Location       string   `json:"location"`
 	RegistrationID int64    `json:"registration_id"`
 	IKPub          []byte   `json:"ik_pub"`
 	SPKPub         []byte   `json:"spk_pub"`
@@ -116,8 +120,8 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		userID, _ := res.LastInsertId()
 
 		devRes, err := tx.ExecContext(r.Context(),
-			`INSERT INTO devices(user_id,device_name,registration_id,created_at,last_seen) VALUES(?,?,?,?,?)`,
-			userID, req.DeviceName, req.RegistrationID, now, now)
+			`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen) VALUES(?,?,?,?,?,?,?)`,
+			userID, req.DeviceName, resolvePlatform(req.Platform, r), req.Location, req.RegistrationID, now, now)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -245,8 +249,8 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		err = lookupErr
 		if err == sql.ErrNoRows {
 			devRes, insertErr := tx.ExecContext(r.Context(),
-				`INSERT INTO devices(user_id,device_name,registration_id,created_at,last_seen) VALUES(?,?,?,?,?)`,
-				userID, req.DeviceName, req.RegistrationID, now, now)
+				`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen) VALUES(?,?,?,?,?,?,?)`,
+				userID, req.DeviceName, resolvePlatform(req.Platform, r), req.Location, req.RegistrationID, now, now)
 			if insertErr != nil {
 				loginInternalError(w, "insert device", insertErr)
 				return
@@ -262,9 +266,14 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		} else {
 			_, err = tx.ExecContext(r.Context(),
 				`UPDATE devices
-				 SET registration_id=?, last_seen=?
+				 SET registration_id=?, last_seen=?,
+				     platform=CASE WHEN ?<>'' THEN ? ELSE platform END,
+				     location=CASE WHEN ?<>'' THEN ? ELSE location END
 				 WHERE id=?`,
-				req.RegistrationID, now, deviceID)
+				req.RegistrationID, now,
+				resolvePlatform(req.Platform, r), resolvePlatform(req.Platform, r),
+				req.Location, req.Location,
+				deviceID)
 			if err != nil {
 				loginInternalError(w, "update device", err)
 				return

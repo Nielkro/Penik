@@ -67,8 +67,11 @@ export function renderDevices(container) {
     }
     for (const d of devices) {
       const title = el("div", { style: "font-size:15px;color:var(--text);font-weight:500;" },
-        d.device_name || "Устройство",
+        d.platform || d.device_name || "Устройство",
         d.is_current ? el("span", { style: "margin-left:8px;font-size:11px;color:var(--success);" }, "· это устройство") : ""
+      );
+      const locationLine = el("div", { style: "font-size:12px;color:var(--text-muted);margin-top:2px;" },
+        d.location ? `📍 ${d.location}` : "📍 Местоположение неизвестно"
       );
       const meta = el("div", { style: "font-size:12px;color:var(--text-muted);margin-top:2px;" },
         `Активно: ${formatFullTime(d.last_seen * 1000)}`,
@@ -78,7 +81,7 @@ export function renderDevices(container) {
       );
       list.appendChild(el("div", {
         style: "padding:12px 16px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;"
-      }, title, meta));
+      }, title, locationLine, meta));
     }
   }
 

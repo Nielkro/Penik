@@ -531,6 +531,42 @@ export function getPersistentDeviceName() {
   return name;
 }
 
+// getClientPlatform builds a human-readable OS + browser label for this browser,
+// e.g. "Linux · Chrome" or "Windows · Firefox", used to describe the device on
+// the user's devices screen.
+export function getClientPlatform() {
+  const ua = navigator.userAgent || "";
+  let os = "";
+  if (/Android/i.test(ua)) os = "Android";
+  else if (/Windows/i.test(ua)) os = "Windows";
+  else if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+  else if (/Mac OS X|Macintosh/i.test(ua)) os = "macOS";
+  else if (/Linux/i.test(ua)) os = "Linux";
+
+  let browser = "";
+  if (/Firefox\//i.test(ua)) browser = "Firefox";
+  else if (/Edg\//i.test(ua)) browser = "Edge";
+  else if (/Chrome\//i.test(ua)) browser = "Chrome";
+  else if (/Safari\//i.test(ua)) browser = "Safari";
+
+  if (os && browser) return `${os} · ${browser}`;
+  return os || browser || "Веб-клиент";
+}
+
+// getClientLocation derives a coarse location label from the browser time zone,
+// e.g. "Europe/Moscow" becomes "Moscow". This avoids requesting geolocation
+// permission while still giving the user a recognizable place hint.
+export function getClientLocation() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    if (!tz) return "";
+    const parts = tz.split("/");
+    return parts[parts.length - 1].replace(/_/g, " ");
+  } catch (e) {
+    return "";
+  }
+}
+
 // ── Groups ──
 
 export async function saveGroup(group) {

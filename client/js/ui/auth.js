@@ -1,5 +1,5 @@
 import { apiPost, apiGet, setToken, getUserById, getToken } from "../api.js";
-import { getPersistentDeviceName, saveIdentityKey, saveIKPrivate, saveIKPublic, getIKPrivate, getIKPublic } from "../storage.js";
+import { getPersistentDeviceName, getClientPlatform, getClientLocation, saveIdentityKey, saveIKPrivate, saveIKPublic, getIKPrivate, getIKPublic } from "../storage.js";
 import { navigate, setCurrentUser, restoreE2EEKeys, backupE2EEKeys } from "../app.js";
 import { el, showToast, spinner, avatar, showConfirmModal, showPinModal } from "./components.js";
 import { generateKeyPair, encryptIdentityEnvelope, derivePublicKey } from "../crypto.js";
@@ -370,6 +370,8 @@ export function renderAuth(container, initialMode = "welcome") {
             nickname: state.nickname,
             password: state.password,
             device_name: getPersistentDeviceName(),
+            platform: getClientPlatform(),
+            location: getClientLocation(),
             ik_pub: keysData.ikPub,
           });
 
@@ -513,6 +515,8 @@ export function renderAuth(container, initialMode = "welcome") {
             nickname: state.nickname,
             password: password,
             device_name: getPersistentDeviceName(),
+            platform: getClientPlatform(),
+            location: getClientLocation(),
           };
 
           // If device already has local key pair, include it
