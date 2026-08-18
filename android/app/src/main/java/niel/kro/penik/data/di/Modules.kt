@@ -92,7 +92,7 @@ object NetworkModule {
      * in a release build. Only debug builds emit request/response bodies.
      */
     internal fun httpLogLevel(isDebug: Boolean): HttpLoggingInterceptor.Level =
-        if (isDebug) HttpLoggingInterceptor.Level.BODY else HttpLoggingInterceptor.Level.NONE
+        if (isDebug) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
 
     @Provides
     @Singleton
