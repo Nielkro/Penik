@@ -31,6 +31,7 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
+        Log.d("PenikFCM", "onNewToken: $token")
         scope.launch {
             tokenStorage.saveFcmToken(token)
             runCatching {
@@ -41,9 +42,13 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
+        Log.d("PenikFCM", "onMessageReceived from: ${message.from}, data: ${message.data}")
         
         val data = message.data
-        if (data.isEmpty()) return
+        if (data.isEmpty()) {
+            Log.d("PenikFCM", "Empty data payload")
+            return
+        }
 
         scope.launch {
             val type = data["type"]
@@ -51,10 +56,17 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
             val timestamp = data["timestamp"]?.toLongOrNull() ?: System.currentTimeMillis()
 
             if (type == "group") {
-                val groupId = data["group_id"]?.toLongOrNull() ?: return@launch
-                val senderUserId = data["sender_user_id"]?.toLongOrNull() ?: return@launch
+                val groupId = data["group_id"]?.toLongOrNull() ?: run {
+                    Log.d("PenikFCM", "Missing group_id")
+                    return@launch
+                }
+                val senderUserId = data["sender_user_id"]?.toLongOrNull() ?: run {
+                    Log.d("PenikFCM", "Missing sender_user_id")
+                    return@launch
+                }
                 val groupName = data["group_name"]
                 val senderName = data["sender_name"]
+                Log.d("PenikFCM", "Showing group notification for group $groupId from $senderUserId")
                 appNotificationManager.showGroupMessageNotification(
                     groupId = groupId,
                     senderUserId = senderUserId,
@@ -64,8 +76,12 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
                     overrideSenderName = senderName
                 )
             } else {
-                val chatUserId = data["chat_user_id"]?.toLongOrNull() ?: return@launch
+                val chatUserId = data["chat_user_id"]?.toLongOrNull() ?: run {
+                    Log.d("PenikFCM", "Missing chat_user_id")
+                    return@launch
+                }
                 val senderName = data["sender_name"]
+                Log.d("PenikFCM", "Showing direct notification for user $chatUserId")
                 appNotificationManager.showDirectMessageNotification(
                     chatUserId = chatUserId,
                     rawText = text,
