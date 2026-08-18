@@ -88,6 +88,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
     private val chatRepository: ChatRepository,
     private val groupRepository: GroupRepository,
     private val webSocketManager: WebSocketManager,
+    private val tokenStorage: niel.kro.penik.data.repository.SecureTokenStorage,
     private val appNotificationManager: niel.kro.penik.ui.notification.AppNotificationManager
 ) {
     suspend operator fun invoke(event: WebSocketEvent) {
@@ -123,9 +124,10 @@ class HandleWebSocketEventUseCase @Inject constructor(
             }
             is WebSocketEvent.OfflineBatch -> {
                 messageRepository.handleOfflineBatch(event)
+                val myId = tokenStorage.getUserId()
                 event.msgs.forEach { msg ->
                     chatRepository.updateLastMessage(msg.chatUserId, msg.text, msg.ts)
-                    if (!msg.sentByMe) {
+                    if (msg.fromUserId != myId) {
                         appNotificationManager.showDirectMessageNotification(msg.chatUserId, msg.text, msg.ts)
                     }
                 }
@@ -134,9 +136,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 val decrypted = messageRepository.handleOfflineBatchEncrypted(event)
                 decrypted.forEach { msg ->
                     chatRepository.updateLastMessage(msg.chatUserId, msg.text, msg.ts)
-                    if (!msg.sentByMe) {
-                        appNotificationManager.showDirectMessageNotification(msg.chatUserId, msg.text, msg.ts)
-                    }
+                    appNotificationManager.showDirectMessageNotification(msg.chatUserId, msg.text, msg.ts)
                 }
             }
             is WebSocketEvent.ChatPurge -> {
