@@ -11,8 +11,12 @@ class PenikApplication : Application() {
     @Inject
     lateinit var webSocketEventCoordinator: WebSocketEventCoordinator
 
+    @Inject
+    lateinit var appNotificationManager: niel.kro.penik.ui.notification.AppNotificationManager
+
     override fun onCreate() {
         super.onCreate()
+        appNotificationManager.createNotificationChannels()
         webSocketEventCoordinator.start()
     }
 }

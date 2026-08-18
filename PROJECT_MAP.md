@@ -93,6 +93,9 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/StartupViewModel.kt` — Determines the initial navigation route based on authorization state.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/DevicesViewModel.kt` — Loads the user's own device list for the devices screen.
 - `android/app/src/main/java/niel/kro/penik/ui/components/Components.kt` — Reusable Compose UI components, including parsing and rendering encrypted file-message payloads as local images with a zoomable full-screen viewer, aspect-ratio-aware inline Media3 video players without attachment labels, or downloadable file attachments.
+- `android/app/src/main/java/niel/kro/penik/ui/notification/AppNotificationManager.kt` — Manages notification channels, builds rich MessagingStyle notifications with colored initials avatars and formatted previews, handles summary grouping, and suppresses notifications for the currently active chat.
+- `android/app/src/main/java/niel/kro/penik/ui/notification/DirectReplyReceiver.kt` — BroadcastReceiver handling inline direct replies from the notification shade without opening the app.
+- `android/app/src/main/java/niel/kro/penik/ui/notification/MarkAsReadReceiver.kt` — BroadcastReceiver for the notification "Mark as read" action clearing unread counters and dismissing notifications.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Theme.kt` — Material/Compose app theme and color scheme.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/ThemeManager.kt` — SharedPreferences-backed light/dark theme state exposed as a StateFlow.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Color.kt` — Android UI color palette.
