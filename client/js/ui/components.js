@@ -1,6 +1,8 @@
 import { decodeKey, decryptFileChaCha20 } from "../crypto.js";
 import { getToken } from "../api.js";
-import { getCachedMedia, saveCachedMedia } from "../storage.js";
+import { getCachedMedia, saveCachedMedia, getAllContacts, getAllGroups } from "../storage.js";
+import { sendGroupMessage } from "../groups.js";
+import { sendDirectMessageToUser } from "./chat.js";
 
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -919,7 +921,6 @@ function showMsgActionMenu(x, y, onCopy, onReply, onDelete, onForward) {
 }
 
 export async function showForwardModal(rawMsgText, senderName) {
-  const { getAllContacts, getAllGroups } = await import("../storage.js");
   const contacts = await getAllContacts();
   const groups = await getAllGroups();
 
@@ -1036,10 +1037,8 @@ async function executeForward(target, rawMsgText, senderName) {
 
   try {
     if (target.type === "group") {
-      const { sendGroupMessage } = await import("../groups.js");
       await sendGroupMessage(target.id, forwardedPayload);
     } else {
-      const { sendDirectMessageToUser } = await import("./chat.js");
       await sendDirectMessageToUser(target.id, forwardedPayload);
     }
     showToast("Сообщение переслано");
