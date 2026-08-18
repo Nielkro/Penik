@@ -19,6 +19,8 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
 import androidx.core.content.FileProvider
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -146,10 +148,12 @@ class AppNotificationManager @Inject constructor(
         val previewText = formatMessagePreview(rawText)
         val avatarUrl = ApiConfig.getUserAvatarUrl(chatUserId)
         val senderAvatarBitmap = resolveAvatarBitmap(chatName, chatUserId, customAvatarBitmap, avatarUrl)
+        val senderIcon = IconCompat.createWithBitmap(senderAvatarBitmap)
         val senderPerson = Person.Builder()
             .setName(chatName)
             .setKey(chatUserId.toString())
-            .setIcon(IconCompat.createWithBitmap(senderAvatarBitmap))
+            .setIcon(senderIcon)
+            .setImportant(true)
             .build()
         val myPerson = Person.Builder().setName("Вы").setKey(myUserId.toString()).build()
 
@@ -169,6 +173,9 @@ class AppNotificationManager @Inject constructor(
         }
 
         val messagingStyle = NotificationCompat.MessagingStyle(myPerson)
+            .setConversationTitle(null)
+            .setGroupConversation(false)
+
         synchronized(messagesList) {
             for (msg in messagesList) {
                 val messageObj = NotificationCompat.MessagingStyle.Message(msg.text, msg.timestamp, msg.senderPerson)
@@ -181,6 +188,7 @@ class AppNotificationManager @Inject constructor(
 
         // Tap action: open MainActivity and navigate to ChatRoom
         val contentIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(EXTRA_CHAT_USER_ID, chatUserId)
             putExtra(EXTRA_CHAT_NAME, chatName)
@@ -191,6 +199,22 @@ class AppNotificationManager @Inject constructor(
             contentIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+
+        // Register Dynamic Shortcut for Android 11+ Conversation Notification styling
+        val shortcutId = "conversation_direct_$chatUserId"
+        try {
+            val shortcut = ShortcutInfoCompat.Builder(context, shortcutId)
+                .setShortLabel(chatName)
+                .setLongLabel(chatName)
+                .setPerson(senderPerson)
+                .setIcon(senderIcon)
+                .setIntent(contentIntent)
+                .setLongLived(true)
+                .build()
+            ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
+        } catch (e: Exception) {
+            // Ignore shortcut failures on older Android versions
+        }
 
         // Direct reply action
         val remoteInput = RemoteInput.Builder(KEY_TEXT_REPLY)
@@ -229,9 +253,11 @@ class AppNotificationManager @Inject constructor(
         ).build()
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_MESSAGES)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setLargeIcon(senderAvatarBitmap)
             .setStyle(messagingStyle)
+            .setShortcutId(shortcutId)
+            .addPerson(senderPerson)
             .setContentIntent(contentPendingIntent)
             .addAction(replyAction)
             .addAction(readAction)
@@ -274,10 +300,12 @@ class AppNotificationManager @Inject constructor(
         val previewText = formatMessagePreview(rawText)
         val avatarUrl = ApiConfig.getUserAvatarUrl(senderUserId)
         val senderAvatarBitmap = resolveAvatarBitmap(senderName, senderUserId, customAvatarBitmap, avatarUrl)
+        val senderIcon = IconCompat.createWithBitmap(senderAvatarBitmap)
         val senderPerson = Person.Builder()
             .setName(senderName)
             .setKey(senderUserId.toString())
-            .setIcon(IconCompat.createWithBitmap(senderAvatarBitmap))
+            .setIcon(senderIcon)
+            .setImportant(true)
             .build()
         val myPerson = Person.Builder().setName("Вы").setKey(myUserId.toString()).build()
 
@@ -312,6 +340,7 @@ class AppNotificationManager @Inject constructor(
 
         // Tap action: open MainActivity and navigate to GroupChat
         val contentIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(EXTRA_GROUP_ID, groupId)
             putExtra(EXTRA_GROUP_NAME, groupName)
@@ -323,10 +352,28 @@ class AppNotificationManager @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        // Register Dynamic Shortcut for Android 11+ Conversation Group Notification styling
+        val shortcutId = "conversation_group_$groupId"
+        try {
+            val shortcut = ShortcutInfoCompat.Builder(context, shortcutId)
+                .setShortLabel(groupName)
+                .setLongLabel(groupName)
+                .setPerson(senderPerson)
+                .setIcon(senderIcon)
+                .setIntent(contentIntent)
+                .setLongLived(true)
+                .build()
+            ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
+        } catch (e: Exception) {
+            // Ignore shortcut failures on older Android versions
+        }
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_MESSAGES)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setLargeIcon(senderAvatarBitmap)
             .setStyle(messagingStyle)
+            .setShortcutId(shortcutId)
+            .addPerson(senderPerson)
             .setContentIntent(contentPendingIntent)
             .setAutoCancel(true)
             .setGroup(GROUP_KEY_MESSAGES)
@@ -354,7 +401,7 @@ class AppNotificationManager @Inject constructor(
         )
 
         val summaryNotification = NotificationCompat.Builder(context, CHANNEL_ID_MESSAGES)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setStyle(NotificationCompat.InboxStyle().setSummaryText("Новые сообщения"))
             .setGroup(GROUP_KEY_MESSAGES)
             .setGroupSummary(true)
