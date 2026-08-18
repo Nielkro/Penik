@@ -290,11 +290,11 @@ class MessageRepository @Inject constructor(
         val isSelfChat = toUserId == myId
 
         Log.d("PenikMsg", "sendMessage: clientMsgId=$clientMsgId, toUserId=$toUserId, isSelfChat=$isSelfChat, textLength=${text.length}")
-        // Resolve replyToMsgId to serverId if the parent message has a serverId stored locally
+        // Match web client reply logic: use parent's clientMsgId (UUID) or serverId
         val resolvedReplyToMsgId = if (!replyToMsgId.isNullOrBlank()) {
             val parentObj = messageDao.findMessageByLocalId(replyToMsgId) 
                 ?: messageDao.findMessageByServerId(replyToMsgId.toLongOrNull() ?: -1L)
-            parentObj?.serverId?.toString() ?: replyToMsgId
+            parentObj?.localId ?: parentObj?.serverId?.toString() ?: replyToMsgId
         } else null
 
         val entity = MessageEntity(
