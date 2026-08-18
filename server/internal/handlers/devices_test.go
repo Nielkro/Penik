@@ -159,3 +159,47 @@ func TestPlatformFromUserAgent(t *testing.T) {
 		}
 	}
 }
+
+func TestClientIP(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.RemoteAddr = "192.168.1.50:54321"
+	if ip := clientIP(req); ip != "192.168.1.50" {
+		t.Errorf("expected 192.168.1.50, got %q", ip)
+	}
+
+	req.Header.Set("X-Forwarded-For", "203.0.113.195, 10.0.0.1")
+	if ip := clientIP(req); ip != "203.0.113.195" {
+		t.Errorf("expected 203.0.113.195, got %q", ip)
+	}
+}
+
+func TestIsPrivateOrLocal(t *testing.T) {
+	cases := map[string]bool{
+		"127.0.0.1":       true,
+		"::1":             true,
+		"10.0.0.1":        true,
+		"192.168.1.1":     true,
+		"172.16.0.1":      true,
+		"192.0.2.1":       true,
+		"198.51.100.1":    true,
+		"203.0.113.1":     true,
+		"8.8.8.8":         false,
+		"1.1.1.1":         false,
+		"invalid-ip":      true,
+		"":                true,
+	}
+	for ip, want := range cases {
+		if got := isPrivateOrLocal(ip); got != want {
+			t.Errorf("isPrivateOrLocal(%q) = %v, want %v", ip, got, want)
+		}
+	}
+}
+
+func TestResolveLocationPrivateIP(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	if loc := resolveLocation("", req); loc != "Локальная сеть" {
+		t.Errorf("expected 'Локальная сеть', got %q", loc)
+	}
+}
+
