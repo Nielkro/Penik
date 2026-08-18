@@ -473,7 +473,11 @@ fun ChatRoomScreen(
                 ) {
                     items(messages, key = { it.localId }) { message ->
                         val parentMsg = message.replyToMsgId?.let { parentId ->
-                            messages.find { it.localId == parentId || it.serverId?.toString() == parentId }
+                            messages.find { 
+                                it.localId == parentId || 
+                                it.serverId?.toString() == parentId ||
+                                "server-${it.serverId}" == parentId
+                            }
                         }
                         val replyText = parentMsg?.text
                         val replySender = parentMsg?.let {
