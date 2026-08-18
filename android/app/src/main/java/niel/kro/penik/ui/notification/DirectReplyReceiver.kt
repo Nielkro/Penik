@@ -24,6 +24,7 @@ class DirectReplyReceiver : BroadcastReceiver() {
     @Inject lateinit var e2eeCrypto: E2EECrypto
     @Inject lateinit var tokenStorage: SecureTokenStorage
     @Inject lateinit var chatRepository: ChatRepository
+    @Inject lateinit var messageDao: niel.kro.penik.data.local.dao.MessageDao
     @Inject lateinit var appNotificationManager: AppNotificationManager
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -80,6 +81,20 @@ class DirectReplyReceiver : BroadcastReceiver() {
                 )
 
                 if (sendResp.isSuccessful) {
+                    val serverId = sendResp.body()?.msgId
+                    messageDao.insertMessage(
+                        niel.kro.penik.data.local.entity.MessageEntity(
+                            localId = clientMsgId,
+                            serverId = serverId,
+                            chatUserId = chatUserId,
+                            senderId = myId,
+                            text = replyText,
+                            timestamp = System.currentTimeMillis(),
+                            sentByMe = true,
+                            delivered = false,
+                            replyToMsgId = replyToMsgId
+                        )
+                    )
                     chatRepository.updateLastMessage(chatUserId, replyText, System.currentTimeMillis(), name = chatName)
                     chatRepository.clearUnread(chatUserId)
                     runCatching { apiService.markMessagesRead(chatUserId) }

@@ -247,7 +247,7 @@ func MarkMessagesRead(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 		// Fetch all unread message IDs from this peer.
 		rows, err := database.QueryContext(ctx,
 			`SELECT id, sender_user_id, client_msg_id FROM messages
-			 WHERE recipient_user_id=? AND sender_user_id=? AND read=0 AND delivered=1`,
+			 WHERE recipient_user_id=? AND sender_user_id=? AND read=0`,
 			myUserID, peerID)
 		if err != nil {
 			http.Error(w, "db error", http.StatusInternalServerError)
