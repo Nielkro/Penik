@@ -60,7 +60,7 @@ class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
         val messageKey = hkdf(salt, groupKey, MESSAGE_INFO.toByteArray(Charsets.UTF_8), 32)
         val aad = buildAad(groupId, keyVersion, messageId, createdAt)
 
-        val cipher = Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
+        val cipher = chaChaPoly1305()
         cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(messageKey, "ChaCha20"), IvParameterSpec(nonce))
         cipher.updateAAD(aad)
         val ciphertext = cipher.doFinal(plaintext)
@@ -80,7 +80,7 @@ class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
         val messageKey = hkdf(salt, groupKey, MESSAGE_INFO.toByteArray(Charsets.UTF_8), 32)
         val aad = buildAad(groupId, keyVersion, messageId, createdAt)
 
-        val cipher = Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
+        val cipher = chaChaPoly1305()
         cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(messageKey, "ChaCha20"), IvParameterSpec(nonce))
         cipher.updateAAD(aad)
         return cipher.doFinal(ciphertext)
@@ -96,6 +96,14 @@ class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
     fun unwrapKey(encryptedKey: ByteArray, sharedSecret: ByteArray, salt: ByteArray, nonce: ByteArray, groupId: Long, keyVersion: Long): ByteArray {
         val aad = "penik-group-key-wrap-v1|$groupId|$keyVersion".toByteArray(Charsets.UTF_8)
         return e2ee.decrypt(encryptedKey, sharedSecret, salt, nonce, "penik-group-key-wrap-v1", aad)
+    }
+
+    // Resolves the AEAD cipher, tolerating providers that only register the
+    // alternate transformation name (mirrors E2EECrypto).
+    private fun chaChaPoly1305(): Cipher = try {
+        Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
+    } catch (e: Exception) {
+        Cipher.getInstance("ChaCha20-Poly1305")
     }
 
     // HKDF-SHA256, identical construction to E2EECrypto.hkdfDerive.
