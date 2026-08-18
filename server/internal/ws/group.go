@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -146,7 +147,30 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 	if groupName == "" {
 		groupName = "Группа"
 	}
-	push.SendGroupMessagePush(c.db, msg.GroupID, c.userID, senderName, groupName, "Новое сообщение в группе")
+
+	for _, did := range recipients {
+		if c.hub.IsOnline(did) {
+			continue
+		}
+
+		var fcmToken string
+		_ = c.db.QueryRowContext(ctx, "SELECT fcm_token FROM devices WHERE id=?", did).Scan(&fcmToken)
+		if fcmToken == "" {
+			continue
+		}
+
+		push.SendDevicePush(fcmToken, map[string]string{
+			"type":           "group",
+			"group_id":       fmt.Sprintf("%d", msg.GroupID),
+			"group_name":     groupName,
+			"sender_user_id": fmt.Sprintf("%d", c.userID),
+			"sender_name":    senderName,
+			"ciphertext":     base64.StdEncoding.EncodeToString(msg.Ciphertext),
+			"salt":           base64.StdEncoding.EncodeToString(msg.Salt),
+			"nonce":          base64.StdEncoding.EncodeToString(msg.Nonce),
+			"timestamp":      fmt.Sprintf("%d", now*1000),
+		})
+	}
 
 	recv := GroupMessageRecv{
 		GroupID:      msg.GroupID,

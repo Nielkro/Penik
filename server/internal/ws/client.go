@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -522,7 +523,35 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 	if senderName == "" {
 		senderName = "Пользователь"
 	}
-	push.SendDirectMessagePush(c.db, recipientUserID, senderUserID, senderName, "Новое сообщение")
+
+	for _, dev := range msg.Devices {
+		var ownerID int64
+		_ = c.db.QueryRowContext(ctx, "SELECT user_id FROM devices WHERE id=?", dev.DeviceID).Scan(&ownerID)
+		if ownerID == senderUserID {
+			continue
+		}
+
+		var fcmToken string
+		_ = c.db.QueryRowContext(ctx, "SELECT fcm_token FROM devices WHERE id=?", dev.DeviceID).Scan(&fcmToken)
+		if fcmToken == "" {
+			continue
+		}
+
+		if c.hub.IsOnline(dev.DeviceID) {
+			continue
+		}
+
+		push.SendDevicePush(fcmToken, map[string]string{
+			"type":           "direct",
+			"chat_user_id":   fmt.Sprintf("%d", senderUserID),
+			"sender_name":    senderName,
+			"ciphertext":     base64.StdEncoding.EncodeToString(dev.Ciphertext),
+			"salt":           base64.StdEncoding.EncodeToString(dev.Salt),
+			"nonce":          base64.StdEncoding.EncodeToString(dev.Nonce),
+			"timestamp":      fmt.Sprintf("%d", now*1000),
+			"sender_user_id": fmt.Sprintf("%d", senderUserID),
+		})
+	}
 
 	for _, deliv := range deliveries {
 		frame, err := encodeFrame(OpMsgRecv, deliv.msgRecv)

@@ -17,8 +17,6 @@ import (
 	"os"
 	"sync"
 	"time"
-
-	"messenger/server/internal/db"
 )
 
 type ServiceAccount struct {
@@ -166,80 +164,12 @@ func (c *FCMClient) signJWT(header, claims []byte) (string, error) {
 	return input + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
-// SendDirectMessagePush sends background notification to all user's devices except the sender device.
-func SendDirectMessagePush(database *db.DB, recipientUserID, senderUserID int64, senderName, text string) {
+func SendDevicePush(token string, data map[string]string) {
 	client := GetFCMClient()
 	if client == nil {
 		return
 	}
-
-	rows, err := database.Query("SELECT fcm_token FROM devices WHERE user_id = ? AND fcm_token != ''", recipientUserID)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-
-	var tokens []string
-	for rows.Next() {
-		var token string
-		if err := rows.Scan(&token); err == nil {
-			tokens = append(tokens, token)
-		}
-	}
-
-	log.Printf("push: sending direct message push to user %d (found %d tokens)", recipientUserID, len(tokens))
-
-	for _, token := range tokens {
-		go client.sendPushPayload(token, map[string]string{
-			"type":           "direct",
-			"chat_user_id":   fmt.Sprintf("%d", senderUserID),
-			"sender_name":    senderName,
-			"text":           text,
-			"timestamp":      fmt.Sprintf("%d", time.Now().UnixMilli()),
-			"sender_user_id": fmt.Sprintf("%d", senderUserID),
-		})
-	}
-}
-
-// SendGroupMessagePush sends background notification to all group members' devices except the sender.
-func SendGroupMessagePush(database *db.DB, groupID int64, senderUserID int64, senderName, groupName, text string) {
-	client := GetFCMClient()
-	if client == nil {
-		return
-	}
-
-	rows, err := database.Query(`
-		SELECT d.fcm_token 
-		  FROM group_members m
-		  JOIN devices d ON d.user_id = m.user_id
-		 WHERE m.group_id = ? AND m.user_id != ? AND d.fcm_token != ''`,
-		groupID, senderUserID)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-
-	var tokens []string
-	for rows.Next() {
-		var token string
-		if err := rows.Scan(&token); err == nil {
-			tokens = append(tokens, token)
-		}
-	}
-
-	log.Printf("push: sending group message push to group %d (found %d tokens)", groupID, len(tokens))
-
-	for _, token := range tokens {
-		go client.sendPushPayload(token, map[string]string{
-			"type":           "group",
-			"group_id":       fmt.Sprintf("%d", groupID),
-			"group_name":     groupName,
-			"sender_user_id": fmt.Sprintf("%d", senderUserID),
-			"sender_name":    senderName,
-			"text":           text,
-			"timestamp":      fmt.Sprintf("%d", time.Now().UnixMilli()),
-		})
-	}
+	go client.sendPushPayload(token, data)
 }
 
 func (c *FCMClient) sendPushPayload(token string, data map[string]string) {
