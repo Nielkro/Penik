@@ -102,6 +102,14 @@ class SecureTokenStorage @Inject constructor(
         return prefs.getString("fcm_token", null)
     }
 
+    fun saveLastUploadedFcmToken(token: String) {
+        prefs.edit().putString("fcm_token_uploaded", token).apply()
+    }
+
+    fun getLastUploadedFcmToken(): String? {
+        return prefs.getString("fcm_token_uploaded", null)
+    }
+
     fun clear() {
         prefs.edit().clear().apply()
     }
