@@ -98,26 +98,25 @@ function getAll(store) {
 // Messages
 
 export async function getMessage(msgId) {
-  if (msgId == null) return null;
   await openDB();
-  let searchId = msgId;
-  if (typeof searchId === "string" && searchId.startsWith("server-")) {
-    const raw = searchId.substring(7);
-    searchId = !isNaN(Number(raw)) ? Number(raw) : raw;
+  if (typeof msgId === "string" && msgId.startsWith("server-")) {
+    const raw = msgId.substring(7);
+    if (!isNaN(Number(raw))) {
+      msgId = Number(raw);
+    } else {
+      msgId = raw;
+    }
   }
-  let res = await get(tx("messages"), searchId);
-  if (!res && typeof searchId === "number") {
-    res = await get(tx("messages"), String(searchId));
-  } else if (!res && typeof searchId === "string" && !isNaN(Number(searchId))) {
-    res = await get(tx("messages"), Number(searchId));
+  let res = await get(tx("messages"), msgId);
+  if (!res) {
+    if (typeof msgId === "number") {
+      res = await get(tx("messages"), String(msgId));
+    } else if (typeof msgId === "string" && !isNaN(Number(msgId))) {
+      res = await get(tx("messages"), Number(msgId));
+    }
   }
   if (!res) {
     res = await getMessageByClientId(String(msgId));
-  }
-  if (!res) {
-    // Search in-memory/IDB by msg_id field matching
-    const all = await getAllMessages();
-    res = all.find(m => String(m.msg_id) === String(msgId) || String(m.client_msg_id) === String(msgId));
   }
   return res;
 }

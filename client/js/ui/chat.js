@@ -664,9 +664,7 @@ export async function renderChat(container, userId) {
       // Asynchronously resolve parent message text
       (async () => {
         try {
-          console.log(`[reply-debug] Resolving reply_to_msg_id: "${msg.reply_to_msg_id}" for msg:`, msg);
           const parent = await getMessage(msg.reply_to_msg_id);
-          console.log(`[reply-debug] Result for "${msg.reply_to_msg_id}":`, parent);
           if (parent) {
             const isParentMine = String(parent.sender_id) === String(me && (me.id || me.user_id));
             const senderName = isParentMine ? "Вы" : (contact.name || contact.nickname || "Собеседник");
@@ -678,12 +676,10 @@ export async function renderChat(container, userId) {
               replyRefEl.insertBefore(thumbImg, replyRefEl.firstChild);
             }
           } else {
-            console.warn(`[reply-debug] Parent message not found in local DB for reply_to_msg_id: "${msg.reply_to_msg_id}"`);
             replyRefEl.querySelector(".reply-ref-sender").textContent = "Сообщение";
             replyRefEl.querySelector(".reply-ref-text").textContent = "Исходное сообщение удалено или недоступно";
           }
         } catch (e) {
-          console.error(`[reply-debug] Error resolving reply_to_msg_id "${msg.reply_to_msg_id}":`, e);
           replyRefEl.remove();
         }
       })();
@@ -726,7 +722,7 @@ export async function renderChat(container, userId) {
       wireMsgCopy(bubble, () => msg.plaintext || "", () => {
         const info = getMessagePreviewInfo(msg.plaintext || "");
         setActiveReply({
-          msg_id: (msg.msg_id && !String(msg.msg_id).startsWith("tmp-")) ? msg.msg_id : (msg.client_msg_id || msg.msg_id || bubble.dataset.msgId),
+          msg_id: msg.client_msg_id || msg.msg_id || bubble.dataset.msgId,
           text: info.text,
           thumb: info.thumb,
           sender: isMine ? "Вы" : (contact.name || contact.nickname || "Собеседник")
@@ -1100,9 +1096,9 @@ export async function renderChat(container, userId) {
       }
     },
     (msgId, status) => {
-      const statusEl = messagesEl.querySelector(`.msg-status-wrapper[data-msg-id="${msgId}"]`);
+      const statusEl = messagesEl.querySelector(`.msg-status[data-msg-id="${msgId}"]`);
       if (statusEl) {
-        statusEl.innerHTML = '<span class="chk chk-1">✓</span><span class="chk chk-2">✓</span>';
+        statusEl.textContent = "✓✓";
         if (status === "read") {
           statusEl.classList.add("msg-status-read");
         }
