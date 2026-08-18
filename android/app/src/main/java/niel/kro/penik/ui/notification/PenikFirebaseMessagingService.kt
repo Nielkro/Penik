@@ -80,12 +80,13 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
                 val senderName = data["sender_name"]
                 
                 // Try E2EE decryption
+                val hasE2eeFields = !data["ciphertext"].isNullOrBlank()
                 val decryptedText = decryptPayload(
                     chatUserId = chatUserId,
                     ciphertextB64 = data["ciphertext"],
                     saltB64 = data["salt"],
                     nonceB64 = data["nonce"]
-                ) ?: rawText
+                ) ?: if (hasE2eeFields) "[Сообщение не расшифровано]" else rawText
 
                 Log.d("PenikFCM", "Showing direct notification for user $chatUserId. Text: $decryptedText")
                 appNotificationManager.showDirectMessageNotification(
