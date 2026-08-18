@@ -20,9 +20,9 @@ class HttpLogLevelTest {
     }
 
     @Test
-    fun debugBuildEnablesBodyLogging() {
+    fun debugBuildEnablesBasicLogging() {
         assertEquals(
-            HttpLoggingInterceptor.Level.BODY,
+            HttpLoggingInterceptor.Level.BASIC,
             NetworkModule.httpLogLevel(isDebug = true)
         )
     }
