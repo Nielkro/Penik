@@ -122,8 +122,7 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
                 val peerIKPub = android.util.Base64.decode(device.identityKey, android.util.Base64.DEFAULT)
                 val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, peerIKPub)
                 try {
-                    // "PenikE2EE" is the AAD info used inside MessageRepository
-                    val decryptedBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, "PenikE2EE")
+                    val decryptedBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce)
                     return String(decryptedBytes, Charsets.UTF_8)
                 } catch (e: Exception) {
                     // Try next device key
