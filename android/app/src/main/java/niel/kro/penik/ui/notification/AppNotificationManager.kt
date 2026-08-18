@@ -89,6 +89,17 @@ class AppNotificationManager @Inject constructor(
 
     private val directThreads = ConcurrentHashMap<Long, MutableList<ThreadMessage>>()
     private val groupThreads = ConcurrentHashMap<Long, MutableList<ThreadMessage>>()
+    private val lastAlertTimestamps = ConcurrentHashMap<String, Long>()
+
+    private fun shouldAlert(key: String): Boolean {
+        val now = System.currentTimeMillis()
+        val last = lastAlertTimestamps[key] ?: 0L
+        val should = (now - last) > 2500L
+        if (should) {
+            lastAlertTimestamps[key] = now
+        }
+        return should
+    }
 
     init {
         createNotificationChannels()
@@ -252,6 +263,9 @@ class AppNotificationManager @Inject constructor(
             readPendingIntent
         ).build()
 
+        val alertKey = "direct_$chatUserId"
+        val isAlertable = shouldAlert(alertKey)
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_MESSAGES)
             .setSmallIcon(R.drawable.ic_notification)
             .setLargeIcon(senderAvatarBitmap)
@@ -263,6 +277,8 @@ class AppNotificationManager @Inject constructor(
             .addAction(readAction)
             .setAutoCancel(true)
             .setGroup(GROUP_KEY_MESSAGES)
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+            .setOnlyAlertOnce(!isAlertable)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .build()
@@ -368,6 +384,9 @@ class AppNotificationManager @Inject constructor(
             // Ignore shortcut failures on older Android versions
         }
 
+        val alertKey = "group_$groupId"
+        val isAlertable = shouldAlert(alertKey)
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_MESSAGES)
             .setSmallIcon(R.drawable.ic_notification)
             .setLargeIcon(senderAvatarBitmap)
@@ -377,6 +396,8 @@ class AppNotificationManager @Inject constructor(
             .setContentIntent(contentPendingIntent)
             .setAutoCancel(true)
             .setGroup(GROUP_KEY_MESSAGES)
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+            .setOnlyAlertOnce(!isAlertable)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .build()
@@ -405,6 +426,8 @@ class AppNotificationManager @Inject constructor(
             .setStyle(NotificationCompat.InboxStyle().setSummaryText("Новые сообщения"))
             .setGroup(GROUP_KEY_MESSAGES)
             .setGroupSummary(true)
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+            .setOnlyAlertOnce(true)
             .setAutoCancel(true)
             .setContentIntent(summaryPendingIntent)
             .build()
