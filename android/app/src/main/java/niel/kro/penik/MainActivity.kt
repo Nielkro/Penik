@@ -28,6 +28,8 @@ import kotlinx.coroutines.launch
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.FcmTokenRequestBody
 import niel.kro.penik.data.repository.SecureTokenStorage
+import niel.kro.penik.ui.theme.ThemeManager
+import niel.kro.penik.ui.theme.PenikTheme
 import javax.inject.Inject
 
 @AndroidEntryPoint
