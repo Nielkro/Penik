@@ -1248,7 +1248,7 @@ export async function sendDirectMessageToUser(targetUserId, text) {
   const storedMsg = {
     msg_id: msgId,
     client_msg_id: msgId,
-    chat_id: Number(targetUserId),
+    chat_id: String(targetUserId),
     sender_id: myId,
     plaintext: text,
     created_at: now,
