@@ -30,40 +30,34 @@ func Logout(database *db.DB) http.HandlerFunc {
 	}
 }
 
-// LogoutAll revokes the user's sessions across all devices. The requesting
-// session is preserved only if it has been active for more than a day, so a
-// freshly minted (potentially attacker-obtained) token is revoked along with
-// the rest. Older, trusted sessions stay signed in.
+// LogoutAll revokes the user's other sessions across all devices, keeping the
+// requesting session. It is allowed only if the requesting session has been
+// active for more than a day; a fresher token is rejected without changing
+// anything, since it may have just been obtained by an attacker.
 func LogoutAll(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
-		if userID == 0 {
+		token := middleware.TokenFromCtx(r.Context())
+		if userID == 0 || token == "" {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		token := middleware.TokenFromCtx(r.Context())
 
-		// Decide whether to keep the requesting session: only if it exists and
-		// was created more than one day ago.
-		keepCurrent := false
-		if token != "" {
-			var createdAt int64
-			err := database.QueryRowContext(r.Context(),
-				`SELECT created_at FROM sessions WHERE token=?`, token).Scan(&createdAt)
-			if err == nil && time.Now().Unix()-createdAt > oneDaySeconds {
-				keepCurrent = true
-			}
+		var createdAt int64
+		err := database.QueryRowContext(r.Context(),
+			`SELECT created_at FROM sessions WHERE token=?`, token).Scan(&createdAt)
+		if err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if time.Now().Unix()-createdAt <= oneDaySeconds {
+			// Session too young to authorize a mass revocation; do nothing.
+			http.Error(w, "session too recent to revoke others", http.StatusForbidden)
+			return
 		}
 
-		var execErr error
-		if keepCurrent {
-			_, execErr = database.ExecContext(r.Context(),
-				`DELETE FROM sessions WHERE user_id=? AND token<>?`, userID, token)
-		} else {
-			_, execErr = database.ExecContext(r.Context(),
-				`DELETE FROM sessions WHERE user_id=?`, userID)
-		}
-		if execErr != nil {
+		if _, err := database.ExecContext(r.Context(),
+			`DELETE FROM sessions WHERE user_id=? AND token<>?`, userID, token); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}

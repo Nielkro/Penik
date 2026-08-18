@@ -155,7 +155,7 @@ func TestLogoutAllKeepsCurrentSessionOlderThanOneDay(t *testing.T) {
 	}
 }
 
-func TestLogoutAllRevokesFreshCurrentSession(t *testing.T) {
+func TestLogoutAllRejectsFreshCurrentSession(t *testing.T) {
 	database, err := db.Open(filepath.Join(t.TempDir(), "logoutall_fresh.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -169,11 +169,12 @@ func TestLogoutAllRevokesFreshCurrentSession(t *testing.T) {
 	rr := httptest.NewRecorder()
 	LogoutAll(database)(rr, logoutAllReq(userID, "current-fresh"))
 
-	if rr.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d", rr.Code)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for fresh session, got %d", rr.Code)
 	}
-	if n := countSessions(t, database, userID); n != 0 {
-		t.Fatalf("fresh current session must be revoked with the rest, got %d remaining", n)
+	// Nothing must be revoked.
+	if n := countSessions(t, database, userID); n != 2 {
+		t.Fatalf("no sessions should be revoked, got %d remaining", n)
 	}
 }
 
