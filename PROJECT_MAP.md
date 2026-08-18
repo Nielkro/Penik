@@ -9,7 +9,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/cmd/server/main.go` — Server entry point: loads config, opens DB, registers REST/WebSocket routes, attaches middleware, and serves the embedded web client.
 - `server/internal/config/config.go` — Loads runtime configuration from environment variables: port, SQLite path, session TTL, size limits, CORS, and upload directory.
 - `server/internal/handlers/auth.go` — REST handlers for registration and login; validates credentials and key material, hashes passwords, and creates devices/sessions.
-- `server/internal/handlers/logout.go` — REST handlers revoking the current session token (`/logout`) or the user's other sessions (`/logout/all`); the requesting session is kept only if it is older than a day.
+- `server/internal/handlers/logout.go` — REST handlers revoking the current session token (`/logout`) or the user's other sessions (`/logout/all`); `/logout/all` is rejected with 403 unless the requesting session is older than a day.
 - `server/internal/handlers/users.go` — Handlers for user profiles, searching users, changing name/nickname, and avatar operations.
 - `server/internal/handlers/messages.go` — REST access to direct message history, delivery/read receipts, and chat deletion operations.
 - `server/internal/handlers/groups.go` — REST lifecycle of groups: creation, retrieval, renaming, deletion, and membership management.
