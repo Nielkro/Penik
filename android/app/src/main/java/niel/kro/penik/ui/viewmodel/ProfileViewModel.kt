@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import niel.kro.penik.data.network.api.DeviceResponse
 import niel.kro.penik.data.repository.AuthRepository
 import niel.kro.penik.domain.usecase.LogoutUseCase
 import javax.inject.Inject
@@ -15,7 +16,9 @@ data class ProfileUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val successMsg: String? = null,
-    val avatarUpdateKey: Long = System.currentTimeMillis()
+    val avatarUpdateKey: Long = System.currentTimeMillis(),
+    val devices: List<DeviceResponse> = emptyList(),
+    val devicesLoading: Boolean = false
 )
 
 @HiltViewModel
@@ -30,6 +33,25 @@ class ProfileViewModel @Inject constructor(
     val userId: Long get() = authRepository.getUserId()
     val name: String get() = authRepository.getName()
     val nickname: String get() = authRepository.getNickname()
+
+    init {
+        loadDevices()
+    }
+
+    // loadDevices fetches the user's devices for display in the profile screen.
+    fun loadDevices() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(devicesLoading = true)
+            authRepository.listDevices().fold(
+                onSuccess = { devices ->
+                    _uiState.value = _uiState.value.copy(devices = devices, devicesLoading = false)
+                },
+                onFailure = {
+                    _uiState.value = _uiState.value.copy(devicesLoading = false)
+                }
+            )
+        }
+    }
 
     fun uploadAvatar(bytes: ByteArray) {
         viewModelScope.launch {
