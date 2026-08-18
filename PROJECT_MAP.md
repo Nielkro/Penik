@@ -26,6 +26,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/ws/group.go` — Receives and routes encrypted group messages, receipts, and offline delivery across group members.
 - `server/internal/ws/hub.go` — Manages the registry of connected devices, broadcasting pre-encoded frames, presence, and shutdown events.
 - `server/internal/ws/protocol.go` — Defines binary opcodes and MsgPack structures for direct/group messages, keys, pairing, presence, and statuses.
+- `server/internal/push/fcm.go` — Handles JWT credentials signing and FCM HTTP v1 background push notifications delivery.
 - `server/internal/middleware/auth.go` — Extracts bearer/WebSocket tokens, validates sessions in the DB, and injects user/device IDs into the request context.
 - `server/internal/middleware/cors.go` — Configures CORS, origin checks, and CSRF protection for HTTP requests.
 - `server/internal/middleware/rate_limit.go` — Provides IP- and user-based rate limiting for public and sensitive operations.
@@ -97,6 +98,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/notification/AppNotificationManager.kt` — Manages notification channels, builds rich MessagingStyle notifications with colored initials avatars and formatted previews, handles summary grouping, and suppresses notifications for the currently active chat.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/DirectReplyReceiver.kt` — BroadcastReceiver handling inline direct replies from the notification shade without opening the app.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/MarkAsReadReceiver.kt` — BroadcastReceiver for the notification "Mark as read" action clearing unread counters and dismissing notifications.
+- `android/app/src/main/java/niel/kro/penik/ui/notification/PenikFirebaseMessagingService.kt` — Firebase Messaging service handling background data pushes and showing conversation notifications.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Theme.kt` — Material/Compose app theme and color scheme.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/ThemeManager.kt` — SharedPreferences-backed light/dark theme state exposed as a StateFlow.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Color.kt` — Android UI color palette.

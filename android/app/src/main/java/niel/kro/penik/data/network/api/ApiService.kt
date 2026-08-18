@@ -148,4 +148,9 @@ interface ApiService {
     suspend fun uploadVKAttachment(
         @Part file: MultipartBody.Part
     ): Response<VkUploadResponse>
+
+    @PUT("devices/me/fcm")
+    suspend fun updateFcmToken(
+        @Body body: FcmTokenRequestBody
+    ): Response<Unit>
 }

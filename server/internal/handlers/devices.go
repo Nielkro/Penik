@@ -65,3 +65,34 @@ func ListDevices(database *db.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(list)
 	}
 }
+
+// UpdateFCMToken sets the FCM token for the currently authenticated device.
+func UpdateFCMToken(database *db.DB) http.HandlerFunc {
+	type request struct {
+		Token string `json:"token"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		deviceID := middleware.DeviceIDFromCtx(r.Context())
+		if userID == 0 || deviceID == 0 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		var req request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		if _, err := database.ExecContext(r.Context(),
+			"UPDATE devices SET fcm_token = ? WHERE id = ? AND user_id = ?",
+			req.Token, deviceID, userID); err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}
+}
+

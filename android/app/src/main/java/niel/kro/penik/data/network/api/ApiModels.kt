@@ -292,3 +292,8 @@ data class DeviceResponse(
     @SerialName("has_session") val hasSession: Boolean = false,
     @SerialName("sessions_count") val sessionsCount: Int = 0
 )
+
+@Serializable
+data class FcmTokenRequestBody(
+    val token: String
+)

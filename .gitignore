@@ -19,5 +19,10 @@ server/.env
 *.keystore
 key.properties
 google-services.json
+**/google-services.json
+*firebase*.json
+server/firebase*.json
+serviceAccountKey*.json
+*.service-account.json
 
 .postman/

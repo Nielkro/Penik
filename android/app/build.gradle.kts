@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -108,4 +109,8 @@ dependencies {
     // SQLCipher — encrypts the Room database at rest (group keys, message cache)
     implementation(libs.sqlcipher.android)
     implementation(libs.androidx.sqlite)
+
+    // Firebase FCM
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 }
