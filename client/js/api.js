@@ -15,16 +15,43 @@ export class ApiError extends Error {
   }
 }
 
+import { saveSessionToken, getSessionToken, deleteSessionToken } from './storage.js';
+
 let _token = null;
+
+// primeToken loads the persisted session token into memory once at startup and
+// migrates any token left in localStorage by an older build. Must be awaited
+// before the first synchronous getToken() call on boot.
+export async function primeToken() {
+  if (_token) return _token;
+  const stored = await getSessionToken();
+  if (stored) {
+    _token = stored;
+    return _token;
+  }
+  const legacy = localStorage.getItem('penik_token');
+  if (legacy) {
+    _token = legacy;
+    await saveSessionToken(legacy);
+    localStorage.removeItem('penik_token');
+  }
+  return _token;
+}
 
 export function setToken(t) {
   _token = t;
-  if (t) localStorage.setItem('penik_token', t);
-  else localStorage.removeItem('penik_token');
+  // Persist to IndexedDB (not localStorage) so an XSS cannot read it via a
+  // synchronous localStorage dump.
+  if (t) {
+    void saveSessionToken(t);
+  } else {
+    void deleteSessionToken();
+  }
+  // Clean up any legacy plaintext copy.
+  localStorage.removeItem('penik_token');
 }
 
 export function getToken() {
-  if (!_token) _token = localStorage.getItem('penik_token');
   return _token;
 }
 

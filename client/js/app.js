@@ -1,4 +1,4 @@
-import { getToken, setToken, getUserById, apiGet, apiPost } from './api.js';
+import { getToken, setToken, primeToken, getUserById, apiGet, apiPost } from './api.js';
 import {
   openDB, saveMessage, updateMessageRead,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
@@ -348,6 +348,7 @@ function handleRoute() {
 async function boot() {
   localStorage.removeItem("penik_sign_jwk");
   await openDB();
+  await primeToken();
   setupGlobalWSListeners();
 
   const token = getToken();
@@ -395,6 +396,13 @@ boot().catch(err => {
 /* ── Exports for use by UI modules ── */
 export async function logout() {
   ws.disconnect();
+  // Revoke the session server-side so the token cannot be replayed. Best-effort:
+  // proceed with local teardown even if the request fails (e.g. offline).
+  try {
+    await apiPost('/logout');
+  } catch (error) {
+    console.warn("Server-side logout failed, clearing locally anyway:", error);
+  }
   setToken(null);
   localStorage.removeItem("user_id");
   localStorage.removeItem("device_id");

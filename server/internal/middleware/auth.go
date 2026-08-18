@@ -14,6 +14,7 @@ type contextKey string
 const (
 	ContextUserID   contextKey = "userID"
 	ContextDeviceID contextKey = "deviceID"
+	ContextToken    contextKey = "token"
 )
 
 // Auth validates the Bearer token (or ?token= query param) and injects
@@ -43,6 +44,7 @@ func Auth(database *db.DB) func(http.Handler) http.Handler {
 
 			ctx := context.WithValue(r.Context(), ContextUserID, userID)
 			ctx = context.WithValue(ctx, ContextDeviceID, deviceID)
+			ctx = context.WithValue(ctx, ContextToken, token)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -82,5 +84,11 @@ func UserIDFromCtx(ctx context.Context) int64 {
 // DeviceIDFromCtx retrieves the authenticated device ID from the context.
 func DeviceIDFromCtx(ctx context.Context) int64 {
 	v, _ := ctx.Value(ContextDeviceID).(int64)
+	return v
+}
+
+// TokenFromCtx retrieves the session token used to authenticate the request.
+func TokenFromCtx(ctx context.Context) string {
+	v, _ := ctx.Value(ContextToken).(string)
 	return v
 }
