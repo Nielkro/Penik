@@ -1096,9 +1096,9 @@ export async function renderChat(container, userId) {
       }
     },
     (msgId, status) => {
-      const statusEl = messagesEl.querySelector(`.msg-status[data-msg-id="${msgId}"]`);
+      const statusEl = messagesEl.querySelector(`.msg-status-wrapper[data-msg-id="${msgId}"]`);
       if (statusEl) {
-        statusEl.textContent = "✓✓";
+        statusEl.innerHTML = '<span class="chk chk-1">✓</span><span class="chk chk-2">✓</span>';
         if (status === "read") {
           statusEl.classList.add("msg-status-read");
         }
