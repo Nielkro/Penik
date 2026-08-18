@@ -168,6 +168,10 @@ func main() {
 		authMW(http.HandlerFunc(handlers.GetMessageHistory(database))))
 	mux.Handle("GET /api/v1/messages/{user_id}/status",
 		authMW(http.HandlerFunc(handlers.GetMessageStatuses(database))))
+	mux.Handle("POST /api/v1/messages/send",
+		authMW(http.HandlerFunc(handlers.SendMessage(database, hub))))
+	mux.Handle("POST /api/v1/messages/{user_id}/read",
+		authMW(http.HandlerFunc(handlers.MarkMessagesRead(database, hub))))
 	mux.Handle("DELETE /api/v1/chats/{peer_id}",
 		authMW(http.HandlerFunc(handlers.DeleteChat(database, hub))))
 	mux.Handle("GET /api/v1/ws",

@@ -297,3 +297,25 @@ data class DeviceResponse(
 data class FcmTokenRequestBody(
     val token: String
 )
+
+@Serializable
+data class RestDevicePayload(
+    @SerialName("device_id") val deviceId: Long,
+    val ciphertext: String, // base64
+    val salt: String,       // base64
+    val nonce: String       // base64
+)
+
+@Serializable
+data class RestSendMessageRequest(
+    @SerialName("to_user_id") val toUserId: Long,
+    @SerialName("msg_id") val msgId: String,
+    @SerialName("reply_to_msg_id") val replyToMsgId: String? = null,
+    val devices: List<RestDevicePayload>
+)
+
+@Serializable
+data class RestSendMessageResponse(
+    @SerialName("msg_id") val msgId: Long,
+    @SerialName("client_msg_id") val clientMsgId: String
+)

@@ -153,4 +153,14 @@ interface ApiService {
     suspend fun updateFcmToken(
         @Body body: FcmTokenRequestBody
     ): Response<Unit>
+
+    @POST("messages/send")
+    suspend fun sendMessageRest(
+        @Body body: RestSendMessageRequest
+    ): Response<RestSendMessageResponse>
+
+    @POST("messages/{userId}/read")
+    suspend fun markMessagesRead(
+        @Path("userId") userId: Long
+    ): Response<Unit>
 }
