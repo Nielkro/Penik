@@ -187,6 +187,8 @@ func SendDirectMessagePush(database *db.DB, recipientUserID, senderUserID int64,
 		}
 	}
 
+	log.Printf("push: sending direct message push to user %d (found %d tokens)", recipientUserID, len(tokens))
+
 	for _, token := range tokens {
 		go client.sendPushPayload(token, map[string]string{
 			"type":           "direct",
@@ -224,6 +226,8 @@ func SendGroupMessagePush(database *db.DB, groupID int64, senderUserID int64, se
 			tokens = append(tokens, token)
 		}
 	}
+
+	log.Printf("push: sending group message push to group %d (found %d tokens)", groupID, len(tokens))
 
 	for _, token := range tokens {
 		go client.sendPushPayload(token, map[string]string{
@@ -273,7 +277,9 @@ func (c *FCMClient) sendPushPayload(token string, data map[string]string) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode == http.StatusOK {
+		log.Printf("push: successfully sent push notification to project %s", c.sa.ProjectID)
+	} else {
 		respBody, _ := io.ReadAll(resp.Body)
 		log.Printf("push: send failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
