@@ -3,6 +3,7 @@ package niel.kro.penik.data.repository
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import niel.kro.penik.data.network.api.ApiService
+import niel.kro.penik.data.network.api.DeviceResponse
 import niel.kro.penik.data.network.api.LoginRequestBody
 import niel.kro.penik.data.network.api.RegisterRequestBody
 import niel.kro.penik.domain.model.AuthResponse
@@ -96,6 +97,20 @@ class AuthRepository @Inject constructor(
             } else {
                 val msg = parseServerError(response.code(), response.errorBody()?.string())
                 Result.failure(Exception(msg))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(mapException(e)))
+        }
+    }
+
+    // listDevices returns the authenticated user's devices, ordered by last seen.
+    suspend fun listDevices(): Result<List<DeviceResponse>> {
+        return try {
+            val response = apiService.listDevices()
+            if (response.isSuccessful) {
+                Result.success(response.body() ?: emptyList())
+            } else {
+                Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
             }
         } catch (e: Exception) {
             Result.failure(Exception(mapException(e)))

@@ -275,3 +275,14 @@ data class KeyBackupResponse(
 data class VkUploadResponse(
     val url: String
 )
+
+@Serializable
+data class DeviceResponse(
+    val id: Long,
+    @SerialName("device_name") val deviceName: String,
+    @SerialName("created_at") val createdAt: Long,
+    @SerialName("last_seen") val lastSeen: Long,
+    @SerialName("is_current") val isCurrent: Boolean = false,
+    @SerialName("has_session") val hasSession: Boolean = false,
+    @SerialName("sessions_count") val sessionsCount: Int = 0
+)

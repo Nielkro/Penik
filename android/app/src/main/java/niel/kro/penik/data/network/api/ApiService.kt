@@ -24,6 +24,9 @@ interface ApiService {
     @GET("users/me")
     suspend fun getMe(): Response<UserSearchResult>
 
+    @GET("devices")
+    suspend fun listDevices(): Response<List<DeviceResponse>>
+
     @GET("users/{userId}")
     suspend fun getUserProfile(@Path("userId") userId: Long): Response<UserSearchResult>
 
