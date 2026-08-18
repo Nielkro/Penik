@@ -410,36 +410,32 @@ private fun PresetCard(
 }
 
 private fun createDemoAvatar(name: String): Bitmap {
-    val size = 128
+    val size = 192
     val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
     // Draw stylish gradient circle
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    val hue = ((Math.abs(name.hashCode()) * 137) % 360).toFloat()
     val gradient = LinearGradient(
         0f, 0f, size.toFloat(), size.toFloat(),
-        AndroidColor.rgb(54, 114, 246),
-        AndroidColor.rgb(139, 92, 246),
+        AndroidColor.HSVToColor(floatArrayOf(hue, 0.7f, 0.9f)),
+        AndroidColor.HSVToColor(floatArrayOf((hue + 45) % 360, 0.85f, 0.65f)),
         Shader.TileMode.CLAMP
     )
-    paint.shader = gradient
-    canvas.drawOval(RectF(0f, 0f, size.toFloat(), size.toFloat()), paint)
+    bgPaint.shader = gradient
+    canvas.drawOval(RectF(0f, 0f, size.toFloat(), size.toFloat()), bgPaint)
 
-    // Draw face icon silhouette / smiley
-    val facePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    // Draw modern bold initial
+    val initial = name.trim().take(1).uppercase().ifBlank { "А" }
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = AndroidColor.WHITE
-        style = Paint.Style.STROKE
-        strokeWidth = 6f
-        strokeCap = Paint.Cap.ROUND
+        textSize = 86f
+        textAlign = Paint.Align.CENTER
+        isFakeBoldText = true
     }
-    // Eyes
-    canvas.drawCircle(size * 0.38f, size * 0.42f, 5f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = AndroidColor.WHITE })
-    canvas.drawCircle(size * 0.62f, size * 0.42f, 5f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = AndroidColor.WHITE })
-    // Smile
-    canvas.drawArc(
-        RectF(size * 0.35f, size * 0.45f, size * 0.65f, size * 0.7f),
-        20f, 140f, false, facePaint
-    )
+    val yPos = (size / 2f) - ((textPaint.descent() + textPaint.ascent()) / 2f)
+    canvas.drawText(initial, size / 2f, yPos, textPaint)
 
     return bitmap
 }

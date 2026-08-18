@@ -145,7 +145,12 @@ class AppNotificationManager @Inject constructor(
 
         val previewText = formatMessagePreview(rawText)
         val avatarUrl = ApiConfig.getUserAvatarUrl(chatUserId)
-        val senderPerson = resolvePerson(chatName, chatUserId, customAvatarBitmap, avatarUrl)
+        val senderAvatarBitmap = resolveAvatarBitmap(chatName, chatUserId, customAvatarBitmap, avatarUrl)
+        val senderPerson = Person.Builder()
+            .setName(chatName)
+            .setKey(chatUserId.toString())
+            .setIcon(IconCompat.createWithBitmap(senderAvatarBitmap))
+            .build()
         val myPerson = Person.Builder().setName("Вы").setKey(myUserId.toString()).build()
 
         val (imageUri, imageMime) = if (customImageBitmap != null) {
@@ -225,6 +230,7 @@ class AppNotificationManager @Inject constructor(
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_MESSAGES)
             .setSmallIcon(R.mipmap.ic_launcher)
+            .setLargeIcon(senderAvatarBitmap)
             .setStyle(messagingStyle)
             .setContentIntent(contentPendingIntent)
             .addAction(replyAction)
@@ -267,7 +273,12 @@ class AppNotificationManager @Inject constructor(
 
         val previewText = formatMessagePreview(rawText)
         val avatarUrl = ApiConfig.getUserAvatarUrl(senderUserId)
-        val senderPerson = resolvePerson(senderName, senderUserId, customAvatarBitmap, avatarUrl)
+        val senderAvatarBitmap = resolveAvatarBitmap(senderName, senderUserId, customAvatarBitmap, avatarUrl)
+        val senderPerson = Person.Builder()
+            .setName(senderName)
+            .setKey(senderUserId.toString())
+            .setIcon(IconCompat.createWithBitmap(senderAvatarBitmap))
+            .build()
         val myPerson = Person.Builder().setName("Вы").setKey(myUserId.toString()).build()
 
         val (imageUri, imageMime) = if (customImageBitmap != null) {
@@ -314,6 +325,7 @@ class AppNotificationManager @Inject constructor(
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_MESSAGES)
             .setSmallIcon(R.mipmap.ic_launcher)
+            .setLargeIcon(senderAvatarBitmap)
             .setStyle(messagingStyle)
             .setContentIntent(contentPendingIntent)
             .setAutoCancel(true)
@@ -366,44 +378,24 @@ class AppNotificationManager @Inject constructor(
         }
     }
 
-    private suspend fun resolvePerson(
+    private suspend fun resolveAvatarBitmap(
         name: String,
         id: Long,
         customAvatarBitmap: Bitmap? = null,
         avatarUrl: String? = null
-    ): Person {
+    ): Bitmap {
         if (customAvatarBitmap != null) {
-            val circle = createCircleBitmap(customAvatarBitmap)
-            return Person.Builder()
-                .setName(name)
-                .setKey(id.toString())
-                .setIcon(IconCompat.createWithBitmap(circle))
-                .build()
+            return createCircleBitmap(customAvatarBitmap)
         }
 
         if (avatarUrl != null) {
             val fetchedBitmap = fetchAvatarBitmap(avatarUrl)
             if (fetchedBitmap != null) {
-                val circle = createCircleBitmap(fetchedBitmap)
-                return Person.Builder()
-                    .setName(name)
-                    .setKey(id.toString())
-                    .setIcon(IconCompat.createWithBitmap(circle))
-                    .build()
+                return createCircleBitmap(fetchedBitmap)
             }
         }
 
-        return createPersonWithInitials(name, id)
-    }
-
-    private fun createPersonWithInitials(name: String, id: Long): Person {
-        val avatarBitmap = createInitialsAvatar(name, id)
-        val icon = IconCompat.createWithBitmap(avatarBitmap)
-        return Person.Builder()
-            .setName(name)
-            .setKey(id.toString())
-            .setIcon(icon)
-            .build()
+        return createInitialsAvatar(name, id)
     }
 
     private suspend fun fetchAvatarBitmap(urlStr: String): Bitmap? = withContext(Dispatchers.IO) {
@@ -438,12 +430,12 @@ class AppNotificationManager @Inject constructor(
     }
 
     fun createInitialsAvatar(name: String, id: Long): Bitmap {
-        val size = 96
+        val size = 192
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
         val hue = ((id * 137) % 360).toFloat()
-        val color = android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.6f, 0.8f))
+        val color = android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.65f, 0.85f))
 
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.color = color
@@ -454,7 +446,7 @@ class AppNotificationManager @Inject constructor(
         val initial = name.trim().take(1).uppercase().ifBlank { "#" }
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.color = android.graphics.Color.WHITE
-            textSize = 44f
+            textSize = 86f
             textAlign = Paint.Align.CENTER
             isFakeBoldText = true
         }
