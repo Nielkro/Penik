@@ -497,7 +497,7 @@ fun ChatRoomScreen(
                             replyText = replyText,
                             onReply = {
                                 activeReply = ReplyInfo(
-                                    msgId = message.serverId?.toString() ?: message.localId,
+                                    msgId = message.localId,
                                     text = message.text,
                                     sender = if (message.sentByMe) "Вы" else chatName
                                 )
