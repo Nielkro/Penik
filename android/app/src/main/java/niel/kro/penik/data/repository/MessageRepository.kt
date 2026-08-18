@@ -290,6 +290,13 @@ class MessageRepository @Inject constructor(
         val isSelfChat = toUserId == myId
 
         Log.d("PenikMsg", "sendMessage: clientMsgId=$clientMsgId, toUserId=$toUserId, isSelfChat=$isSelfChat, textLength=${text.length}")
+        // Resolve replyToMsgId to serverId if the parent message has a serverId stored locally
+        val resolvedReplyToMsgId = if (!replyToMsgId.isNullOrBlank()) {
+            val parentObj = messageDao.findMessageByLocalId(replyToMsgId) 
+                ?: messageDao.findMessageByServerId(replyToMsgId.toLongOrNull() ?: -1L)
+            parentObj?.serverId?.toString() ?: replyToMsgId
+        } else null
+
         val entity = MessageEntity(
             localId = clientMsgId,
             chatUserId = toUserId,
@@ -298,7 +305,7 @@ class MessageRepository @Inject constructor(
             timestamp = System.currentTimeMillis(),
             sentByMe = true,
             delivered = false,
-            replyToMsgId = replyToMsgId
+            replyToMsgId = resolvedReplyToMsgId
         )
         messageDao.insertMessage(entity)
 
@@ -349,7 +356,7 @@ class MessageRepository @Inject constructor(
             )
         }
 
-        webSocketManager.sendEncryptedMessage(toUserId, clientMsgId, payloads, replyToMsgId)
+        webSocketManager.sendEncryptedMessage(toUserId, clientMsgId, payloads, resolvedReplyToMsgId)
         return clientMsgId
     }
 
