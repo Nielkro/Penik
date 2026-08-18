@@ -31,8 +31,13 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
         Log.d("PenikFCM", "onNewToken: $token")
         runBlocking {
             tokenStorage.saveFcmToken(token)
-            runCatching {
-                apiService.updateFcmToken(FcmTokenRequestBody(token))
+            if (tokenStorage.getLastUploadedFcmToken() != token) {
+                runCatching {
+                    val resp = apiService.updateFcmToken(FcmTokenRequestBody(token))
+                    if (resp.isSuccessful) {
+                        tokenStorage.saveLastUploadedFcmToken(token)
+                    }
+                }
             }
         }
     }

@@ -85,8 +85,13 @@ class AuthRepository @Inject constructor(
                 
                 // Upload FCM token if exists
                 tokenStorage.getFcmToken()?.let { fcmToken ->
-                    runCatching {
-                        apiService.updateFcmToken(niel.kro.penik.data.network.api.FcmTokenRequestBody(fcmToken))
+                    if (tokenStorage.getLastUploadedFcmToken() != fcmToken) {
+                        runCatching {
+                            val resp = apiService.updateFcmToken(niel.kro.penik.data.network.api.FcmTokenRequestBody(fcmToken))
+                            if (resp.isSuccessful) {
+                                tokenStorage.saveLastUploadedFcmToken(fcmToken)
+                            }
+                        }
                     }
                 }
 
@@ -123,8 +128,13 @@ class AuthRepository @Inject constructor(
 
                 // Upload FCM token if exists
                 tokenStorage.getFcmToken()?.let { fcmToken ->
-                    runCatching {
-                        apiService.updateFcmToken(niel.kro.penik.data.network.api.FcmTokenRequestBody(fcmToken))
+                    if (tokenStorage.getLastUploadedFcmToken() != fcmToken) {
+                        runCatching {
+                            val resp = apiService.updateFcmToken(niel.kro.penik.data.network.api.FcmTokenRequestBody(fcmToken))
+                            if (resp.isSuccessful) {
+                                tokenStorage.saveLastUploadedFcmToken(fcmToken)
+                            }
+                        }
                     }
                 }
 

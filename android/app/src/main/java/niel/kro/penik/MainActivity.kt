@@ -58,11 +58,20 @@ class MainActivity : ComponentActivity() {
                     tokenStorage.saveFcmToken(token)
                     lifecycleScope.launch {
                         if (tokenStorage.isLoggedIn()) {
-                            runCatching {
-                                val resp = apiService.updateFcmToken(FcmTokenRequestBody(token))
-                                Log.d("PenikFCM", "FCM token uploaded to server. HTTP Status: ${resp.code()}")
-                            }.onFailure { e ->
-                                Log.e("PenikFCM", "Failed to upload FCM token: ${e.message}", e)
+                            if (tokenStorage.getLastUploadedFcmToken() == token) {
+                                Log.d("PenikFCM", "FCM token is already uploaded, skipping request")
+                            } else {
+                                runCatching {
+                                    val resp = apiService.updateFcmToken(FcmTokenRequestBody(token))
+                                    if (resp.isSuccessful) {
+                                        tokenStorage.saveLastUploadedFcmToken(token)
+                                        Log.d("PenikFCM", "FCM token uploaded to server. HTTP Status: ${resp.code()}")
+                                    } else {
+                                        Log.d("PenikFCM", "FCM token upload failed status: ${resp.code()}")
+                                    }
+                                }.onFailure { e ->
+                                    Log.e("PenikFCM", "Failed to upload FCM token: ${e.message}", e)
+                                }
                             }
                         } else {
                             Log.d("PenikFCM", "User not logged in, skipping FCM token upload")
