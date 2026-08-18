@@ -88,6 +88,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
     private val chatRepository: ChatRepository,
     private val groupRepository: GroupRepository,
     private val webSocketManager: WebSocketManager,
+    private val appNotificationManager: niel.kro.penik.ui.notification.AppNotificationManager
 ) {
     suspend operator fun invoke(event: WebSocketEvent) {
         when (event) {
@@ -96,6 +97,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 chatRepository.updateLastMessage(event.chatUserId, event.text, event.ts)
                 if (isIncoming) {
                     chatRepository.incrementUnread(event.chatUserId)
+                    appNotificationManager.showDirectMessageNotification(event.chatUserId, event.text, event.ts)
                 }
             }
             is WebSocketEvent.MsgRecvEncrypted -> {
@@ -106,6 +108,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
                     chatRepository.updateLastMessage(event.chatUserId, text, event.ts)
                     if (isIncoming) {
                         chatRepository.incrementUnread(event.chatUserId)
+                        appNotificationManager.showDirectMessageNotification(event.chatUserId, text, event.ts)
                     }
                 }
             }
@@ -122,28 +125,43 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 messageRepository.handleOfflineBatch(event)
                 event.msgs.forEach { msg ->
                     chatRepository.updateLastMessage(msg.chatUserId, msg.text, msg.ts)
+                    if (!msg.sentByMe) {
+                        appNotificationManager.showDirectMessageNotification(msg.chatUserId, msg.text, msg.ts)
+                    }
                 }
             }
             is WebSocketEvent.OfflineBatchEncrypted -> {
                 val decrypted = messageRepository.handleOfflineBatchEncrypted(event)
                 decrypted.forEach { msg ->
                     chatRepository.updateLastMessage(msg.chatUserId, msg.text, msg.ts)
+                    if (!msg.sentByMe) {
+                        appNotificationManager.showDirectMessageNotification(msg.chatUserId, msg.text, msg.ts)
+                    }
                 }
             }
             is WebSocketEvent.ChatPurge -> {
                 messageRepository.deleteChatMessages(event.peerId)
                 chatRepository.deleteChat(event.peerId)
+                appNotificationManager.cancelChatNotification(event.peerId)
             }
             is WebSocketEvent.MsgStatusBatch -> {
                 messageRepository.handleMsgStatusBatch(event)
             }
             is WebSocketEvent.PairingHistoryReady -> Unit
             is WebSocketEvent.GroupMessageRecv -> {
-                groupRepository.handleIncoming(
+                val msgEntity = groupRepository.handleIncoming(
                     event.groupId, event.id, event.messageId, event.senderUserId, event.senderDeviceId,
                     event.keyVersion, event.ciphertext, event.salt, event.nonce, event.createdAt,
                     event.replyToMsgId
                 )
+                if (msgEntity != null && !msgEntity.sentByMe) {
+                    appNotificationManager.showGroupMessageNotification(
+                        groupId = event.groupId,
+                        senderUserId = event.senderUserId,
+                        rawText = msgEntity.text,
+                        timestamp = event.createdAt
+                    )
+                }
             }
             is WebSocketEvent.GroupMessageAck -> {
                 groupRepository.onAck(event.groupId, event.messageId, event.id)

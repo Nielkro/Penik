@@ -50,6 +50,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -70,6 +71,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
 import niel.kro.penik.ui.components.MessageBubble
+import niel.kro.penik.ui.notification.AppNotificationManager
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.serialization.json.buildJsonObject
@@ -104,6 +106,13 @@ fun ChatRoomScreen(
     val showE2eeDialog by viewModel.showE2eeDialog.collectAsState()
     val isSelfChat = viewModel.isSelfChat
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
+
+    DisposableEffect(chatUserId) {
+        AppNotificationManager.setActiveChat("direct_$chatUserId")
+        onDispose {
+            AppNotificationManager.clearActiveChat("direct_$chatUserId")
+        }
+    }
 
     // Show the button when the last message is not fully visible.
     val showScrollDown by remember {

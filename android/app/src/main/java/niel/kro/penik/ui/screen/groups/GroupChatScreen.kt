@@ -62,6 +62,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -94,6 +95,7 @@ import niel.kro.penik.ui.components.GroupAvatar
 import niel.kro.penik.ui.components.MessageBubble
 import niel.kro.penik.ui.components.UserAvatar
 import niel.kro.penik.ui.components.avatarUrlFor
+import niel.kro.penik.ui.notification.AppNotificationManager
 import niel.kro.penik.ui.viewmodel.GroupChatViewModel
 
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -113,6 +115,13 @@ fun GroupChatScreen(
     val messages by viewModel.messages.collectAsState()
     val members by viewModel.members.collectAsState()
     val groupEntity by viewModel.groupFlow.collectAsState()
+
+    DisposableEffect(groupId) {
+        AppNotificationManager.setActiveChat("group_$groupId")
+        onDispose {
+            AppNotificationManager.clearActiveChat("group_$groupId")
+        }
+    }
     val searchResults by viewModel.searchResults.collectAsState()
     val error by viewModel.error.collectAsState()
     val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
