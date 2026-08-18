@@ -551,6 +551,14 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 			"nonce":          base64.StdEncoding.EncodeToString(dev.Nonce),
 			"timestamp":      fmt.Sprintf("%d", now*1000),
 			"sender_user_id": fmt.Sprintf("%d", senderUserID),
+			"msg_id":         func() string {
+				for _, d := range deliveries {
+					if d.deviceID == dev.DeviceID {
+						return fmt.Sprintf("%d", d.msgRecv.MsgID)
+					}
+				}
+				return ""
+			}(),
 		})
 	}
 
