@@ -26,6 +26,9 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
     @Inject
     lateinit var apiService: ApiService
 
+    @Inject
+    lateinit var e2eeCrypto: niel.kro.penik.data.crypto.E2EECrypto
+
     private val job = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + job)
 
@@ -52,7 +55,7 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
 
         scope.launch {
             val type = data["type"]
-            val text = data["text"] ?: ""
+            val rawText = data["text"] ?: ""
             val timestamp = data["timestamp"]?.toLongOrNull() ?: System.currentTimeMillis()
 
             if (type == "group") {
@@ -70,7 +73,7 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
                 appNotificationManager.showGroupMessageNotification(
                     groupId = groupId,
                     senderUserId = senderUserId,
-                    rawText = text,
+                    rawText = rawText,
                     timestamp = timestamp,
                     overrideGroupName = groupName,
                     overrideSenderName = senderName
@@ -81,14 +84,61 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
                     return@launch
                 }
                 val senderName = data["sender_name"]
-                Log.d("PenikFCM", "Showing direct notification for user $chatUserId")
+                
+                // Try E2EE decryption
+                val decryptedText = decryptPayload(
+                    chatUserId = chatUserId,
+                    ciphertextB64 = data["ciphertext"],
+                    saltB64 = data["salt"],
+                    nonceB64 = data["nonce"]
+                ) ?: rawText
+
+                Log.d("PenikFCM", "Showing direct notification for user $chatUserId. Text: $decryptedText")
                 appNotificationManager.showDirectMessageNotification(
                     chatUserId = chatUserId,
-                    rawText = text,
+                    rawText = decryptedText,
                     timestamp = timestamp,
                     overrideSenderName = senderName
                 )
             }
+        }
+    }
+
+    private suspend fun decryptPayload(
+        chatUserId: Long,
+        ciphertextB64: String?,
+        saltB64: String?,
+        nonceB64: String?
+    ): String? {
+        if (ciphertextB64.isNullOrBlank() || saltB64.isNullOrBlank() || nonceB64.isNullOrBlank()) return null
+        
+        return try {
+            val ciphertext = android.util.Base64.decode(ciphertextB64, android.util.Base64.DEFAULT)
+            val salt = android.util.Base64.decode(saltB64, android.util.Base64.DEFAULT)
+            val nonce = android.util.Base64.decode(nonceB64, android.util.Base64.DEFAULT)
+            
+            val myPrivateIK = tokenStorage.getPrivateKey() ?: return null
+            
+            // Fetch key bundle from server
+            val bundleResp = apiService.getKeyBundle(chatUserId)
+            if (!bundleResp.isSuccessful) return null
+            val bundle = bundleResp.body() ?: return null
+            
+            for (device in bundle.devices) {
+                val peerIKPub = android.util.Base64.decode(device.identityKey, android.util.Base64.DEFAULT)
+                val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, peerIKPub)
+                try {
+                    // "PenikE2EE" is the AAD info used inside MessageRepository
+                    val decryptedBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, "PenikE2EE")
+                    return String(decryptedBytes, Charsets.UTF_8)
+                } catch (e: Exception) {
+                    // Try next device key
+                }
+            }
+            null
+        } catch (e: Exception) {
+            Log.e("PenikFCM", "Decryption failed: ${e.message}", e)
+            null
         }
     }
 
