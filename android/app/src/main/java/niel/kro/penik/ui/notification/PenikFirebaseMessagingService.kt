@@ -5,10 +5,7 @@ import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.FcmTokenRequestBody
 import niel.kro.penik.data.repository.SecureTokenStorage
@@ -29,13 +26,10 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
     @Inject
     lateinit var e2eeCrypto: niel.kro.penik.data.crypto.E2EECrypto
 
-    private val job = SupervisorJob()
-    private val scope = CoroutineScope(Dispatchers.IO + job)
-
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         Log.d("PenikFCM", "onNewToken: $token")
-        scope.launch {
+        runBlocking {
             tokenStorage.saveFcmToken(token)
             runCatching {
                 apiService.updateFcmToken(FcmTokenRequestBody(token))
@@ -53,7 +47,7 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
             return
         }
 
-        scope.launch {
+        runBlocking {
             val type = data["type"]
             val rawText = data["text"] ?: ""
             val timestamp = data["timestamp"]?.toLongOrNull() ?: System.currentTimeMillis()
@@ -61,11 +55,11 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
             if (type == "group") {
                 val groupId = data["group_id"]?.toLongOrNull() ?: run {
                     Log.d("PenikFCM", "Missing group_id")
-                    return@launch
+                    return@runBlocking
                 }
                 val senderUserId = data["sender_user_id"]?.toLongOrNull() ?: run {
                     Log.d("PenikFCM", "Missing sender_user_id")
-                    return@launch
+                    return@runBlocking
                 }
                 val groupName = data["group_name"]
                 val senderName = data["sender_name"]
@@ -81,7 +75,7 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
             } else {
                 val chatUserId = data["chat_user_id"]?.toLongOrNull() ?: run {
                     Log.d("PenikFCM", "Missing chat_user_id")
-                    return@launch
+                    return@runBlocking
                 }
                 val senderName = data["sender_name"]
                 
@@ -140,10 +134,5 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
             Log.e("PenikFCM", "Decryption failed: ${e.message}", e)
             null
         }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        job.cancel()
     }
 }
