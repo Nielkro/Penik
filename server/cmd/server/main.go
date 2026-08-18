@@ -83,6 +83,11 @@ func main() {
 	// Authenticated routes — wrap each with the auth middleware.
 	authMW := middleware.Auth(database)
 
+	mux.Handle("POST /api/v1/logout",
+		authMW(http.HandlerFunc(handlers.Logout(database))))
+	mux.Handle("POST /api/v1/logout/all",
+		authMW(http.HandlerFunc(handlers.LogoutAll(database))))
+
 	mux.Handle("GET /api/v1/users/search",
 		authMW(http.HandlerFunc(handlers.SearchUsers(database))))
 	mux.Handle("GET /api/v1/users/{id}",
@@ -189,6 +194,7 @@ func main() {
 	var handler http.Handler = mux
 	handler = middleware.MaxBodySize(cfg.MaxBodySize)(handler)
 	handler = middleware.CORS(cfg)(handler)
+	handler = middleware.SecurityHeaders(handler)
 	handler = middleware.RequestLogger(handler)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)

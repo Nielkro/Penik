@@ -45,8 +45,8 @@
 
 ## 4. Остаточные риски
 
-- **Токен веб-клиента в localStorage.** `client/js/api.js:20-44` хранит `penik_token` в `localStorage`; успешный XSS может привести к захвату сессии. Риск: средний/высокий.
-- **Нет отзыва сессий.** TTL по умолчанию составляет 30 дней (`server/internal/config/config.go:37-42`), endpoint для logout/revoke отсутствует. Украденный токен действует до истечения срока. Риск: средний.
+- **Токен веб-клиента в localStorage.** Исправлено. Токен перенесён в IndexedDB (`e2ee_keys`/`session_token`), в памяти кэшируется через `primeToken()`, устаревшая копия из `localStorage` мигрируется и удаляется (`client/js/api.js`, `client/js/storage.js`). Добавлен CSP и защитные заголовки (`server/internal/middleware/security_headers.go`), ограничивающие внешнюю загрузку кода и фрейминг. Остаточно: на script-src сохраняется `'unsafe-inline'` из-за inline import map.
+- **Отзыв сессий.** Исправлено. Добавлены endpoint `POST /api/v1/logout` (отзыв текущего токена) и `POST /api/v1/logout/all` (отзыв всех сессий пользователя); веб-клиент вызывает logout на сервере при выходе (`server/internal/handlers/logout.go`, `client/js/app.js`). Покрыто тестами `logout_test.go`. Остаточно: TTL по умолчанию всё ещё 30 дней, ротация access-токенов не реализована.
 - **Нет forward secrecy и защиты от подмены ключей сервером.** Ограничение зафиксировано в `README.md:159-167`; компрометация identity key может раскрыть историю, а публичные ключи требуют ручной сверки safety number. Риск: средний/высокий.
 - **Нет явного запрета cleartext в Android manifest.** В `AndroidManifest.xml` отсутствуют `android:usesCleartextTraffic="false"` и Network Security Config. Это усиливает риск ошибочной конфигурации WebSocket. Риск: средний.
 - **Вложения читаются целиком в память.** `server/internal/handlers/vkupload.go:197-215` использует `io.ReadAll(file)`, а upload не имеет отдельного rate limit. Аутентифицированный пользователь может создавать давление на память и исходящий трафик. Риск: средний.

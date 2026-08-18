@@ -498,6 +498,24 @@ export async function saveIKPublic(publicKey) {
   return put(tx("e2ee_keys", "readwrite"), { id: "identity_public_key", publicKey });
 }
 
+// The session bearer token is kept in IndexedDB rather than localStorage so it
+// is not exposed to a synchronous localStorage dump during an XSS.
+export async function saveSessionToken(token) {
+  await openDB();
+  return put(tx("e2ee_keys", "readwrite"), { id: "session_token", token });
+}
+
+export async function getSessionToken() {
+  await openDB();
+  const record = await get(tx("e2ee_keys"), "session_token");
+  return record ? record.token : null;
+}
+
+export async function deleteSessionToken() {
+  await openDB();
+  return del(tx("e2ee_keys", "readwrite"), "session_token");
+}
+
 export async function getIKPublic() {
   await openDB();
   const record = await get(tx("e2ee_keys"), "identity_public_key");
