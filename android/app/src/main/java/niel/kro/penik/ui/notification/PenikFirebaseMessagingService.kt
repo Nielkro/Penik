@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import niel.kro.penik.data.network.api.ApiService
+import niel.kro.penik.data.network.api.FcmTokenRequestBody
 import niel.kro.penik.data.repository.SecureTokenStorage
 import javax.inject.Inject
 
@@ -33,7 +34,7 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
         scope.launch {
             tokenStorage.saveFcmToken(token)
             runCatching {
-                apiService.updateFcmToken(token)
+                apiService.updateFcmToken(FcmTokenRequestBody(token))
             }
         }
     }
