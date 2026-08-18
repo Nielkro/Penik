@@ -31,6 +31,7 @@ import niel.kro.penik.data.repository.SecureTokenStorage
 import niel.kro.penik.ui.theme.ThemeManager
 import niel.kro.penik.ui.theme.PenikTheme
 import javax.inject.Inject
+import android.util.Log
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -53,15 +54,23 @@ class MainActivity : ComponentActivity() {
             if (task.isSuccessful) {
                 val token = task.result
                 if (token != null) {
+                    Log.d("PenikFCM", "Fetched FCM token: $token")
                     tokenStorage.saveFcmToken(token)
                     lifecycleScope.launch {
                         if (tokenStorage.isLoggedIn()) {
                             runCatching {
-                                apiService.updateFcmToken(FcmTokenRequestBody(token))
+                                val resp = apiService.updateFcmToken(FcmTokenRequestBody(token))
+                                Log.d("PenikFCM", "FCM token uploaded to server. HTTP Status: ${resp.code()}")
+                            }.onFailure { e ->
+                                Log.e("PenikFCM", "Failed to upload FCM token: ${e.message}", e)
                             }
+                        } else {
+                            Log.d("PenikFCM", "User not logged in, skipping FCM token upload")
                         }
                     }
                 }
+            } else {
+                Log.e("PenikFCM", "Failed to fetch FCM token", task.exception)
             }
         }
 
