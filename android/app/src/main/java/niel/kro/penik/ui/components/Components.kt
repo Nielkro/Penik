@@ -1695,8 +1695,7 @@ fun MessageBubble(
                     )
                 }
             }
-            val columnModifier = if (replySender != null && replyText != null) Modifier.width(IntrinsicSize.Max) else Modifier
-            Column(modifier = columnModifier) {
+            Column {
                 if (fwdSenderName != null) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
