@@ -1695,7 +1695,8 @@ fun MessageBubble(
                     )
                 }
             }
-            Column {
+            val columnModifier = if (replySender != null && replyText != null) Modifier.width(IntrinsicSize.Max) else Modifier
+            Column(modifier = columnModifier) {
                 if (fwdSenderName != null) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -1817,7 +1818,7 @@ fun MessageBubble(
                         }
                     }
                 } else {
-                    val isSingleLineShort = !isFailed && !parsedText.contains('\n') && parsedText.length <= 35
+                    val isSingleLineShort = !isFailed && replySender == null && !parsedText.contains('\n') && parsedText.length <= 35
                     if (isSingleLineShort) {
                         Row(
                             modifier = Modifier.padding(top = 1.dp),
