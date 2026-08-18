@@ -1818,12 +1818,14 @@ fun MessageBubble(
                         }
                     }
                 } else {
-                    val isSingleLineShort = !isFailed && replySender == null && !parsedText.contains('\n') && parsedText.length <= 35
+                    val isSingleLineShort = !isFailed && !parsedText.contains('\n') && parsedText.length <= 35
                     if (isSingleLineShort) {
                         Row(
-                            modifier = Modifier.padding(top = 1.dp),
+                            modifier = Modifier
+                                .then(if (replySender != null) Modifier.fillMaxWidth() else Modifier)
+                                .padding(top = 1.dp),
                             verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = Arrangement.Start
+                            horizontalArrangement = if (replySender != null) Arrangement.SpaceBetween else Arrangement.Start
                         ) {
                             ClickableLinkedText(
                                 text = parsedText,
