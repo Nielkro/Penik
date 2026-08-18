@@ -73,7 +73,8 @@ export function buildGroupListItem(g, onChange) {
             }
           }
         }
-        previewSpan.textContent = `${senderName}: ${last.plaintext || ""}`;
+        const subPreview = getMessagePreview(last.plaintext || "");
+        previewSpan.textContent = senderName ? `${senderName}: ${subPreview}` : subPreview;
       } else {
         previewSpan.textContent = g.role ? `Роль: ${roleLabel(g.role)}` : "";
       }

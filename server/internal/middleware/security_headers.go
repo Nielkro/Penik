@@ -10,7 +10,7 @@ import "net/http"
 // still meaningfully reduces the blast radius: no external code, no framing,
 // no base-tag hijack, and connections limited to same-origin (REST + ws/wss).
 const contentSecurityPolicy = "default-src 'self'; " +
-	"script-src 'self' 'unsafe-inline'; " +
+	"script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' 'unsafe-eval'; " +
 	"style-src 'self' 'unsafe-inline'; " +
 	"img-src 'self' data: blob:; " +
 	"media-src 'self' blob:; " +
