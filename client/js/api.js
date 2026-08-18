@@ -205,6 +205,12 @@ export async function getUserById(userId) {
   return get(`/users/${userId}`);
 }
 
+// listDevices returns the authenticated user's devices, with is_current flagging
+// the device that issued this request.
+export async function listDevices() {
+  return get('/devices');
+}
+
 /* ── Messages (REST fallback) ── */
 
 export async function getMessageHistory(userId, before, limit = 40) {

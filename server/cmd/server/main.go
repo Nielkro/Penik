@@ -87,6 +87,8 @@ func main() {
 		authMW(http.HandlerFunc(handlers.Logout(database))))
 	mux.Handle("POST /api/v1/logout/all",
 		authMW(http.HandlerFunc(handlers.LogoutAll(database))))
+	mux.Handle("GET /api/v1/devices",
+		authMW(http.HandlerFunc(handlers.ListDevices(database))))
 
 	mux.Handle("GET /api/v1/users/search",
 		authMW(http.HandlerFunc(handlers.SearchUsers(database))))
