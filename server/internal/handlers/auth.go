@@ -119,9 +119,10 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		}
 		userID, _ := res.LastInsertId()
 
+		loc := resolveLocation(req.Location, r)
 		devRes, err := tx.ExecContext(r.Context(),
 			`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen) VALUES(?,?,?,?,?,?,?)`,
-			userID, req.DeviceName, resolvePlatform(req.Platform, r), req.Location, req.RegistrationID, now, now)
+			userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -247,10 +248,11 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 				userID, req.DeviceName).Scan(&deviceID)
 		}
 		err = lookupErr
+		loc := resolveLocation(req.Location, r)
 		if err == sql.ErrNoRows {
 			devRes, insertErr := tx.ExecContext(r.Context(),
 				`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen) VALUES(?,?,?,?,?,?,?)`,
-				userID, req.DeviceName, resolvePlatform(req.Platform, r), req.Location, req.RegistrationID, now, now)
+				userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now)
 			if insertErr != nil {
 				loginInternalError(w, "insert device", insertErr)
 				return
@@ -272,7 +274,7 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 				 WHERE id=?`,
 				req.RegistrationID, now,
 				resolvePlatform(req.Platform, r), resolvePlatform(req.Platform, r),
-				req.Location, req.Location,
+				loc, loc,
 				deviceID)
 			if err != nil {
 				loginInternalError(w, "update device", err)

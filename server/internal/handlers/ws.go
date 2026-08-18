@@ -45,6 +45,11 @@ func WebSocketHandler(hub *ws.Hub, database *db.DB, cfg *config.Config) http.Han
 		}
 
 		client := ws.NewClient(hub, conn, userID, deviceID, database, cfg)
+		if loc := resolveLocation("", r); loc != "" {
+			_, _ = database.ExecContext(r.Context(),
+				`UPDATE devices SET location=? WHERE id=?`,
+				loc, deviceID)
+		}
 		client.Run(r.Context())
 	}
 }
