@@ -18,8 +18,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -70,30 +68,27 @@ fun SettingsScreen(
                 .padding(innerPadding)
                 .padding(16.dp)
         ) {
-            // Theme switch row
+            // Theme toggle row: tapping anywhere switches between light and dark.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .padding(vertical = 4.dp),
+                    .clickable { ThemeManager.toggle() }
+                    .padding(vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
-                    Text("Светлая тема", color = colors.textPrimary, fontSize = 16.sp)
+                    Text("Тема", color = colors.textPrimary, fontSize = 16.sp)
                     Text(
-                        text = if (isLight) "Включена" else "Выключена",
+                        text = if (isLight) "Светлая" else "Тёмная",
                         color = colors.textMuted,
                         fontSize = 13.sp
                     )
                 }
-                Switch(
-                    checked = isLight,
-                    onCheckedChange = { ThemeManager.setLight(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = colors.accent,
-                        checkedTrackColor = colors.accent.copy(alpha = 0.4f)
-                    )
+                Text(
+                    text = if (isLight) "☀️" else "🌙",
+                    fontSize = 22.sp
                 )
             }
 

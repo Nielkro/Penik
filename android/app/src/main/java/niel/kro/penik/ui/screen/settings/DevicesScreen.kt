@@ -85,11 +85,16 @@ fun DevicesScreen(
                                     .padding(12.dp)
                             ) {
                                 Text(
-                                    text = device.deviceName.ifBlank { "Устройство" } +
+                                    text = device.platform.ifBlank { device.deviceName.ifBlank { "Устройство" } } +
                                         if (device.isCurrent) "  · это устройство" else "",
                                     color = colors.textPrimary,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = if (device.location.isNotBlank()) "📍 ${device.location}" else "📍 Местоположение неизвестно",
+                                    color = colors.textMuted,
+                                    fontSize = 12.sp
                                 )
                                 Text(
                                     text = if (device.hasSession) "в сети" else "нет активной сессии",

@@ -48,8 +48,23 @@ class AuthRepository @Inject constructor(
         return generateAndSaveKeys()
     }
 
-    suspend fun login(nickname: String, password: String, deviceName: String): Result<AuthResponse> {
-        return try {
+    // clientPlatform reports the Android OS version, e.g. "Android 14", so the
+    // devices screen can show a readable platform instead of a raw model code.
+    private fun clientPlatform(): String {
+        val release = android.os.Build.VERSION.RELEASE ?: ""
+        return if (release.isBlank()) "Android" else "Android $release"
+    }
+
+    // clientLocation derives a coarse location from the device time zone,
+    // e.g. "Europe/Moscow" becomes "Moscow", avoiding a location permission
+    // while still giving a recognizable place hint.
+    private fun clientLocation(): String {
+        val tz = java.util.TimeZone.getDefault().id ?: ""
+        if (tz.isBlank()) return ""
+        return tz.substringAfterLast('/').replace('_', ' ')
+    }
+
+    suspend fun login(nickname: String, password: String, deviceName: String): Result<AuthResponse> {        return try {
             val (privateKey, publicKey) = stableIdentityKeyPair()
             val ikPubBase64 = Base64.getEncoder().encodeToString(publicKey)
 
@@ -58,6 +73,8 @@ class AuthRepository @Inject constructor(
                     nickname = nickname,
                     password = password,
                     deviceName = deviceName,
+                    platform = clientPlatform(),
+                    location = clientLocation(),
                     ikPub = ikPubBase64
                 )
             )
@@ -86,6 +103,8 @@ class AuthRepository @Inject constructor(
                     nickname = nickname,
                     password = password,
                     deviceName = deviceName,
+                    platform = clientPlatform(),
+                    location = clientLocation(),
                     ikPub = ikPubBase64
                 )
             )

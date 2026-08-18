@@ -63,6 +63,11 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate registration id: %w", err)
 	}
 
+	if err := migrateDeviceMeta(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate device meta: %w", err)
+	}
+
 	if err := migrateMessagesClientMsgId(sqlDB); err != nil {
 		sqlDB.Close()
 		return nil, fmt.Errorf("db: migrate messages client msg id: %w", err)
@@ -338,13 +343,31 @@ func migratePurgePending(database *sql.DB) error {
 }
 
 func migrateRegistrationId(database *sql.DB) error {
+	return addDeviceColumnIfMissing(database, "registration_id",
+		"ALTER TABLE devices ADD COLUMN registration_id INTEGER NOT NULL DEFAULT 0")
+}
+
+// migrateDeviceMeta adds the platform and location columns that record where a
+// device is signing in from, for databases created before they existed.
+func migrateDeviceMeta(database *sql.DB) error {
+	if err := addDeviceColumnIfMissing(database, "platform",
+		"ALTER TABLE devices ADD COLUMN platform TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	return addDeviceColumnIfMissing(database, "location",
+		"ALTER TABLE devices ADD COLUMN location TEXT NOT NULL DEFAULT ''")
+}
+
+// addDeviceColumnIfMissing runs alterSQL only when the devices table lacks the
+// named column, making the ALTER idempotent across restarts.
+func addDeviceColumnIfMissing(database *sql.DB, column, alterSQL string) error {
 	rows, err := database.Query("PRAGMA table_info(devices)")
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
-	hasReg := false
+	has := false
 	for rows.Next() {
 		var cid int
 		var name, typeStr string
@@ -353,13 +376,15 @@ func migrateRegistrationId(database *sql.DB) error {
 		if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err != nil {
 			return err
 		}
-		if name == "registration_id" {
-			hasReg = true
+		if name == column {
+			has = true
 		}
 	}
-
-	if !hasReg {
-		if _, err := database.Exec("ALTER TABLE devices ADD COLUMN registration_id INTEGER NOT NULL DEFAULT 0"); err != nil {
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !has {
+		if _, err := database.Exec(alterSQL); err != nil {
 			return err
 		}
 	}

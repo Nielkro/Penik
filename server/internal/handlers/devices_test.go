@@ -116,3 +116,46 @@ func TestListDevicesUnauthorized(t *testing.T) {
 		t.Fatalf("expected 401, got %d", rr.Code)
 	}
 }
+
+func TestListDevicesReturnsPlatformAndLocation(t *testing.T) {
+	database, err := db.Open(filepath.Join(t.TempDir(), "devices4.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	userID, deviceID := setupUserDevice(t, database, "dave")
+	if _, err := database.Exec(
+		`UPDATE devices SET platform=?, location=? WHERE id=?`,
+		"Android 14", "Moscow", deviceID); err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	ListDevices(database)(rr, listDevicesReq(userID, deviceID))
+
+	var list []deviceResponse
+	if err := json.NewDecoder(rr.Body).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 device, got %d", len(list))
+	}
+	if list[0].Platform != "Android 14" || list[0].Location != "Moscow" {
+		t.Errorf("expected platform/location echoed, got %q / %q", list[0].Platform, list[0].Location)
+	}
+}
+
+func TestPlatformFromUserAgent(t *testing.T) {
+	cases := map[string]string{
+		"Mozilla/5.0 (X11; Linux x86_64) Chrome/120.0":       "Linux · Chrome",
+		"Mozilla/5.0 (Windows NT 10.0) Gecko Firefox/121.0":  "Windows · Firefox",
+		"Mozilla/5.0 (Linux; Android 14) Chrome/120":          "Android · Chrome",
+		"":                                                    "",
+	}
+	for ua, want := range cases {
+		if got := platformFromUserAgent(ua); got != want {
+			t.Errorf("platformFromUserAgent(%q) = %q, want %q", ua, got, want)
+		}
+	}
+}

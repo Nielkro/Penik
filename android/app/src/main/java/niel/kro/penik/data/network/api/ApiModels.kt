@@ -8,6 +8,8 @@ data class LoginRequestBody(
     val nickname: String,
     val password: String,
     @SerialName("device_name") val deviceName: String,
+    val platform: String = "",
+    val location: String = "",
     @SerialName("ik_pub") val ikPub: String? = null
 )
 
@@ -17,6 +19,8 @@ data class RegisterRequestBody(
     val nickname: String,
     val password: String,
     @SerialName("device_name") val deviceName: String,
+    val platform: String = "",
+    val location: String = "",
     @SerialName("ik_pub") val ikPub: String? = null
 )
 
@@ -280,6 +284,8 @@ data class VkUploadResponse(
 data class DeviceResponse(
     val id: Long,
     @SerialName("device_name") val deviceName: String,
+    val platform: String = "",
+    val location: String = "",
     @SerialName("created_at") val createdAt: Long,
     @SerialName("last_seen") val lastSeen: Long,
     @SerialName("is_current") val isCurrent: Boolean = false,
