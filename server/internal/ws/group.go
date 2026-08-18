@@ -165,6 +165,7 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 			"group_name":     groupName,
 			"sender_user_id": fmt.Sprintf("%d", c.userID),
 			"sender_name":    senderName,
+			"text":           "Новое сообщение в группе",
 			"ciphertext":     base64.StdEncoding.EncodeToString(msg.Ciphertext),
 			"salt":           base64.StdEncoding.EncodeToString(msg.Salt),
 			"nonce":          base64.StdEncoding.EncodeToString(msg.Nonce),

@@ -545,6 +545,7 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 			"type":           "direct",
 			"chat_user_id":   fmt.Sprintf("%d", senderUserID),
 			"sender_name":    senderName,
+			"text":           "Новое сообщение",
 			"ciphertext":     base64.StdEncoding.EncodeToString(dev.Ciphertext),
 			"salt":           base64.StdEncoding.EncodeToString(dev.Salt),
 			"nonce":          base64.StdEncoding.EncodeToString(dev.Nonce),
