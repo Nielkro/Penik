@@ -98,7 +98,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 chatRepository.updateLastMessage(event.chatUserId, event.text, event.ts)
                 if (isIncoming) {
                     chatRepository.incrementUnread(event.chatUserId)
-                    appNotificationManager.showDirectMessageNotification(event.chatUserId, event.text, event.ts)
+                    appNotificationManager.showDirectMessageNotification(event.chatUserId, event.text, event.ts, msgServerId = event.msgId)
                 }
             }
             is WebSocketEvent.MsgRecvEncrypted -> {
@@ -109,7 +109,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
                     chatRepository.updateLastMessage(event.chatUserId, text, event.ts)
                     if (isIncoming) {
                         chatRepository.incrementUnread(event.chatUserId)
-                        appNotificationManager.showDirectMessageNotification(event.chatUserId, text, event.ts)
+                        appNotificationManager.showDirectMessageNotification(event.chatUserId, text, event.ts, msgServerId = event.msgId)
                     }
                 }
             }

@@ -60,6 +60,7 @@ class AppNotificationManager @Inject constructor(
         const val EXTRA_CHAT_NAME = "chatName"
         const val EXTRA_GROUP_ID = "groupId"
         const val EXTRA_GROUP_NAME = "groupName"
+        const val EXTRA_LAST_MSG_SERVER_ID = "lastMsgServerId"
 
         @Volatile
         var activeChatKey: String? = null
@@ -90,6 +91,8 @@ class AppNotificationManager @Inject constructor(
     private val directThreads = ConcurrentHashMap<Long, MutableList<ThreadMessage>>()
     private val groupThreads = ConcurrentHashMap<Long, MutableList<ThreadMessage>>()
     private val lastAlertTimestamps = ConcurrentHashMap<String, Long>()
+    // Last incoming message server ID per chatUserId — used for reply-to
+    private val lastIncomingMsgIds = ConcurrentHashMap<Long, Long>()
 
     private fun shouldAlert(key: String): Boolean {
         val now = System.currentTimeMillis()
@@ -145,6 +148,7 @@ class AppNotificationManager @Inject constructor(
         chatUserId: Long,
         rawText: String,
         timestamp: Long,
+        msgServerId: Long = 0L,
         overrideSenderName: String? = null,
         customAvatarBitmap: Bitmap? = null,
         customImageBitmap: Bitmap? = null
@@ -181,6 +185,10 @@ class AppNotificationManager @Inject constructor(
             if (messagesList.size > 15) {
                 messagesList.removeAt(0)
             }
+        }
+        // Track last incoming message server ID for reply-to
+        if (msgServerId > 0L) {
+            lastIncomingMsgIds[chatUserId] = msgServerId
         }
 
         val messagingStyle = NotificationCompat.MessagingStyle(myPerson)
@@ -231,9 +239,13 @@ class AppNotificationManager @Inject constructor(
         val remoteInput = RemoteInput.Builder(KEY_TEXT_REPLY)
             .setLabel("Ответить")
             .build()
+        val lastMsgId = lastIncomingMsgIds[chatUserId] ?: msgServerId
         val replyIntent = Intent(context, DirectReplyReceiver::class.java).apply {
             putExtra(EXTRA_CHAT_USER_ID, chatUserId)
             putExtra(EXTRA_CHAT_NAME, chatName)
+            if (lastMsgId > 0L) {
+                putExtra(EXTRA_LAST_MSG_SERVER_ID, lastMsgId.toString())
+            }
         }
         val replyPendingIntent = PendingIntent.getBroadcast(
             context,

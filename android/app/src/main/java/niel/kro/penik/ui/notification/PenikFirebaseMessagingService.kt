@@ -83,6 +83,7 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
                     return@runBlocking
                 }
                 val senderName = data["sender_name"]
+                val msgServerId = data["msg_id"]?.toLongOrNull() ?: 0L
                 
                 // Try E2EE decryption
                 val hasE2eeFields = !data["ciphertext"].isNullOrBlank()
@@ -98,6 +99,7 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
                     chatUserId = chatUserId,
                     rawText = decryptedText,
                     timestamp = timestamp,
+                    msgServerId = msgServerId,
                     overrideSenderName = senderName
                 )
             }
