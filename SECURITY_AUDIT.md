@@ -10,10 +10,10 @@
 
 ### 2.1 Android логирует тела всех HTTP-запросов и ответов
 
-- **Описание:** В `android/app/src/main/java/niel/kro/penik/data/di/Modules.kt:107-109` подключён `HttpLoggingInterceptor` с уровнем `BODY` без ограничения debug-сборкой. Этот же клиент добавляет Bearer-токен (`:99-106`).
+- **Описание:** В `android/app/src/main/java/niel/kro/penik/data/di/Modules.kt` подключён `HttpLoggingInterceptor`. Этот же клиент добавляет Bearer-токен.
 - **Уровень риска:** Высокий
 - **Последствия:** В системные и диагностические логи могут попасть пароли, Bearer-токены, зашифрованные бэкапы, ключевой материал и метаданные сообщений.
-- **Статус:** Не исправлено
+- **Статус:** Исправлено. Уровень логирования вычисляется через `NetworkModule.httpLogLevel(BuildConfig.DEBUG)`: `BODY` только в debug-сборке, `NONE` в release. Поведение зафиксировано юнит-тестом `HttpLogLevelTest`.
 
 ### 2.2 CORS и WebSocket разрешают любой origin по умолчанию
 
