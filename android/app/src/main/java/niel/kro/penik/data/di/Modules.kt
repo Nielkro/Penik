@@ -27,6 +27,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 import niel.kro.penik.data.crypto.E2EECrypto
 import niel.kro.penik.data.crypto.GroupCrypto
+import niel.kro.penik.BuildConfig
 
 
 @Module
@@ -83,6 +84,16 @@ object NetworkModule {
 
     private val BASE_URL = niel.kro.penik.data.network.api.ApiConfig.BASE_URL
 
+    /**
+     * Resolves the OkHttp logging verbosity from the build type.
+     *
+     * Full BODY logging captures the Authorization bearer token, passwords,
+     * encrypted key backups and message metadata, so it must never be active
+     * in a release build. Only debug builds emit request/response bodies.
+     */
+    internal fun httpLogLevel(isDebug: Boolean): HttpLoggingInterceptor.Level =
+        if (isDebug) HttpLoggingInterceptor.Level.BODY else HttpLoggingInterceptor.Level.NONE
+
     @Provides
     @Singleton
     fun provideJson(): Json = Json {
@@ -106,7 +117,7 @@ object NetworkModule {
                 chain.proceed(request.build())
             }
             .addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.NONE
+                level = httpLogLevel(BuildConfig.DEBUG)
             })
             .addInterceptor { chain ->
                 val response = chain.proceed(chain.request())
