@@ -36,7 +36,8 @@ import niel.kro.penik.ui.theme.ThemeManager
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit = {},
-    onDevices: () -> Unit = {}
+    onDevices: () -> Unit = {},
+    onNotificationDebug: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val isLight by ThemeManager.isLight.collectAsState()
@@ -106,6 +107,29 @@ fun SettingsScreen(
             ) {
                 Text("Мои устройства", color = colors.textPrimary, fontSize = 16.sp)
                 Text("›", color = colors.textMuted, fontSize = 20.sp)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Notification debug navigation row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { onNotificationDebug() }
+                    .padding(vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Тест уведомлений", color = colors.textPrimary, fontSize = 16.sp)
+                    Text(
+                        text = "Дебаг меню проверки уведомлений",
+                        color = colors.textMuted,
+                        fontSize = 13.sp
+                    )
+                }
+                Text("🧪 ›", color = colors.accent, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
