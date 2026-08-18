@@ -184,6 +184,9 @@ export async function deleteMessage(msgId) {
 
 export async function saveMessage(message) {
   await openDB();
+  if (message && message.chat_id != null) {
+    message.chat_id = String(message.chat_id);
+  }
   return put(tx("messages", "readwrite"), message);
 }
 
@@ -194,30 +197,50 @@ export async function getMessages(chatId, limit = 50, before = null) {
     const store = transaction.objectStore("messages");
     const index = store.index("chat_id");
     const list = [];
+    const seen = new Set();
 
-    const keyRange = IDBKeyRange.only(String(chatId));
+    const strId = String(chatId);
+    const numId = Number(chatId);
     const beforeTime = before == null ? null : (typeof before === "number" ? before : Number(before));
-    const req = index.openCursor(keyRange);
 
-    req.onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (cursor) {
-        const msg = cursor.value;
-        if (beforeTime == null || msg.created_at < beforeTime) {
-          list.push(msg);
-        }
-        cursor.continue();
-      } else {
-        // Order strictly by wall-clock time. The cursor yields messages in
-        // primary-key (msg_id / server id) order, which is NOT a reliable proxy
-        // for send time: a pending message can be resolved to a fresh, larger
-        // server id and would otherwise jump to the bottom despite an old
-        // created_at. Sort here and return the newest `limit` messages.
-        list.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
-        resolve(list.slice(-limit));
-      }
+    const finalize = () => {
+      list.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+      resolve(list.slice(-limit));
     };
-    req.onerror = () => reject(req.error);
+
+    const scanKey = (k, next) => {
+      const req = index.openCursor(IDBKeyRange.only(k));
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          const msg = cursor.value;
+          const msgKey = msg.msg_id != null ? String(msg.msg_id) : (msg.client_msg_id || String(cursor.key));
+          if (!seen.has(msgKey)) {
+            seen.add(msgKey);
+            if (beforeTime == null || msg.created_at < beforeTime) {
+              list.push(msg);
+            }
+          }
+          cursor.continue();
+        } else if (next) {
+          next();
+        } else {
+          finalize();
+        }
+      };
+      req.onerror = () => {
+        if (next) next();
+        else finalize();
+      };
+    };
+
+    if (!isNaN(numId) && String(numId) !== strId) {
+      scanKey(strId, () => scanKey(numId, null));
+    } else if (!isNaN(numId)) {
+      scanKey(strId, () => scanKey(numId, null));
+    } else {
+      scanKey(strId, null);
+    }
   });
 }
 

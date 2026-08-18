@@ -1820,24 +1820,17 @@ fun MessageBubble(
                 } else {
                     val isSingleLineShort = !isFailed && !parsedText.contains('\n') && parsedText.length <= 35
                     if (isSingleLineShort) {
-                        val hasReply = replySender != null && replyText != null
                         Row(
-                            modifier = if (hasReply) {
-                                Modifier.fillMaxWidth().padding(top = 1.dp)
-                            } else {
-                                Modifier.padding(top = 1.dp)
-                            },
+                            modifier = Modifier.padding(top = 1.dp),
                             verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = if (hasReply) Arrangement.SpaceBetween else Arrangement.Start
+                            horizontalArrangement = Arrangement.Start
                         ) {
                             ClickableLinkedText(
                                 text = parsedText,
                                 textColor = textColor,
                                 linkColor = linkColor,
                                 fontSize = 15.sp,
-                                modifier = Modifier
-                                    .weight(1f, fill = false)
-                                    .padding(end = 8.dp),
+                                modifier = Modifier.padding(end = 6.dp),
                                 onLongClick = {
                                     showMenu = true
                                 }
