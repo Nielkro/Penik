@@ -20,7 +20,7 @@
 - **Описание:** `server/internal/config/config.go:32` задаёт `ALLOWED_ORIGINS=*` по умолчанию. В `server/internal/middleware/cors.go:23-27` это приводит к `Access-Control-Allow-Origin: *`, а `server/internal/handlers/ws.go:34-39` отключает проверку origin для WebSocket.
 - **Уровень риска:** Высокий
 - **Последствия:** При ошибочной production-конфигурации сторонние origin смогут обращаться к API и WebSocket с доступным токеном; CSRF-проверка также не включается для wildcard-конфигурации.
-- **Статус:** Не исправлено
+- **Статус:** Исправлено. Добавлена переменная `ENV`; `Config.Validate()` в production требует явный, не-wildcard, HTTPS-only список `ALLOWED_ORIGINS` и вызывается при старте (`main.go`), иначе сервер отказывается запускаться (fail-closed). Wildcard остаётся допустимым только в development. Покрыто тестами `config_test.go`.
 
 ### 2.3 Android WebSocket: неявное определение схемы
 

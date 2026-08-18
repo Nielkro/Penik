@@ -28,6 +28,9 @@ var frontendFS embed.FS
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("invalid config: %v", err)
+	}
 
 	database, err := db.Open(cfg.DBPath)
 	if err != nil {

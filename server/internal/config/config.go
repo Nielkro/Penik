@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 // Config holds all runtime configuration loaded from environment variables.
 type Config struct {
+	Env            string // "development" (default) or "production"
 	Port           string
 	DBPath         string
 	SessionTTL     time.Duration
@@ -19,12 +21,45 @@ type Config struct {
 	VKBotToken     string
 }
 
+// IsProduction reports whether the server runs with production hardening.
+func (c *Config) IsProduction() bool {
+	return strings.EqualFold(c.Env, "production") || strings.EqualFold(c.Env, "prod")
+}
+
+// Validate enforces fail-closed security invariants. In production the CORS /
+// WebSocket origin allowlist must be an explicit, non-wildcard, HTTPS-only list,
+// so a misconfigured deployment refuses to start instead of exposing the API to
+// any origin.
+func (c *Config) Validate() error {
+	if !c.IsProduction() {
+		return nil
+	}
+	origins := strings.TrimSpace(c.AllowedOrigins)
+	if origins == "" || origins == "*" {
+		return fmt.Errorf("ALLOWED_ORIGINS must be an explicit list in production, got %q", c.AllowedOrigins)
+	}
+	for _, raw := range strings.Split(origins, ",") {
+		o := strings.TrimSpace(raw)
+		if o == "" {
+			continue
+		}
+		if o == "*" {
+			return fmt.Errorf("ALLOWED_ORIGINS must not contain a wildcard in production")
+		}
+		if !strings.HasPrefix(o, "https://") {
+			return fmt.Errorf("ALLOWED_ORIGINS entry %q must use https:// in production", o)
+		}
+	}
+	return nil
+}
+
 // Load reads configuration from environment variables (and .env file) with sensible defaults.
 func Load() *Config {
 	loadDotEnv(".env")
 	loadDotEnv("server/.env")
 
 	cfg := &Config{
+		Env:            getEnv("ENV", "development"),
 		Port:           getEnv("PORT", "8143"),
 		DBPath:         getEnv("DB_PATH", "./data/messenger.db"),
 		MaxAvatarSize:  getEnvInt64("MAX_AVATAR_SIZE", 5*1024*1024),
