@@ -22,11 +22,22 @@ import dagger.hilt.android.AndroidEntryPoint
 import niel.kro.penik.ui.navigation.NavGraph
 import niel.kro.penik.ui.navigation.Screen
 import niel.kro.penik.ui.notification.AppNotificationManager
-import niel.kro.penik.ui.theme.PenikTheme
-import niel.kro.penik.ui.theme.ThemeManager
+import androidx.lifecycle.lifecycleScope
+import com.google.firebase.messaging.FirebaseMessaging
+import kotlinx.coroutines.launch
+import niel.kro.penik.data.network.api.ApiService
+import niel.kro.penik.data.network.api.FcmTokenRequestBody
+import niel.kro.penik.data.repository.SecureTokenStorage
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var tokenStorage: SecureTokenStorage
+
+    @Inject
+    lateinit var apiService: ApiService
 
     private var pendingRoute by mutableStateOf<String?>(null)
 
@@ -35,6 +46,22 @@ class MainActivity : ComponentActivity() {
         ThemeManager.init(this)
         enableEdgeToEdge()
         extractNavigationRoute(intent)
+
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                val token = task.result
+                if (token != null) {
+                    tokenStorage.saveFcmToken(token)
+                    lifecycleScope.launch {
+                        if (tokenStorage.isLoggedIn()) {
+                            runCatching {
+                                apiService.updateFcmToken(FcmTokenRequestBody(token))
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         setContent {
             val isLight by ThemeManager.isLight.collectAsState()

@@ -82,6 +82,14 @@ class AuthRepository @Inject constructor(
                 val body = response.body()!!
                 tokenStorage.saveAuth(body.token, body.userId, body.deviceId)
                 fetchAndSaveUserProfile(body.userId)
+                
+                // Upload FCM token if exists
+                tokenStorage.getFcmToken()?.let { fcmToken ->
+                    runCatching {
+                        apiService.updateFcmToken(niel.kro.penik.data.network.api.FcmTokenRequestBody(fcmToken))
+                    }
+                }
+
                 Result.success(AuthResponse(body.token, body.userId, body.deviceId))
             } else {
                 val msg = parseServerError(response.code(), response.errorBody()?.string())
@@ -112,6 +120,14 @@ class AuthRepository @Inject constructor(
                 val body = response.body()!!
                 tokenStorage.saveAuth(body.token, body.userId, body.deviceId)
                 tokenStorage.saveUserProfile(name, nickname)
+
+                // Upload FCM token if exists
+                tokenStorage.getFcmToken()?.let { fcmToken ->
+                    runCatching {
+                        apiService.updateFcmToken(niel.kro.penik.data.network.api.FcmTokenRequestBody(fcmToken))
+                    }
+                }
+
                 Result.success(AuthResponse(body.token, body.userId, body.deviceId))
             } else {
                 val msg = parseServerError(response.code(), response.errorBody()?.string())

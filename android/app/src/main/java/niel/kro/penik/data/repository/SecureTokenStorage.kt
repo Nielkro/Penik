@@ -94,6 +94,14 @@ class SecureTokenStorage @Inject constructor(
     fun getNickname(): String = prefs.getString(KEY_NICKNAME, "") ?: ""
     fun isLoggedIn(): Boolean = getToken() != null
 
+    fun saveFcmToken(token: String) {
+        prefs.edit().putString("fcm_token", token).apply()
+    }
+
+    fun getFcmToken(): String? {
+        return prefs.getString("fcm_token", null)
+    }
+
     fun clear() {
         prefs.edit().clear().apply()
     }

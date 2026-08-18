@@ -14,6 +14,7 @@ import (
 	"github.com/shamaton/msgpack/v2"
 	"messenger/server/internal/config"
 	"messenger/server/internal/db"
+	"messenger/server/internal/push"
 	"nhooyr.io/websocket"
 )
 
@@ -515,6 +516,13 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
+
+	var senderName string
+	_ = c.db.QueryRowContext(ctx, "SELECT name FROM users WHERE id = ?", senderUserID).Scan(&senderName)
+	if senderName == "" {
+		senderName = "Пользователь"
+	}
+	push.SendDirectMessagePush(c.db, recipientUserID, senderUserID, senderName, "Новое сообщение")
 
 	for _, deliv := range deliveries {
 		frame, err := encodeFrame(OpMsgRecv, deliv.msgRecv)

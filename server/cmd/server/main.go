@@ -89,6 +89,8 @@ func main() {
 		authMW(http.HandlerFunc(handlers.LogoutAll(database))))
 	mux.Handle("GET /api/v1/devices",
 		authMW(http.HandlerFunc(handlers.ListDevices(database))))
+	mux.Handle("PUT /api/v1/devices/me/fcm",
+		authMW(http.HandlerFunc(handlers.UpdateFCMToken(database))))
 
 	mux.Handle("GET /api/v1/users/search",
 		authMW(http.HandlerFunc(handlers.SearchUsers(database))))

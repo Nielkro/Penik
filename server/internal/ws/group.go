@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"messenger/server/internal/push"
 )
 
 const (
@@ -133,6 +135,18 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+
+	var senderName string
+	_ = c.db.QueryRowContext(ctx, "SELECT name FROM users WHERE id = ?", c.userID).Scan(&senderName)
+	if senderName == "" {
+		senderName = "Участник"
+	}
+	var groupName string
+	_ = c.db.QueryRowContext(ctx, "SELECT name FROM groups WHERE id = ?", msg.GroupID).Scan(&groupName)
+	if groupName == "" {
+		groupName = "Группа"
+	}
+	push.SendGroupMessagePush(c.db, msg.GroupID, c.userID, senderName, groupName, "Новое сообщение в группе")
 
 	recv := GroupMessageRecv{
 		GroupID:      msg.GroupID,

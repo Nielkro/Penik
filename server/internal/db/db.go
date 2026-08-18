@@ -107,6 +107,11 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate reply_to_msg_id: %w", err)
 	}
 
+	if err := migrateFcmToken(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate fcm_token: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
 }
 
@@ -764,4 +769,19 @@ func migrateReplyToMsgId(database *sql.DB) error {
 	}
 	return nil
 }
+
+// migrateFcmToken adds fcm_token column to devices table
+func migrateFcmToken(database *sql.DB) error {
+	has, err := tableHasColumn(database, "devices", "fcm_token")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := database.Exec("ALTER TABLE devices ADD COLUMN fcm_token TEXT NOT NULL DEFAULT ''"); err != nil {
+			return fmt.Errorf("add fcm_token to devices: %w", err)
+		}
+	}
+	return nil
+}
+
 
