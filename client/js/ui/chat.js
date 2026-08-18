@@ -40,16 +40,27 @@ export function getMessagePreviewInfo(plaintext) {
         const inner = getMessagePreviewInfo(parsed.text || "");
         return { text: prefix + fromPrefix + inner.text, thumb: inner.thumb, isMedia: inner.isMedia };
       }
-      if (parsed.type === "file" && (parsed.file || parsed.url)) {
+      if ((parsed.type === "file" || parsed.file) && (parsed.file || parsed.url)) {
         const fileObj = parsed.file || parsed;
-        const isImage = (fileObj.mime || "").startsWith("image/");
-        const isVideo = (fileObj.mime || "").startsWith("video/");
-        let text = parsed.text || "";
-        if (!text) {
+        const mime = fileObj.mime || "";
+        const fileName = fileObj.name || "";
+        const isImage = mime.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(fileName);
+        const isVideo = mime.startsWith("video/") || /\.(mp4|mov|webm|mkv|avi)$/i.test(fileName);
+        const isAudio = mime.startsWith("audio/") || /\.(mp3|ogg|wav|m4a|aac|flac)$/i.test(fileName);
+
+        let text = parsed.text ? parsed.text.trim() : "";
+        if (text) {
+          if (isImage) text = `📷 ${text}`;
+          else if (isVideo) text = `🎬 ${text}`;
+          else if (isAudio) text = `🎵 ${text}`;
+          else text = `📎 ${text}`;
+        } else {
           if (isImage) text = "📷 Фото";
           else if (isVideo) text = "🎬 Видео";
-          else text = fileObj.name ? `📎 ${fileObj.name}` : "📎 Файл";
+          else if (isAudio) text = "🎵 Аудио";
+          else text = fileName ? `📎 ${fileName}` : "📎 Файл";
         }
+
         if (parsed.fwd_from) {
           text = `↪ ${parsed.fwd_from}: ${text}`;
         }
@@ -63,9 +74,12 @@ export function getMessagePreviewInfo(plaintext) {
         const inner = getMessagePreviewInfo(parsed.text);
         return { text: prefix + inner.text, thumb: inner.thumb, isMedia: inner.isMedia };
       }
+      if (parsed.type) {
+        return { text: prefix + (parsed.type === "file" ? "📎 Файл" : "Сообщение"), thumb: null, isMedia: false };
+      }
     } catch (e) {}
   }
-  return { text: prefix + payloadStr, thumb: null, isMedia: false };
+  return { text: prefix + payloadStr.replace(/\s+/g, " "), thumb: null, isMedia: false };
 }
 
 export function getMessagePreview(plaintext) {
@@ -140,7 +154,7 @@ export async function renderChatList(container) {
         avatar({ name: "Избранное" }, 48),
         el("div", { class: "chatlist-item-info" },
           el("span", { class: "chatlist-item-name" }, "Избранное"),
-          el("span", { class: "chatlist-item-preview" }, selfChatEntry.last_message || "")
+          el("span", { class: "chatlist-item-preview" }, getMessagePreview(selfChatEntry.last_message || ""))
         ),
         el("span", { class: "chatlist-item-time" }, selfChatEntry.last_ts ? formatTime(selfChatEntry.last_ts) : "")
       );
@@ -984,7 +998,7 @@ export async function renderChat(container, userId) {
         reply_to_msg_id: currentReply ? currentReply.msg_id : null
       };
       await saveMessage(storedMsg);
-      await saveContact({ ...contact, last_message: text, last_ts: now });
+      await saveContact({ ...contact, last_message: getMessagePreview(text), last_ts: now });
 
       pendingAcks.set(String(msgId), { tempId: tempId, userId: userId });
 
