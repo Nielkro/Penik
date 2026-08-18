@@ -1,4 +1,4 @@
-import { apiPatch, apiGet, listDevices, createPairingSession, getPairingSession, uploadPairingHistory, uploadAvatar } from "../api.js";
+import { apiPatch, apiGet, createPairingSession, getPairingSession, uploadPairingHistory, uploadAvatar } from "../api.js";
 import { getAllMessages, getAllContacts, getAllGroups, getAllGroupMembers, getAllGroupKeys, getAllGroupMessages } from "../storage.js";
 import { deriveSharedSecret, encryptPairingHistory, generateKeyPair } from "../crypto.js";
 import { importPairingHistory } from "../pairing.js";
@@ -11,7 +11,7 @@ const decodeB64Url = s => {
 const encodeB64Url = b => btoa(String.fromCharCode(...b)).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
 const pack = ({ ciphertext, salt, nonce }) => new TextEncoder().encode(JSON.stringify({ ciphertext: encodeB64Url(ciphertext), salt: encodeB64Url(salt), nonce: encodeB64Url(nonce) }));
 import { navigate, getCurrentUser, setCurrentUser, logout, backupE2EEKeys, restoreE2EEKeys } from "../app.js";
-import { avatar, el, showToast, spinner, formatFullTime } from "./components.js";
+import { avatar, el, showToast, spinner } from "./components.js";
 import QRCode from "qrcode";
 import { ws, OP } from "../ws.js";
 
@@ -485,39 +485,6 @@ export function renderProfile(container) {
   });
   const pairingSection = el("div", { style: "margin-top:16px;border-top:1px solid rgba(255,255,255,.1);padding-top:16px;width:100%;" }, el("h3", { style: "font-size:14px;color:#aaa;" }, "Устройства"), pairingBtn, receiveHistoryBtn);
 
-  // --- Devices list section ---
-  const devicesList = el("div", { class: "profile-devices-list", style: "width:100%;" }, spinner());
-  const devicesSection = el("div", { style: "margin-top:16px;border-top:1px solid rgba(255,255,255,.1);padding-top:16px;width:100%;" },
-    el("h3", { style: "font-size:14px;color:#aaa;" }, "Мои устройства"),
-    devicesList
-  );
-
-  function renderDevices(devices) {
-    devicesList.innerHTML = "";
-    if (!devices || devices.length === 0) {
-      devicesList.appendChild(el("div", { style: "color:#888;font-size:13px;" }, "Нет устройств"));
-      return;
-    }
-    for (const d of devices) {
-      const title = el("div", { style: "font-size:14px;color:#eee;" },
-        d.device_name || "Устройство",
-        d.is_current ? el("span", { style: "margin-left:8px;font-size:11px;color:#4caf50;" }, "· это устройство") : ""
-      );
-      const meta = el("div", { style: "font-size:12px;color:#888;margin-top:2px;" },
-        `Активно: ${formatFullTime(d.last_seen * 1000)}`,
-        d.has_session ? el("span", { style: "margin-left:8px;color:#4caf50;" }, "в сети") : el("span", { style: "margin-left:8px;color:#888;" }, "нет активной сессии")
-      );
-      devicesList.appendChild(el("div", { style: "padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);" }, title, meta));
-    }
-  }
-
-  listDevices()
-    .then(renderDevices)
-    .catch(() => {
-      devicesList.innerHTML = "";
-      devicesList.appendChild(el("div", { style: "color:#e57373;font-size:13px;" }, "Не удалось загрузить устройства"));
-    });
-
   const infoSection = el("div", { class: "profile-info" },
     el("div", { class: "profile-name-row" }, nameDisplay, nameInput),
     usernameEl,
@@ -530,8 +497,7 @@ export function renderProfile(container) {
     infoSection,
     pwSection,
     backupSection,
-    pairingSection,
-    devicesSection
+    pairingSection
   );
 
   const wrap = el("div", { class: "profile-wrap" },

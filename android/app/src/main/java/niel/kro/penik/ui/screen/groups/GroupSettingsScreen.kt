@@ -1,5 +1,7 @@
 package niel.kro.penik.ui.screen.groups
 
+import niel.kro.penik.ui.theme.LocalAppColors
+
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -66,14 +68,6 @@ import niel.kro.penik.ui.components.FullscreenImageViewer
 import niel.kro.penik.ui.components.GroupAvatar
 import niel.kro.penik.ui.components.UserAvatar
 import niel.kro.penik.ui.components.avatarUrlFor
-import niel.kro.penik.ui.theme.Accent
-import niel.kro.penik.ui.theme.Background
-import niel.kro.penik.ui.theme.Border
-import niel.kro.penik.ui.theme.Danger
-import niel.kro.penik.ui.theme.InputBg
-import niel.kro.penik.ui.theme.Panel
-import niel.kro.penik.ui.theme.TextMuted
-import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.GroupSettingsViewModel
 
 private fun formatDateTime(timestamp: Long): String {
@@ -147,16 +141,16 @@ fun GroupSettingsScreen(
     }
 
     Scaffold(
-        containerColor = Background,
+        containerColor = LocalAppColors.current.background,
         topBar = {
             TopAppBar(
-                title = { Text("Настройки группы", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+                title = { Text("Настройки группы", color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад", tint = TextPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад", tint = LocalAppColors.current.textPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Panel)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = LocalAppColors.current.panel)
             )
         }
     ) { padding ->
@@ -198,7 +192,7 @@ fun GroupSettingsScreen(
 
                             if (isLoading) {
                                 CircularProgressIndicator(
-                                    color = Accent,
+                                    color = LocalAppColors.current.accent,
                                     modifier = Modifier.size(32.dp)
                                 )
                             }
@@ -210,7 +204,7 @@ fun GroupSettingsScreen(
                                     .align(Alignment.BottomEnd)
                                     .size(28.dp)
                                     .clip(CircleShape)
-                                    .background(Accent)
+                                    .background(LocalAppColors.current.accent)
                                     .clickable { imagePickerLauncher.launch("image/*") },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -230,21 +224,21 @@ fun GroupSettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Panel)
+                            .background(LocalAppColors.current.panel)
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = groupName.ifEmpty { "Группа без названия" },
-                                color = TextPrimary,
+                                color = LocalAppColors.current.textPrimary,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = "Создана: " + (group?.createdAt?.let { formatDateTime(it) } ?: ""),
-                                color = TextMuted,
+                                color = LocalAppColors.current.textMuted,
                                 fontSize = 12.sp
                             )
                         }
@@ -254,7 +248,7 @@ fun GroupSettingsScreen(
                                 renameInputText = groupName
                                 showRenameDialog = true
                             }) {
-                                Icon(Icons.Default.Edit, contentDescription = "Редактировать название", tint = Accent)
+                                Icon(Icons.Default.Edit, contentDescription = "Редактировать название", tint = LocalAppColors.current.accent)
                             }
                         }
                     }
@@ -271,19 +265,19 @@ fun GroupSettingsScreen(
                     ) {
                         Text(
                             text = "Участники (${members.size})",
-                            color = TextPrimary,
+                            color = LocalAppColors.current.textPrimary,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
 
                         if (isMePrivileged) {
                             TextButton(onClick = { showInviteDialog = true }) {
-                                Text("＋ Добавить", color = Accent, fontWeight = FontWeight.Bold)
+                                Text("＋ Добавить", color = LocalAppColors.current.accent, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
 
-                    HorizontalDivider(color = Border)
+                    HorizontalDivider(color = LocalAppColors.current.border)
                 }
 
                 // Members list
@@ -302,7 +296,7 @@ fun GroupSettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Panel)
+                            .background(LocalAppColors.current.panel)
                             .clickable { selectedMemberForProfile = member }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -317,13 +311,13 @@ fun GroupSettingsScreen(
                         Column {
                             val displayNameWithMe = displayName + if (isMe) " (вы)" else ""
                             val roleRu = roleLabel(member.role) + if (member.status == "pending") " · приглашён" else ""
-                            Text(displayNameWithMe, color = TextPrimary, fontWeight = FontWeight.Medium)
-                            Text(roleRu, color = TextMuted, fontSize = 12.sp)
+                            Text(displayNameWithMe, color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.Medium)
+                            Text(roleRu, color = LocalAppColors.current.textMuted, fontSize = 12.sp)
                         }
                     }
 
                     if (index < sortedMembers.lastIndex) {
-                        HorizontalDivider(color = Border)
+                        HorizontalDivider(color = LocalAppColors.current.border)
                     }
                 }
             }
@@ -334,8 +328,8 @@ fun GroupSettingsScreen(
     if (showRenameDialog) {
         AlertDialog(
             onDismissRequest = { showRenameDialog = false },
-            containerColor = Panel,
-            titleContentColor = TextPrimary,
+            containerColor = LocalAppColors.current.panel,
+            titleContentColor = LocalAppColors.current.textPrimary,
             title = { Text("Переименовать группу", fontWeight = FontWeight.SemiBold) },
             text = {
                 OutlinedTextField(
@@ -344,14 +338,14 @@ fun GroupSettingsScreen(
                     label = { Text("Название группы") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = InputBg,
-                        unfocusedContainerColor = InputBg,
-                        focusedBorderColor = Accent,
-                        unfocusedBorderColor = Border,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedLabelColor = Accent,
-                        unfocusedLabelColor = TextMuted
+                        focusedContainerColor = LocalAppColors.current.inputBg,
+                        unfocusedContainerColor = LocalAppColors.current.inputBg,
+                        focusedBorderColor = LocalAppColors.current.accent,
+                        unfocusedBorderColor = LocalAppColors.current.border,
+                        focusedTextColor = LocalAppColors.current.textPrimary,
+                        unfocusedTextColor = LocalAppColors.current.textPrimary,
+                        focusedLabelColor = LocalAppColors.current.accent,
+                        unfocusedLabelColor = LocalAppColors.current.textMuted
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -363,12 +357,12 @@ fun GroupSettingsScreen(
                         showRenameDialog = false
                     }
                 }) {
-                    Text("Сохранить", color = Accent)
+                    Text("Сохранить", color = LocalAppColors.current.accent)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showRenameDialog = false }) {
-                    Text("Отмена", color = TextPrimary)
+                    Text("Отмена", color = LocalAppColors.current.textPrimary)
                 }
             }
         )
@@ -384,9 +378,9 @@ fun GroupSettingsScreen(
 
         AlertDialog(
             onDismissRequest = { selectedMemberForProfile = null },
-            containerColor = Panel,
-            titleContentColor = TextPrimary,
-            textContentColor = TextPrimary,
+            containerColor = LocalAppColors.current.panel,
+            titleContentColor = LocalAppColors.current.textPrimary,
+            textContentColor = LocalAppColors.current.textPrimary,
             title = {},
             text = {
                 Column(
@@ -395,10 +389,10 @@ fun GroupSettingsScreen(
                 ) {
                     UserAvatar(userId = member.userId, name = displayName, size = 96.dp)
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text(displayName, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(displayName, color = LocalAppColors.current.textPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     if (member.nickname.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(2.dp))
-                        Text("@${member.nickname}", color = TextMuted, fontSize = 14.sp)
+                        Text("@${member.nickname}", color = LocalAppColors.current.textMuted, fontSize = 14.sp)
                     }
                     val liveState = livePresence[member.userId]
                     val memberOnline = liveState?.online ?: member.online
@@ -408,28 +402,28 @@ fun GroupSettingsScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             presence,
-                            color = if (memberOnline) Accent else TextMuted,
+                            color = if (memberOnline) LocalAppColors.current.accent else LocalAppColors.current.textMuted,
                             fontSize = 13.sp
                         )
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider(color = Border)
+                    HorizontalDivider(color = LocalAppColors.current.border)
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Роль", color = TextMuted, fontSize = 14.sp)
-                        Text(roleLabel(member.role), color = TextPrimary, fontSize = 14.sp)
+                        Text("Роль", color = LocalAppColors.current.textMuted, fontSize = 14.sp)
+                        Text(roleLabel(member.role), color = LocalAppColors.current.textPrimary, fontSize = 14.sp)
                     }
-                    HorizontalDivider(color = Border)
+                    HorizontalDivider(color = LocalAppColors.current.border)
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("ID", color = TextMuted, fontSize = 14.sp)
-                        Text("${member.userId}", color = TextPrimary, fontSize = 14.sp)
+                        Text("ID", color = LocalAppColors.current.textMuted, fontSize = 14.sp)
+                        Text("${member.userId}", color = LocalAppColors.current.textPrimary, fontSize = 14.sp)
                     }
-                    HorizontalDivider(color = Border)
+                    HorizontalDivider(color = LocalAppColors.current.border)
 
                     if (canManageRow || canRemoveRow) {
                         Spacer(modifier = Modifier.height(4.dp))
@@ -445,7 +439,7 @@ fun GroupSettingsScreen(
                         ) {
                             Text(
                                 if (member.role == "admin") "Снять роль админа" else "Сделать админом",
-                                color = Accent,
+                                color = LocalAppColors.current.accent,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -458,14 +452,14 @@ fun GroupSettingsScreen(
                                 selectedMemberForProfile = null
                             }
                         ) {
-                            Text("Удалить из группы", color = Danger, modifier = Modifier.fillMaxWidth())
+                            Text("Удалить из группы", color = LocalAppColors.current.danger, modifier = Modifier.fillMaxWidth())
                         }
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { selectedMemberForProfile = null }) {
-                    Text("Закрыть", color = Accent)
+                    Text("Закрыть", color = LocalAppColors.current.accent)
                 }
             }
         )
@@ -476,9 +470,9 @@ fun GroupSettingsScreen(
         val displayName = member.name.ifEmpty { member.nickname.ifEmpty { "#${member.userId}" } }
         AlertDialog(
             onDismissRequest = { memberToRemove = null },
-            containerColor = Panel,
-            titleContentColor = TextPrimary,
-            textContentColor = TextPrimary,
+            containerColor = LocalAppColors.current.panel,
+            titleContentColor = LocalAppColors.current.textPrimary,
+            textContentColor = LocalAppColors.current.textPrimary,
             title = { Text("Удалить участника", fontWeight = FontWeight.SemiBold) },
             text = { Text("Вы действительно хотите удалить участника $displayName из группы?") },
             confirmButton = {
@@ -486,12 +480,12 @@ fun GroupSettingsScreen(
                     viewModel.removeMember(member.userId)
                     memberToRemove = null
                 }) {
-                    Text("Удалить", color = Accent)
+                    Text("Удалить", color = LocalAppColors.current.accent)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { memberToRemove = null }) {
-                    Text("Отмена", color = TextPrimary)
+                    Text("Отмена", color = LocalAppColors.current.textPrimary)
                 }
             }
         )
@@ -511,8 +505,8 @@ fun GroupSettingsScreen(
 
         AlertDialog(
             onDismissRequest = { showInviteDialog = false; inviteSearchQuery = "" },
-            containerColor = Panel,
-            titleContentColor = TextPrimary,
+            containerColor = LocalAppColors.current.panel,
+            titleContentColor = LocalAppColors.current.textPrimary,
             title = { Text("Пригласить участника", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {
@@ -522,14 +516,14 @@ fun GroupSettingsScreen(
                         label = { Text("Поиск контактов") },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = InputBg,
-                            unfocusedContainerColor = InputBg,
-                            focusedBorderColor = Accent,
-                            unfocusedBorderColor = Border,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedLabelColor = Accent,
-                            unfocusedLabelColor = TextMuted
+                            focusedContainerColor = LocalAppColors.current.inputBg,
+                            unfocusedContainerColor = LocalAppColors.current.inputBg,
+                            focusedBorderColor = LocalAppColors.current.accent,
+                            unfocusedBorderColor = LocalAppColors.current.border,
+                            focusedTextColor = LocalAppColors.current.textPrimary,
+                            unfocusedTextColor = LocalAppColors.current.textPrimary,
+                            focusedLabelColor = LocalAppColors.current.accent,
+                            unfocusedLabelColor = LocalAppColors.current.textMuted
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -544,19 +538,19 @@ fun GroupSettingsScreen(
                             checked = shareHistory,
                             onCheckedChange = { shareHistory = it },
                             colors = CheckboxDefaults.colors(
-                                checkedColor = Accent,
-                                uncheckedColor = TextMuted,
-                                checkmarkColor = TextPrimary
+                                checkedColor = LocalAppColors.current.accent,
+                                uncheckedColor = LocalAppColors.current.textMuted,
+                                checkmarkColor = LocalAppColors.current.textPrimary
                             )
                         )
                         Text(
                             text = "Поделиться историей чата до вступления",
-                            color = TextPrimary,
+                            color = LocalAppColors.current.textPrimary,
                             fontSize = 14.sp,
                             modifier = Modifier.padding(start = 8.dp)
                         )
                     }
-                    HorizontalDivider(color = Border)
+                    HorizontalDivider(color = LocalAppColors.current.border)
                     LazyColumn(modifier = Modifier.fillMaxWidth().padding(top = 8.dp).weight(1f, fill = false)) {
                         items(inviteableContacts) { contact ->
                             val displayName = contact.name.ifEmpty { contact.nickname.ifEmpty { "#${contact.userId}" } }
@@ -579,21 +573,21 @@ fun GroupSettingsScreen(
                                     modifier = Modifier.padding(end = 12.dp)
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(displayName, color = TextPrimary, fontWeight = FontWeight.Medium)
+                                    Text(displayName, color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.Medium)
                                     if (contact.nickname.isNotEmpty()) {
-                                        Text("@${contact.nickname}", color = TextMuted, fontSize = 12.sp)
+                                        Text("@${contact.nickname}", color = LocalAppColors.current.textMuted, fontSize = 12.sp)
                                     }
                                 }
-                                Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Accent, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.PersonAdd, contentDescription = null, tint = LocalAppColors.current.accent, modifier = Modifier.size(20.dp))
                             }
-                            HorizontalDivider(color = Border)
+                            HorizontalDivider(color = LocalAppColors.current.border)
                         }
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { showInviteDialog = false; inviteSearchQuery = "" }) {
-                    Text("Закрыть", color = Accent)
+                    Text("Закрыть", color = LocalAppColors.current.accent)
                 }
             }
         )

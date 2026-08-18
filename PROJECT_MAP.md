@@ -58,6 +58,8 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/js/ui/chat.js` — Displays the chat list, direct messaging room, messages, delivery/read receipts, and input controls.
 - `client/js/ui/groups.js` — Displays the group list and group chat room, including messages, invitations, and member actions.
 - `client/js/ui/profile.js` — Profile screen for editing user data and uploading avatars.
+- `client/js/ui/settings.js` — Settings screen (theme switching) and a separate devices screen listing the user's own devices.
+- `client/js/theme.js` — Dark/light theme state, persistence in localStorage, and application to the document root.
 - `client/js/ui/search.js` — User search screen and initiator for direct chats.
 - `client/js/ui/components.js` — Shared UI components: avatars, time formatting, hover tooltip for full timestamp, message copy menu, scroll-down button, toasts, and modals.
 - `client/js/globals.d.ts` — Ambient type declarations for globals the app attaches to `window`; type-checking only, emits no JavaScript.
@@ -79,6 +81,8 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupSettingsScreen.kt` — Group settings screen: member list, roles, invitations, and key rotation.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/profile/ProfileScreen.kt` — Profile UI, name/password changes, avatar management, and key backup.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/pairing/PairingScannerScreen.kt` — Screen for scanning and processing QR pairing sessions for new devices.
+- `android/app/src/main/java/niel/kro/penik/ui/screen/settings/SettingsScreen.kt` — Settings screen with a light/dark theme switch and navigation to the devices screen.
+- `android/app/src/main/java/niel/kro/penik/ui/screen/settings/DevicesScreen.kt` — Separate screen listing the user's own devices.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/AuthViewModel.kt` — Manages login/registration state and actions.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ChatRoomViewModel.kt` — Subscribes the chat room to messages, handles sending, and processes statuses.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ChatsListViewModel.kt` — Loads and observes the direct chat list.
@@ -86,8 +90,10 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/GroupSettingsViewModel.kt` — Manages changes to group composition, roles, names, and keys.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ProfileViewModel.kt` — Manages profile data, avatars, passwords, key backups, and the user's device list.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/StartupViewModel.kt` — Determines the initial navigation route based on authorization state.
+- `android/app/src/main/java/niel/kro/penik/ui/viewmodel/DevicesViewModel.kt` — Loads the user's own device list for the devices screen.
 - `android/app/src/main/java/niel/kro/penik/ui/components/Components.kt` — Reusable Compose UI components, including parsing and rendering encrypted file-message payloads as local images with a zoomable full-screen viewer, aspect-ratio-aware inline Media3 video players without attachment labels, or downloadable file attachments.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Theme.kt` — Material/Compose app theme and color scheme.
+- `android/app/src/main/java/niel/kro/penik/ui/theme/ThemeManager.kt` — SharedPreferences-backed light/dark theme state exposed as a StateFlow.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Color.kt` — Android UI color palette.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Type.kt` — Compose UI typography.
 

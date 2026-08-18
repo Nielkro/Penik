@@ -1,5 +1,7 @@
 package niel.kro.penik.ui.screen.profile
 
+import niel.kro.penik.ui.theme.LocalAppColors
+
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,10 +36,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import niel.kro.penik.ui.components.UserAvatar
-import niel.kro.penik.ui.theme.Accent
-import niel.kro.penik.ui.theme.Danger
-import niel.kro.penik.ui.theme.TextMuted
-import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.ProfileViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -102,7 +100,7 @@ fun ProfileScreen(
 
             if (uiState.isLoading) {
                 CircularProgressIndicator(
-                    color = Accent,
+                    color = LocalAppColors.current.accent,
                     modifier = Modifier.size(32.dp)
                 )
             }
@@ -112,7 +110,7 @@ fun ProfileScreen(
 
         Text(
             text = "Нажмите на аватар для смены",
-            color = TextMuted,
+            color = LocalAppColors.current.textMuted,
             fontSize = 12.sp
         )
 
@@ -121,7 +119,7 @@ fun ProfileScreen(
         if (displayName.isNotBlank()) {
             Text(
                 text = displayName,
-                color = TextPrimary,
+                color = LocalAppColors.current.textPrimary,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -132,7 +130,7 @@ fun ProfileScreen(
         if (nickname.isNotBlank()) {
             Text(
                 text = "@$nickname",
-                color = TextMuted,
+                color = LocalAppColors.current.textMuted,
                 fontSize = 15.sp
             )
         }
@@ -141,7 +139,7 @@ fun ProfileScreen(
 
         Text(
             text = "ID: ${viewModel.userId}",
-            color = TextMuted,
+            color = LocalAppColors.current.textMuted,
             fontSize = 13.sp
         )
 
@@ -149,27 +147,27 @@ fun ProfileScreen(
 
         Text(
             text = "Мои устройства",
-            color = TextMuted,
+            color = LocalAppColors.current.textMuted,
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(modifier = Modifier.height(8.dp))
         if (uiState.devicesLoading && uiState.devices.isEmpty()) {
-            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Accent)
+            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = LocalAppColors.current.accent)
         } else {
             uiState.devices.forEach { device ->
                 Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                     Text(
                         text = device.deviceName.ifBlank { "Устройство" } +
                             if (device.isCurrent) "  · это устройство" else "",
-                        color = TextPrimary,
+                        color = LocalAppColors.current.textPrimary,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
                         text = if (device.hasSession) "в сети" else "нет активной сессии",
-                        color = if (device.hasSession) Accent else TextMuted,
+                        color = if (device.hasSession) LocalAppColors.current.accent else LocalAppColors.current.textMuted,
                         fontSize = 12.sp
                     )
                 }
@@ -195,12 +193,12 @@ fun ProfileScreen(
                 .height(52.dp),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = Danger.copy(alpha = 0.15f)
+                containerColor = LocalAppColors.current.danger.copy(alpha = 0.15f)
             )
         ) {
             Text(
                 text = "Выйти",
-                color = Danger,
+                color = LocalAppColors.current.danger,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium
             )

@@ -1,5 +1,7 @@
 package niel.kro.penik.ui.navigation
 
+import niel.kro.penik.ui.theme.LocalAppColors
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -20,27 +22,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import niel.kro.penik.ui.screen.chatslist.ChatsListContent
 import niel.kro.penik.ui.screen.profile.ProfileScreen
-import niel.kro.penik.ui.theme.Accent
-import niel.kro.penik.ui.theme.Background
-import niel.kro.penik.ui.theme.Panel
-import niel.kro.penik.ui.theme.TextMuted
-import niel.kro.penik.ui.theme.TextPrimary
 
 @Composable
 fun MainScreen(
     onChatClick: (Long, String) -> Unit,
     onGroupClick: (Long, String) -> Unit,
     onLogout: () -> Unit,
-    onPairingScanner: () -> Unit
+    onPairingScanner: () -> Unit,
+    onSettings: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     Scaffold(
-        containerColor = Background,
+        containerColor = LocalAppColors.current.background,
         bottomBar = {
             NavigationBar(
-                containerColor = Panel,
-                contentColor = TextPrimary
+                containerColor = LocalAppColors.current.panel,
+                contentColor = LocalAppColors.current.textPrimary
             ) {
                 NavigationBarItem(
                     selected = selectedTab == 0,
@@ -48,11 +46,11 @@ fun MainScreen(
                     icon = { Icon(Icons.Default.Chat, contentDescription = "Чаты") },
                     label = { androidx.compose.material3.Text("Чаты") },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Accent,
-                        selectedTextColor = Accent,
-                        unselectedIconColor = TextMuted,
-                        unselectedTextColor = TextMuted,
-                        indicatorColor = Accent.copy(alpha = 0.12f)
+                        selectedIconColor = LocalAppColors.current.accent,
+                        selectedTextColor = LocalAppColors.current.accent,
+                        unselectedIconColor = LocalAppColors.current.textMuted,
+                        unselectedTextColor = LocalAppColors.current.textMuted,
+                        indicatorColor = LocalAppColors.current.accent.copy(alpha = 0.12f)
                     )
                 )
                 NavigationBarItem(
@@ -61,11 +59,11 @@ fun MainScreen(
                     icon = { Icon(Icons.Default.Person, contentDescription = "Профиль") },
                     label = { androidx.compose.material3.Text("Профиль") },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Accent,
-                        selectedTextColor = Accent,
-                        unselectedIconColor = TextMuted,
-                        unselectedTextColor = TextMuted,
-                        indicatorColor = Accent.copy(alpha = 0.12f)
+                        selectedIconColor = LocalAppColors.current.accent,
+                        selectedTextColor = LocalAppColors.current.accent,
+                        unselectedIconColor = LocalAppColors.current.textMuted,
+                        unselectedTextColor = LocalAppColors.current.textMuted,
+                        indicatorColor = LocalAppColors.current.accent.copy(alpha = 0.12f)
                     )
                 )
             }
@@ -77,7 +75,7 @@ fun MainScreen(
                 .padding(innerPadding)
         ) {
             when (selectedTab) {
-                0 -> ChatsListContent(onChatClick = onChatClick, onGroupClick = onGroupClick)
+                0 -> ChatsListContent(onChatClick = onChatClick, onGroupClick = onGroupClick, onSettings = onSettings)
                 1 -> ProfileScreen(onLogout = onLogout, onPairingScanner = onPairingScanner)
             }
         }
