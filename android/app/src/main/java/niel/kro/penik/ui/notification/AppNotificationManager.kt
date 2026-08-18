@@ -6,16 +6,23 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Shader
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
+import androidx.core.content.FileProvider
 import androidx.core.graphics.drawable.IconCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -23,7 +30,12 @@ import niel.kro.penik.MainActivity
 import niel.kro.penik.R
 import niel.kro.penik.data.local.dao.ChatDao
 import niel.kro.penik.data.local.dao.GroupDao
+import niel.kro.penik.data.network.api.ApiConfig
 import niel.kro.penik.data.repository.SecureTokenStorage
+import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -65,7 +77,14 @@ class AppNotificationManager @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
 
     // In-memory message thread history for rich MessagingStyle notifications
-    private data class ThreadMessage(val text: CharSequence, val timestamp: Long, val senderPerson: Person)
+    data class ThreadMessage(
+        val text: CharSequence,
+        val timestamp: Long,
+        val senderPerson: Person,
+        val imageUri: Uri? = null,
+        val imageMimeType: String? = null
+    )
+
     private val directThreads = ConcurrentHashMap<Long, MutableList<ThreadMessage>>()
     private val groupThreads = ConcurrentHashMap<Long, MutableList<ThreadMessage>>()
 
@@ -103,25 +122,42 @@ class AppNotificationManager @Inject constructor(
         notificationManager.cancel((100000 + groupId).toInt())
     }
 
+    fun cancelAllNotifications() {
+        directThreads.clear()
+        groupThreads.clear()
+        notificationManager.cancelAll()
+    }
+
     suspend fun showDirectMessageNotification(
         chatUserId: Long,
         rawText: String,
-        timestamp: Long
+        timestamp: Long,
+        overrideSenderName: String? = null,
+        customAvatarBitmap: Bitmap? = null,
+        customImageBitmap: Bitmap? = null
     ) {
         // Do not notify if the user is actively viewing this direct chat
         if (activeChatKey == "direct_$chatUserId") return
 
         val myUserId = secureTokenStorage.getUserId() ?: 0L
         val chatEntity = chatDao.getChat(chatUserId)
-        val chatName = chatEntity?.name?.ifBlank { "Пользователь #$chatUserId" } ?: "Пользователь #$chatUserId"
+        val chatName = overrideSenderName ?: chatEntity?.name?.ifBlank { "Пользователь #$chatUserId" } ?: "Пользователь #$chatUserId"
 
         val previewText = formatMessagePreview(rawText)
-        val senderPerson = createPerson(chatName, chatUserId)
+        val avatarUrl = ApiConfig.getUserAvatarUrl(chatUserId)
+        val senderPerson = resolvePerson(chatName, chatUserId, customAvatarBitmap, avatarUrl)
         val myPerson = Person.Builder().setName("Вы").setKey(myUserId.toString()).build()
+
+        val (imageUri, imageMime) = if (customImageBitmap != null) {
+            val uri = saveBitmapToCache(customImageBitmap, "notif_custom_${System.currentTimeMillis()}.jpg")
+            Pair(uri, "image/jpeg")
+        } else {
+            extractAttachmentImageUri(rawText)
+        }
 
         val messagesList = directThreads.computeIfAbsent(chatUserId) { mutableListOf() }
         synchronized(messagesList) {
-            messagesList.add(ThreadMessage(previewText, timestamp, senderPerson))
+            messagesList.add(ThreadMessage(previewText, timestamp, senderPerson, imageUri, imageMime))
             if (messagesList.size > 15) {
                 messagesList.removeAt(0)
             }
@@ -130,7 +166,11 @@ class AppNotificationManager @Inject constructor(
         val messagingStyle = NotificationCompat.MessagingStyle(myPerson)
         synchronized(messagesList) {
             for (msg in messagesList) {
-                messagingStyle.addMessage(msg.text, msg.timestamp, msg.senderPerson)
+                val messageObj = NotificationCompat.MessagingStyle.Message(msg.text, msg.timestamp, msg.senderPerson)
+                if (msg.imageUri != null && msg.imageMimeType != null) {
+                    messageObj.setData(msg.imageMimeType, msg.imageUri)
+                }
+                messagingStyle.addMessage(messageObj)
             }
         }
 
@@ -179,7 +219,7 @@ class AppNotificationManager @Inject constructor(
         )
         val readAction = NotificationCompat.Action.Builder(
             0,
-            "Прочитано",
+            "Пометить прочитанным",
             readPendingIntent
         ).build()
 
@@ -207,7 +247,11 @@ class AppNotificationManager @Inject constructor(
         groupId: Long,
         senderUserId: Long,
         rawText: String,
-        timestamp: Long
+        timestamp: Long,
+        overrideGroupName: String? = null,
+        overrideSenderName: String? = null,
+        customAvatarBitmap: Bitmap? = null,
+        customImageBitmap: Bitmap? = null
     ) {
         // Do not notify if the user is actively viewing this group
         if (activeChatKey == "group_$groupId") return
@@ -216,18 +260,26 @@ class AppNotificationManager @Inject constructor(
         if (senderUserId == myUserId) return
 
         val groupEntity = groupDao.getGroup(groupId)
-        val groupName = groupEntity?.name?.ifBlank { "Группа #$groupId" } ?: "Группа #$groupId"
+        val groupName = overrideGroupName ?: groupEntity?.name?.ifBlank { "Группа #$groupId" } ?: "Группа #$groupId"
         val members = groupDao.getMembers(groupId)
         val senderMember = members.find { it.userId == senderUserId }
-        val senderName = senderMember?.name?.ifBlank { "Участник #$senderUserId" } ?: "Участник #$senderUserId"
+        val senderName = overrideSenderName ?: senderMember?.name?.ifBlank { "Участник #$senderUserId" } ?: "Участник #$senderUserId"
 
         val previewText = formatMessagePreview(rawText)
-        val senderPerson = createPerson(senderName, senderUserId)
+        val avatarUrl = ApiConfig.getUserAvatarUrl(senderUserId)
+        val senderPerson = resolvePerson(senderName, senderUserId, customAvatarBitmap, avatarUrl)
         val myPerson = Person.Builder().setName("Вы").setKey(myUserId.toString()).build()
+
+        val (imageUri, imageMime) = if (customImageBitmap != null) {
+            val uri = saveBitmapToCache(customImageBitmap, "notif_custom_grp_${System.currentTimeMillis()}.jpg")
+            Pair(uri, "image/jpeg")
+        } else {
+            extractAttachmentImageUri(rawText)
+        }
 
         val messagesList = groupThreads.computeIfAbsent(groupId) { mutableListOf() }
         synchronized(messagesList) {
-            messagesList.add(ThreadMessage(previewText, timestamp, senderPerson))
+            messagesList.add(ThreadMessage(previewText, timestamp, senderPerson, imageUri, imageMime))
             if (messagesList.size > 15) {
                 messagesList.removeAt(0)
             }
@@ -239,7 +291,11 @@ class AppNotificationManager @Inject constructor(
 
         synchronized(messagesList) {
             for (msg in messagesList) {
-                messagingStyle.addMessage(msg.text, msg.timestamp, msg.senderPerson)
+                val messageObj = NotificationCompat.MessagingStyle.Message(msg.text, msg.timestamp, msg.senderPerson)
+                if (msg.imageUri != null && msg.imageMimeType != null) {
+                    messageObj.setData(msg.imageMimeType, msg.imageUri)
+                }
+                messagingStyle.addMessage(messageObj)
             }
         }
 
@@ -310,7 +366,37 @@ class AppNotificationManager @Inject constructor(
         }
     }
 
-    private fun createPerson(name: String, id: Long): Person {
+    private suspend fun resolvePerson(
+        name: String,
+        id: Long,
+        customAvatarBitmap: Bitmap? = null,
+        avatarUrl: String? = null
+    ): Person {
+        if (customAvatarBitmap != null) {
+            val circle = createCircleBitmap(customAvatarBitmap)
+            return Person.Builder()
+                .setName(name)
+                .setKey(id.toString())
+                .setIcon(IconCompat.createWithBitmap(circle))
+                .build()
+        }
+
+        if (avatarUrl != null) {
+            val fetchedBitmap = fetchAvatarBitmap(avatarUrl)
+            if (fetchedBitmap != null) {
+                val circle = createCircleBitmap(fetchedBitmap)
+                return Person.Builder()
+                    .setName(name)
+                    .setKey(id.toString())
+                    .setIcon(IconCompat.createWithBitmap(circle))
+                    .build()
+            }
+        }
+
+        return createPersonWithInitials(name, id)
+    }
+
+    private fun createPersonWithInitials(name: String, id: Long): Person {
         val avatarBitmap = createInitialsAvatar(name, id)
         val icon = IconCompat.createWithBitmap(avatarBitmap)
         return Person.Builder()
@@ -320,7 +406,38 @@ class AppNotificationManager @Inject constructor(
             .build()
     }
 
-    private fun createInitialsAvatar(name: String, id: Long): Bitmap {
+    private suspend fun fetchAvatarBitmap(urlStr: String): Bitmap? = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = URL(urlStr)
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 1500
+                readTimeout = 1500
+                doInput = true
+            }
+            connection.connect()
+            if (connection.responseCode == 200) {
+                connection.inputStream.use { input ->
+                    BitmapFactory.decodeStream(input)
+                }
+            } else {
+                null
+            }
+        }.getOrNull()
+    }
+
+    fun createCircleBitmap(bitmap: Bitmap): Bitmap {
+        val size = Math.min(bitmap.width, bitmap.height)
+        val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        paint.shader = shader
+        val radius = size / 2f
+        canvas.drawCircle(radius, radius, radius, paint)
+        return output
+    }
+
+    fun createInitialsAvatar(name: String, id: Long): Bitmap {
         val size = 96
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -346,6 +463,38 @@ class AppNotificationManager @Inject constructor(
         canvas.drawText(initial, size / 2f, yPos, textPaint)
 
         return bitmap
+    }
+
+    private fun extractAttachmentImageUri(rawText: String): Pair<Uri?, String?> {
+        val trimmed = rawText.trim()
+        if (!trimmed.startsWith("{")) return Pair(null, null)
+        try {
+            val root = json.parseToJsonElement(trimmed).jsonObject
+            val file = if (root["type"]?.jsonPrimitive?.content == "file") root["file"]?.jsonObject else null
+            val thumbBase64 = file?.get("thumb")?.jsonPrimitive?.content
+            val mime = file?.get("mime")?.jsonPrimitive?.content ?: "image/jpeg"
+            if (!thumbBase64.isNullOrBlank() && (mime.startsWith("image/") || mime.startsWith("video/"))) {
+                val cleanBase64 = if (thumbBase64.contains(",")) thumbBase64.substringAfter(",") else thumbBase64
+                val bytes = android.util.Base64.decode(cleanBase64, android.util.Base64.DEFAULT)
+                val attachmentsDir = File(context.cacheDir, "attachments").apply { mkdirs() }
+                val fileOut = File(attachmentsDir, "notif_${System.currentTimeMillis()}_${Math.abs(cleanBase64.hashCode())}.jpg")
+                fileOut.writeBytes(bytes)
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", fileOut)
+                return Pair(uri, "image/jpeg")
+            }
+        } catch (e: Exception) {
+            // Ignore parse errors
+        }
+        return Pair(null, null)
+    }
+
+    fun saveBitmapToCache(bitmap: Bitmap, filename: String): Uri {
+        val attachmentsDir = File(context.cacheDir, "attachments").apply { mkdirs() }
+        val file = File(attachmentsDir, filename)
+        FileOutputStream(file).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
+        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }
 
     private fun formatMessagePreview(raw: String): String {
