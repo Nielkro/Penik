@@ -12,6 +12,8 @@ import niel.kro.penik.ui.screen.auth.AuthScreen
 import niel.kro.penik.ui.screen.chatroom.ChatRoomScreen
 import niel.kro.penik.ui.screen.groups.GroupChatScreen
 import niel.kro.penik.ui.screen.groups.GroupSettingsScreen
+import niel.kro.penik.ui.screen.settings.SettingsScreen
+import niel.kro.penik.ui.screen.settings.DevicesScreen
 import niel.kro.penik.ui.viewmodel.StartupViewModel
 import niel.kro.penik.ui.screen.pairing.PairingScannerScreen
 
@@ -52,8 +54,20 @@ fun NavGraph(
                         popUpTo(0) { inclusive = true }
                     }
                 },
-                onPairingScanner = { navController.navigate(Screen.PairingScanner.route) }
+                onPairingScanner = { navController.navigate(Screen.PairingScanner.route) },
+                onSettings = { navController.navigate(Screen.Settings.route) }
             )
+        }
+
+        composable(Screen.Settings.route) {
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onDevices = { navController.navigate(Screen.Devices.route) }
+            )
+        }
+
+        composable(Screen.Devices.route) {
+            DevicesScreen(onBack = { navController.popBackStack() })
         }
 
         composable(Screen.PairingScanner.route) {

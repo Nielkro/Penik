@@ -1,5 +1,7 @@
 package niel.kro.penik.ui.screen.chatslist
 
+import niel.kro.penik.ui.theme.LocalAppColors
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -38,11 +41,6 @@ import niel.kro.penik.ui.components.ChatListItem
 import niel.kro.penik.ui.components.ConnectionStatusBar
 import niel.kro.penik.ui.components.FullscreenImageViewer
 import niel.kro.penik.ui.components.SearchUserItem
-import niel.kro.penik.ui.theme.Background
-import niel.kro.penik.ui.theme.Border
-import niel.kro.penik.ui.theme.InputBg
-import niel.kro.penik.ui.theme.TextMuted
-import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.ChatsListViewModel
 
 import niel.kro.penik.ui.viewmodel.FeedItem
@@ -55,6 +53,7 @@ private const val SELF_CHAT_ICON = "\uD83D\uDCDD"
 fun ChatsListContent(
     onChatClick: (Long, String) -> Unit,
     onGroupClick: (Long, String) -> Unit,
+    onSettings: () -> Unit = {},
     viewModel: ChatsListViewModel = hiltViewModel()
 ) {
     val feed by viewModel.feed.collectAsState()
@@ -99,15 +98,15 @@ fun ChatsListContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(focusRequester),
-                        placeholder = { Text("Поиск...", color = TextMuted) },
+                        placeholder = { Text("Поиск...", color = LocalAppColors.current.textMuted) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = InputBg,
-                            unfocusedContainerColor = InputBg,
-                            focusedBorderColor = Border,
-                            unfocusedBorderColor = Border,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
+                            focusedContainerColor = LocalAppColors.current.inputBg,
+                            unfocusedContainerColor = LocalAppColors.current.inputBg,
+                            focusedBorderColor = LocalAppColors.current.border,
+                            unfocusedBorderColor = LocalAppColors.current.border,
+                            focusedTextColor = LocalAppColors.current.textPrimary,
+                            unfocusedTextColor = LocalAppColors.current.textPrimary
                         )
                     )
                 } else {
@@ -128,7 +127,7 @@ fun ChatsListContent(
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Закрыть поиск",
-                            tint = TextPrimary
+                            tint = LocalAppColors.current.textPrimary
                         )
                     }
                 }
@@ -139,14 +138,21 @@ fun ChatsListContent(
                         Icon(
                             Icons.Default.Search,
                             contentDescription = "Поиск",
-                            tint = TextPrimary
+                            tint = LocalAppColors.current.textPrimary
+                        )
+                    }
+                    IconButton(onClick = onSettings) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = "Настройки",
+                            tint = LocalAppColors.current.textPrimary
                         )
                     }
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Background,
-                titleContentColor = TextPrimary
+                containerColor = LocalAppColors.current.background,
+                titleContentColor = LocalAppColors.current.textPrimary
             )
         )
 
@@ -155,7 +161,7 @@ fun ChatsListContent(
         if (isSearching && searchResults.isNotEmpty()) {
             Text(
                 text = "Люди",
-                color = TextMuted,
+                color = LocalAppColors.current.textMuted,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -170,14 +176,14 @@ fun ChatsListContent(
                             onChatClick(user.id, user.name.ifBlank { user.nickname })
                         }
                     )
-                    HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
+                    HorizontalDivider(color = LocalAppColors.current.border, modifier = Modifier.padding(horizontal = 16.dp))
                 }
 
                 if (filteredFeed.isNotEmpty()) {
                     item {
                         Text(
                             text = "Чаты и группы",
-                            color = TextMuted,
+                            color = LocalAppColors.current.textMuted,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -211,7 +217,7 @@ fun ChatsListContent(
             ) {
                 Text(
                     text = if (filteredFeed.isEmpty()) "Ничего не найдено" else "",
-                    color = TextMuted,
+                    color = LocalAppColors.current.textMuted,
                     fontSize = 16.sp
                 )
             }
@@ -246,7 +252,7 @@ fun ChatsListContent(
                 ) {
                     Text(
                         text = "Нет переписок",
-                        color = TextMuted,
+                        color = LocalAppColors.current.textMuted,
                         fontSize = 16.sp
                     )
                 }
@@ -264,7 +270,7 @@ fun ChatsListContent(
                                 onChatClick(myId, SELF_CHAT_NAME)
                             }
                         )
-                        HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
+                        HorizontalDivider(color = LocalAppColors.current.border, modifier = Modifier.padding(horizontal = 16.dp))
                     }
                     items(filteredFeed, key = { "${if (it is FeedItem.ChatItem) "chat" else "group"}-${it.id}" }) { item ->
                         ChatListItem(

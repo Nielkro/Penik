@@ -1,5 +1,7 @@
 package niel.kro.penik.ui.screen.groups
 
+import niel.kro.penik.ui.theme.LocalAppColors
+
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -92,14 +94,6 @@ import niel.kro.penik.ui.components.GroupAvatar
 import niel.kro.penik.ui.components.MessageBubble
 import niel.kro.penik.ui.components.UserAvatar
 import niel.kro.penik.ui.components.avatarUrlFor
-import niel.kro.penik.ui.theme.Accent
-import niel.kro.penik.ui.theme.Background
-import niel.kro.penik.ui.theme.Border
-import niel.kro.penik.ui.theme.InputBg
-import niel.kro.penik.ui.theme.Panel
-import niel.kro.penik.ui.theme.PanelSecondary
-import niel.kro.penik.ui.theme.TextMuted
-import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.GroupChatViewModel
 
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -240,7 +234,7 @@ fun GroupChatScreen(
     }
 
     Scaffold(
-        containerColor = Background,
+        containerColor = LocalAppColors.current.background,
         topBar = {
             TopAppBar(
                 title = {
@@ -264,44 +258,44 @@ fun GroupChatScreen(
                             )
                         }
                         Column {
-                            Text(groupName, color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                            Text("${members.size} участников", color = TextMuted, fontSize = 12.sp)
+                            Text(groupName, color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.SemiBold)
+                            Text("${members.size} участников", color = LocalAppColors.current.textMuted, fontSize = 12.sp)
                         }
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад", tint = TextPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад", tint = LocalAppColors.current.textPrimary)
                     }
                 },
                 actions = {
                     Box {
                         IconButton(onClick = { showMenu = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "Меню", tint = TextPrimary)
+                            Icon(Icons.Default.MoreVert, contentDescription = "Меню", tint = LocalAppColors.current.textPrimary)
                         }
                         DropdownMenu(
                             expanded = showMenu,
                             onDismissRequest = { showMenu = false },
-                            modifier = Modifier.background(Panel)
+                            modifier = Modifier.background(LocalAppColors.current.panel)
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Настройки группы", color = TextPrimary) },
+                                text = { Text("Настройки группы", color = LocalAppColors.current.textPrimary) },
                                 onClick = { showMenu = false; onGroupSettingsClick(groupId) }
                             )
                             DropdownMenuItem(
-                                text = { Text("Участники", color = TextPrimary) },
+                                text = { Text("Участники", color = LocalAppColors.current.textPrimary) },
                                 onClick = { showMenu = false; showMembersDialog = true }
                             )
                             if (canManage) {
                                 DropdownMenuItem(
-                                    text = { Text("Пригласить", color = TextPrimary) },
+                                    text = { Text("Пригласить", color = LocalAppColors.current.textPrimary) },
                                     onClick = { showMenu = false; showInviteDialog = true }
                                 )
                             }
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Panel)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = LocalAppColors.current.panel)
             )
         }
     ) { padding ->
@@ -385,8 +379,8 @@ fun GroupChatScreen(
                                 listState.animateScrollToItem(messages.lastIndex, scrollOffset = 10000)
                             }
                         },
-                        containerColor = Panel,
-                        contentColor = TextPrimary,
+                        containerColor = LocalAppColors.current.panel,
+                        contentColor = LocalAppColors.current.textPrimary,
                         elevation = FloatingActionButtonDefaults.elevation(4.dp),
                         shape = CircleShape,
                         modifier = Modifier.size(40.dp)
@@ -400,16 +394,16 @@ fun GroupChatScreen(
                 }
             }
 
-            HorizontalDivider(color = Border, thickness = 1.dp)
+            HorizontalDivider(color = LocalAppColors.current.border, thickness = 1.dp)
             if (groupEntity?.status == "pending") {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(PanelSecondary)
+                        .background(LocalAppColors.current.panelSecondary)
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Вас пригласили в эту группу", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Text("Вас пригласили в эту группу", color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                     Spacer(modifier = Modifier.height(10.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -417,14 +411,14 @@ fun GroupChatScreen(
                     ) {
                         Button(
                             onClick = { viewModel.acceptInvitation() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                            colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.accent)
                         ) {
-                            Text("Принять", color = TextPrimary)
+                            Text("Принять", color = LocalAppColors.current.textPrimary)
                         }
                         OutlinedButton(
                             onClick = { viewModel.declineInvitation(onDone = onBack) }
                         ) {
-                            Text("Отклонить", color = TextMuted)
+                            Text("Отклонить", color = LocalAppColors.current.textMuted)
                         }
                     }
                 }
@@ -432,7 +426,7 @@ fun GroupChatScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Panel)
+                        .background(LocalAppColors.current.panel)
                 ) {
                 activeReply?.let { reply ->
                     val replyInfo = remember(reply.text) { parseReplyContent(reply.text) }
@@ -456,7 +450,7 @@ fun GroupChatScreen(
                             modifier = Modifier
                                 .width(3.dp)
                                 .height(36.dp)
-                                .background(Accent)
+                                .background(LocalAppColors.current.accent)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         if (replyThumbBitmap != null) {
@@ -473,13 +467,13 @@ fun GroupChatScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = reply.sender,
-                                color = Accent,
+                                color = LocalAppColors.current.accent,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = replyInfo?.displayText ?: reply.text,
-                                color = TextMuted,
+                                color = LocalAppColors.current.textMuted,
                                 fontSize = 12.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -489,7 +483,7 @@ fun GroupChatScreen(
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Закрыть",
-                                tint = TextMuted
+                                tint = LocalAppColors.current.textMuted
                             )
                         }
                     }
@@ -513,22 +507,22 @@ fun GroupChatScreen(
                         Icon(
                             imageVector = Icons.Default.AttachFile,
                             contentDescription = "Прикрепить файл",
-                            tint = TextMuted
+                            tint = LocalAppColors.current.textMuted
                         )
                     }
 
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
-                        placeholder = { Text("Сообщение", color = TextMuted) },
+                        placeholder = { Text("Сообщение", color = LocalAppColors.current.textMuted) },
                         modifier = Modifier.weight(1f),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = InputBg,
-                            unfocusedContainerColor = InputBg,
-                            focusedBorderColor = Accent,
-                            unfocusedBorderColor = Border,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
+                            focusedContainerColor = LocalAppColors.current.inputBg,
+                            unfocusedContainerColor = LocalAppColors.current.inputBg,
+                            focusedBorderColor = LocalAppColors.current.accent,
+                            unfocusedBorderColor = LocalAppColors.current.border,
+                            focusedTextColor = LocalAppColors.current.textPrimary,
+                            unfocusedTextColor = LocalAppColors.current.textPrimary
                         ),
                         shape = RoundedCornerShape(24.dp),
                         maxLines = 4
@@ -547,7 +541,7 @@ fun GroupChatScreen(
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Отправить",
-                            tint = if (inputText.isNotBlank()) Accent else TextMuted
+                            tint = if (inputText.isNotBlank()) LocalAppColors.current.accent else LocalAppColors.current.textMuted
                         )
                     }
                 }
@@ -562,9 +556,9 @@ fun GroupChatScreen(
             ) {
                 Card(
                     modifier = Modifier.padding(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Panel)
+                    colors = CardDefaults.cardColors(containerColor = LocalAppColors.current.panel)
                 ) {
-                    Text(error!!, color = TextPrimary, modifier = Modifier.padding(12.dp))
+                    Text(error!!, color = LocalAppColors.current.textPrimary, modifier = Modifier.padding(12.dp))
                 }
             }
         }
@@ -583,8 +577,8 @@ fun GroupChatScreen(
         }
         AlertDialog(
             onDismissRequest = { showMembersDialog = false },
-            containerColor = Panel,
-            titleContentColor = TextPrimary,
+            containerColor = LocalAppColors.current.panel,
+            titleContentColor = LocalAppColors.current.textPrimary,
             title = { Text("Участники", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {
@@ -624,17 +618,17 @@ fun GroupChatScreen(
                                         "member" -> "участник"
                                         else -> member.role
                                     } + if (member.status == "pending") " · приглашён" else ""
-                                    Text(displayNameWithMe, color = TextPrimary, fontWeight = FontWeight.Medium)
-                                    Text(roleRu, color = TextMuted, fontSize = 12.sp)
+                                    Text(displayNameWithMe, color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.Medium)
+                                    Text(roleRu, color = LocalAppColors.current.textMuted, fontSize = 12.sp)
                                 }
                             }
                             if (index < sortedMembers.lastIndex) {
-                                HorizontalDivider(color = Border)
+                                HorizontalDivider(color = LocalAppColors.current.border)
                             }
                         }
                     }
                     if (canManage) {
-                        HorizontalDivider(color = Border, modifier = Modifier.padding(vertical = 4.dp))
+                        HorizontalDivider(color = LocalAppColors.current.border, modifier = Modifier.padding(vertical = 4.dp))
                         TextButton(
                             onClick = {
                                 showMembersDialog = false
@@ -642,14 +636,14 @@ fun GroupChatScreen(
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("＋ Добавить участника", color = Accent, fontWeight = FontWeight.Bold)
+                            Text("＋ Добавить участника", color = LocalAppColors.current.accent, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { showMembersDialog = false }) {
-                    Text("Закрыть", color = Accent)
+                    Text("Закрыть", color = LocalAppColors.current.accent)
                 }
             }
         )
@@ -663,8 +657,8 @@ fun GroupChatScreen(
 
         AlertDialog(
             onDismissRequest = { selectedMemberForActions = null },
-            containerColor = Panel,
-            titleContentColor = TextPrimary,
+            containerColor = LocalAppColors.current.panel,
+            titleContentColor = LocalAppColors.current.textPrimary,
             title = { Text(member.name.ifEmpty { member.nickname.ifEmpty { "#${member.userId}" } }) },
             text = {
                 Column {
@@ -679,7 +673,7 @@ fun GroupChatScreen(
                         ) {
                             Text(
                                 if (member.role == "admin") "Снять роль админа" else "Сделать админом",
-                                color = Accent,
+                                color = LocalAppColors.current.accent,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -692,7 +686,7 @@ fun GroupChatScreen(
                                 selectedMemberForActions = null
                             }
                         ) {
-                            Text("Удалить из группы", color = Accent, modifier = Modifier.fillMaxWidth())
+                            Text("Удалить из группы", color = LocalAppColors.current.accent, modifier = Modifier.fillMaxWidth())
                         }
                     }
                 }
@@ -700,7 +694,7 @@ fun GroupChatScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { selectedMemberForActions = null }) {
-                    Text("Отмена", color = TextPrimary)
+                    Text("Отмена", color = LocalAppColors.current.textPrimary)
                 }
             }
         )
@@ -710,9 +704,9 @@ fun GroupChatScreen(
         val displayName = member.name.ifEmpty { member.nickname.ifEmpty { "#${member.userId}" } }
         AlertDialog(
             onDismissRequest = { memberToRemove = null },
-            containerColor = Panel,
-            titleContentColor = TextPrimary,
-            textContentColor = TextPrimary,
+            containerColor = LocalAppColors.current.panel,
+            titleContentColor = LocalAppColors.current.textPrimary,
+            textContentColor = LocalAppColors.current.textPrimary,
             title = { Text("Удалить участника", fontWeight = FontWeight.SemiBold) },
             text = { Text("Вы действительно хотите удалить участника $displayName из группы?") },
             confirmButton = {
@@ -720,12 +714,12 @@ fun GroupChatScreen(
                     viewModel.removeMember(member.userId)
                     memberToRemove = null
                 }) {
-                    Text("Удалить", color = Accent)
+                    Text("Удалить", color = LocalAppColors.current.accent)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { memberToRemove = null }) {
-                    Text("Отмена", color = TextPrimary)
+                    Text("Отмена", color = LocalAppColors.current.textPrimary)
                 }
             }
         )
@@ -746,8 +740,8 @@ fun GroupChatScreen(
 
         AlertDialog(
             onDismissRequest = { showInviteDialog = false; searchQuery = "" },
-            containerColor = Panel,
-            titleContentColor = TextPrimary,
+            containerColor = LocalAppColors.current.panel,
+            titleContentColor = LocalAppColors.current.textPrimary,
             title = { Text("Пригласить участника", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {
@@ -757,14 +751,14 @@ fun GroupChatScreen(
                         label = { Text("Поиск контактов") },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = InputBg,
-                            unfocusedContainerColor = InputBg,
-                            focusedBorderColor = Accent,
-                            unfocusedBorderColor = Border,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedLabelColor = Accent,
-                            unfocusedLabelColor = TextMuted
+                            focusedContainerColor = LocalAppColors.current.inputBg,
+                            unfocusedContainerColor = LocalAppColors.current.inputBg,
+                            focusedBorderColor = LocalAppColors.current.accent,
+                            unfocusedBorderColor = LocalAppColors.current.border,
+                            focusedTextColor = LocalAppColors.current.textPrimary,
+                            unfocusedTextColor = LocalAppColors.current.textPrimary,
+                            focusedLabelColor = LocalAppColors.current.accent,
+                            unfocusedLabelColor = LocalAppColors.current.textMuted
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -779,19 +773,19 @@ fun GroupChatScreen(
                             checked = shareHistory,
                             onCheckedChange = { shareHistory = it },
                             colors = CheckboxDefaults.colors(
-                                checkedColor = Accent,
-                                uncheckedColor = TextMuted,
-                                checkmarkColor = TextPrimary
+                                checkedColor = LocalAppColors.current.accent,
+                                uncheckedColor = LocalAppColors.current.textMuted,
+                                checkmarkColor = LocalAppColors.current.textPrimary
                             )
                         )
                         Text(
                             text = "Поделиться историей чата до вступления",
-                            color = TextPrimary,
+                            color = LocalAppColors.current.textPrimary,
                             fontSize = 14.sp,
                             modifier = Modifier.padding(start = 8.dp)
                         )
                     }
-                    HorizontalDivider(color = Border)
+                    HorizontalDivider(color = LocalAppColors.current.border)
                     LazyColumn(modifier = Modifier.fillMaxWidth().padding(top = 8.dp).weight(1f, fill = false)) {
                         items(inviteableContacts) { contact ->
                             val displayName = contact.name.ifEmpty { contact.nickname.ifEmpty { "#${contact.userId}" } }
@@ -814,21 +808,21 @@ fun GroupChatScreen(
                                     modifier = Modifier.padding(end = 12.dp)
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(displayName, color = TextPrimary, fontWeight = FontWeight.Medium)
+                                    Text(displayName, color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.Medium)
                                     if (contact.nickname.isNotEmpty()) {
-                                        Text("@${contact.nickname}", color = TextMuted, fontSize = 12.sp)
+                                        Text("@${contact.nickname}", color = LocalAppColors.current.textMuted, fontSize = 12.sp)
                                     }
                                 }
-                                Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Accent, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.PersonAdd, contentDescription = null, tint = LocalAppColors.current.accent, modifier = Modifier.size(20.dp))
                             }
-                            HorizontalDivider(color = Border)
+                            HorizontalDivider(color = LocalAppColors.current.border)
                         }
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { showInviteDialog = false; searchQuery = "" }) {
-                    Text("Закрыть", color = Accent)
+                    Text("Закрыть", color = LocalAppColors.current.accent)
                 }
             }
         )

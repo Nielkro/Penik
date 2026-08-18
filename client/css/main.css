@@ -32,6 +32,30 @@
   --ease:         0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Light theme: activated by data-theme="light" on the root element. */
+:root[data-theme="light"] {
+  --bg:           #f4f4f8;
+  --panel:        #ffffff;
+  --panel2:       #ececf3;
+  --input:        #ffffff;
+  --border:       #dcdce6;
+  --border-light: #c9c9d6;
+  --accent:       #4a5de4;
+  --accent-hover: #3a4dd0;
+  --accent-dim:   rgba(74, 93, 228, 0.12);
+  --text:         #1a1a24;
+  --text-muted:   #6a6a80;
+  --text-dim:     #a0a0b4;
+  --sent-bg:      #4a5de4;
+  --sent-text:    #ffffff;
+  --recv-bg:      #ececf3;
+  --danger:       #d83b3b;
+  --danger-dim:   rgba(216, 59, 59, 0.10);
+  --success:      #2ea55c;
+  --success-dim:  rgba(46, 165, 92, 0.10);
+  --warning:      #d98a10;
+}
+
 html, body {
   height: 100%;
   width: 100%;

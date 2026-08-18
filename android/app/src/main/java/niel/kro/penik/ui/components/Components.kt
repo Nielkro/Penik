@@ -1,5 +1,7 @@
 package niel.kro.penik.ui.components
 
+import niel.kro.penik.ui.theme.LocalAppColors
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -110,18 +112,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import niel.kro.penik.ui.theme.Accent
-import niel.kro.penik.ui.theme.Background
-import niel.kro.penik.ui.theme.Border
-import niel.kro.penik.ui.theme.Danger
-import niel.kro.penik.ui.theme.InputBg
-import niel.kro.penik.ui.theme.Panel
-import niel.kro.penik.ui.theme.PanelSecondary
-import niel.kro.penik.ui.theme.SentMessageBg
-import niel.kro.penik.ui.theme.SentMessageText
-import niel.kro.penik.ui.theme.TextMuted
-import niel.kro.penik.ui.theme.TextPrimary
-import niel.kro.penik.ui.theme.Warning
 import niel.kro.penik.data.network.websocket.ConnectionState
 import niel.kro.penik.data.crypto.E2EECrypto
 import java.io.File
@@ -466,7 +456,7 @@ fun ChatListItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = name,
-                    color = TextPrimary,
+                    color = LocalAppColors.current.textPrimary,
                     fontWeight = FontWeight.Medium,
                     fontSize = 16.sp,
                     maxLines = 1,
@@ -476,7 +466,7 @@ fun ChatListItem(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = messagePreview(lastMessage),
-                        color = TextMuted,
+                        color = LocalAppColors.current.textMuted,
                         fontSize = 14.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -490,7 +480,7 @@ fun ChatListItem(
                     modifier = Modifier
                         .size(22.dp)
                         .clip(CircleShape)
-                        .background(Accent),
+                        .background(LocalAppColors.current.accent),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -528,7 +518,7 @@ fun SearchUserItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = name.ifBlank { nickname },
-                color = TextPrimary,
+                color = LocalAppColors.current.textPrimary,
                 fontWeight = FontWeight.Medium,
                 fontSize = 16.sp,
                 maxLines = 1,
@@ -538,7 +528,7 @@ fun SearchUserItem(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = messagePreview(lastMessage),
-                    color = TextMuted,
+                    color = LocalAppColors.current.textMuted,
                     fontSize = 14.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -547,7 +537,7 @@ fun SearchUserItem(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "@$nickname",
-                    color = TextMuted,
+                    color = LocalAppColors.current.textMuted,
                     fontSize = 14.sp
                 )
             }
@@ -557,7 +547,7 @@ fun SearchUserItem(
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = formatTime(timestamp),
-                color = TextMuted,
+                color = LocalAppColors.current.textMuted,
                 fontSize = 12.sp
             )
         }
@@ -1363,7 +1353,7 @@ private fun FileAttachmentContent(
                             .background(Color(0x33000000)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(if (loadError) "Ошибка загрузки" else "Загрузка видео…", color = TextMuted, fontSize = 12.sp)
+                        Text(if (loadError) "Ошибка загрузки" else "Загрузка видео…", color = LocalAppColors.current.textMuted, fontSize = 12.sp)
                     }
                 }
 
@@ -1387,7 +1377,7 @@ private fun FileAttachmentContent(
                                 MessageTicks(
                                     delivered = delivered,
                                     read = read,
-                                    color = if (read) Accent else Color.White.copy(alpha = 0.8f)
+                                    color = if (read) LocalAppColors.current.accent else Color.White.copy(alpha = 0.8f)
                                 )
                             }
                         }
@@ -1425,9 +1415,9 @@ private fun FileAttachmentContent(
                         contentAlignment = Alignment.Center
                     ) {
                         if (loadError) {
-                            Text("Ошибка загрузки", color = TextMuted, fontSize = 12.sp)
+                            Text("Ошибка загрузки", color = LocalAppColors.current.textMuted, fontSize = 12.sp)
                         } else {
-                            CircularProgressIndicator(color = TextMuted, modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+                            CircularProgressIndicator(color = LocalAppColors.current.textMuted, modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
                         }
                     }
                 }
@@ -1452,7 +1442,7 @@ private fun FileAttachmentContent(
                                 MessageTicks(
                                     delivered = delivered,
                                     read = read,
-                                    color = if (read) Accent else Color.White.copy(alpha = 0.8f)
+                                    color = if (read) LocalAppColors.current.accent else Color.White.copy(alpha = 0.8f)
                                 )
                             }
                         }
@@ -1466,20 +1456,20 @@ private fun FileAttachmentContent(
                 Column {
                     Text(attachment.name, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     val size = formatFileSize(attachment.size)
-                    if (size.isNotEmpty()) Text(size, color = TextMuted, fontSize = 12.sp)
+                    if (size.isNotEmpty()) Text(size, color = LocalAppColors.current.textMuted, fontSize = 12.sp)
                 }
             }
         }
         if (localFile == null && !isImage && !isVideo) {
             Spacer(modifier = Modifier.height(4.dp))
-            Text(if (loadError) "Не удалось загрузить файл" else "Загрузка…", color = TextMuted, fontSize = 12.sp)
+            Text(if (loadError) "Не удалось загрузить файл" else "Загрузка…", color = LocalAppColors.current.textMuted, fontSize = 12.sp)
         }
         if (attachment.caption.isNotBlank()) {
             Spacer(modifier = Modifier.height(4.dp))
             ClickableLinkedText(
                 text = attachment.caption,
                 textColor = textColor,
-                linkColor = if (textColor == SentMessageText) Color(0xFF64B5F6) else Color(0xFF409CFF),
+                linkColor = if (textColor == LocalAppColors.current.sentMessageText) Color(0xFF64B5F6) else Color(0xFF409CFF),
                 fontSize = 15.sp
             )
         }
@@ -1572,17 +1562,17 @@ fun MessageBubble(
     val bgColor = if (isFailed) {
         Color(0x26EF5350)
     } else if (isSentByMe) {
-        SentMessageBg
+        LocalAppColors.current.sentMessageBg
     } else {
-        PanelSecondary
+        LocalAppColors.current.panelSecondary
     }
 
     val textColor = if (isFailed) {
         Color(0xFFEF5350)
     } else if (isSentByMe) {
-        SentMessageText
+        LocalAppColors.current.sentMessageText
     } else {
-        TextPrimary
+        LocalAppColors.current.textPrimary
     }
 
     val linkColor = if (isSentByMe) {
@@ -1668,10 +1658,10 @@ fun MessageBubble(
             DropdownMenu(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },
-                modifier = Modifier.background(PanelSecondary)
+                modifier = Modifier.background(LocalAppColors.current.panelSecondary)
             ) {
                 DropdownMenuItem(
-                    text = { Text("Копировать", color = TextPrimary) },
+                    text = { Text("Копировать", color = LocalAppColors.current.textPrimary) },
                     onClick = {
                         doCopy()
                         showMenu = false
@@ -1679,7 +1669,7 @@ fun MessageBubble(
                 )
                 if (onReply != null && !isFailed) {
                     DropdownMenuItem(
-                        text = { Text("Ответить", color = TextPrimary) },
+                        text = { Text("Ответить", color = LocalAppColors.current.textPrimary) },
                         onClick = {
                             onReply()
                             showMenu = false
@@ -1688,7 +1678,7 @@ fun MessageBubble(
                 }
                 if (onForward != null && !isFailed) {
                     DropdownMenuItem(
-                        text = { Text("Переслать", color = TextPrimary) },
+                        text = { Text("Переслать", color = LocalAppColors.current.textPrimary) },
                         onClick = {
                             onForward()
                             showMenu = false
@@ -1714,7 +1704,7 @@ fun MessageBubble(
                     ) {
                         Text(
                             text = "↪ Переслано от $fwdSenderName",
-                            color = Accent,
+                            color = LocalAppColors.current.accent,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -1759,7 +1749,7 @@ fun MessageBubble(
                             modifier = Modifier
                                 .width(3.dp)
                                 .fillMaxHeight()
-                                .background(Accent)
+                                .background(LocalAppColors.current.accent)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         if (replyThumbBitmap != null) {
@@ -1781,13 +1771,13 @@ fun MessageBubble(
                         ) {
                             Text(
                                 text = replySender,
-                                color = if (isSentByMe) Color(0xFFB8D4FF) else Accent,
+                                color = if (isSentByMe) Color(0xFFB8D4FF) else LocalAppColors.current.accent,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 11.sp
                             )
                             Text(
                                 text = replyInfo?.displayText ?: replyText,
-                                color = TextMuted,
+                                color = LocalAppColors.current.textMuted,
                                 fontSize = 12.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -1815,14 +1805,14 @@ fun MessageBubble(
                             Text(
                                 text = formatTime(timestamp),
                                 fontSize = 10.sp,
-                                color = if (isSentByMe) SentMessageText else TextMuted
+                                color = if (isSentByMe) LocalAppColors.current.sentMessageText else LocalAppColors.current.textMuted
                             )
                             if (isSentByMe) {
                                 Spacer(modifier = Modifier.width(4.dp))
                                 MessageTicks(
                                     delivered = delivered,
                                     read = read,
-                                    color = if (read) Accent else TextMuted
+                                    color = if (read) LocalAppColors.current.accent else LocalAppColors.current.textMuted
                                 )
                             }
                         }
@@ -1861,14 +1851,14 @@ fun MessageBubble(
                                 Text(
                                     text = formatTime(timestamp),
                                     fontSize = 10.sp,
-                                    color = if (isSentByMe) SentMessageText else TextMuted
+                                    color = if (isSentByMe) LocalAppColors.current.sentMessageText else LocalAppColors.current.textMuted
                                 )
                                 if (isSentByMe) {
                                     Spacer(modifier = Modifier.width(3.dp))
                                     MessageTicks(
                                         delivered = delivered,
                                         read = read,
-                                        color = if (read) Accent else TextMuted
+                                        color = if (read) LocalAppColors.current.accent else LocalAppColors.current.textMuted
                                     )
                                 }
                             }
@@ -1892,14 +1882,14 @@ fun MessageBubble(
                             Text(
                                 text = formatTime(timestamp),
                                 fontSize = 10.sp,
-                                color = if (isSentByMe) SentMessageText else TextMuted
+                                color = if (isSentByMe) LocalAppColors.current.sentMessageText else LocalAppColors.current.textMuted
                             )
                             if (isSentByMe) {
                                 Spacer(modifier = Modifier.width(4.dp))
                                 MessageTicks(
                                     delivered = delivered,
                                     read = read,
-                                    color = if (read) Accent else TextMuted
+                                    color = if (read) LocalAppColors.current.accent else LocalAppColors.current.textMuted
                                 )
                             }
                         }
@@ -1945,8 +1935,8 @@ fun ConnectionStatusBar(connectionState: ConnectionState) {
         ConnectionState.CONNECTED -> return
     }
     val color = when (connectionState) {
-        ConnectionState.CONNECTING -> Warning
-        else -> Danger
+        ConnectionState.CONNECTING -> LocalAppColors.current.warning
+        else -> LocalAppColors.current.danger
     }
     Box(
         modifier = Modifier
@@ -2281,7 +2271,7 @@ fun ForwardTargetDialog(
                 .fillMaxWidth(0.95f)
                 .heightIn(max = 480.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(Panel)
+                .background(LocalAppColors.current.panel)
                 .padding(16.dp)
         ) {
             Row(
@@ -2293,10 +2283,10 @@ fun ForwardTargetDialog(
                     text = "Переслать сообщение",
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp,
-                    color = TextPrimary
+                    color = LocalAppColors.current.textPrimary
                 )
                 IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Закрыть", tint = TextMuted)
+                    Icon(Icons.Default.Close, contentDescription = "Закрыть", tint = LocalAppColors.current.textMuted)
                 }
             }
 
@@ -2305,16 +2295,16 @@ fun ForwardTargetDialog(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Поиск чата...", color = TextMuted, fontSize = 14.sp) },
+                placeholder = { Text("Поиск чата...", color = LocalAppColors.current.textMuted, fontSize = 14.sp) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = InputBg,
-                    unfocusedContainerColor = InputBg,
-                    focusedBorderColor = Accent,
-                    unfocusedBorderColor = Border,
-                    focusedTextColor = TextPrimary,
-                    unfocusedTextColor = TextPrimary
+                    focusedContainerColor = LocalAppColors.current.inputBg,
+                    unfocusedContainerColor = LocalAppColors.current.inputBg,
+                    focusedBorderColor = LocalAppColors.current.accent,
+                    unfocusedBorderColor = LocalAppColors.current.border,
+                    focusedTextColor = LocalAppColors.current.textPrimary,
+                    unfocusedTextColor = LocalAppColors.current.textPrimary
                 )
             )
 
@@ -2327,7 +2317,7 @@ fun ForwardTargetDialog(
                         .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Чаты не найдены", color = TextMuted, fontSize = 14.sp)
+                    Text("Чаты не найдены", color = LocalAppColors.current.textMuted, fontSize = 14.sp)
                 }
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
@@ -2347,7 +2337,7 @@ fun ForwardTargetDialog(
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 text = item.name,
-                                color = TextPrimary,
+                                color = LocalAppColors.current.textPrimary,
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 15.sp,
                                 maxLines = 1,

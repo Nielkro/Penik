@@ -14,6 +14,8 @@ import { groupAvatarUpdateTimestamps, showToast } from './ui/components.js';
 import { renderGroup } from './ui/groups.js';
 import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
+import { renderSettings, renderDevices } from './ui/settings.js';
+import { initTheme } from './theme.js';
 import {
   deriveSharedSecret, e2eeEncrypt, e2eeDecrypt,
   encryptKeyBackup, decryptKeyBackup, derivePublicKey, generateKeyPair
@@ -201,6 +203,10 @@ function buildMainLayout() {
       <span class="nav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
       <span>Поиск</span>
     </button>
+    <button class="nav-item" data-screen="settings">
+      <span class="nav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span>
+      <span>Настройки</span>
+    </button>
     <button class="nav-item" data-screen="profile">
       <span class="nav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></span>
       <span>Профиль</span>
@@ -236,11 +242,19 @@ function buildMainLayout() {
   groupScreen.className = 'screen chat-screen';
   groupScreen.id = 'screen-group';
 
-  screensWrap.append(chatListScreen, chatScreen, searchScreen, profileScreen, groupScreen);
+  const settingsScreen = document.createElement('div');
+  settingsScreen.className = 'screen settings-screen';
+  settingsScreen.id = 'screen-settings';
+
+  const devicesScreen = document.createElement('div');
+  devicesScreen.className = 'screen devices-screen';
+  devicesScreen.id = 'screen-devices';
+
+  screensWrap.append(chatListScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, devicesScreen);
   wrap.append(screensWrap, nav);
   app.appendChild(wrap);
 
-  _mainLayout = { chatListScreen, chatScreen, searchScreen, profileScreen, groupScreen, nav };
+  _mainLayout = { chatListScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, devicesScreen, nav };
   return _mainLayout;
 }
 
@@ -256,13 +270,15 @@ function showMain(screen, userId) {
   const layout = buildMainLayout();
 
   /* Update nav */
-  const activeNavScreen = (screen === 'chat' || screen === 'group') ? 'chats' : screen;
+  const activeNavScreen = (screen === 'chat' || screen === 'group') ? 'chats'
+    : (screen === 'devices') ? 'settings'
+    : screen;
   layout.nav.querySelectorAll('.nav-item').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.screen === activeNavScreen);
   });
 
   /* Hide all screens */
-  ['chats', 'chat', 'search', 'profile', 'group'].forEach(s => {
+  ['chats', 'chat', 'search', 'profile', 'group', 'settings', 'devices'].forEach(s => {
     const el = document.getElementById(`screen-${s}`);
     if (el) el.classList.remove('active');
   });
@@ -298,6 +314,14 @@ function showMain(screen, userId) {
     layout.profileScreen.classList.add('active');
     layout.profileScreen.innerHTML = '';
     renderProfile(layout.profileScreen);
+  } else if (screen === 'settings') {
+    layout.settingsScreen.classList.add('active');
+    layout.settingsScreen.innerHTML = '';
+    renderSettings(layout.settingsScreen);
+  } else if (screen === 'devices') {
+    layout.devicesScreen.classList.add('active');
+    layout.devicesScreen.innerHTML = '';
+    renderDevices(layout.devicesScreen);
   } else if (screen === 'group' && userId) {
     layout.groupScreen.classList.add('active');
     layout.groupScreen.innerHTML = '';
@@ -346,6 +370,7 @@ function handleRoute() {
 
 /* ── Bootstrap ── */
 async function boot() {
+  initTheme();
   localStorage.removeItem("penik_sign_jwk");
   await openDB();
   await primeToken();

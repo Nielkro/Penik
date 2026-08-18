@@ -1,5 +1,7 @@
 package niel.kro.penik.ui.screen.groups
 
+import niel.kro.penik.ui.theme.LocalAppColors
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,13 +46,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import niel.kro.penik.ui.components.FullscreenImageViewer
 import niel.kro.penik.ui.components.GroupAvatar
 import niel.kro.penik.ui.components.avatarUrlFor
-import niel.kro.penik.ui.theme.Accent
-import niel.kro.penik.ui.theme.Background
-import niel.kro.penik.ui.theme.Border
-import niel.kro.penik.ui.theme.InputBg
-import niel.kro.penik.ui.theme.Panel
-import niel.kro.penik.ui.theme.TextMuted
-import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.GroupsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,18 +70,18 @@ fun GroupsListScreen(
     }
 
     Scaffold(
-        containerColor = Background,
+        containerColor = LocalAppColors.current.background,
         topBar = {
             TopAppBar(
-                title = { Text("Группы", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Panel)
+                title = { Text("Группы", color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.SemiBold) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = LocalAppColors.current.panel)
             )
         },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showCreateDialog = true },
-                containerColor = Accent,
-                contentColor = Background
+                containerColor = LocalAppColors.current.accent,
+                contentColor = LocalAppColors.current.background
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Создать группу")
             }
@@ -97,7 +92,7 @@ fun GroupsListScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                Text("Нет групп", color = TextMuted, fontSize = 16.sp)
+                Text("Нет групп", color = LocalAppColors.current.textMuted, fontSize = 16.sp)
             }
         } else {
             LazyColumn(
@@ -113,7 +108,7 @@ fun GroupsListScreen(
                                 if (isPending) Modifier
                                 else Modifier.clickable { onGroupClick(group.id, group.name) }
                             ),
-                        colors = CardDefaults.cardColors(containerColor = Panel),
+                        colors = CardDefaults.cardColors(containerColor = LocalAppColors.current.panel),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Row(
@@ -134,19 +129,19 @@ fun GroupsListScreen(
                                 )
                             }
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(group.name, color = TextPrimary, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                                Text(group.name, color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.Medium, fontSize = 16.sp)
                                 Text(
                                     if (isPending) "Приглашение в группу" else "Группа",
-                                    color = TextMuted,
+                                    color = LocalAppColors.current.textMuted,
                                     fontSize = 14.sp
                                 )
                             }
                             if (isPending) {
                                 TextButton(onClick = { viewModel.acceptInvitation(group.id) }) {
-                                    Text("Принять", color = Accent)
+                                    Text("Принять", color = LocalAppColors.current.accent)
                                 }
                                 TextButton(onClick = { viewModel.declineInvitation(group.id) }) {
-                                    Text("Отклонить", color = TextMuted)
+                                    Text("Отклонить", color = LocalAppColors.current.textMuted)
                                 }
                             }
                         }
@@ -162,9 +157,9 @@ fun GroupsListScreen(
             ) {
                 Card(
                     modifier = Modifier.padding(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Panel)
+                    colors = CardDefaults.cardColors(containerColor = LocalAppColors.current.panel)
                 ) {
-                    Text(error!!, color = TextPrimary, modifier = Modifier.padding(12.dp))
+                    Text(error!!, color = LocalAppColors.current.textPrimary, modifier = Modifier.padding(12.dp))
                 }
             }
         }
@@ -173,8 +168,8 @@ fun GroupsListScreen(
     if (showCreateDialog) {
         AlertDialog(
             onDismissRequest = { showCreateDialog = false; newGroupName = "" },
-            containerColor = Panel,
-            titleContentColor = TextPrimary,
+            containerColor = LocalAppColors.current.panel,
+            titleContentColor = LocalAppColors.current.textPrimary,
             title = { Text("Создать группу", fontWeight = FontWeight.SemiBold) },
             text = {
                 OutlinedTextField(
@@ -183,14 +178,14 @@ fun GroupsListScreen(
                     label = { Text("Название группы") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = InputBg,
-                        unfocusedContainerColor = InputBg,
-                        focusedBorderColor = Accent,
-                        unfocusedBorderColor = Border,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedLabelColor = Accent,
-                        unfocusedLabelColor = TextMuted
+                        focusedContainerColor = LocalAppColors.current.inputBg,
+                        unfocusedContainerColor = LocalAppColors.current.inputBg,
+                        focusedBorderColor = LocalAppColors.current.accent,
+                        unfocusedBorderColor = LocalAppColors.current.border,
+                        focusedTextColor = LocalAppColors.current.textPrimary,
+                        unfocusedTextColor = LocalAppColors.current.textPrimary,
+                        focusedLabelColor = LocalAppColors.current.accent,
+                        unfocusedLabelColor = LocalAppColors.current.textMuted
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -206,12 +201,12 @@ fun GroupsListScreen(
                     },
                     enabled = newGroupName.isNotBlank() && !busy
                 ) {
-                    Text("Создать", color = Accent)
+                    Text("Создать", color = LocalAppColors.current.accent)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showCreateDialog = false; newGroupName = "" }) {
-                    Text("Отмена", color = TextMuted)
+                    Text("Отмена", color = LocalAppColors.current.textMuted)
                 }
             }
         )

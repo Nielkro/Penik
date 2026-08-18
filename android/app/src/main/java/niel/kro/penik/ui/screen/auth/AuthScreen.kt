@@ -1,5 +1,7 @@
 package niel.kro.penik.ui.screen.auth
 
+import niel.kro.penik.ui.theme.LocalAppColors
+
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,13 +56,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import niel.kro.penik.ui.components.InitialsAvatar
 import niel.kro.penik.ui.components.UserAvatar
-import niel.kro.penik.ui.theme.Accent
-import niel.kro.penik.ui.theme.Background
-import niel.kro.penik.ui.theme.Border
-import niel.kro.penik.ui.theme.Danger
-import niel.kro.penik.ui.theme.InputBg
-import niel.kro.penik.ui.theme.TextMuted
-import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.AuthMode
 import niel.kro.penik.ui.viewmodel.AuthViewModel
 
@@ -88,7 +83,7 @@ fun AuthScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Background)
+            .background(LocalAppColors.current.background)
             .padding(24.dp)
     ) {
         // Back button (top left)
@@ -101,7 +96,7 @@ fun AuthScreen(
             ) {
                 Text(
                     text = "←",
-                    color = TextPrimary,
+                    color = LocalAppColors.current.textPrimary,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -123,7 +118,7 @@ fun AuthScreen(
                             .height(4.dp)
                             .clip(RoundedCornerShape(2.dp))
                             .background(
-                                if (i <= state.step) Accent else Color.White.copy(alpha = 0.05f)
+                                if (i <= state.step) LocalAppColors.current.accent else Color.White.copy(alpha = 0.05f)
                             )
                     )
                 }
@@ -141,14 +136,14 @@ fun AuthScreen(
                 AuthMode.WELCOME -> {
                     Text(
                         text = "Penik",
-                        color = Accent,
+                        color = LocalAppColors.current.accent,
                         fontSize = 36.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Защищенный мессенджер с E2EE",
-                        color = TextMuted,
+                        color = LocalAppColors.current.textMuted,
                         fontSize = 14.sp
                     )
                     Spacer(modifier = Modifier.height(48.dp))
@@ -158,9 +153,9 @@ fun AuthScreen(
                             .fillMaxWidth()
                             .height(52.dp),
                         shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                        colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.accent)
                     ) {
-                        Text("Регистрация", fontSize = 16.sp, color = TextPrimary)
+                        Text("Регистрация", fontSize = 16.sp, color = LocalAppColors.current.textPrimary)
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
@@ -168,20 +163,20 @@ fun AuthScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp)
-                            .border(1.dp, Border, RoundedCornerShape(14.dp)),
+                            .border(1.dp, LocalAppColors.current.border, RoundedCornerShape(14.dp)),
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent)
                     ) {
-                        Text("Войти", fontSize = 16.sp, color = TextPrimary)
+                        Text("Войти", fontSize = 16.sp, color = LocalAppColors.current.textPrimary)
                     }
                 }
 
                 AuthMode.REGISTER -> {
                     when (state.step) {
                         0 -> { // Registration: Nickname
-                            Text("Выберите никнейм", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Выберите никнейм", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.textPrimary)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("Уникальное имя для поиска в сети", fontSize = 13.sp, color = TextMuted)
+                            Text("Уникальное имя для поиска в сети", fontSize = 13.sp, color = LocalAppColors.current.textMuted)
                             Spacer(modifier = Modifier.height(32.dp))
                             OutlinedTextField(
                                 value = state.nickname,
@@ -192,14 +187,14 @@ fun AuthScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = InputBg,
-                                    unfocusedContainerColor = InputBg,
-                                    focusedBorderColor = Accent,
-                                    unfocusedBorderColor = Border,
-                                    focusedTextColor = TextPrimary,
-                                    unfocusedTextColor = TextPrimary,
-                                    focusedLabelColor = Accent,
-                                    unfocusedLabelColor = TextMuted
+                                    focusedContainerColor = LocalAppColors.current.inputBg,
+                                    unfocusedContainerColor = LocalAppColors.current.inputBg,
+                                    focusedBorderColor = LocalAppColors.current.accent,
+                                    unfocusedBorderColor = LocalAppColors.current.border,
+                                    focusedTextColor = LocalAppColors.current.textPrimary,
+                                    unfocusedTextColor = LocalAppColors.current.textPrimary,
+                                    focusedLabelColor = LocalAppColors.current.accent,
+                                    unfocusedLabelColor = LocalAppColors.current.textMuted
                                 )
                             )
                             RenderError(state.error)
@@ -212,9 +207,9 @@ fun AuthScreen(
                         }
 
                         1 -> { // Registration: Password
-                            Text("Создайте пароль", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Создайте пароль", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.textPrimary)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("Используется для входа в ваш аккаунт", fontSize = 13.sp, color = TextMuted)
+                            Text("Используется для входа в ваш аккаунт", fontSize = 13.sp, color = LocalAppColors.current.textMuted)
                             Spacer(modifier = Modifier.height(32.dp))
                             OutlinedTextField(
                                 value = state.password,
@@ -226,14 +221,14 @@ fun AuthScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = InputBg,
-                                    unfocusedContainerColor = InputBg,
-                                    focusedBorderColor = Accent,
-                                    unfocusedBorderColor = Border,
-                                    focusedTextColor = TextPrimary,
-                                    unfocusedTextColor = TextPrimary,
-                                    focusedLabelColor = Accent,
-                                    unfocusedLabelColor = TextMuted
+                                    focusedContainerColor = LocalAppColors.current.inputBg,
+                                    unfocusedContainerColor = LocalAppColors.current.inputBg,
+                                    focusedBorderColor = LocalAppColors.current.accent,
+                                    unfocusedBorderColor = LocalAppColors.current.border,
+                                    focusedTextColor = LocalAppColors.current.textPrimary,
+                                    unfocusedTextColor = LocalAppColors.current.textPrimary,
+                                    focusedLabelColor = LocalAppColors.current.accent,
+                                    unfocusedLabelColor = LocalAppColors.current.textMuted
                                 )
                             )
                             RenderError(state.error)
@@ -246,9 +241,9 @@ fun AuthScreen(
                         }
 
                         2 -> { // Registration: E2EE Password
-                            Text("Создайте e2ee-пароль", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Создайте e2ee-пароль", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.textPrimary)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("Ключ шифрования переписок. Знаете его только вы.", fontSize = 13.sp, color = TextMuted, textAlign = TextAlign.Center)
+                            Text("Ключ шифрования переписок. Знаете его только вы.", fontSize = 13.sp, color = LocalAppColors.current.textMuted, textAlign = TextAlign.Center)
                             Spacer(modifier = Modifier.height(32.dp))
                             OutlinedTextField(
                                 value = state.e2eePassword,
@@ -259,20 +254,20 @@ fun AuthScreen(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                                 trailingIcon = {
                                     IconButton(onClick = { showPassword = !showPassword }) {
-                                        Text(if (showPassword) "🙈" else "👁️", color = TextMuted)
+                                        Text(if (showPassword) "🙈" else "👁️", color = LocalAppColors.current.textMuted)
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = InputBg,
-                                    unfocusedContainerColor = InputBg,
-                                    focusedBorderColor = Accent,
-                                    unfocusedBorderColor = Border,
-                                    focusedTextColor = TextPrimary,
-                                    unfocusedTextColor = TextPrimary,
-                                    focusedLabelColor = Accent,
-                                    unfocusedLabelColor = TextMuted
+                                    focusedContainerColor = LocalAppColors.current.inputBg,
+                                    unfocusedContainerColor = LocalAppColors.current.inputBg,
+                                    focusedBorderColor = LocalAppColors.current.accent,
+                                    unfocusedBorderColor = LocalAppColors.current.border,
+                                    focusedTextColor = LocalAppColors.current.textPrimary,
+                                    unfocusedTextColor = LocalAppColors.current.textPrimary,
+                                    focusedLabelColor = LocalAppColors.current.accent,
+                                    unfocusedLabelColor = LocalAppColors.current.textMuted
                                 )
                             )
                             RenderError(state.error)
@@ -285,9 +280,9 @@ fun AuthScreen(
                         }
 
                         3 -> { // Registration: Profile Name / Avatar
-                            Text("Ваша аватарка и имя", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Ваша аватарка и имя", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.textPrimary)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("Загрузите фото и укажите отображаемое имя", fontSize = 13.sp, color = TextMuted)
+                            Text("Загрузите фото и укажите отображаемое имя", fontSize = 13.sp, color = LocalAppColors.current.textMuted)
                             Spacer(modifier = Modifier.height(24.dp))
 
                             // Clickable avatar placeholder
@@ -296,7 +291,7 @@ fun AuthScreen(
                                     .size(96.dp)
                                     .clip(CircleShape)
                                     .background(Color.White.copy(alpha = 0.05f))
-                                    .border(1.dp, Border, CircleShape)
+                                    .border(1.dp, LocalAppColors.current.border, CircleShape)
                                     .clickable { imageLauncher.launch("image/*") },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -313,7 +308,7 @@ fun AuthScreen(
                                         )
                                     }
                                 } else {
-                                    Text("+", fontSize = 32.sp, color = TextMuted)
+                                    Text("+", fontSize = 32.sp, color = LocalAppColors.current.textMuted)
                                 }
                             }
 
@@ -326,14 +321,14 @@ fun AuthScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = InputBg,
-                                    unfocusedContainerColor = InputBg,
-                                    focusedBorderColor = Accent,
-                                    unfocusedBorderColor = Border,
-                                    focusedTextColor = TextPrimary,
-                                    unfocusedTextColor = TextPrimary,
-                                    focusedLabelColor = Accent,
-                                    unfocusedLabelColor = TextMuted
+                                    focusedContainerColor = LocalAppColors.current.inputBg,
+                                    unfocusedContainerColor = LocalAppColors.current.inputBg,
+                                    focusedBorderColor = LocalAppColors.current.accent,
+                                    unfocusedBorderColor = LocalAppColors.current.border,
+                                    focusedTextColor = LocalAppColors.current.textPrimary,
+                                    unfocusedTextColor = LocalAppColors.current.textPrimary,
+                                    focusedLabelColor = LocalAppColors.current.accent,
+                                    unfocusedLabelColor = LocalAppColors.current.textMuted
                                 )
                             )
                             RenderError(state.error)
@@ -350,9 +345,9 @@ fun AuthScreen(
                 AuthMode.LOGIN -> {
                     when (state.step) {
                         0 -> { // Login: Nickname
-                            Text("Введите никнейм", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Введите никнейм", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.textPrimary)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("Укажите ваш никнейм для входа", fontSize = 13.sp, color = TextMuted)
+                            Text("Укажите ваш никнейм для входа", fontSize = 13.sp, color = LocalAppColors.current.textMuted)
                             Spacer(modifier = Modifier.height(32.dp))
                             OutlinedTextField(
                                 value = state.nickname,
@@ -363,14 +358,14 @@ fun AuthScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = InputBg,
-                                    unfocusedContainerColor = InputBg,
-                                    focusedBorderColor = Accent,
-                                    unfocusedBorderColor = Border,
-                                    focusedTextColor = TextPrimary,
-                                    unfocusedTextColor = TextPrimary,
-                                    focusedLabelColor = Accent,
-                                    unfocusedLabelColor = TextMuted
+                                    focusedContainerColor = LocalAppColors.current.inputBg,
+                                    unfocusedContainerColor = LocalAppColors.current.inputBg,
+                                    focusedBorderColor = LocalAppColors.current.accent,
+                                    unfocusedBorderColor = LocalAppColors.current.border,
+                                    focusedTextColor = LocalAppColors.current.textPrimary,
+                                    unfocusedTextColor = LocalAppColors.current.textPrimary,
+                                    focusedLabelColor = LocalAppColors.current.accent,
+                                    unfocusedLabelColor = LocalAppColors.current.textMuted
                                 )
                             )
                             RenderError(state.error)
@@ -383,18 +378,18 @@ fun AuthScreen(
                         }
 
                         1 -> { // Login: Confirm profile ("Это вы?")
-                            Text("Это ваш аккаунт?", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Это ваш аккаунт?", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.textPrimary)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("Проверьте данные перед входом", fontSize = 13.sp, color = TextMuted)
+                            Text("Проверьте данные перед входом", fontSize = 13.sp, color = LocalAppColors.current.textMuted)
                             Spacer(modifier = Modifier.height(32.dp))
 
                             state.tempUserId?.let { uid ->
                                 UserAvatar(userId = uid, name = state.tempName ?: "", size = 88.dp)
                             }
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text(state.tempName ?: "", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                            Text(state.tempName ?: "", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = LocalAppColors.current.textPrimary)
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text("@${state.nickname}", fontSize = 14.sp, color = TextMuted)
+                            Text("@${state.nickname}", fontSize = 14.sp, color = LocalAppColors.current.textMuted)
 
                             Spacer(modifier = Modifier.height(32.dp))
                             PrimaryButton(
@@ -404,14 +399,14 @@ fun AuthScreen(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             TextButton(onClick = { viewModel.goBack() }) {
-                                Text("Войти в другой аккаунт", color = Accent, fontSize = 14.sp)
+                                Text("Войти в другой аккаунт", color = LocalAppColors.current.accent, fontSize = 14.sp)
                             }
                         }
 
                         2 -> { // Login: Password
-                            Text("Введите пароль", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Введите пароль", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.textPrimary)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("Пароль от вашего аккаунта Penik", fontSize = 13.sp, color = TextMuted)
+                            Text("Пароль от вашего аккаунта Penik", fontSize = 13.sp, color = LocalAppColors.current.textMuted)
                             Spacer(modifier = Modifier.height(32.dp))
                             OutlinedTextField(
                                 value = state.password,
@@ -423,14 +418,14 @@ fun AuthScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = InputBg,
-                                    unfocusedContainerColor = InputBg,
-                                    focusedBorderColor = Accent,
-                                    unfocusedBorderColor = Border,
-                                    focusedTextColor = TextPrimary,
-                                    unfocusedTextColor = TextPrimary,
-                                    focusedLabelColor = Accent,
-                                    unfocusedLabelColor = TextMuted
+                                    focusedContainerColor = LocalAppColors.current.inputBg,
+                                    unfocusedContainerColor = LocalAppColors.current.inputBg,
+                                    focusedBorderColor = LocalAppColors.current.accent,
+                                    unfocusedBorderColor = LocalAppColors.current.border,
+                                    focusedTextColor = LocalAppColors.current.textPrimary,
+                                    unfocusedTextColor = LocalAppColors.current.textPrimary,
+                                    focusedLabelColor = LocalAppColors.current.accent,
+                                    unfocusedLabelColor = LocalAppColors.current.textMuted
                                 )
                             )
                             RenderError(state.error)
@@ -443,9 +438,9 @@ fun AuthScreen(
                         }
 
                         3 -> { // Login: E2EE Password
-                            Text("Восстановление ключей", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Восстановление ключей", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.textPrimary)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("Введите e2ee-пароль для расшифрования сообщений", fontSize = 13.sp, color = TextMuted, textAlign = TextAlign.Center)
+                            Text("Введите e2ee-пароль для расшифрования сообщений", fontSize = 13.sp, color = LocalAppColors.current.textMuted, textAlign = TextAlign.Center)
                             Spacer(modifier = Modifier.height(32.dp))
                             OutlinedTextField(
                                 value = state.e2eePassword,
@@ -456,20 +451,20 @@ fun AuthScreen(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                                 trailingIcon = {
                                     IconButton(onClick = { showPassword = !showPassword }) {
-                                        Text(if (showPassword) "🙈" else "👁️", color = TextMuted)
+                                        Text(if (showPassword) "🙈" else "👁️", color = LocalAppColors.current.textMuted)
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = InputBg,
-                                    unfocusedContainerColor = InputBg,
-                                    focusedBorderColor = Accent,
-                                    unfocusedBorderColor = Border,
-                                    focusedTextColor = TextPrimary,
-                                    unfocusedTextColor = TextPrimary,
-                                    focusedLabelColor = Accent,
-                                    unfocusedLabelColor = TextMuted
+                                    focusedContainerColor = LocalAppColors.current.inputBg,
+                                    unfocusedContainerColor = LocalAppColors.current.inputBg,
+                                    focusedBorderColor = LocalAppColors.current.accent,
+                                    unfocusedBorderColor = LocalAppColors.current.border,
+                                    focusedTextColor = LocalAppColors.current.textPrimary,
+                                    unfocusedTextColor = LocalAppColors.current.textPrimary,
+                                    focusedLabelColor = LocalAppColors.current.accent,
+                                    unfocusedLabelColor = LocalAppColors.current.textMuted
                                 )
                             )
                             RenderError(state.error)
@@ -481,11 +476,11 @@ fun AuthScreen(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             TextButton(onClick = { viewModel.skipE2eeBackup(onLoginSuccess) }) {
-                                Text("Войти как новое устройство (создать свои ключи)", color = Accent, fontSize = 13.sp, textAlign = TextAlign.Center)
+                                Text("Войти как новое устройство (создать свои ключи)", color = LocalAppColors.current.accent, fontSize = 13.sp, textAlign = TextAlign.Center)
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             TextButton(onClick = { showResetDialog = true }) {
-                                Text("Забыли e2ee-пароль? (Начать с чистого листа)", color = TextMuted, fontSize = 12.sp, textAlign = TextAlign.Center)
+                                Text("Забыли e2ee-пароль? (Начать с чистого листа)", color = LocalAppColors.current.textMuted, fontSize = 12.sp, textAlign = TextAlign.Center)
                             }
                         }
                     }
@@ -518,19 +513,19 @@ fun AuthScreen(
                         showResetDialog = false
                         viewModel.submitLoginE2eeReset(newE2eePassword, onLoginSuccess)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Danger)
+                    colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.danger)
                 ) {
-                    Text("Сбросить ключи", color = TextPrimary)
+                    Text("Сбросить ключи", color = LocalAppColors.current.textPrimary)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showResetDialog = false }) {
-                    Text("Отмена", color = TextPrimary)
+                    Text("Отмена", color = LocalAppColors.current.textPrimary)
                 }
             },
-            containerColor = Background,
-            titleContentColor = TextPrimary,
-            textContentColor = TextPrimary
+            containerColor = LocalAppColors.current.background,
+            titleContentColor = LocalAppColors.current.textPrimary,
+            textContentColor = LocalAppColors.current.textPrimary
         )
     }
 }
@@ -541,7 +536,7 @@ private fun RenderError(error: String?) {
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = error,
-            color = Danger,
+            color = LocalAppColors.current.danger,
             fontSize = 14.sp,
             textAlign = TextAlign.Center
         )
@@ -561,14 +556,14 @@ private fun PrimaryButton(
             .height(52.dp),
         shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Accent,
-            disabledContainerColor = Accent.copy(alpha = 0.5f)
+            containerColor = LocalAppColors.current.accent,
+            disabledContainerColor = LocalAppColors.current.accent.copy(alpha = 0.5f)
         ),
         enabled = !isLoading
     ) {
         if (isLoading) {
             CircularProgressIndicator(
-                color = TextPrimary,
+                color = LocalAppColors.current.textPrimary,
                 strokeWidth = 2.dp,
                 modifier = Modifier.size(24.dp)
             )
@@ -577,7 +572,7 @@ private fun PrimaryButton(
                 text = text,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium,
-                color = TextPrimary
+                color = LocalAppColors.current.textPrimary
             )
         }
     }

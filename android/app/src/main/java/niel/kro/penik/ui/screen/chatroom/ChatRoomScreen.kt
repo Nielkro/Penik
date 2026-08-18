@@ -1,5 +1,7 @@
 package niel.kro.penik.ui.screen.chatroom
 
+import niel.kro.penik.ui.theme.LocalAppColors
+
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -68,10 +70,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
 import niel.kro.penik.ui.components.MessageBubble
-import niel.kro.penik.ui.theme.Accent
-import niel.kro.penik.ui.theme.Background
-import niel.kro.penik.ui.theme.Border
-import niel.kro.penik.ui.theme.InputBg
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.serialization.json.buildJsonObject
@@ -81,11 +79,6 @@ import kotlinx.serialization.json.jsonObject
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import niel.kro.penik.ui.theme.Panel
-import niel.kro.penik.ui.theme.PanelSecondary
-import niel.kro.penik.ui.theme.Success
-import niel.kro.penik.ui.theme.TextMuted
-import niel.kro.penik.ui.theme.TextPrimary
 import niel.kro.penik.ui.viewmodel.ChatRoomViewModel
 
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -163,8 +156,8 @@ fun ChatRoomScreen(
     if (showE2eeDialog) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissE2eeDialog() },
-            containerColor = Panel,
-            titleContentColor = TextPrimary,
+            containerColor = LocalAppColors.current.panel,
+            titleContentColor = LocalAppColors.current.textPrimary,
             title = {
                 Text(
                     text = "Что такое E2EE?",
@@ -177,27 +170,27 @@ fun ChatRoomScreen(
                         text = "E2EE (End-to-End Encryption) — сквозное шифрование.",
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
-                        color = TextPrimary,
+                        color = LocalAppColors.current.textPrimary,
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
                     Text(
                         text = "Ваше устройство и устройство собеседника обмениваются публичными ключами и с помощью специального математического алгоритма (Диффи-Хеллмана) независимо друг от друга вычисляют один и тот же секретный ключ. При этом этот ключ никогда не передаётся по сети. Им шифруется каждое сообщение, и расшифровать его можете только вы и ваш собеседник.",
                         fontSize = 13.sp,
-                        color = TextMuted,
+                        color = LocalAppColors.current.textMuted,
                         lineHeight = 18.sp,
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
                     Text(
                         text = "Код безопасности (Safety Number) — это общий цифровой отпечаток ваших ключей. Сверив его лично или в другом канале, вы убедитесь, что общаетесь напрямую без подмены ключей третьими лицами.",
                         fontSize = 12.sp,
-                        color = TextMuted,
+                        color = LocalAppColors.current.textMuted,
                         lineHeight = 18.sp
                     )
                 }
             },
             confirmButton = {
                 TextButton(onClick = { viewModel.dismissE2eeDialog() }) {
-                    Text("Понятно", color = Accent)
+                    Text("Понятно", color = LocalAppColors.current.accent)
                 }
             }
         )
@@ -206,20 +199,20 @@ fun ChatRoomScreen(
     if (showDialog) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissSafetyDialog() },
-            containerColor = Panel,
-            titleContentColor = TextPrimary,
+            containerColor = LocalAppColors.current.panel,
+            titleContentColor = LocalAppColors.current.textPrimary,
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "Код безопасности ",
                         fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary
+                        color = LocalAppColors.current.textPrimary
                     )
                     Text(
                         text = "E2EE",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Accent,
+                        color = LocalAppColors.current.accent,
                         modifier = Modifier.clickable { viewModel.onE2eeClick() }
                     )
                 }
@@ -229,7 +222,7 @@ fun ChatRoomScreen(
                     Text(
                         text = "Сравните эти числа с числами на устройстве вашего собеседника. Если они совпадают, ваше сквозное шифрование на 100% защищено от перехвата.",
                         fontSize = 13.sp,
-                        color = TextMuted,
+                        color = LocalAppColors.current.textMuted,
                         textAlign = TextAlign.Center,
                         lineHeight = 18.sp,
                         modifier = Modifier.padding(bottom = 16.dp)
@@ -239,20 +232,20 @@ fun ChatRoomScreen(
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
-                        color = Success,
+                        color = LocalAppColors.current.success,
                         textAlign = TextAlign.Center,
                         letterSpacing = 2.sp,
                         lineHeight = 28.sp,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(PanelSecondary, RoundedCornerShape(8.dp))
+                            .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(8.dp))
                             .padding(16.dp)
                     )
                 }
             },
             confirmButton = {
                 TextButton(onClick = { viewModel.dismissSafetyDialog() }) {
-                    Text("Закрыть", color = Accent)
+                    Text("Закрыть", color = LocalAppColors.current.accent)
                 }
             }
         )
@@ -309,13 +302,13 @@ fun ChatRoomScreen(
     messageToDeleteLocalId?.let { localId ->
         AlertDialog(
             onDismissRequest = { messageToDeleteLocalId = null },
-            containerColor = Panel,
-            titleContentColor = TextPrimary,
+            containerColor = LocalAppColors.current.panel,
+            titleContentColor = LocalAppColors.current.textPrimary,
             title = {
                 Text(
                     text = "Удалить сообщение?",
                     fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
+                    color = LocalAppColors.current.textPrimary
                 )
             },
             text = {
@@ -323,7 +316,7 @@ fun ChatRoomScreen(
                     Text(
                         text = "Вы действительно хотите удалить это сообщение?",
                         fontSize = 13.sp,
-                        color = TextMuted,
+                        color = LocalAppColors.current.textMuted,
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
                     Row(
@@ -338,14 +331,14 @@ fun ChatRoomScreen(
                             onCheckedChange = { deleteForEveryoneChecked = it },
                             colors = CheckboxDefaults.colors(
                                 checkedColor = Color(0xFFEF5350),
-                                uncheckedColor = TextMuted
+                                uncheckedColor = LocalAppColors.current.textMuted
                             )
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Удалить также для собеседника",
                             fontSize = 13.sp,
-                            color = TextPrimary
+                            color = LocalAppColors.current.textPrimary
                         )
                     }
                 }
@@ -363,7 +356,7 @@ fun ChatRoomScreen(
             },
             dismissButton = {
                 TextButton(onClick = { messageToDeleteLocalId = null }) {
-                    Text("Отмена", color = TextMuted)
+                    Text("Отмена", color = LocalAppColors.current.textMuted)
                 }
             }
         )
@@ -371,7 +364,7 @@ fun ChatRoomScreen(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = Background,
+        containerColor = LocalAppColors.current.background,
         topBar = {
             TopAppBar(
                 title = {
@@ -405,11 +398,11 @@ fun ChatRoomScreen(
                                     Icon(
                                         imageVector = Icons.Default.Lock,
                                         contentDescription = "Код безопасности E2EE",
-                                        tint = Success,
+                                        tint = LocalAppColors.current.success,
                                         modifier = Modifier
                                             .padding(start = 8.dp)
                                             .clip(RoundedCornerShape(4.dp))
-                                            .background(Success.copy(alpha = 0.15f))
+                                            .background(LocalAppColors.current.success.copy(alpha = 0.15f))
                                             .clickable { viewModel.onSafetyClick() }
                                             .padding(4.dp)
                                             .size(16.dp)
@@ -423,7 +416,7 @@ fun ChatRoomScreen(
                                         text = "печатает...",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Accent
+                                        color = LocalAppColors.current.accent
                                     )
                                 } else {
                                     val presence = niel.kro.penik.ui.util.formatPresence(online, lastSeen)
@@ -431,7 +424,7 @@ fun ChatRoomScreen(
                                         Text(
                                             text = presence,
                                             fontSize = 12.sp,
-                                            color = if (online) Accent else TextMuted
+                                            color = if (online) LocalAppColors.current.accent else LocalAppColors.current.textMuted
                                         )
                                     }
                                 }
@@ -444,13 +437,13 @@ fun ChatRoomScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Назад",
-                            tint = TextPrimary
+                            tint = LocalAppColors.current.textPrimary
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Panel,
-                    titleContentColor = TextPrimary
+                    containerColor = LocalAppColors.current.panel,
+                    titleContentColor = LocalAppColors.current.textPrimary
                 )
             )
         }
@@ -530,8 +523,8 @@ fun ChatRoomScreen(
                                 listState.animateScrollToItem(messages.lastIndex, scrollOffset = 10000)
                             }
                         },
-                        containerColor = Panel,
-                        contentColor = TextPrimary,
+                        containerColor = LocalAppColors.current.panel,
+                        contentColor = LocalAppColors.current.textPrimary,
                         elevation = FloatingActionButtonDefaults.elevation(4.dp),
                         shape = CircleShape,
                         modifier = Modifier.size(40.dp)
@@ -548,7 +541,7 @@ fun ChatRoomScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Panel)
+                    .background(LocalAppColors.current.panel)
                     .imePadding()
             ) {
                 activeReply?.let { reply ->
@@ -573,7 +566,7 @@ fun ChatRoomScreen(
                             modifier = Modifier
                                 .width(3.dp)
                                 .height(36.dp)
-                                .background(Accent)
+                                .background(LocalAppColors.current.accent)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         if (replyThumbBitmap != null) {
@@ -590,13 +583,13 @@ fun ChatRoomScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = reply.sender,
-                                color = Accent,
+                                color = LocalAppColors.current.accent,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = replyInfo?.displayText ?: reply.text,
-                                color = TextMuted,
+                                color = LocalAppColors.current.textMuted,
                                 fontSize = 12.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -606,7 +599,7 @@ fun ChatRoomScreen(
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Закрыть",
-                                tint = TextMuted
+                                tint = LocalAppColors.current.textMuted
                             )
                         }
                     }
@@ -630,7 +623,7 @@ fun ChatRoomScreen(
                         Icon(
                             imageVector = Icons.Default.AttachFile,
                             contentDescription = "Прикрепить файл",
-                            tint = TextMuted
+                            tint = LocalAppColors.current.textMuted
                         )
                     }
 
@@ -643,15 +636,15 @@ fun ChatRoomScreen(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(14.dp)),
-                        placeholder = { Text("Сообщение...", color = TextMuted) },
+                        placeholder = { Text("Сообщение...", color = LocalAppColors.current.textMuted) },
                         maxLines = 5,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = InputBg,
-                            unfocusedContainerColor = InputBg,
-                            focusedBorderColor = Border,
-                            unfocusedBorderColor = Border,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
+                            focusedContainerColor = LocalAppColors.current.inputBg,
+                            unfocusedContainerColor = LocalAppColors.current.inputBg,
+                            focusedBorderColor = LocalAppColors.current.border,
+                            unfocusedBorderColor = LocalAppColors.current.border,
+                            focusedTextColor = LocalAppColors.current.textPrimary,
+                            unfocusedTextColor = LocalAppColors.current.textPrimary
                         )
                     )
 
@@ -669,7 +662,7 @@ fun ChatRoomScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Отправить",
-                            tint = Accent
+                            tint = LocalAppColors.current.accent
                         )
                     }
                 }
