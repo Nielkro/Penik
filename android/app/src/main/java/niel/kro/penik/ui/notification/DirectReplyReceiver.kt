@@ -35,7 +35,14 @@ class DirectReplyReceiver : BroadcastReceiver() {
 
         val chatUserId = intent.getLongExtra(AppNotificationManager.EXTRA_CHAT_USER_ID, -1L)
         val chatName = intent.getStringExtra(AppNotificationManager.EXTRA_CHAT_NAME) ?: ""
-        val replyToMsgId = intent.getStringExtra(AppNotificationManager.EXTRA_LAST_MSG_SERVER_ID)
+        val rawReplyToMsgId = intent.getStringExtra(AppNotificationManager.EXTRA_LAST_MSG_SERVER_ID)
+        // Standardize replyToMsgId: if it's a numeric server ID, store as server-ID for web/app IDB compatibility
+        val replyToMsgId = when {
+            rawReplyToMsgId.isNullOrBlank() -> null
+            rawReplyToMsgId.startsWith("server-") -> rawReplyToMsgId
+            rawReplyToMsgId.toLongOrNull() != null -> rawReplyToMsgId
+            else -> rawReplyToMsgId
+        }
         if (chatUserId <= 0) return
 
         val pendingResult = goAsync()
