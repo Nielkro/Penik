@@ -726,7 +726,7 @@ export async function renderChat(container, userId) {
       wireMsgCopy(bubble, () => msg.plaintext || "", () => {
         const info = getMessagePreviewInfo(msg.plaintext || "");
         setActiveReply({
-          msg_id: msg.client_msg_id || msg.msg_id || bubble.dataset.msgId,
+          msg_id: (msg.msg_id && !String(msg.msg_id).startsWith("tmp-")) ? msg.msg_id : (msg.client_msg_id || msg.msg_id || bubble.dataset.msgId),
           text: info.text,
           thumb: info.thumb,
           sender: isMine ? "Вы" : (contact.name || contact.nickname || "Собеседник")
