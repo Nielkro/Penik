@@ -31,7 +31,8 @@ export function initCallSystem() {
 export async function startCall(calleeUserId, callType = "audio") {
   try {
     showToast("Инициализация вызова…");
-    const callData = await initiateCall(calleeUserId, callType);
+    const targetId = Number(calleeUserId);
+    const callData = await initiateCall(targetId, callType);
     currentCallId = callData.call_id;
 
     showOutgoingCallModal(callData.room_name, callType, callData.token, callData.livekit_url);

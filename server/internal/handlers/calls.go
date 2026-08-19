@@ -67,13 +67,24 @@ func InitiateCall(database *db.DB, cfg *config.Config, hub *ws.Hub) http.Handler
 			return
 		}
 
-		var req InitiateCallRequest
+		var req struct {
+			CalleeUserID interface{} `json:"callee_user_id"`
+			CallType     string      `json:"call_type"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
 
-		if req.CalleeUserID <= 0 || req.CalleeUserID == callerID {
+		var calleeID int64
+		switch v := req.CalleeUserID.(type) {
+		case float64:
+			calleeID = int64(v)
+		case string:
+			calleeID, _ = strconv.ParseInt(v, 10, 64)
+		}
+
+		if calleeID <= 0 || calleeID == callerID {
 			http.Error(w, "invalid callee user id", http.StatusBadRequest)
 			return
 		}
@@ -84,7 +95,7 @@ func InitiateCall(database *db.DB, cfg *config.Config, hub *ws.Hub) http.Handler
 
 		// Check if callee exists
 		var calleeName string
-		err := database.QueryRow("SELECT name FROM users WHERE id = ?", req.CalleeUserID).Scan(&calleeName)
+		err := database.QueryRow("SELECT name FROM users WHERE id = ?", calleeID).Scan(&calleeName)
 		if err == sql.ErrNoRows {
 			http.Error(w, "callee not found", http.StatusNotFound)
 			return
@@ -97,11 +108,11 @@ func InitiateCall(database *db.DB, cfg *config.Config, hub *ws.Hub) http.Handler
 		_ = database.QueryRow("SELECT name FROM users WHERE id = ?", callerID).Scan(&callerName)
 
 		now := time.Now().Unix()
-		roomName := fmt.Sprintf("call_%d_%d_%d", callerID, req.CalleeUserID, now)
+		roomName := fmt.Sprintf("call_%d_%d_%d", callerID, calleeID, now)
 
 		res, err := database.Exec(
 			`INSERT INTO calls (room_name, caller_user_id, callee_user_id, call_type, status, started_at) VALUES (?, ?, ?, ?, 'missed', ?)`,
-			roomName, callerID, req.CalleeUserID, req.CallType, now,
+			roomName, callerID, calleeID, req.CallType, now,
 		)
 		if err != nil {
 			http.Error(w, "failed to record call", http.StatusInternalServerError)
@@ -126,7 +137,7 @@ func InitiateCall(database *db.DB, cfg *config.Config, hub *ws.Hub) http.Handler
 			"call_type":      req.CallType,
 			"started_at":     now,
 		})
-		hub.SendToUser(req.CalleeUserID, signalPayload)
+		hub.SendToUser(calleeID, signalPayload)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(InitiateCallResponse{
