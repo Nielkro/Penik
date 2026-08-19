@@ -24,6 +24,7 @@ import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
 import { verifyPeerIdentityKey } from './pinning.js';
 import { emitPresenceUpdate, emitTypingUpdate } from './presence.js';
 import { getCachedMedia } from './storage.js';
+import { initCallSystem } from './calls.js';
 
 // Service Worker registration for HTTP 206 Partial Content Range streaming
 if ('serviceWorker' in navigator) {
@@ -1080,6 +1081,7 @@ function setupGlobalWSListeners() {
     showToast('Сервер выключается…', 'warning');
   });
   registerGroupWSListeners();
+  initCallSystem();
 
   // Periodically drop pending ACKs that never resolved, and clear them on
   // disconnect (the outbox re-flush on reconnect re-registers live ones).

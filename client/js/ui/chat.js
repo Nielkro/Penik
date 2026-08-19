@@ -15,6 +15,7 @@ import {
 import { syncGroups, getAllGroups, getGroupMessages, onGroupUpdate } from "../groups.js";
 import { buildGroupListItem, showCreateGroupModal } from "./groups.js";
 import { onPresenceUpdate, onTypingUpdate } from "../presence.js";
+import { startCall } from "../calls.js";
 
 
 
@@ -339,10 +340,34 @@ export async function renderChat(container, userId) {
     }
   });
 
+  const audioCallBtn = isSelfChat ? null : el("button", {
+    class: "icon-btn chat-audio-call",
+    title: "Аудиозвонок",
+    style: "margin-left: auto; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; padding: 4px; font-size: 18px;"
+  }, "📞");
+
+  const videoCallBtn = isSelfChat ? null : el("button", {
+    class: "icon-btn chat-video-call",
+    title: "Видеозвонок",
+    style: "margin-left: 8px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; padding: 4px; font-size: 18px;"
+  }, "📹");
+
+  if (audioCallBtn) {
+    audioCallBtn.addEventListener("mouseenter", () => { audioCallBtn.style.opacity = "1"; });
+    audioCallBtn.addEventListener("mouseleave", () => { audioCallBtn.style.opacity = "0.7"; });
+    audioCallBtn.addEventListener("click", () => startCall(userId, "audio"));
+  }
+
+  if (videoCallBtn) {
+    videoCallBtn.addEventListener("mouseenter", () => { videoCallBtn.style.opacity = "1"; });
+    videoCallBtn.addEventListener("mouseleave", () => { videoCallBtn.style.opacity = "0.7"; });
+    videoCallBtn.addEventListener("click", () => startCall(userId, "video"));
+  }
+
   const safetyBtn = isSelfChat ? null : el("button", {
     class: "icon-btn chat-safety",
     title: "Код безопасности E2EE",
-    style: "margin-left: auto; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; padding: 4px;"
+    style: "margin-left: 8px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; padding: 4px;"
   }, svgIcon("M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", 20, "var(--text-muted)"));
   
   if (safetyBtn) {
@@ -402,6 +427,8 @@ export async function renderChat(container, userId) {
     avatarEl,
     el("div", { class: "chat-header-info" }, nameEl, nickEl)
   ];
+  if (audioCallBtn) headerChildren.push(audioCallBtn);
+  if (videoCallBtn) headerChildren.push(videoCallBtn);
   if (safetyBtn) headerChildren.push(safetyBtn);
   if (deleteBtn) headerChildren.push(deleteBtn);
 

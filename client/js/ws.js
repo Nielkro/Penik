@@ -298,6 +298,8 @@ class WSManager {
       handlers.forEach(fn => {
         try { fn(payload); } catch (e) { console.error('[ws] Handler error', e); }
       });
+
+      window.dispatchEvent(new CustomEvent("penik:ws-message", { detail: payload }));
     } catch (err) {
       console.error('[ws] Failed to decode/process frame', err);
     }

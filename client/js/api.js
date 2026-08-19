@@ -282,3 +282,17 @@ export function getGroupHistory(groupId, { limit = 100, before_id } = {}) {
 
 export function uploadGroupHistoryPackets(groupId, packets) { return post(`/groups/${groupId}/history-packets`, { packets }); }
 export function getGroupHistoryPacket(groupId) { return get(`/groups/${groupId}/history-packets`); }
+
+/* ── Calls ── */
+
+export function initiateCall(calleeUserId, callType = 'audio') {
+  return post('/calls/initiate', { callee_user_id: calleeUserId, call_type: callType });
+}
+
+export function respondCall(callId, action) {
+  return post(`/calls/${callId}/respond`, { action });
+}
+
+export function getCallLogs() {
+  return get('/calls/logs');
+}
