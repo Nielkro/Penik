@@ -220,3 +220,18 @@ CREATE TABLE IF NOT EXISTS group_history_packets (
 
 CREATE INDEX IF NOT EXISTS idx_group_history_packets_expiry
     ON group_history_packets(expires_at);
+
+CREATE TABLE IF NOT EXISTS calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_name TEXT NOT NULL,
+    caller_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    callee_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    call_type TEXT NOT NULL DEFAULT 'audio', -- 'audio' or 'video'
+    status TEXT NOT NULL DEFAULT 'missed',   -- 'accepted', 'missed', 'rejected', 'busy', 'ended'
+    started_at INTEGER NOT NULL,
+    answered_at INTEGER DEFAULT NULL,
+    ended_at INTEGER DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_calls_users ON calls(caller_user_id, callee_user_id);
+CREATE INDEX IF NOT EXISTS idx_calls_started ON calls(started_at);

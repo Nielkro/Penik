@@ -6,8 +6,9 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 ### Go server
 
-- `server/cmd/server/main.go` — Server entry point: loads config, opens DB, registers REST/WebSocket routes, attaches middleware, and serves the embedded web client.
-- `server/internal/config/config.go` — Loads runtime configuration from environment variables: port, SQLite path, session TTL, size limits, CORS, and upload directory.
+- `server/cmd/server/main.go` — Server entry point: loads config, opens DB, registers REST/WebSocket/Calls routes, attaches middleware, and serves the embedded web client.
+- `server/internal/config/config.go` — Loads runtime configuration from environment variables: port, SQLite path, session TTL, size limits, CORS, upload directory, and LiveKit credentials.
+- `server/internal/handlers/calls.go` — REST handlers for initiating audio/video LiveKit calls, generating JWT tokens, answering/rejecting/ending calls, and retrieving user call logs.
 - `server/internal/handlers/auth.go` — REST handlers for registration and login; validates credentials and key material, hashes passwords, and creates devices/sessions.
 - `server/internal/handlers/logout.go` — REST handlers revoking the current session token (`/logout`) or the user's other sessions (`/logout/all`); `/logout/all` is rejected with 403 unless the requesting session is older than a day.
 - `server/internal/handlers/devices.go` — REST handler `GET /api/v1/devices` listing the authenticated user's devices, flagging the current device and whether each has an active session.

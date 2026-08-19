@@ -174,6 +174,15 @@ func main() {
 		authMW(http.HandlerFunc(handlers.MarkMessagesRead(database, hub))))
 	mux.Handle("DELETE /api/v1/chats/{peer_id}",
 		authMW(http.HandlerFunc(handlers.DeleteChat(database, hub))))
+
+	// Calls API routes
+	mux.Handle("POST /api/v1/calls/initiate",
+		authMW(http.HandlerFunc(handlers.InitiateCall(database, cfg, hub))))
+	mux.Handle("POST /api/v1/calls/{id}/respond",
+		authMW(http.HandlerFunc(handlers.RespondCall(database, cfg, hub))))
+	mux.Handle("GET /api/v1/calls/logs",
+		authMW(http.HandlerFunc(handlers.GetCallLogs(database))))
+
 	mux.Handle("GET /api/v1/ws",
 		authMW(http.HandlerFunc(handlers.WebSocketHandler(hub, database, cfg))))
 
