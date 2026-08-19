@@ -60,16 +60,20 @@ export async function startCall(calleeUserId, callType = "audio") {
   try {
     showToast("Инициализация вызова…");
     const targetId = Number(calleeUserId);
-    const callData = await initiateCall(targetId, callType);
-    currentCallId = callData.call_id;
 
-    showOutgoingCallModal(callData.room_name, callType, callData.token, callData.livekit_url);
+    // Send call initiation via WebSocket Opcode 0x30
+    sendCallSignalOpcode(targetId, {
+      action: "initiate",
+      call_type: callType
+    });
+
+    showOutgoingCallModal(targetId, callType);
   } catch (err) {
     showToast(`Ошибка вызова: ${err.message || err}`);
   }
 }
 
-function showOutgoingCallModal(roomName, callType, token, livekitUrl) {
+function showOutgoingCallModal(targetId, callType) {
   closeAllCallModals();
 
   const statusEl = el("div", { style: "margin-top: 8px; color: var(--text-muted);" }, "Звоним…");
@@ -83,21 +87,22 @@ function showOutgoingCallModal(roomName, callType, token, livekitUrl) {
     )
   );
 
-  cancelBtn.addEventListener("click", async () => {
-    if (currentCallId) {
-      await respondCall(currentCallId, "end").catch(() => {});
-    }
+  cancelBtn.addEventListener("click", () => {
+    sendCallSignalOpcode(targetId, { action: "end" });
     leaveCurrentRoom();
     closeAllCallModals();
   });
 
   document.body.appendChild(modal);
-  outgoingModalState = { modal, token, livekitUrl, callType };
+  outgoingModalState = { modal, targetId, callType };
 }
 
 async function handleCallAccepted(data) {
   showToast("Вызов принят!");
-  if (outgoingModalState) {
+  if (data && data.token && data.livekit_url) {
+    const callType = outgoingModalState ? outgoingModalState.callType : "audio";
+    await connectToLiveKitRoom(data.token, data.livekit_url, callType);
+  } else if (outgoingModalState && outgoingModalState.token) {
     const { token, livekitUrl, callType } = outgoingModalState;
     await connectToLiveKitRoom(token, livekitUrl, callType);
   }
@@ -124,9 +129,10 @@ function handleCallEnded() {
 function handleIncomingCall(data) {
   closeAllCallModals();
   currentCallId = data.call_id;
+  const callerUserId = data.from_user_id || data.caller_user_id;
 
   const title = data.call_type === "video" ? "📹 Входящий видеовызов" : "📞 Входящий вызов";
-  const callerName = data.caller_name || `Пользователь #${data.caller_user_id}`;
+  const callerName = data.caller_name || `Пользователь #${callerUserId}`;
 
   const acceptBtn = el("button", { class: "btn btn-primary", style: "margin-right: 12px;" }, "Ответить");
   const rejectBtn = el("button", { class: "btn btn-danger" }, "Отклонить");
@@ -144,9 +150,14 @@ function handleIncomingCall(data) {
 
   acceptBtn.addEventListener("click", async () => {
     try {
-      const resp = await respondCall(data.call_id, "accept");
-      closeAllCallModals();
-      await connectToLiveKitRoom(resp.token, resp.livekit_url, data.call_type);
+      if (data.call_id) {
+        const resp = await respondCall(data.call_id, "accept");
+        closeAllCallModals();
+        await connectToLiveKitRoom(resp.token, resp.livekit_url, data.call_type);
+      } else {
+        sendCallSignalOpcode(callerUserId, { action: "accept" });
+        closeAllCallModals();
+      }
     } catch (err) {
       showToast(`Ошибка подключения: ${err.message || err}`);
       closeAllCallModals();
@@ -154,7 +165,11 @@ function handleIncomingCall(data) {
   });
 
   rejectBtn.addEventListener("click", async () => {
-    await respondCall(data.call_id, "reject").catch(() => {});
+    if (data.call_id) {
+      await respondCall(data.call_id, "reject").catch(() => {});
+    } else {
+      sendCallSignalOpcode(callerUserId, { action: "reject" });
+    }
     closeAllCallModals();
   });
 
