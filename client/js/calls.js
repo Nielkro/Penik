@@ -61,19 +61,25 @@ export async function startCall(calleeUserId, callType = "audio") {
     showToast("Инициализация вызова…");
     const targetId = Number(calleeUserId);
 
-    // Send call initiation via WebSocket Opcode 0x30
+    // 1. Get LiveKit Token & Room info from REST API
+    const callData = await initiateCall(targetId, callType);
+    currentCallId = callData.call_id;
+
+    // 2. Also send WebSocket Opcode 0x30 signal for real-time delivery
     sendCallSignalOpcode(targetId, {
-      action: "initiate",
+      type: "incoming_call",
+      call_id: callData.call_id,
+      room_name: callData.room_name,
       call_type: callType
     });
 
-    showOutgoingCallModal(targetId, callType);
+    showOutgoingCallModal(callData.room_name, callType, callData.token, callData.livekit_url, targetId);
   } catch (err) {
     showToast(`Ошибка вызова: ${err.message || err}`);
   }
 }
 
-function showOutgoingCallModal(targetId, callType) {
+function showOutgoingCallModal(roomName, callType, token, livekitUrl, targetId) {
   closeAllCallModals();
 
   const statusEl = el("div", { style: "margin-top: 8px; color: var(--text-muted);" }, "Звоним…");
@@ -87,14 +93,17 @@ function showOutgoingCallModal(targetId, callType) {
     )
   );
 
-  cancelBtn.addEventListener("click", () => {
+  cancelBtn.addEventListener("click", async () => {
+    if (currentCallId) {
+      await respondCall(currentCallId, "end").catch(() => {});
+    }
     sendCallSignalOpcode(targetId, { action: "end" });
     leaveCurrentRoom();
     closeAllCallModals();
   });
 
   document.body.appendChild(modal);
-  outgoingModalState = { modal, targetId, callType };
+  outgoingModalState = { modal, roomName, token, livekitUrl, callType, targetId };
 }
 
 async function handleCallAccepted(data) {
