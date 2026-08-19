@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/auth"
+	"github.com/shamaton/msgpack/v2"
 
 	"messenger/server/internal/config"
 	"messenger/server/internal/db"
@@ -128,7 +129,7 @@ func InitiateCall(database *db.DB, cfg *config.Config, hub *ws.Hub) http.Handler
 		}
 
 		// Send real-time call invitation via WebSocket to callee
-		signalPayload, _ := json.Marshal(map[string]interface{}{
+		signalPayload, _ := msgpack.Marshal(map[string]interface{}{
 			"type":           "incoming_call",
 			"call_id":        callID,
 			"room_name":      roomName,
@@ -137,7 +138,7 @@ func InitiateCall(database *db.DB, cfg *config.Config, hub *ws.Hub) http.Handler
 			"call_type":      req.CallType,
 			"started_at":     now,
 		})
-		hub.SendToUser(calleeID, signalPayload)
+		hub.SendBinaryToUser(calleeID, ws.OpCallSignalResp, signalPayload)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(InitiateCallResponse{
@@ -201,11 +202,11 @@ func RespondCall(database *db.DB, cfg *config.Config, hub *ws.Hub) http.HandlerF
 			token, _ = GenerateLiveKitToken(cfg.LiveKitAPIKey, cfg.LiveKitSecret, roomName, fmt.Sprintf("%d", calleeID))
 
 			// Notify caller that call was accepted
-			signalPayload, _ := json.Marshal(map[string]interface{}{
+			signalPayload, _ := msgpack.Marshal(map[string]interface{}{
 				"type":    "call_accepted",
 				"call_id": callID,
 			})
-			hub.SendToUser(callerID, signalPayload)
+			hub.SendBinaryToUser(callerID, ws.OpCallSignalResp, signalPayload)
 
 		case "reject":
 			_, _ = database.Exec("UPDATE calls SET status = 'rejected', ended_at = ? WHERE id = ?", now, callID)
@@ -213,19 +214,19 @@ func RespondCall(database *db.DB, cfg *config.Config, hub *ws.Hub) http.HandlerF
 			if userID == callerID {
 				otherID = calleeID
 			}
-			signalPayload, _ := json.Marshal(map[string]interface{}{
+			signalPayload, _ := msgpack.Marshal(map[string]interface{}{
 				"type":    "call_rejected",
 				"call_id": callID,
 			})
-			hub.SendToUser(otherID, signalPayload)
+			hub.SendBinaryToUser(otherID, ws.OpCallSignalResp, signalPayload)
 
 		case "busy":
 			_, _ = database.Exec("UPDATE calls SET status = 'busy', ended_at = ? WHERE id = ?", now, callID)
-			signalPayload, _ := json.Marshal(map[string]interface{}{
+			signalPayload, _ := msgpack.Marshal(map[string]interface{}{
 				"type":    "call_busy",
 				"call_id": callID,
 			})
-			hub.SendToUser(callerID, signalPayload)
+			hub.SendBinaryToUser(callerID, ws.OpCallSignalResp, signalPayload)
 
 		case "end":
 			_, _ = database.Exec("UPDATE calls SET ended_at = ? WHERE id = ? AND ended_at IS NULL", now, callID)
@@ -236,11 +237,11 @@ func RespondCall(database *db.DB, cfg *config.Config, hub *ws.Hub) http.HandlerF
 			if userID == callerID {
 				otherID = calleeID
 			}
-			signalPayload, _ := json.Marshal(map[string]interface{}{
+			signalPayload, _ := msgpack.Marshal(map[string]interface{}{
 				"type":    "call_ended",
 				"call_id": callID,
 			})
-			hub.SendToUser(otherID, signalPayload)
+			hub.SendBinaryToUser(otherID, ws.OpCallSignalResp, signalPayload)
 
 		default:
 			http.Error(w, "unsupported action", http.StatusBadRequest)
