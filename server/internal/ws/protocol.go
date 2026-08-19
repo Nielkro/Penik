@@ -41,6 +41,9 @@ const (
 	OpGroupMessageRead      Opcode = 0x26
 	OpGroupHistoryReady     Opcode = 0x27
 	OpGroupAvatarUpdate     Opcode = 0x28
+
+	OpCallSignalReq  Opcode = 0x30
+	OpCallSignalResp Opcode = 0x31
 )
 
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]

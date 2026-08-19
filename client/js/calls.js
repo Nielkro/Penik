@@ -2,6 +2,8 @@ import { Room, RoomEvent } from "livekit-client";
 import { initiateCall, respondCall } from "./api.js";
 import { el, showToast } from "./ui/components.js";
 
+import { ws, OP } from "./ws.js";
+
 let activeRoom = null;
 let currentCallId = null;
 let activeCallModal = null;
@@ -10,6 +12,23 @@ let outgoingModalState = null;
 
 // Initialize global WebSockets / custom call signal listener
 export function initCallSystem() {
+  if (ws) {
+    ws.on(OP.CALL_SIGNAL_RESP, (data) => {
+      if (!data) return;
+      if (data.type === "incoming_call") {
+        handleIncomingCall(data);
+      } else if (data.type === "call_accepted") {
+        handleCallAccepted(data);
+      } else if (data.type === "call_rejected") {
+        handleCallRejected();
+      } else if (data.type === "call_busy") {
+        handleCallBusy();
+      } else if (data.type === "call_ended") {
+        handleCallEnded();
+      }
+    });
+  }
+
   window.addEventListener("penik:ws-message", (/** @type {any} */ e) => {
     const data = e.detail;
     if (!data) return;
@@ -26,6 +45,15 @@ export function initCallSystem() {
       handleCallEnded();
     }
   });
+}
+
+export function sendCallSignalOpcode(toUserId, signalData) {
+  if (ws) {
+    ws.send(OP.CALL_SIGNAL_REQ, {
+      to_user_id: Number(toUserId),
+      ...signalData
+    });
+  }
 }
 
 export async function startCall(calleeUserId, callType = "audio") {

@@ -256,6 +256,29 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 		}
 		return c.handleTyping(ctx, &req)
 
+	case OpCallSignalReq:
+		var req map[string]interface{}
+		if err := msgpack.Unmarshal(payload, &req); err != nil {
+			return fmt.Errorf("unmarshal CallSignalReq: %w", err)
+		}
+		if toUserIDVal, ok := req["to_user_id"]; ok {
+			var toUserID int64
+			switch v := toUserIDVal.(type) {
+			case int64:
+				toUserID = v
+			case uint64:
+				toUserID = int64(v)
+			case float64:
+				toUserID = int64(v)
+			}
+			if toUserID > 0 {
+				req["from_user_id"] = c.userID
+				respPayload, _ := msgpack.Marshal(req)
+				c.hub.SendBinaryToUser(toUserID, OpCallSignalResp, respPayload)
+			}
+		}
+		return nil
+
 	case OpKeyFetchReq:
 		var req KeyFetchReq
 		if err := msgpack.Unmarshal(payload, &req); err != nil {

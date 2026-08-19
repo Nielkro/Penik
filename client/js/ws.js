@@ -38,6 +38,8 @@ export const OP = {
   GROUP_MESSAGE_READ:      0x26,
   GROUP_HISTORY_READY:     0x27,
   GROUP_AVATAR_UPDATE:     0x28,
+  CALL_SIGNAL_REQ:         0x30,
+  CALL_SIGNAL_RESP:        0x31,
 };
 
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

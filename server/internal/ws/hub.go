@@ -57,6 +57,12 @@ func (h *Hub) SendToUser(userID int64, frame []byte) {
 	}
 }
 
+// SendBinaryToUser delivers a binary opcode frame with msgpack payload to all online devices of a user.
+func (h *Hub) SendBinaryToUser(userID int64, opcode Opcode, payload []byte) {
+	frame := append([]byte{byte(opcode)}, payload...)
+	h.SendToUser(userID, frame)
+}
+
 // SendToDevice delivers a pre-encoded frame to the given device if it is online.
 func (h *Hub) SendToDevice(deviceID int64, frame []byte) {
 	h.mu.RLock()
