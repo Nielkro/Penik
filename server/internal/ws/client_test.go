@@ -10,14 +10,13 @@ func TestClientMessageRateLimit(t *testing.T) {
 			t.Fatalf("message burst frame %d: got %v, want allowed", i+1, got)
 		}
 	}
-	if got := c.checkFrameRate(OpMsgSend); got != frameRateDrop {
-		t.Fatalf("first excess message frame: got %v, want drop", got)
-	}
-	if got := c.checkFrameRate(OpMsgSend); got != frameRateDrop {
-		t.Fatalf("second excess message frame: got %v, want drop", got)
+	for i := 0; i < rateViolationLimit-1; i++ {
+		if got := c.checkFrameRate(OpMsgSend); got != frameRateDrop {
+			t.Fatalf("excess message frame %d: got %v, want drop", i+1, got)
+		}
 	}
 	if got := c.checkFrameRate(OpMsgSend); got != frameRateClose {
-		t.Fatalf("third excess message frame: got %v, want close", got)
+		t.Fatalf("final excess message frame: got %v, want close", got)
 	}
 }
 

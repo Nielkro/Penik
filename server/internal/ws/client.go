@@ -24,11 +24,11 @@ const (
 	readTimeout  = 70 * time.Second // slightly longer than ping interval
 	pingInterval = 30 * time.Second
 
-	msgSendRate         = 4.0
-	msgSendBurst        = 10.0
-	serviceFrameRate    = 15.0
-	serviceFrameBurst   = 20.0
-	rateViolationLimit  = 3
+	msgSendRate         = 50.0
+	msgSendBurst        = 100.0
+	serviceFrameRate    = 100.0
+	serviceFrameBurst   = 200.0
+	rateViolationLimit  = 10
 	rateViolationWindow = 2 * time.Second
 )
 
