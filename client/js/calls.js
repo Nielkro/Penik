@@ -61,17 +61,9 @@ export async function startCall(calleeUserId, callType = "audio") {
     showToast("Инициализация вызова…");
     const targetId = Number(calleeUserId);
 
-    // 1. Get LiveKit Token & Room info from REST API
+    // 1. Get LiveKit Token & Room info from REST API (server sends WS signal to callee)
     const callData = await initiateCall(targetId, callType);
     currentCallId = callData.call_id;
-
-    // 2. Also send WebSocket Opcode 0x30 signal for real-time delivery
-    sendCallSignalOpcode(targetId, {
-      type: "incoming_call",
-      call_id: callData.call_id,
-      room_name: callData.room_name,
-      call_type: callType
-    });
 
     showOutgoingCallModal(callData.room_name, callType, callData.token, callData.livekit_url, targetId);
   } catch (err) {
@@ -136,6 +128,9 @@ function handleCallEnded() {
 }
 
 function handleIncomingCall(data) {
+  if (incomingCallModal && currentCallId === data.call_id) {
+    return;
+  }
   closeAllCallModals();
   currentCallId = data.call_id;
   const callerUserId = data.from_user_id || data.caller_user_id;
