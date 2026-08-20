@@ -20,6 +20,10 @@ export function initCallUI() {
   callManager.onCallStateChange = (callState, mediaState) => {
     renderCallModal(callState, mediaState);
   };
+
+  callManager.onMediaStateChange = (mediaState) => {
+    updateMediaControlsUI(mediaState);
+  };
 }
 
 function renderCallModal(callState, mediaState) {
@@ -82,6 +86,7 @@ function renderCallModal(callState, mediaState) {
     callModalEl.innerHTML = `
       <div class="call-active-window">
         <div id="remote-video-container" class="remote-video-container"></div>
+        <div id="local-video-container" class="local-video-container"></div>
         <div class="call-controls-bar">
           <button class="call-control-btn ${mediaState.isMuted ? 'active-off' : ''}" id="btn-toggle-mic" title="Микрофон">
             ${mediaState.isMuted ? SVG_ICONS.micOff : SVG_ICONS.micOn}
@@ -99,5 +104,20 @@ function renderCallModal(callState, mediaState) {
     document.getElementById('btn-toggle-mic').addEventListener('click', () => callManager.toggleMic());
     document.getElementById('btn-toggle-cam').addEventListener('click', () => callManager.toggleCamera());
     document.getElementById('btn-end-active-call').addEventListener('click', () => callManager.endCall());
+  }
+}
+
+function updateMediaControlsUI(mediaState) {
+  const micBtn = document.getElementById('btn-toggle-mic');
+  const camBtn = document.getElementById('btn-toggle-cam');
+
+  if (micBtn) {
+    micBtn.className = `call-control-btn ${mediaState.isMuted ? 'active-off' : ''}`;
+    micBtn.innerHTML = mediaState.isMuted ? SVG_ICONS.micOff : SVG_ICONS.micOn;
+  }
+
+  if (camBtn) {
+    camBtn.className = `call-control-btn ${mediaState.isVideoOff ? 'active-off' : ''}`;
+    camBtn.innerHTML = mediaState.isVideoOff ? SVG_ICONS.camOff : SVG_ICONS.camOn;
   }
 }
