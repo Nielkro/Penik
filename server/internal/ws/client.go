@@ -86,6 +86,7 @@ func (c *Client) Run(ctx context.Context) {
 	go c.broadcastPresenceConnect(context.Background())
 	defer func() {
 		c.hub.unregister <- c
+		CleanupUserCalls(c.userID)
 		c.conn.Close(websocket.StatusNormalClosure, "bye")
 		// Best-effort: record when this device went offline, so last_seen
 		// reflects "last active" rather than only "last connected."
