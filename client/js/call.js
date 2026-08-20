@@ -159,11 +159,19 @@ export class CallManager {
         adaptiveStream: false,
         dynacast: false,
         videoCaptureDefaults: {
-          resolution: VideoPresets.h1080.resolution,
+          resolution: { width: 1920, height: 1080 },
+          frameRate: 60,
         },
         publishDefaults: {
-          videoEncoding: VideoPresets.h1080.encoding,
+          videoEncoding: {
+            maxBitrate: 5_000_000, // 5 Mbps Full HD
+            maxFramerate: 60,
+          },
           simulcast: false,
+          screenShareEncoding: {
+            maxBitrate: 7_000_000,
+            maxFramerate: 60,
+          },
         },
       });
 
