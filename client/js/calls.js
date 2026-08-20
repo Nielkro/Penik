@@ -10,40 +10,31 @@ let activeCallModal = null;
 let incomingCallModal = null;
 let outgoingModalState = null;
 
+function handleCallSignal(data) {
+  if (!data) return;
+  if (data.type === "incoming_call") {
+    handleIncomingCall(data);
+  } else if (data.type === "call_accepted") {
+    handleCallAccepted(data);
+  } else if (data.type === "call_rejected") {
+    handleCallRejected();
+  } else if (data.type === "call_busy") {
+    handleCallBusy();
+  } else if (data.type === "call_ended") {
+    handleCallEnded();
+  }
+}
+
 // Initialize global WebSockets / custom call signal listener
 export function initCallSystem() {
   if (ws) {
-    ws.on(OP.CALL_SIGNAL_RESP, (data) => {
-      if (!data) return;
-      if (data.type === "incoming_call") {
-        handleIncomingCall(data);
-      } else if (data.type === "call_accepted") {
-        handleCallAccepted(data);
-      } else if (data.type === "call_rejected") {
-        handleCallRejected();
-      } else if (data.type === "call_busy") {
-        handleCallBusy();
-      } else if (data.type === "call_ended") {
-        handleCallEnded();
-      }
-    });
+    ws.on(OP.CALL_SIGNAL_RESP, handleCallSignal);
+    ws.on(OP.CALL_SIGNAL_REQ, handleCallSignal);
   }
 
   window.addEventListener("penik:ws-message", (/** @type {any} */ e) => {
     const data = e.detail;
-    if (!data) return;
-
-    if (data.type === "incoming_call") {
-      handleIncomingCall(data);
-    } else if (data.type === "call_accepted") {
-      handleCallAccepted(data);
-    } else if (data.type === "call_rejected") {
-      handleCallRejected();
-    } else if (data.type === "call_busy") {
-      handleCallBusy();
-    } else if (data.type === "call_ended") {
-      handleCallEnded();
-    }
+    handleCallSignal(data);
   });
 }
 
