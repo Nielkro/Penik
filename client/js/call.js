@@ -1,4 +1,4 @@
-import { Room, RoomEvent, VideoPresets, Track } from 'livekit-client';
+import { Room, RoomEvent, VideoPresets } from 'livekit-client';
 import { ws, OP } from './ws.js';
 import { showToast } from './ui/components.js';
 
@@ -6,13 +6,11 @@ export class CallManager {
   constructor() {
     this.currentCall = null;
     this.room = null;
-    this.localAudioTrack = null;
-    this.localVideoTrack = null;
     this.isMuted = false;
     this.isVideoOff = false;
-    this.ringtoneAudio = null;
 
     this.onCallStateChange = null;
+    this.onMediaStateChange = null;
   }
 
   init() {
@@ -82,14 +80,14 @@ export class CallManager {
     if (!this.room) return;
     this.isMuted = !this.isMuted;
     await this.room.localParticipant.setMicrophoneEnabled(!this.isMuted);
-    this._notifyState();
+    this._notifyMediaState();
   }
 
   async toggleCamera() {
     if (!this.room) return;
     this.isVideoOff = !this.isVideoOff;
     await this.room.localParticipant.setCameraEnabled(!this.isVideoOff);
-    this._notifyState();
+    this._notifyMediaState();
   }
 
   cleanup() {
@@ -167,10 +165,15 @@ export class CallManager {
 
       this.room
         .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-          this._attachTrack(track, participant);
+          this._attachRemoteTrack(track, participant);
         })
         .on(RoomEvent.TrackUnsubscribed, (track) => {
           track.detach();
+        })
+        .on(RoomEvent.LocalTrackPublished, (publication) => {
+          if (publication.track) {
+            this._attachLocalTrack(publication.track);
+          }
         })
         .on(RoomEvent.Disconnected, () => {
           this.cleanup();
@@ -194,18 +197,40 @@ export class CallManager {
     }
   }
 
-  _attachTrack(track, participant) {
+  _attachRemoteTrack(track, participant) {
     const container = document.getElementById('remote-video-container');
     if (!container) return;
 
     const element = track.attach();
     element.dataset.participantId = participant.identity;
+    element.className = 'remote-video-element';
+    container.appendChild(element);
+  }
+
+  _attachLocalTrack(track) {
+    if (track.kind !== 'video') return;
+    const container = document.getElementById('local-video-container');
+    if (!container) return;
+
+    container.innerHTML = '';
+    const element = track.attach();
+    element.className = 'local-video-element';
+    element.muted = true;
     container.appendChild(element);
   }
 
   _notifyState() {
     if (typeof this.onCallStateChange === 'function') {
       this.onCallStateChange(this.currentCall, {
+        isMuted: this.isMuted,
+        isVideoOff: this.isVideoOff,
+      });
+    }
+  }
+
+  _notifyMediaState() {
+    if (typeof this.onMediaStateChange === 'function') {
+      this.onMediaStateChange({
         isMuted: this.isMuted,
         isVideoOff: this.isVideoOff,
       });
