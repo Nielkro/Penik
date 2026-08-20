@@ -156,10 +156,14 @@ export class CallManager {
   async _connectLiveKit(url, token) {
     try {
       this.room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
+        adaptiveStream: false,
+        dynacast: false,
         videoCaptureDefaults: {
-          resolution: VideoPresets.h720.resolution,
+          resolution: VideoPresets.h1080.resolution,
+        },
+        publishDefaults: {
+          videoEncoding: VideoPresets.h1080.encoding,
+          simulcast: false,
         },
       });
 
