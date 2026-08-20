@@ -205,3 +205,21 @@ func (c *Client) handleCallEnd(payload []byte) error {
 	}
 	return nil
 }
+
+// CleanupUserCalls is called when a WebSocket connection drops to clean up any active calls.
+func CleanupUserCalls(userID int64) {
+	callsMu.Lock()
+	defer callsMu.Unlock()
+
+	callID, inCall := userCalls[userID]
+	if !inCall {
+		return
+	}
+
+	ac, ok := activeCalls[callID]
+	if ok {
+		delete(activeCalls, callID)
+		delete(userCalls, ac.CallerID)
+		delete(userCalls, ac.CalleeID)
+	}
+}
