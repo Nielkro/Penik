@@ -41,6 +41,13 @@ const (
 	OpGroupMessageRead      Opcode = 0x26
 	OpGroupHistoryReady     Opcode = 0x27
 	OpGroupAvatarUpdate     Opcode = 0x28
+
+	OpCallOffer    Opcode = 0x30
+	OpCallIncoming Opcode = 0x31
+	OpCallAccept   Opcode = 0x32
+	OpCallAccepted Opcode = 0x33
+	OpCallReject   Opcode = 0x34
+	OpCallEnd      Opcode = 0x35
 )
 
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]
@@ -288,3 +295,47 @@ type GroupAvatarUpdate struct {
 	GroupID int64 `msgpack:"group_id"`
 	TS      int64 `msgpack:"ts"`
 }
+
+// CallOffer is sent client→server to initiate a 1:1 call.
+type CallOffer struct {
+	ToUserID int64 `msgpack:"to_user_id"`
+	IsVideo  bool  `msgpack:"is_video"`
+}
+
+// CallIncoming is sent server→client to inform the target user of an incoming call.
+type CallIncoming struct {
+	CallID     string `msgpack:"call_id"`
+	FromUserID int64  `msgpack:"from_user_id"`
+	IsVideo    bool   `msgpack:"is_video"`
+	RoomName   string `msgpack:"room_name"`
+	LiveKitURL string `msgpack:"livekit_url"`
+	Token      string `msgpack:"token"`
+}
+
+// CallAccept is sent client→server when the recipient accepts the call.
+type CallAccept struct {
+	CallID string `msgpack:"call_id"`
+}
+
+// CallAccepted is sent server→client to caller confirming call acceptance + providing token.
+type CallAccepted struct {
+	CallID     string `msgpack:"call_id"`
+	ToUserID   int64  `msgpack:"to_user_id"`
+	RoomName   string `msgpack:"room_name"`
+	LiveKitURL string `msgpack:"livekit_url"`
+	Token      string `msgpack:"token"`
+}
+
+// CallReject is sent client→server (or server→client) when call is declined/busy.
+type CallReject struct {
+	CallID   string `msgpack:"call_id"`
+	ToUserID int64  `msgpack:"to_user_id"`
+	Reason   string `msgpack:"reason"` // "declined", "busy", "timeout"
+}
+
+// CallEnd is sent client→server (or server→client) to terminate an ongoing call.
+type CallEnd struct {
+	CallID   string `msgpack:"call_id"`
+	ToUserID int64  `msgpack:"to_user_id"`
+}
+

@@ -19,6 +19,9 @@ type Config struct {
 	AllowedOrigins string // comma-separated list, "*" for any
 	UploadDir      string
 	VKBotToken     string
+	LiveKitURL       string
+	LiveKitAPIKey    string
+	LiveKitAPISecret string
 }
 
 // IsProduction reports whether the server runs with production hardening.
@@ -67,6 +70,9 @@ func Load() *Config {
 		AllowedOrigins: getEnv("ALLOWED_ORIGINS", "*"),
 		UploadDir:      getEnv("UPLOAD_DIR", "./data/upload"),
 		VKBotToken:     getEnv("VK_BOT_TOKEN", ""),
+		LiveKitURL:       getEnv("LIVEKIT_URL", "ws://localhost:7880"),
+		LiveKitAPIKey:    getEnv("LIVEKIT_API_KEY", "devkey"),
+		LiveKitAPISecret: getEnv("LIVEKIT_API_SECRET", "secret"),
 	}
 
 	ttlStr := getEnv("SESSION_TTL", "720h")

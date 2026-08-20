@@ -25,6 +25,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/ws/client.go` — Implements the WebSocket client read/write pump, handling direct messages, key requests, receipt events, offline batching, and presence.
 - `server/internal/ws/group.go` — Receives and routes encrypted group messages, receipts, and offline delivery across group members.
 - `server/internal/ws/hub.go` — Manages the registry of connected devices, broadcasting pre-encoded frames, presence, and shutdown events.
+- `server/internal/ws/call.go` — Manages LiveKit 1:1 call signaling and JWT access token generation.
 - `server/internal/ws/protocol.go` — Defines binary opcodes and MsgPack structures for direct/group messages, keys, pairing, presence, and statuses.
 - `server/internal/push/fcm.go` — Handles JWT credentials signing and FCM HTTP v1 background push notifications delivery.
 - `server/internal/middleware/auth.go` — Extracts bearer/WebSocket tokens, validates sessions in the DB, and injects user/device IDs into the request context.
@@ -36,6 +37,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ### Browser client transport
 
 - `client/js/api.js` — Unified browser REST client: attaches tokens, serializes JSON, parses errors, and exports APIs for users, messages, pairing, and groups.
+- `client/js/call.js` — LiveKit Web SDK integration and call state manager.
 - `client/js/pairing.js` — Decrypts and imports history transferred from Android into the browser IndexedDB stores.
 - `client/js/ws.js` — Manages the browser WebSocket connection: encodes/decodes MsgPack frames, supports opcodes, ping/pong, request queuing, and exponential backoff reconnection.
 - `client/js/presence.js` — Publishes user presence events and provides handlers for online status updates.

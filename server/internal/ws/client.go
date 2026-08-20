@@ -249,6 +249,15 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 		}
 		return c.handleChatPurgeAck(ctx, &msg)
 
+	case OpCallOffer:
+		return c.handleCallOffer(payload)
+	case OpCallAccept:
+		return c.handleCallAccept(payload)
+	case OpCallReject:
+		return c.handleCallReject(payload)
+	case OpCallEnd:
+		return c.handleCallEnd(payload)
+
 	case OpTyping:
 		var req TypingNotify
 		if err := msgpack.Unmarshal(payload, &req); err != nil {
