@@ -101,6 +101,14 @@ function renderCallModal(callState, mediaState) {
       </div>
     `;
 
+    const activeWin = callModalEl.querySelector('.call-active-window');
+    if (activeWin) {
+      activeWin.addEventListener('click', (e) => {
+        if (e.target.closest('.call-controls-bar')) return;
+        activeWin.classList.toggle('swapped-layout');
+      });
+    }
+
     document.getElementById('btn-toggle-mic').addEventListener('click', () => callManager.toggleMic());
     document.getElementById('btn-toggle-cam').addEventListener('click', () => callManager.toggleCamera());
     document.getElementById('btn-end-active-call').addEventListener('click', () => callManager.endCall());
