@@ -170,7 +170,9 @@ export class CallManager {
     for (const url of urlsToTry) {
       try {
         this.room = new Room({
-          adaptiveStream: true,
+          adaptiveStream: {
+            pixelDensity: 'screen',
+          },
           dynacast: true,
           audioCaptureDefaults: {
             echoCancellation: true,
