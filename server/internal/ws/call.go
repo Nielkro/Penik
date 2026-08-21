@@ -102,12 +102,13 @@ func (c *Client) handleCallOffer(payload []byte) error {
 	}
 
 	incomingPayload, _ := msgpack.Marshal(CallIncoming{
-		CallID:     callID,
-		FromUserID: c.userID,
-		IsVideo:    offer.IsVideo,
-		RoomName:   roomName,
-		LiveKitURL: c.cfg.LiveKitURL,
-		Token:      token,
+		CallID:             callID,
+		FromUserID:         c.userID,
+		IsVideo:            offer.IsVideo,
+		RoomName:           roomName,
+		LiveKitURL:         c.cfg.LiveKitURL,
+		LiveKitFallbackURL: c.cfg.LiveKitFallbackURL,
+		Token:              token,
 	})
 
 	c.hub.SendToUser(offer.ToUserID, append([]byte{byte(OpCallIncoming)}, incomingPayload...))
@@ -136,11 +137,12 @@ func (c *Client) handleCallAccept(payload []byte) error {
 	}
 
 	acceptedPayload, _ := msgpack.Marshal(CallAccepted{
-		CallID:     ac.CallID,
-		ToUserID:   c.userID,
-		RoomName:   ac.RoomName,
-		LiveKitURL: c.cfg.LiveKitURL,
-		Token:      token,
+		CallID:             ac.CallID,
+		ToUserID:           c.userID,
+		RoomName:           ac.RoomName,
+		LiveKitURL:         c.cfg.LiveKitURL,
+		LiveKitFallbackURL: c.cfg.LiveKitFallbackURL,
+		Token:              token,
 	})
 
 	c.hub.SendToUser(ac.CallerID, append([]byte{byte(OpCallAccepted)}, acceptedPayload...))

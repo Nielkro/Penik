@@ -44,13 +44,13 @@ export class CallManager {
   acceptCall() {
     if (!this.currentCall || this.currentCall.state !== 'INCOMING') return;
 
-    const { callId, token, livekitUrl } = this.currentCall;
+    const { callId, token, livekitUrl, livekitFallbackUrl } = this.currentCall;
     this.currentCall.state = 'CONNECTING';
     this._notifyState();
 
     ws.send(OP.CALL_ACCEPT, { call_id: callId });
 
-    this._connectLiveKit(livekitUrl, token);
+    this._connectLiveKit(livekitUrl, livekitFallbackUrl, token);
   }
 
   rejectCall(reason = 'declined') {
@@ -123,6 +123,7 @@ export class CallManager {
       isVideo: payload.is_video,
       roomName: payload.room_name,
       livekitUrl: payload.livekit_url,
+      livekitFallbackUrl: payload.livekit_fallback_url,
       token: payload.token,
     };
 
@@ -136,7 +137,7 @@ export class CallManager {
     this.currentCall.state = 'CONNECTING';
     this._notifyState();
 
-    this._connectLiveKit(payload.livekit_url, payload.token);
+    this._connectLiveKit(payload.livekit_url, payload.livekit_fallback_url, payload.token);
   }
 
   _handleCallReject(payload) {
@@ -153,73 +154,95 @@ export class CallManager {
     this.cleanup();
   }
 
-  async _connectLiveKit(url, token) {
-    try {
-      this.room = new Room({
-        adaptiveStream: false,
-        dynacast: false,
-        videoCaptureDefaults: {
-          resolution: { width: 1920, height: 1080 },
-          frameRate: 60,
-        },
-        publishDefaults: {
-          videoEncoding: {
-            maxBitrate: 5_000_000, // 5 Mbps Full HD
-            maxFramerate: 60,
-          },
-          simulcast: false,
-          screenShareEncoding: {
-            maxBitrate: 7_000_000,
-            maxFramerate: 60,
-          },
-        },
-      });
+  async _connectLiveKit(primaryUrl, fallbackUrl, token) {
+    // Legacy call signature check (primaryUrl, token)
+    if (!token && typeof fallbackUrl === 'string' && !fallbackUrl.startsWith('ws://') && !fallbackUrl.startsWith('wss://')) {
+      token = fallbackUrl;
+      fallbackUrl = null;
+    }
 
-      this.room
-        .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-          this._attachRemoteTrack(track, participant);
-        })
-        .on(RoomEvent.TrackUnsubscribed, (track) => {
-          track.detach();
-        })
-        .on(RoomEvent.LocalTrackPublished, (publication) => {
-          if (publication.track) {
-            this._attachLocalTrack(publication.track);
-          }
-        })
-        .on(RoomEvent.Disconnected, () => {
-          this.cleanup();
+    const urlsToTry = [primaryUrl];
+    if (fallbackUrl && fallbackUrl !== primaryUrl) {
+      urlsToTry.push(fallbackUrl);
+    }
+
+    let lastErr = null;
+    for (const url of urlsToTry) {
+      try {
+        this.room = new Room({
+          adaptiveStream: false,
+          dynacast: false,
+          videoCaptureDefaults: {
+            resolution: { width: 1920, height: 1080 },
+            frameRate: 60,
+          },
+          publishDefaults: {
+            videoEncoding: {
+              maxBitrate: 5_000_000, // 5 Mbps Full HD
+              maxFramerate: 60,
+            },
+            simulcast: false,
+            screenShareEncoding: {
+              maxBitrate: 7_000_000,
+              maxFramerate: 60,
+            },
+          },
         });
 
-      await this.room.connect(url, token, {
-        rtcConfig: {
-          iceServers: [
-            {
-              urls: 'turn:188.234.237.181:3478?transport=udp',
-              username: 'XqMHIp1ngpZmmv29vgusTONyrAiI7/7ZM0YeVgtS2Ec=',
-              credential: '13f85af63411137a848c5d8c5ab90a3de048b72073c3c9c5f61f62128a929784',
-            },
-            {
-              urls: 'stun:stun.l.google.com:19302',
-            },
-          ],
-        },
-      });
+        this.room
+          .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+            this._attachRemoteTrack(track, participant);
+          })
+          .on(RoomEvent.TrackUnsubscribed, (track) => {
+            track.detach();
+          })
+          .on(RoomEvent.LocalTrackPublished, (publication) => {
+            if (publication.track) {
+              this._attachLocalTrack(publication.track);
+            }
+          })
+          .on(RoomEvent.Disconnected, () => {
+            this.cleanup();
+          });
 
-      if (this.currentCall) {
-        this.currentCall.state = 'ACTIVE';
-        this._notifyState();
-      }
+        await this.room.connect(url, token, {
+          rtcConfig: {
+            iceServers: [
+              {
+                urls: 'turn:188.234.237.181:3478?transport=udp',
+                username: 'XqMHIp1ngpZmmv29vgusTONyrAiI7/7ZM0YeVgtS2Ec=',
+                credential: '13f85af63411137a848c5d8c5ab90a3de048b72073c3c9c5f61f62128a929784', // gitleaks:allow
+              },
+              {
+                urls: 'stun:stun.l.google.com:19302',
+              },
+            ],
+          },
+        });
 
-      await this.room.localParticipant.setMicrophoneEnabled(true);
-      if (this.currentCall && this.currentCall.isVideo) {
-        await this.room.localParticipant.setCameraEnabled(true);
+        if (this.currentCall) {
+          this.currentCall.state = 'ACTIVE';
+          this._notifyState();
+        }
+
+        await this.room.localParticipant.setMicrophoneEnabled(true);
+        if (this.currentCall && this.currentCall.isVideo) {
+          await this.room.localParticipant.setCameraEnabled(true);
+        }
+        return; // Successfully connected
+      } catch (err) {
+        console.warn(`Failed to connect to LiveKit URL ${url}:`, err);
+        lastErr = err;
+        if (this.room) {
+          try { this.room.disconnect(); } catch (_) {}
+          this.room = null;
+        }
       }
-    } catch (err) {
-      console.error('LiveKit connection error:', err);
-      showToast('Ошибка подключения к серверу звонка', 'error');
-      this.cleanup();
     }
+
+    console.error('LiveKit connection error across all endpoints:', lastErr);
+    showToast('Ошибка подключения к серверу звонка', 'error');
+    this.cleanup();
   }
 
   _attachRemoteTrack(track, participant) {

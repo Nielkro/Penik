@@ -7,7 +7,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ### Go server
 
 - `server/cmd/server/main.go` — Server entry point: loads config, opens DB, registers REST/WebSocket routes, attaches middleware, and serves the embedded web client.
-- `server/internal/config/config.go` — Loads runtime configuration from environment variables: port, SQLite path, session TTL, size limits, CORS, and upload directory.
+- `server/internal/config/config.go` — Loads runtime configuration from environment variables: port, SQLite path, session TTL, size limits, CORS, upload directory, and primary/fallback LiveKit URLs.
 - `server/internal/handlers/auth.go` — REST handlers for registration and login; validates credentials and key material, hashes passwords, and creates devices/sessions.
 - `server/internal/handlers/logout.go` — REST handlers revoking the current session token (`/logout`) or the user's other sessions (`/logout/all`); `/logout/all` is rejected with 403 unless the requesting session is older than a day.
 - `server/internal/handlers/devices.go` — REST handler `GET /api/v1/devices` listing the authenticated user's devices, flagging the current device and whether each has an active session.
@@ -37,7 +37,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ### Browser client transport
 
 - `client/js/api.js` — Unified browser REST client: attaches tokens, serializes JSON, parses errors, and exports APIs for users, messages, pairing, and groups.
-- `client/js/call.js` — LiveKit Web SDK integration and call state manager.
+- `client/js/call.js` — LiveKit Web SDK integration and call state manager supporting primary and fallback endpoints.
 - `client/js/pairing.js` — Decrypts and imports history transferred from Android into the browser IndexedDB stores.
 - `client/js/ws.js` — Manages the browser WebSocket connection: encodes/decodes MsgPack frames, supports opcodes, ping/pong, request queuing, and exponential backoff reconnection.
 - `client/js/presence.js` — Publishes user presence events and provides handlers for online status updates.
