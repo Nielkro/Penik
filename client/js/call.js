@@ -13,8 +13,18 @@ export class CallManager {
     this.isScreenShareOn = false;
     this.hasRemoteVideo = false;
 
+    this.callStartTime = null;
+    this.timerInterval = null;
+    this.activeSpeakers = new Set(); // Set of participant identities
+
+    this.selectedAudioInputId = null;
+    this.selectedAudioOutputId = null;
+    this.selectedVideoInputId = null;
+
     this.onCallStateChange = null;
     this.onMediaStateChange = null;
+    this.onActiveSpeakersChange = null;
+    this.onTimerTick = null;
   }
 
   init() {
@@ -147,7 +157,64 @@ export class CallManager {
     }
   }
 
+  async getDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return {
+        audioInputs: devices.filter(d => d.kind === 'audioinput'),
+        audioOutputs: devices.filter(d => d.kind === 'audiooutput'),
+        videoInputs: devices.filter(d => d.kind === 'videoinput'),
+      };
+    } catch (e) {
+      console.warn('Failed to enumerate media devices:', e);
+      return { audioInputs: [], audioOutputs: [], videoInputs: [] };
+    }
+  }
+
+  async setAudioInputDevice(deviceId) {
+    this.selectedAudioInputId = deviceId;
+    if (this.room) {
+      await this.room.switchActiveDevice('audioinput', deviceId);
+    }
+  }
+
+  async setAudioOutputDevice(deviceId) {
+    this.selectedAudioOutputId = deviceId;
+    if (this.room) {
+      await this.room.switchActiveDevice('audiooutput', deviceId);
+    }
+  }
+
+  async setVideoInputDevice(deviceId) {
+    this.selectedVideoInputId = deviceId;
+    if (this.room) {
+      await this.room.switchActiveDevice('videoinput', deviceId);
+    }
+  }
+
+  _startTimer() {
+    this._stopTimer();
+    this.callStartTime = Date.now();
+    this.timerInterval = setInterval(() => {
+      if (this.callStartTime && typeof this.onTimerTick === 'function') {
+        const elapsedSec = Math.floor((Date.now() - this.callStartTime) / 1000);
+        const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+        const secs = String(elapsedSec % 60).padStart(2, '0');
+        this.onTimerTick(`${mins}:${secs}`);
+      }
+    }, 1000);
+  }
+
+  _stopTimer() {
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval);
+      this.timerInterval = null;
+    }
+    this.callStartTime = null;
+  }
+
   cleanup() {
+    this._stopTimer();
     if (this.room) {
       try {
         this.room.disconnect();
@@ -162,6 +229,7 @@ export class CallManager {
     this.isVideoOff = false;
     this.isScreenShareOn = false;
     this.hasRemoteVideo = false;
+    this.activeSpeakers.clear();
     this._notifyState();
   }
 
@@ -242,10 +310,12 @@ export class CallManager {
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true,
+            deviceId: this.selectedAudioInputId || undefined,
           },
           videoCaptureDefaults: {
             resolution: { width: 1920, height: 1080 },
             frameRate: 60,
+            deviceId: this.selectedVideoInputId || undefined,
           },
           publishDefaults: {
             videoCodec: 'vp9',
@@ -291,6 +361,15 @@ export class CallManager {
               this._checkRemoteTracks();
             }
           })
+          .on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+            this.activeSpeakers.clear();
+            for (const sp of speakers) {
+              this.activeSpeakers.add(sp.identity);
+            }
+            if (typeof this.onActiveSpeakersChange === 'function') {
+              this.onActiveSpeakersChange(this.activeSpeakers);
+            }
+          })
           .on(RoomEvent.LocalTrackPublished, (publication) => {
             if (publication.track) {
               this._attachLocalTrack(publication.track);
@@ -318,6 +397,7 @@ export class CallManager {
         if (this.currentCall) {
           this.currentCall.state = 'ACTIVE';
           this.isVideoOff = !this.currentCall.isVideo;
+          this._startTimer();
           this._notifyState();
         }
 
@@ -345,7 +425,6 @@ export class CallManager {
     if (track.kind === 'video') {
       const container = document.getElementById('remote-video-container');
       if (container) {
-        // Find or create a tile for this track
         let tile = /** @type {HTMLElement|null} */ (container.querySelector(`[data-track-sid="${track.sid}"]`));
         if (!tile) {
           tile = document.createElement('div');
@@ -353,6 +432,7 @@ export class CallManager {
           tile.dataset.trackSid = track.sid;
           tile.dataset.participantId = participant.identity;
           tile.dataset.source = track.source || 'camera';
+          this._makeTileDraggable(tile);
           container.appendChild(tile);
         } else {
           tile.innerHTML = '';
@@ -362,8 +442,8 @@ export class CallManager {
         element.className = 'video-stream-element';
         tile.appendChild(element);
 
-        // Allow clicking on any tile to make it primary / full-screen
         tile.onclick = (e) => {
+          if (tile && tile.dataset.dragged === 'true') return;
           e.stopPropagation();
           if (tile) this._setPrimaryTile(tile);
         };
@@ -386,6 +466,8 @@ export class CallManager {
       tile.className = 'video-tile local-tile';
       tile.dataset.trackSid = track.sid;
       tile.dataset.source = track.source || 'camera';
+      tile.dataset.participantId = this.room?.localParticipant?.identity || 'local';
+      this._makeTileDraggable(tile);
       container.appendChild(tile);
     } else {
       tile.innerHTML = '';
@@ -400,12 +482,82 @@ export class CallManager {
     tile.appendChild(element);
 
     tile.onclick = (e) => {
+      if (tile && tile.dataset.dragged === 'true') return;
       e.stopPropagation();
       if (tile) this._setPrimaryTile(tile);
     };
 
     this._updateTileLayout();
     this._notifyMediaState();
+  }
+
+  _makeTileDraggable(tile) {
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
+
+    const onStart = (clientX, clientY) => {
+      if (!tile.classList.contains('pip-tile')) return;
+      isDragging = true;
+      tile.dataset.dragged = 'false';
+      startX = clientX;
+      startY = clientY;
+      const rect = tile.getBoundingClientRect();
+      startLeft = rect.left;
+      startTop = rect.top;
+
+      // Unset right/bottom and convert to fixed pixel coordinates
+      tile.style.right = 'auto';
+      tile.style.bottom = 'auto';
+      tile.style.left = `${startLeft}px`;
+      tile.style.top = `${startTop}px`;
+    };
+
+    const onMove = (clientX, clientY) => {
+      if (!isDragging) return;
+      const dx = clientX - startX;
+      const dy = clientY - startY;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+        tile.dataset.dragged = 'true';
+      }
+      let newLeft = startLeft + dx;
+      let newTop = startTop + dy;
+
+      // Constrain inside call window bounds
+      const win = document.querySelector('.call-active-window');
+      if (win) {
+        const winRect = win.getBoundingClientRect();
+        const tileW = tile.offsetWidth;
+        const tileH = tile.offsetHeight;
+        newLeft = Math.max(winRect.left + 8, Math.min(winRect.right - tileW - 8, newLeft));
+        newTop = Math.max(winRect.top + 8, Math.min(winRect.bottom - tileH - 80, newTop));
+      }
+
+      tile.style.left = `${newLeft}px`;
+      tile.style.top = `${newTop}px`;
+    };
+
+    const onEnd = () => {
+      if (!isDragging) return;
+      isDragging = false;
+      setTimeout(() => {
+        tile.dataset.dragged = 'false';
+      }, 50);
+    };
+
+    tile.addEventListener('mousedown', (e) => onStart(e.clientX, e.clientY));
+    window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
+    window.addEventListener('mouseup', onEnd);
+
+    tile.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) onStart(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 1) onMove(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    window.addEventListener('touchend', onEnd);
   }
 
   _setPrimaryTile(selectedTile) {
@@ -415,11 +567,9 @@ export class CallManager {
     const allTiles = /** @type {HTMLElement[]} */ (Array.from(document.querySelectorAll('.video-tile')));
     if (allTiles.length <= 1) return;
 
-    // Check if the clicked tile is already primary
     const isCurrentlyPrimary = selectedTile.classList.contains('primary-tile');
 
     if (isCurrentlyPrimary) {
-      // Toggle to another available tile if any
       const otherTile = allTiles.find(t => t !== selectedTile);
       if (otherTile) {
         this._setPrimaryTile(otherTile);
@@ -434,6 +584,10 @@ export class CallManager {
 
     selectedTile.classList.remove('pip-tile');
     selectedTile.classList.add('primary-tile');
+    selectedTile.style.left = '';
+    selectedTile.style.top = '';
+    selectedTile.style.right = '';
+    selectedTile.style.bottom = '';
   }
 
   _updateTileLayout() {
@@ -443,7 +597,6 @@ export class CallManager {
     const hasPrimary = allTiles.some(t => t.classList.contains('primary-tile'));
 
     if (!hasPrimary) {
-      // Prioritize screen share if present, otherwise remote camera, otherwise local
       let primary = allTiles.find(t => t.dataset.source === 'screen_share' && t.classList.contains('remote-tile'))
         || allTiles.find(t => t.dataset.source === 'screen_share')
         || allTiles.find(t => t.classList.contains('remote-tile'))
@@ -453,6 +606,10 @@ export class CallManager {
         if (t === primary) {
           t.classList.add('primary-tile');
           t.classList.remove('pip-tile');
+          t.style.left = '';
+          t.style.top = '';
+          t.style.right = '';
+          t.style.bottom = '';
         } else {
           t.classList.add('pip-tile');
           t.classList.remove('primary-tile');
