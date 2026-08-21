@@ -75,8 +75,8 @@ func Load() *Config {
 		AllowedOrigins:     getEnv("ALLOWED_ORIGINS", "*"),
 		UploadDir:          getEnv("UPLOAD_DIR", "./data/upload"),
 		VKBotToken:         getEnv("VK_BOT_TOKEN", ""),
-		LiveKitURL:         getEnv("LIVEKIT_URL", "wss://livekit.home.penik.ru"),
-		LiveKitFallbackURL: getEnv("LIVEKIT_FALLBACK_URL", "wss://call.api.penik.ru"),
+		LiveKitURL:         getEnv("LIVEKIT_URL", ""),
+		LiveKitFallbackURL: getEnv("LIVEKIT_FALLBACK_URL", ""),
 		LiveKitAPIKey:      getEnv("LIVEKIT_API_KEY", "devkey"),
 		LiveKitAPISecret:   getEnv("LIVEKIT_API_SECRET", "secret"),
 	}
