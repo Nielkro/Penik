@@ -221,7 +221,7 @@ export class CallManager {
   }
 
   cleanup() {
-    console.log('[call] cleanup', new Error().stack);
+    console.log('[call] cleanup');
     this._stopTimer();
     clearTimeout(this._dialTimeout);
     if (this.room) {
@@ -406,16 +406,16 @@ export class CallManager {
             }
           })
           .on(RoomEvent.Disconnected, () => {
-            // currentCall is nulled by endCall/cleanup, so its presence with an
-            // ACTIVE state means the room dropped unexpectedly: tell the server
-            // so both users leave the busy state and the peer UI closes too.
+            // A failed initial connect also emits Disconnected before the
+            // connect() promise rejects; only an ACTIVE room dropping is a real
+            // call end. CONNECTING failures are handled by the failover loop.
             if (this.currentCall && this.currentCall.state === 'ACTIVE') {
               ws.send(OP.CALL_END, {
                 call_id: this.currentCall.callId || '',
                 to_user_id: this.currentCall.toUserId || this.currentCall.fromUserId,
               });
+              this.cleanup();
             }
-            this.cleanup();
           });
 
         await this.room.connect(url, token, { validate: false });
