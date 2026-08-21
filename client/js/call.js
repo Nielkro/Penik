@@ -345,16 +345,30 @@ export class CallManager {
     if (track.kind === 'video') {
       const container = document.getElementById('remote-video-container');
       if (container) {
-        // Clean up previous tracks from this participant if needed
-        const existing = container.querySelector(`[data-track-sid="${track.sid}"]`);
-        if (existing) existing.remove();
+        // Find or create a tile for this track
+        let tile = /** @type {HTMLElement|null} */ (container.querySelector(`[data-track-sid="${track.sid}"]`));
+        if (!tile) {
+          tile = document.createElement('div');
+          tile.className = 'video-tile remote-tile';
+          tile.dataset.trackSid = track.sid;
+          tile.dataset.participantId = participant.identity;
+          tile.dataset.source = track.source || 'camera';
+          container.appendChild(tile);
+        } else {
+          tile.innerHTML = '';
+        }
 
         const element = track.attach();
-        element.dataset.participantId = participant.identity;
-        element.dataset.trackSid = track.sid;
-        element.className = 'remote-video-element';
-        container.appendChild(element);
+        element.className = 'video-stream-element';
+        tile.appendChild(element);
+
+        // Allow clicking on any tile to make it primary / full-screen
+        tile.onclick = (e) => {
+          e.stopPropagation();
+          if (tile) this._setPrimaryTile(tile);
+        };
       }
+      this._updateTileLayout();
       this._checkRemoteTracks();
     } else if (track.kind === 'audio') {
       track.attach();
@@ -366,16 +380,91 @@ export class CallManager {
     const container = document.getElementById('local-video-container');
     if (!container) return;
 
-    // Remove any previous video element
-    container.innerHTML = '';
-    const element = track.attach();
-    element.className = 'local-video-element';
-    element.muted = true;
-    if (track.source === 'screen_share') {
-      element.classList.add('screenshare');
+    let tile = /** @type {HTMLElement|null} */ (container.querySelector(`[data-track-sid="${track.sid}"]`));
+    if (!tile) {
+      tile = document.createElement('div');
+      tile.className = 'video-tile local-tile';
+      tile.dataset.trackSid = track.sid;
+      tile.dataset.source = track.source || 'camera';
+      container.appendChild(tile);
+    } else {
+      tile.innerHTML = '';
     }
-    container.appendChild(element);
+
+    const element = track.attach();
+    element.className = 'video-stream-element';
+    element.muted = true;
+    if (track.source === 'camera') {
+      element.classList.add('camera-mirror');
+    }
+    tile.appendChild(element);
+
+    tile.onclick = (e) => {
+      e.stopPropagation();
+      if (tile) this._setPrimaryTile(tile);
+    };
+
+    this._updateTileLayout();
     this._notifyMediaState();
+  }
+
+  _setPrimaryTile(selectedTile) {
+    const activeWin = document.querySelector('.call-active-window');
+    if (!activeWin) return;
+
+    const allTiles = /** @type {HTMLElement[]} */ (Array.from(document.querySelectorAll('.video-tile')));
+    if (allTiles.length <= 1) return;
+
+    // Check if the clicked tile is already primary
+    const isCurrentlyPrimary = selectedTile.classList.contains('primary-tile');
+
+    if (isCurrentlyPrimary) {
+      // Toggle to another available tile if any
+      const otherTile = allTiles.find(t => t !== selectedTile);
+      if (otherTile) {
+        this._setPrimaryTile(otherTile);
+      }
+      return;
+    }
+
+    allTiles.forEach(t => {
+      t.classList.remove('primary-tile');
+      t.classList.add('pip-tile');
+    });
+
+    selectedTile.classList.remove('pip-tile');
+    selectedTile.classList.add('primary-tile');
+  }
+
+  _updateTileLayout() {
+    const allTiles = /** @type {HTMLElement[]} */ (Array.from(document.querySelectorAll('.video-tile')));
+    if (allTiles.length === 0) return;
+
+    const hasPrimary = allTiles.some(t => t.classList.contains('primary-tile'));
+
+    if (!hasPrimary) {
+      // Prioritize screen share if present, otherwise remote camera, otherwise local
+      let primary = allTiles.find(t => t.dataset.source === 'screen_share' && t.classList.contains('remote-tile'))
+        || allTiles.find(t => t.dataset.source === 'screen_share')
+        || allTiles.find(t => t.classList.contains('remote-tile'))
+        || allTiles[0];
+
+      allTiles.forEach(t => {
+        if (t === primary) {
+          t.classList.add('primary-tile');
+          t.classList.remove('pip-tile');
+        } else {
+          t.classList.add('pip-tile');
+          t.classList.remove('primary-tile');
+        }
+      });
+    } else {
+      allTiles.forEach(t => {
+        if (!t.classList.contains('primary-tile')) {
+          t.classList.add('pip-tile');
+        }
+      });
+    }
   }
 
   _checkRemoteTracks() {
@@ -391,6 +480,7 @@ export class CallManager {
       }
     }
     this.hasRemoteVideo = hasVideo;
+    this._updateTileLayout();
     this._notifyMediaState();
   }
 
