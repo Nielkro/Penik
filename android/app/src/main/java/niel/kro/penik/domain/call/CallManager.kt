@@ -358,7 +358,10 @@ class CallManager @Inject constructor(
                     if (event.participant == room.localParticipant) _localVideoTrack.value = null
                 }
                 is RoomEvent.Disconnected -> {
-                    if (ui.phase != CallPhase.IDLE) {
+                    // A failed initial connect also emits Disconnected before
+                    // connect() throws; the failover loop owns CONNECTING.
+                    // Only an ACTIVE room dropping is a real call end.
+                    if (ui.phase == CallPhase.ACTIVE) {
                         if (currentCallId.isNotEmpty()) {
                             webSocketManager.sendCallEnd(currentCallId, ui.peerUserId)
                         }
