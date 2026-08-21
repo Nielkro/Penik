@@ -170,20 +170,32 @@ export class CallManager {
     for (const url of urlsToTry) {
       try {
         this.room = new Room({
-          adaptiveStream: false,
-          dynacast: false,
+          adaptiveStream: true,
+          dynacast: true,
+          audioCaptureDefaults: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
           videoCaptureDefaults: {
             resolution: { width: 1920, height: 1080 },
             frameRate: 60,
           },
           publishDefaults: {
+            videoCodec: 'vp9',
+            backupCodec: { codec: 'vp8' },
             videoEncoding: {
-              maxBitrate: 5_000_000, // 5 Mbps Full HD
+              maxBitrate: 6_000_000, // 6 Mbps Full HD 60FPS
               maxFramerate: 60,
             },
-            simulcast: false,
+            audioPreset: {
+              maxBitrate: 128_000, // 128 kbps HD Audio
+            },
+            red: true,
+            dtx: false,
+            simulcast: true,
             screenShareEncoding: {
-              maxBitrate: 7_000_000,
+              maxBitrate: 8_000_000,
               maxFramerate: 60,
             },
           },
