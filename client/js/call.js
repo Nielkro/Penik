@@ -190,6 +190,10 @@ export class CallManager {
               maxBitrate: 6_000_000, // 6 Mbps Full HD 60FPS
               maxFramerate: 60,
             },
+            videoSimulcastLayers: [
+              VideoPresets.h720,
+              VideoPresets.h540,
+            ],
             audioPreset: {
               maxBitrate: 128_000, // 128 kbps HD Audio
             },
