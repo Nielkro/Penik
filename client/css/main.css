@@ -1521,7 +1521,8 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   position: relative;
   display: flex;
   flex-direction: column;
-  background: #000;
+  background: radial-gradient(circle at center, #1b1c2b 0%, #0d0e15 100%);
+  overflow: hidden;
 }
 
 .remote-video-container {
@@ -1531,28 +1532,62 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+.remote-video-container.hidden-stream {
+  display: none !important;
 }
 
 .remote-video-container video {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+}
+
+.call-participant-placeholder {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.call-participant-placeholder.hidden {
+  display: none !important;
+}
+
+.call-status-badge {
+  font-size: 14px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 6px 16px;
+  border-radius: 20px;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .local-video-container {
   position: absolute;
-  top: 20px;
-  right: 20px;
-  width: 180px;
-  height: 120px;
-  border-radius: 12px;
+  top: 24px;
+  right: 24px;
+  width: 200px;
+  height: 130px;
+  border-radius: 14px;
   overflow: hidden;
-  border: 2px solid var(--border);
-  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
   background: #111;
   z-index: 10;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.local-video-container.hidden {
+  display: none !important;
 }
 
 .local-video-container video {
@@ -1573,33 +1608,44 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   z-index: 1;
 }
 
+.call-active-window.swapped-layout .local-video-container video {
+  object-fit: contain;
+}
+
 .call-active-window.swapped-layout .remote-video-container {
   position: absolute;
-  top: 20px;
-  right: 20px;
-  width: 180px;
-  height: 120px;
-  border-radius: 12px;
+  top: 24px;
+  right: 24px;
+  width: 200px;
+  height: 130px;
+  border-radius: 14px;
   overflow: hidden;
-  border: 2px solid var(--border);
-  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
   background: #111;
   z-index: 10;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.call-active-window.swapped-layout .remote-video-container video {
+  object-fit: cover;
+}
+
 .call-controls-bar {
   position: absolute;
-  bottom: 30px;
+  bottom: 36px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
+  align-items: center;
   gap: 16px;
-  background: rgba(26, 26, 36, 0.85);
-  padding: 12px 24px;
+  background: rgba(22, 23, 34, 0.85);
+  padding: 10px 20px;
   border-radius: 40px;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   z-index: 100;
 }
 
@@ -1608,23 +1654,44 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   height: 48px;
   border-radius: 50%;
   border: none;
-  background: var(--panel2);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--text);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.call-control-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(1.06);
 }
 
 .call-control-btn.active-off {
-  background: var(--danger-dim);
-  color: var(--danger);
+  background: rgba(235, 77, 75, 0.2);
+  color: #ff6b6b;
+  border: 1px solid rgba(235, 77, 75, 0.3);
+}
+
+.call-control-btn.active-on {
+  background: rgba(78, 201, 122, 0.2);
+  color: #5cdb95;
+  border: 1px solid rgba(78, 201, 122, 0.4);
 }
 
 .btn-end-call {
-  background: var(--danger);
+  width: 52px;
+  height: 52px;
+  background: #eb4d4b;
   color: white;
+  margin-left: 6px;
+  box-shadow: 0 4px 15px rgba(235, 77, 75, 0.4);
+}
+
+.btn-end-call:hover {
+  background: #ff5252;
+  transform: scale(1.08);
 }
 
 
