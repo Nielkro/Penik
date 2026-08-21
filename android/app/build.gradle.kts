@@ -113,4 +113,7 @@ dependencies {
     // Firebase FCM
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
+
+    // LiveKit (real-time calls)
+    implementation(libs.livekit.android)
 }

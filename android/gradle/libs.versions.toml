@@ -25,6 +25,7 @@ sqlcipher = "4.9.0"
 androidxSqlite = "2.5.0"
 googleServices = "4.4.2"
 firebaseBom = "33.10.0"
+livekit = "2.28.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -82,6 +83,9 @@ androidx-sqlite = { group = "androidx.sqlite", name = "sqlite", version.ref = "a
 # Firebase
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
+
+# LiveKit (real-time calls)
+livekit-android = { group = "io.livekit", name = "livekit-android", version.ref = "livekit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -34,6 +34,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -106,6 +108,36 @@ fun ChatRoomScreen(
     val showE2eeDialog by viewModel.showE2eeDialog.collectAsState()
     val isSelfChat = viewModel.isSelfChat
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
+
+    var pendingCallVideo by remember { mutableStateOf<Boolean?>(null) }
+    val callPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { granted ->
+        val isVideo = pendingCallVideo
+        pendingCallVideo = null
+        if (isVideo == null) return@rememberLauncherForActivityResult
+        val micGranted = granted[android.Manifest.permission.RECORD_AUDIO] == true
+        val camGranted = !isVideo || granted[android.Manifest.permission.CAMERA] == true
+        if (micGranted && camGranted) {
+            viewModel.startCall(isVideo)
+        } else {
+            android.widget.Toast.makeText(context, "Нет разрешений для звонка", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    fun startCallWithPermissions(isVideo: Boolean) {
+        val needed = mutableListOf(android.Manifest.permission.RECORD_AUDIO)
+        if (isVideo) needed.add(android.Manifest.permission.CAMERA)
+        val missing = needed.filter {
+            context.checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) {
+            viewModel.startCall(isVideo)
+        } else {
+            pendingCallVideo = isVideo
+            callPermissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+    val callState by viewModel.callState.collectAsState()
 
     DisposableEffect(chatUserId) {
         AppNotificationManager.setActiveChat("direct_$chatUserId")
@@ -448,6 +480,25 @@ fun ChatRoomScreen(
                             contentDescription = "Назад",
                             tint = LocalAppColors.current.textPrimary
                         )
+                    }
+                },
+                actions = {
+                    if (!isSelfChat) {
+                        val callsEnabled = callState.phase == niel.kro.penik.domain.call.CallPhase.IDLE
+                        IconButton(onClick = { startCallWithPermissions(false) }, enabled = callsEnabled) {
+                            Icon(
+                                imageVector = Icons.Default.Call,
+                                contentDescription = "Аудиозвонок",
+                                tint = LocalAppColors.current.textPrimary
+                            )
+                        }
+                        IconButton(onClick = { startCallWithPermissions(true) }, enabled = callsEnabled) {
+                            Icon(
+                                imageVector = Icons.Default.Videocam,
+                                contentDescription = "Видеозвонок",
+                                tint = LocalAppColors.current.textPrimary
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

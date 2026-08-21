@@ -47,7 +47,8 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiConfig.kt` — Central network configuration object holding server host, port, scheme, base URL, and avatar URL generators.
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiService.kt` — Retrofit contract for the Android client's REST API covering auth, profiles, messages, pairing, groups, keys, and avatars.
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiModels.kt` — Kotlin data models for Retrofit API requests and responses.
-- `android/app/src/main/java/niel/kro/penik/data/network/websocket/WebSocketManager.kt` — Maintains the OkHttp WebSocket connection, binary MsgPack protocol, reconnects, ping/pong, and flow of typed events.
+- `android/app/src/main/java/niel/kro/penik/data/network/websocket/WebSocketManager.kt` — Maintains the OkHttp WebSocket connection, binary MsgPack protocol, reconnects, ping/pong, and flow of typed events, including call signaling frames (0x30-0x35).
+- `android/app/src/main/java/niel/kro/penik/domain/call/CallManager.kt` — Singleton 1:1 call state machine (idle/dialing/incoming/connecting/active): LiveKit room connect with primary/fallback failover, mic/camera toggles, ringtone and vibration, ring timeout, call timer, and cleanup on all exit paths.
 - `android/app/src/main/java/niel/kro/penik/data/repository/SecureTokenStorage.kt` — Stores tokens, user/device IDs, and cryptographic keys in secure local storage.
 
 ## UI
@@ -73,14 +74,15 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 - `android/app/src/main/AndroidManifest.xml` — Android app declaration, components, permissions, application class, and FileProvider for decrypted attachments.
 - `android/app/src/main/res/xml/attachment_paths.xml` — FileProvider path configuration granting read-only content URIs for decrypted files in `cacheDir/attachments`.
-- `android/app/src/main/java/niel/kro/penik/MainActivity.kt` — Main Activity; enables edge-to-edge mode and launches Compose navigation within the app theme.
+- `android/app/src/main/java/niel/kro/penik/MainActivity.kt` — Main Activity; enables edge-to-edge mode and launches Compose navigation within the app theme, with a global call overlay drawn above the nav graph and answer handling for call notification intents.
 - `android/app/src/main/java/niel/kro/penik/PenikApplication.kt` — Hilt Application class and entry point for the global WebSocket event coordinator.
 - `android/app/src/main/java/niel/kro/penik/ui/navigation/NavGraph.kt` — Compose Navigation graph for auth, main screen, direct/group chats, group settings, and pairing scanner.
 - `android/app/src/main/java/niel/kro/penik/ui/navigation/NavRoutes.kt` — Declares typed routes and screen parameters for the Android client.
 - `android/app/src/main/java/niel/kro/penik/ui/navigation/MainScreen.kt` — Main app layout combining chat lists, groups, profile, and logout/pairing actions.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/auth/AuthScreen.kt` — User login and registration UI.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/chatslist/ChatsListScreen.kt` — Direct chat list UI and navigation to chat rooms.
-- `android/app/src/main/java/niel/kro/penik/ui/screen/chatroom/ChatRoomScreen.kt` — Direct chat room UI: message history, input, sending, receipts, connection state; scroll-down FAB shown only when last message is not visible.
+- `android/app/src/main/java/niel/kro/penik/ui/screen/chatroom/ChatRoomScreen.kt` — Direct chat room UI: message history, input, sending, receipts, connection state; scroll-down FAB shown only when last message is not visible; audio/video call buttons in the top bar.
+- `android/app/src/main/java/niel/kro/penik/ui/call/CallOverlayScreen.kt` — Global call overlay: incoming call accept/decline, dialing, and active call screens with remote/local video renderers, PiP swap, and media controls.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupsListScreen.kt` — Group list UI and pending invitations.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupChatScreen.kt` — Group chat room UI with messages and group actions; scroll-down FAB shown only when last message is not visible.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupSettingsScreen.kt` — Group settings screen: member list, roles, invitations, and key rotation.
@@ -98,9 +100,10 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/StartupViewModel.kt` — Determines the initial navigation route based on authorization state.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/DevicesViewModel.kt` — Loads the user's own device list for the devices screen.
 - `android/app/src/main/java/niel/kro/penik/ui/components/Components.kt` — Reusable Compose UI components, including parsing and rendering encrypted file-message payloads as local images with a zoomable full-screen viewer, aspect-ratio-aware inline Media3 video players without attachment labels, or downloadable file attachments.
-- `android/app/src/main/java/niel/kro/penik/ui/notification/AppNotificationManager.kt` — Manages notification channels, builds rich MessagingStyle notifications with colored initials avatars and formatted previews, handles summary grouping, and suppresses notifications for the currently active chat.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/DirectReplyReceiver.kt` — BroadcastReceiver handling inline direct replies from the notification shade without opening the app.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/MarkAsReadReceiver.kt` — BroadcastReceiver for the notification "Mark as read" action clearing unread counters and dismissing notifications.
+- `android/app/src/main/java/niel/kro/penik/ui/notification/CallActionReceiver.kt` — BroadcastReceiver handling answer/decline actions from the incoming call notification.
+- `android/app/src/main/java/niel/kro/penik/ui/notification/AppNotificationManager.kt` — Manages notification channels (messages and calls), builds rich MessagingStyle notifications with colored initials avatars and formatted previews, full-screen incoming call notifications, handles summary grouping, and suppresses notifications for the currently active chat.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/PenikFirebaseMessagingService.kt` — Firebase Messaging service handling background data pushes and showing conversation notifications.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Theme.kt` — Material/Compose app theme and color scheme.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/ThemeManager.kt` — SharedPreferences-backed light/dark theme state exposed as a StateFlow.

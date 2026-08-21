@@ -19,6 +19,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // LiveKit Android SDK pulls com.github.davidliu:audioswitch from JitPack
+        maven { url = uri("https://jitpack.io") }
     }
 }
 
