@@ -53,6 +53,7 @@ data class CallUiState(
 
 private const val TAG = "CallManager"
 private const val RING_TIMEOUT_MS = 30_000L
+private const val INCOMING_RING_TIMEOUT_MS = 45_000L
 private const val LIVEKIT_CONNECT_TIMEOUT_MS = 15_000L
 
 @Singleton
@@ -141,11 +142,22 @@ class CallManager @Inject constructor(
             peerName = ui.peerName,
             isVideo = event.isVideo
         )
+        ringTimeoutJob?.cancel()
+        ringTimeoutJob = scope.launch {
+            delay(INCOMING_RING_TIMEOUT_MS)
+            if (ui.phase == CallPhase.INCOMING) {
+                webSocketManager.sendCallReject(callIdOfIncoming, ui.peerUserId, "declined")
+                stopRinger()
+                notificationManager.cancelIncomingCallNotification()
+                cleanup()
+            }
+        }
         scope.launch { resolvePeerName(event.fromUserId) }
     }
 
     fun acceptCall() {
         if (ui.phase != CallPhase.INCOMING) return
+        ringTimeoutJob?.cancel()
         stopRinger()
         notificationManager.cancelIncomingCallNotification()
         currentCallId = callIdOfIncoming
@@ -206,6 +218,7 @@ class CallManager @Inject constructor(
                 _state.value = ui.copy(micMuted = next)
             } catch (e: Exception) {
                 Log.e(TAG, "toggleMic failed", e)
+                toast("Не удалось переключить микрофон")
             }
         }
     }
@@ -213,6 +226,12 @@ class CallManager @Inject constructor(
     fun toggleCamera() {
         val room = room ?: return
         val next = !ui.cameraOff
+        if (next && ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            toast("Нет разрешения на камеру")
+            return
+        }
         scope.launch {
             try {
                 room.localParticipant.setCameraEnabled(!next)
@@ -220,6 +239,7 @@ class CallManager @Inject constructor(
                 publishLocalVideoTrack()
             } catch (e: Exception) {
                 Log.e(TAG, "toggleCamera failed", e)
+                toast("Не удалось переключить камеру")
             }
         }
     }
@@ -253,6 +273,11 @@ class CallManager @Inject constructor(
                 return
             } catch (e: Exception) {
                 Log.e(TAG, "LiveKit connect failed to $url", e)
+                // Stop collecting events before disconnecting: otherwise the
+                // Disconnected handler fires for our own retry teardown and
+                // ends the call before the fallback URL is tried.
+                eventsJob?.cancel()
+                eventsJob = null
                 try { candidate?.disconnect() } catch (_: Exception) {}
                 try { candidate?.release() } catch (_: Exception) {}
             }

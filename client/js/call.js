@@ -392,10 +392,10 @@ export class CallManager {
             }
           })
           .on(RoomEvent.Disconnected, () => {
-            // currentCall is nulled by endCall/cleanup, so its presence means
-            // the room dropped unexpectedly: tell the server so both users
-            // leave the busy state and the peer UI closes too.
-            if (this.currentCall) {
+            // currentCall is nulled by endCall/cleanup, so its presence with an
+            // ACTIVE state means the room dropped unexpectedly: tell the server
+            // so both users leave the busy state and the peer UI closes too.
+            if (this.currentCall && this.currentCall.state === 'ACTIVE') {
               ws.send(OP.CALL_END, {
                 call_id: this.currentCall.callId || '',
                 to_user_id: this.currentCall.toUserId || this.currentCall.fromUserId,
@@ -422,6 +422,7 @@ export class CallManager {
         console.warn(`Failed to connect to LiveKit URL ${url}:`, err);
         lastErr = err;
         if (this.room) {
+          try { this.room.removeAllListeners(); } catch (_) {}
           try { this.room.disconnect(); } catch (_) {}
           this.room = null;
         }

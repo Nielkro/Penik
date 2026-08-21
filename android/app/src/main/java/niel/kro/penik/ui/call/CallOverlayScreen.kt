@@ -219,13 +219,11 @@ private fun ActiveCallView(callManager: CallManager) {
                 active = state.micMuted,
                 label = "Микрофон"
             ) { callManager.toggleMic() }
-            if (state.isVideo) {
-                ControlButton(
-                    icon = if (state.cameraOff) Icons.Default.VideocamOff else Icons.Default.Videocam,
-                    active = state.cameraOff,
-                    label = "Камера"
-                ) { callManager.toggleCamera() }
-            }
+            ControlButton(
+                icon = if (state.cameraOff) Icons.Default.VideocamOff else Icons.Default.Videocam,
+                active = state.cameraOff,
+                label = "Камера"
+            ) { callManager.toggleCamera() }
             CircleButton(icon = Icons.Default.CallEnd, background = HangupRed, label = "Завершить") {
                 callManager.endCall()
             }
