@@ -10,18 +10,19 @@ import (
 
 // Config holds all runtime configuration loaded from environment variables.
 type Config struct {
-	Env            string // "development" (default) or "production"
-	Port           string
-	DBPath         string
-	SessionTTL     time.Duration
-	MaxAvatarSize  int64
-	MaxBodySize    int64
-	AllowedOrigins string // comma-separated list, "*" for any
-	UploadDir      string
-	VKBotToken     string
-	LiveKitURL       string
-	LiveKitAPIKey    string
-	LiveKitAPISecret string
+	Env                string // "development" (default) or "production"
+	Port               string
+	DBPath             string
+	SessionTTL         time.Duration
+	MaxAvatarSize      int64
+	MaxBodySize        int64
+	AllowedOrigins     string // comma-separated list, "*" for any
+	UploadDir          string
+	VKBotToken         string
+	LiveKitURL         string
+	LiveKitFallbackURL string
+	LiveKitAPIKey      string
+	LiveKitAPISecret   string
 }
 
 // IsProduction reports whether the server runs with production hardening.
@@ -29,11 +30,15 @@ func (c *Config) IsProduction() bool {
 	return strings.EqualFold(c.Env, "production") || strings.EqualFold(c.Env, "prod")
 }
 
-// Validate enforces fail-closed security invariants. In production the CORS /
-// WebSocket origin allowlist must be an explicit, non-wildcard, HTTPS-only list,
-// so a misconfigured deployment refuses to start instead of exposing the API to
-// any origin.
+// Validate enforces fail-closed security invariants and required configuration.
 func (c *Config) Validate() error {
+	if strings.TrimSpace(c.LiveKitURL) == "" {
+		return fmt.Errorf("LIVEKIT_URL is required and cannot be empty")
+	}
+	if strings.TrimSpace(c.LiveKitFallbackURL) == "" {
+		return fmt.Errorf("LIVEKIT_FALLBACK_URL is required and cannot be empty")
+	}
+
 	if !c.IsProduction() {
 		return nil
 	}
@@ -62,17 +67,18 @@ func Load() *Config {
 	loadDotEnv("server/.env")
 
 	cfg := &Config{
-		Env:            getEnv("ENV", "development"),
-		Port:           getEnv("PORT", "8143"),
-		DBPath:         getEnv("DB_PATH", "./data/messenger.db"),
-		MaxAvatarSize:  getEnvInt64("MAX_AVATAR_SIZE", 5*1024*1024),
-		MaxBodySize:    getEnvInt64("MAX_BODY_SIZE", 210*1024*1024), // supports uploads up to ~200MB
-		AllowedOrigins: getEnv("ALLOWED_ORIGINS", "*"),
-		UploadDir:      getEnv("UPLOAD_DIR", "./data/upload"),
-		VKBotToken:     getEnv("VK_BOT_TOKEN", ""),
-		LiveKitURL:       getEnv("LIVEKIT_URL", "ws://localhost:7880"),
-		LiveKitAPIKey:    getEnv("LIVEKIT_API_KEY", "devkey"),
-		LiveKitAPISecret: getEnv("LIVEKIT_API_SECRET", "secret"),
+		Env:                getEnv("ENV", "development"),
+		Port:               getEnv("PORT", "8143"),
+		DBPath:             getEnv("DB_PATH", "./data/messenger.db"),
+		MaxAvatarSize:      getEnvInt64("MAX_AVATAR_SIZE", 5*1024*1024),
+		MaxBodySize:        getEnvInt64("MAX_BODY_SIZE", 210*1024*1024), // supports uploads up to ~200MB
+		AllowedOrigins:     getEnv("ALLOWED_ORIGINS", "*"),
+		UploadDir:          getEnv("UPLOAD_DIR", "./data/upload"),
+		VKBotToken:         getEnv("VK_BOT_TOKEN", ""),
+		LiveKitURL:         getEnv("LIVEKIT_URL", "wss://livekit.home.penik.ru"),
+		LiveKitFallbackURL: getEnv("LIVEKIT_FALLBACK_URL", "wss://call.api.penik.ru"),
+		LiveKitAPIKey:      getEnv("LIVEKIT_API_KEY", "devkey"),
+		LiveKitAPISecret:   getEnv("LIVEKIT_API_SECRET", "secret"),
 	}
 
 	ttlStr := getEnv("SESSION_TTL", "720h")

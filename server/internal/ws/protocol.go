@@ -304,12 +304,13 @@ type CallOffer struct {
 
 // CallIncoming is sent server→client to inform the target user of an incoming call.
 type CallIncoming struct {
-	CallID     string `msgpack:"call_id"`
-	FromUserID int64  `msgpack:"from_user_id"`
-	IsVideo    bool   `msgpack:"is_video"`
-	RoomName   string `msgpack:"room_name"`
-	LiveKitURL string `msgpack:"livekit_url"`
-	Token      string `msgpack:"token"`
+	CallID             string `msgpack:"call_id"`
+	FromUserID         int64  `msgpack:"from_user_id"`
+	IsVideo            bool   `msgpack:"is_video"`
+	RoomName           string `msgpack:"room_name"`
+	LiveKitURL         string `msgpack:"livekit_url"`
+	LiveKitFallbackURL string `msgpack:"livekit_fallback_url,omitempty"`
+	Token              string `msgpack:"token"`
 }
 
 // CallAccept is sent client→server when the recipient accepts the call.
@@ -319,11 +320,12 @@ type CallAccept struct {
 
 // CallAccepted is sent server→client to caller confirming call acceptance + providing token.
 type CallAccepted struct {
-	CallID     string `msgpack:"call_id"`
-	ToUserID   int64  `msgpack:"to_user_id"`
-	RoomName   string `msgpack:"room_name"`
-	LiveKitURL string `msgpack:"livekit_url"`
-	Token      string `msgpack:"token"`
+	CallID             string `msgpack:"call_id"`
+	ToUserID           int64  `msgpack:"to_user_id"`
+	RoomName           string `msgpack:"room_name"`
+	LiveKitURL         string `msgpack:"livekit_url"`
+	LiveKitFallbackURL string `msgpack:"livekit_fallback_url,omitempty"`
+	Token              string `msgpack:"token"`
 }
 
 // CallReject is sent client→server (or server→client) when call is declined/busy.
