@@ -1600,6 +1600,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   padding: 12px 24px;
   border-radius: 40px;
   backdrop-filter: blur(10px);
+  z-index: 100;
 }
 
 .call-control-btn {
