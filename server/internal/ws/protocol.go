@@ -309,7 +309,7 @@ type CallIncoming struct {
 	IsVideo            bool   `msgpack:"is_video"`
 	RoomName           string `msgpack:"room_name"`
 	LiveKitURL         string `msgpack:"livekit_url"`
-	LiveKitFallbackURL string `msgpack:"livekit_fallback_url,omitempty"`
+	LiveKitFallbackURL string `msgpack:"livekit_fallback_url"`
 	Token              string `msgpack:"token"`
 }
 
@@ -324,7 +324,7 @@ type CallAccepted struct {
 	ToUserID           int64  `msgpack:"to_user_id"`
 	RoomName           string `msgpack:"room_name"`
 	LiveKitURL         string `msgpack:"livekit_url"`
-	LiveKitFallbackURL string `msgpack:"livekit_fallback_url,omitempty"`
+	LiveKitFallbackURL string `msgpack:"livekit_fallback_url"`
 	Token              string `msgpack:"token"`
 }
 

@@ -78,7 +78,7 @@ export class CallManager {
         showToast('Нет ответа', 'info');
         this.rejectCall('declined');
       }
-    }, 30_000);
+    }, 90_000);
 
     this._notifyState();
   }
@@ -221,6 +221,7 @@ export class CallManager {
   }
 
   cleanup() {
+    console.log('[call] cleanup', new Error().stack);
     this._stopTimer();
     clearTimeout(this._dialTimeout);
     if (this.room) {
@@ -284,6 +285,7 @@ export class CallManager {
   }
 
   _handleCallReject(payload) {
+    console.log('[call] CALL_REJECT received', payload);
     if (!this.currentCall) return;
 
     let reason;
@@ -295,6 +297,7 @@ export class CallManager {
   }
 
   _handleCallEnd() {
+    console.log('[call] CALL_END received');
     if (!this.currentCall) return;
     showToast('Звонок завершен', 'info');
     this.cleanup();
