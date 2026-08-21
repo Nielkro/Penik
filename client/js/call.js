@@ -205,20 +205,7 @@ export class CallManager {
             this.cleanup();
           });
 
-        await this.room.connect(url, token, {
-          rtcConfig: {
-            iceServers: [
-              {
-                urls: 'turn:188.234.237.181:3478?transport=udp',
-                username: 'XqMHIp1ngpZmmv29vgusTONyrAiI7/7ZM0YeVgtS2Ec=',
-                credential: '***REDACTED-BY-FILTER-REPO***', // gitleaks:allow
-              },
-              {
-                urls: 'stun:stun.l.google.com:19302',
-              },
-            ],
-          },
-        });
+        await this.room.connect(url, token);
 
         if (this.currentCall) {
           this.currentCall.state = 'ACTIVE';
