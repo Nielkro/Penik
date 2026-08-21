@@ -202,6 +202,7 @@ private fun ActiveCallView(callManager: CallManager) {
                     track = pip,
                     eglBase = callManager.eglBase,
                     mirror = !swapped,
+                    onTop = true,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -232,7 +233,7 @@ private fun ActiveCallView(callManager: CallManager) {
 }
 
 @Composable
-private fun VideoRenderer(track: VideoTrack?, eglBase: EglBase, mirror: Boolean, modifier: Modifier = Modifier) {
+private fun VideoRenderer(track: VideoTrack?, eglBase: EglBase, mirror: Boolean, onTop: Boolean = false, modifier: Modifier = Modifier) {
     var renderer by remember { mutableStateOf<SurfaceViewRenderer?>(null) }
 
     AndroidView(
@@ -241,7 +242,7 @@ private fun VideoRenderer(track: VideoTrack?, eglBase: EglBase, mirror: Boolean,
             SurfaceViewRenderer(ctx).apply {
                 init(eglBase.eglBaseContext, null)
                 setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
-                setZOrderMediaOverlay(true)
+                if (onTop) setZOrderOnTop(true) else setZOrderMediaOverlay(true)
                 setMirror(mirror)
                 renderer = this
             }

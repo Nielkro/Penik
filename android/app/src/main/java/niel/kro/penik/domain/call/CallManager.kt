@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import io.livekit.android.LiveKit
+import io.livekit.android.LiveKitOverrides
 import io.livekit.android.RoomOptions
 import io.livekit.android.events.RoomEvent
 import io.livekit.android.room.Room
@@ -291,7 +292,8 @@ class CallManager @Inject constructor(
     private fun createRoom(): Room {
         val r = LiveKit.create(
             context,
-            RoomOptions(adaptiveStream = true, dynacast = true)
+            RoomOptions(adaptiveStream = true, dynacast = true),
+            LiveKitOverrides(eglBase = eglBase)
         )
         eventsJob?.cancel()
         eventsJob = scope.launch { collectRoomEvents(r) }

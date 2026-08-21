@@ -73,6 +73,13 @@ export class CallManager {
       is_video: isVideo,
     });
 
+    this._dialTimeout = setTimeout(() => {
+      if (this.currentCall && this.currentCall.state === 'DIALING') {
+        showToast('Нет ответа', 'info');
+        this.rejectCall('declined');
+      }
+    }, 30_000);
+
     this._notifyState();
   }
 
@@ -215,8 +222,10 @@ export class CallManager {
 
   cleanup() {
     this._stopTimer();
+    clearTimeout(this._dialTimeout);
     if (this.room) {
       try {
+        this.room.removeAllListeners();
         this.room.disconnect();
       } catch (e) {
         console.error(e);
@@ -263,6 +272,7 @@ export class CallManager {
   async _handleCallAccepted(payload) {
     if (!this.currentCall || this.currentCall.state !== 'DIALING') return;
 
+    clearTimeout(this._dialTimeout);
     this.currentCall.callId = payload.call_id;
     this.currentCall.state = 'CONNECTING';
     if (!this.currentCall.peerContact && payload.to_user_id) {
@@ -404,7 +414,7 @@ export class CallManager {
             this.cleanup();
           });
 
-        await this.room.connect(url, token);
+        await this.room.connect(url, token, { validate: false });
 
         if (this.currentCall) {
           this.currentCall.state = 'ACTIVE';
