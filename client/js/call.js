@@ -171,7 +171,7 @@ export class CallManager {
       try {
         this.room = new Room({
           adaptiveStream: {
-            pixelDensity: 'screen',
+            pixelDensity: 2,
           },
           dynacast: true,
           audioCaptureDefaults: {
