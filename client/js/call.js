@@ -345,7 +345,7 @@ export class CallManager {
     if (track.kind === 'video') {
       const container = document.getElementById('remote-video-container');
       if (container) {
-        // Remove existing element for this track if present
+        // Clean up previous tracks from this participant if needed
         const existing = container.querySelector(`[data-track-sid="${track.sid}"]`);
         if (existing) existing.remove();
 
@@ -366,10 +366,14 @@ export class CallManager {
     const container = document.getElementById('local-video-container');
     if (!container) return;
 
+    // Remove any previous video element
     container.innerHTML = '';
     const element = track.attach();
     element.className = 'local-video-element';
     element.muted = true;
+    if (track.source === 'screen_share') {
+      element.classList.add('screenshare');
+    }
     container.appendChild(element);
     this._notifyMediaState();
   }
