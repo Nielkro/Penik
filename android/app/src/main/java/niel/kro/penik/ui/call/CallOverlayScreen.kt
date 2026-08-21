@@ -6,6 +6,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -46,10 +49,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import io.livekit.android.renderer.TextureViewRenderer
 import io.livekit.android.room.track.VideoTrack
 import livekit.org.webrtc.EglBase
 import livekit.org.webrtc.RendererCommon
-import livekit.org.webrtc.SurfaceViewRenderer
 import niel.kro.penik.domain.call.CallManager
 import niel.kro.penik.domain.call.CallPhase
 import niel.kro.penik.ui.components.UserAvatar
@@ -71,7 +74,22 @@ fun CallOverlay(callManager: CallManager) {
 
     if (state.phase == CallPhase.IDLE) return
 
-    Box(modifier = Modifier.fillMaxSize().background(CallBackground)) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(CallBackground)
+            .pointerInput(Unit) {
+                // Swallow all pointer events not handled by call controls,
+                // so the chat underneath is not clickable during a call.
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false).consume()
+                    do {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
+    ) {
         when (state.phase) {
             CallPhase.INCOMING -> IncomingCallView(callManager)
             CallPhase.DIALING, CallPhase.CONNECTING -> DialingView(callManager, state.phase == CallPhase.CONNECTING)
@@ -158,7 +176,9 @@ private fun ActiveCallView(callManager: CallManager) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (primary != null) {
-            VideoRenderer(track = primary, eglBase = callManager.eglBase, mirror = swapped, modifier = Modifier.fillMaxSize())
+            Box(modifier = Modifier.fillMaxSize().clickable { swapped = !swapped }) {
+                VideoRenderer(track = primary, eglBase = callManager.eglBase, mirror = swapped, modifier = Modifier.fillMaxSize())
+            }
         } else {
             Column(
                 modifier = Modifier.fillMaxSize(),
@@ -202,7 +222,6 @@ private fun ActiveCallView(callManager: CallManager) {
                     track = pip,
                     eglBase = callManager.eglBase,
                     mirror = !swapped,
-                    onTop = true,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -233,16 +252,15 @@ private fun ActiveCallView(callManager: CallManager) {
 }
 
 @Composable
-private fun VideoRenderer(track: VideoTrack?, eglBase: EglBase, mirror: Boolean, onTop: Boolean = false, modifier: Modifier = Modifier) {
-    var renderer by remember { mutableStateOf<SurfaceViewRenderer?>(null) }
+private fun VideoRenderer(track: VideoTrack?, eglBase: EglBase, mirror: Boolean, modifier: Modifier = Modifier) {
+    var renderer by remember { mutableStateOf<TextureViewRenderer?>(null) }
 
     AndroidView(
         modifier = modifier.background(Color.Black),
         factory = { ctx ->
-            SurfaceViewRenderer(ctx).apply {
+            TextureViewRenderer(ctx).apply {
                 init(eglBase.eglBaseContext, null)
                 setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
-                if (onTop) setZOrderOnTop(true) else setZOrderMediaOverlay(true)
                 setMirror(mirror)
                 renderer = this
             }
@@ -259,6 +277,12 @@ private fun VideoRenderer(track: VideoTrack?, eglBase: EglBase, mirror: Boolean,
             if (track != null && r != null) {
                 track.removeRenderer(r)
             }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try { renderer?.release() } catch (_: Exception) {}
         }
     }
 }
