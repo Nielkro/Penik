@@ -310,6 +310,7 @@ export class CallManager {
     if (fallbackUrl && fallbackUrl !== primaryUrl) {
       urlsToTry.push(fallbackUrl);
     }
+    console.log(`LiveKit failover: trying ${urlsToTry.length} endpoint(s):`, urlsToTry);
 
     let lastErr = null;
     for (const url of urlsToTry) {
