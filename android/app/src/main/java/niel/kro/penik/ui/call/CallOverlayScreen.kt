@@ -4,6 +4,11 @@ import android.Manifest
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -51,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.livekit.android.renderer.TextureViewRenderer
 import io.livekit.android.room.track.VideoTrack
+import kotlinx.coroutines.delay
 import livekit.org.webrtc.EglBase
 import livekit.org.webrtc.RendererCommon
 import niel.kro.penik.domain.call.CallManager
@@ -169,6 +175,14 @@ private fun ActiveCallView(callManager: CallManager) {
     val remoteTrack by callManager.remoteVideoTrack.collectAsState()
     val localTrack by callManager.localVideoTrack.collectAsState()
     var swapped by remember { mutableStateOf(false) }
+    var controlsVisible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(controlsVisible) {
+        if (controlsVisible) {
+            delay(4000)
+            controlsVisible = false
+        }
+    }
 
     val primary = if (swapped) localTrack else remoteTrack
     val pip = if (swapped) remoteTrack else localTrack
@@ -176,12 +190,12 @@ private fun ActiveCallView(callManager: CallManager) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (primary != null) {
-            Box(modifier = Modifier.fillMaxSize().clickable { swapped = !swapped }) {
+            Box(modifier = Modifier.fillMaxSize().clickable { controlsVisible = !controlsVisible }) {
                 VideoRenderer(track = primary, eglBase = callManager.eglBase, mirror = swapped, modifier = Modifier.fillMaxSize())
             }
         } else {
             Column(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().clickable { controlsVisible = !controlsVisible },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -193,19 +207,25 @@ private fun ActiveCallView(callManager: CallManager) {
             }
         }
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 48.dp, start = 16.dp, end = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        AnimatedVisibility(
+            visible = controlsVisible,
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = fadeIn(),
+            exit = fadeOut()
         ) {
-            Text(state.peerName, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                state.elapsed.ifEmpty { "Подключение..." },
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 14.sp
-            )
+            Column(
+                modifier = Modifier
+                    .padding(top = 48.dp, start = 16.dp, end = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(state.peerName, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    state.elapsed.ifEmpty { "Подключение..." },
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 14.sp
+                )
+            }
         }
 
         if (showLocalPip) {
@@ -227,25 +247,30 @@ private fun ActiveCallView(callManager: CallManager) {
             }
         }
 
-        Row(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 32.dp),
-            horizontalArrangement = Arrangement.spacedBy(24.dp),
-            verticalAlignment = Alignment.CenterVertically
+        AnimatedVisibility(
+            visible = controlsVisible,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
         ) {
-            ControlButton(
-                icon = if (state.micMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                active = state.micMuted,
-                label = "Микрофон"
-            ) { callManager.toggleMic() }
-            ControlButton(
-                icon = if (state.cameraOff) Icons.Default.VideocamOff else Icons.Default.Videocam,
-                active = state.cameraOff,
-                label = "Камера"
-            ) { callManager.toggleCamera() }
-            CircleButton(icon = Icons.Default.CallEnd, background = HangupRed, label = "Завершить") {
-                callManager.endCall()
+            Row(
+                modifier = Modifier.padding(bottom = 32.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ControlButton(
+                    icon = if (state.micMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                    active = state.micMuted,
+                    label = "Микрофон"
+                ) { callManager.toggleMic() }
+                ControlButton(
+                    icon = if (state.cameraOff) Icons.Default.VideocamOff else Icons.Default.Videocam,
+                    active = state.cameraOff,
+                    label = "Камера"
+                ) { callManager.toggleCamera() }
+                CircleButton(icon = Icons.Default.CallEnd, background = HangupRed, label = "Завершить") {
+                    callManager.endCall()
+                }
             }
         }
     }

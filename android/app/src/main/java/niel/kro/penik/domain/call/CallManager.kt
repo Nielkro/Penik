@@ -280,12 +280,15 @@ class CallManager @Inject constructor(
 
     private suspend fun connectLiveKit() {
         val urls = listOfNotNull(livekitUrl, livekitFallbackUrl).distinct().filter { it.isNotBlank() }
-        for (url in urls) {
+        for ((index, url) in urls.withIndex()) {
             var candidate: Room? = null
             try {
                 candidate = createRoom()
                 withTimeout(LIVEKIT_CONNECT_TIMEOUT_MS) { candidate.connect(url, token) }
                 room = candidate
+                if (index > 0) {
+                    toast("Подключено к резервному серверу — качество может быть хуже")
+                }
                 onRoomConnected()
                 return
             } catch (e: Exception) {
