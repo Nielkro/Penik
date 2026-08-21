@@ -1623,6 +1623,11 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   transform: scaleX(-1);
 }
 
+.local-video-container video.screenshare {
+  object-fit: contain;
+  transform: none;
+}
+
 /* Swapped layout mode */
 .call-active-window.swapped-layout .local-video-container {
   position: absolute;
