@@ -1525,26 +1525,6 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   overflow: hidden;
 }
 
-.remote-video-container {
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-
-.remote-video-container.hidden-stream {
-  display: none !important;
-}
-
-.remote-video-container video {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
 .call-avatar-wrapper,
 .call-active-avatar-wrap {
   display: flex;
@@ -1572,7 +1552,8 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 }
 
 .call-participant-placeholder {
-  flex: 1;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   display: flex;
@@ -1580,6 +1561,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   align-items: center;
   justify-content: center;
   gap: 14px;
+  z-index: 0;
 }
 
 .call-participant-placeholder.hidden {
@@ -1596,71 +1578,69 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.remote-video-container,
 .local-video-container {
-  position: absolute;
-  top: 24px;
-  right: 24px;
-  width: 200px;
-  height: 130px;
-  border-radius: 14px;
-  overflow: hidden;
-  border: 2px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
-  background: #111;
-  z-index: 10;
-  cursor: pointer;
+  display: contents;
+}
+
+.video-tile {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
 }
 
-.local-video-container.hidden {
-  display: none !important;
-}
-
-.local-video-container video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transform: scaleX(-1);
-}
-
-.local-video-container video.screenshare {
-  object-fit: contain;
-  transform: none;
-}
-
-/* Swapped layout mode */
-.call-active-window.swapped-layout .local-video-container {
+/* Fullscreen / Primary video stream */
+.video-tile.primary-tile {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  border-radius: 0;
-  border: none;
   z-index: 1;
+  border: none;
+  border-radius: 0;
 }
 
-.call-active-window.swapped-layout .local-video-container video {
+.video-tile.primary-tile video {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 
-.call-active-window.swapped-layout .remote-video-container {
+/* Floating Picture-in-Picture Tile */
+.video-tile.pip-tile {
   position: absolute;
   top: 24px;
   right: 24px;
-  width: 200px;
-  height: 130px;
+  width: 220px;
+  height: 140px;
   border-radius: 14px;
-  overflow: hidden;
-  border: 2px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
-  background: #111;
-  z-index: 10;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.7);
+  z-index: 20;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.call-active-window.swapped-layout .remote-video-container video {
+.video-tile.pip-tile:hover {
+  transform: scale(1.04);
+  border-color: var(--accent, #5b6ef5);
+}
+
+.video-tile.pip-tile video {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
+}
+
+.video-stream-element {
+  width: 100%;
+  height: 100%;
+}
+
+.video-stream-element.camera-mirror {
+  transform: scaleX(-1);
 }
 
 .call-controls-bar {
