@@ -21,6 +21,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import io.livekit.android.LiveKit
@@ -32,6 +35,7 @@ import io.livekit.android.room.track.Track
 import io.livekit.android.room.track.VideoTrack
 import livekit.org.webrtc.EglBase
 import niel.kro.penik.data.network.api.ApiService
+import niel.kro.penik.data.network.websocket.ConnectionState
 import niel.kro.penik.data.network.websocket.WebSocketEvent
 import niel.kro.penik.data.network.websocket.WebSocketManager
 import niel.kro.penik.ui.notification.AppNotificationManager
@@ -91,6 +95,18 @@ class CallManager @Inject constructor(
     private var currentCallId: String = ""
 
     private val ui get() = _state.value
+
+    init {
+        webSocketManager.connectionState
+            .drop(1)
+            .onEach { state ->
+                if (state == ConnectionState.DISCONNECTED && ui.phase != CallPhase.IDLE) {
+                    toast("Соединение потеряно, звонок завершен")
+                    cleanup()
+                }
+            }
+            .launchIn(scope)
+    }
 
     // --- Outgoing ---
 
