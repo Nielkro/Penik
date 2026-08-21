@@ -1818,6 +1818,23 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   z-index: 100;
 }
 
+.call-active-window .call-header-bar,
+.call-active-window .call-controls-bar {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.call-active-window.controls-hidden .call-header-bar {
+  opacity: 0;
+  transform: translateY(-16px);
+  pointer-events: none;
+}
+
+.call-active-window.controls-hidden .call-controls-bar {
+  opacity: 0;
+  transform: translate(-50%, 120%);
+  pointer-events: none;
+}
+
 .call-control-btn {
   width: 48px;
   height: 48px;
