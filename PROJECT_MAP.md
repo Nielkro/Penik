@@ -65,6 +65,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/js/ui/settings.js` — Settings screen (theme switching) and a separate devices screen listing the user's own devices.
 - `client/js/theme.js` — Dark/light theme state, persistence in localStorage, and application to the document root.
 - `client/js/ui/search.js` — User search screen and initiator for direct chats.
+- `client/js/ui/call_modal.js` — Renders the active/incoming/dialing call overlay modal, participant placeholders, video/screenshare layout swapping, and in-call media control buttons.
 - `client/js/ui/components.js` — Shared UI components: avatars, time formatting, hover tooltip for full timestamp, message copy menu, scroll-down button, toasts, and modals.
 - `client/js/globals.d.ts` — Ambient type declarations for globals the app attaches to `window`; type-checking only, emits no JavaScript.
 

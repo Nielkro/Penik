@@ -8,6 +8,8 @@ export class CallManager {
     this.room = null;
     this.isMuted = false;
     this.isVideoOff = false;
+    this.isScreenShareOn = false;
+    this.hasRemoteVideo = false;
 
     this.onCallStateChange = null;
     this.onMediaStateChange = null;
@@ -90,6 +92,24 @@ export class CallManager {
     this._notifyMediaState();
   }
 
+  async toggleScreenShare() {
+    if (!this.room) return;
+    try {
+      const nextState = !this.isScreenShareOn;
+      await this.room.localParticipant.setScreenShareEnabled(nextState, {
+        audio: true,
+        selfBrowserSurface: 'include',
+        surfaceSwitching: 'include',
+      });
+      this.isScreenShareOn = nextState;
+      this._notifyMediaState();
+    } catch (e) {
+      console.warn('Screen share toggled/cancelled:', e);
+      this.isScreenShareOn = false;
+      this._notifyMediaState();
+    }
+  }
+
   cleanup() {
     if (this.room) {
       try {
@@ -103,6 +123,8 @@ export class CallManager {
     this.currentCall = null;
     this.isMuted = false;
     this.isVideoOff = false;
+    this.isScreenShareOn = false;
+    this.hasRemoteVideo = false;
     this._notifyState();
   }
 
@@ -211,12 +233,29 @@ export class CallManager {
           .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
             this._attachRemoteTrack(track, participant);
           })
-          .on(RoomEvent.TrackUnsubscribed, (track) => {
+          .on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
             track.detach();
+            this._checkRemoteTracks();
+          })
+          .on(RoomEvent.TrackMuted, (publication, participant) => {
+            if (publication.kind === 'video' && participant !== this.room?.localParticipant) {
+              this._checkRemoteTracks();
+            }
+          })
+          .on(RoomEvent.TrackUnmuted, (publication, participant) => {
+            if (publication.kind === 'video' && participant !== this.room?.localParticipant) {
+              this._checkRemoteTracks();
+            }
           })
           .on(RoomEvent.LocalTrackPublished, (publication) => {
             if (publication.track) {
               this._attachLocalTrack(publication.track);
+            }
+          })
+          .on(RoomEvent.LocalTrackUnpublished, (publication) => {
+            if (publication.source === 'screen_share') {
+              this.isScreenShareOn = false;
+              this._notifyMediaState();
             }
           })
           .on(RoomEvent.Disconnected, () => {
@@ -227,6 +266,7 @@ export class CallManager {
 
         if (this.currentCall) {
           this.currentCall.state = 'ACTIVE';
+          this.isVideoOff = !this.currentCall.isVideo;
           this._notifyState();
         }
 
@@ -251,13 +291,19 @@ export class CallManager {
   }
 
   _attachRemoteTrack(track, participant) {
-    const container = document.getElementById('remote-video-container');
-    if (!container) return;
-
-    const element = track.attach();
-    element.dataset.participantId = participant.identity;
-    element.className = 'remote-video-element';
-    container.appendChild(element);
+    if (track.kind === 'video') {
+      const container = document.getElementById('remote-video-container');
+      if (container) {
+        const element = track.attach();
+        element.dataset.participantId = participant.identity;
+        element.dataset.trackSid = track.sid;
+        element.className = 'remote-video-element';
+        container.appendChild(element);
+      }
+      this._checkRemoteTracks();
+    } else if (track.kind === 'audio') {
+      track.attach();
+    }
   }
 
   _attachLocalTrack(track) {
@@ -265,11 +311,27 @@ export class CallManager {
     const container = document.getElementById('local-video-container');
     if (!container) return;
 
-    container.innerHTML = '';
     const element = track.attach();
     element.className = 'local-video-element';
     element.muted = true;
     container.appendChild(element);
+    this._notifyMediaState();
+  }
+
+  _checkRemoteTracks() {
+    let hasVideo = false;
+    if (this.room) {
+      for (const participant of this.room.remoteParticipants.values()) {
+        for (const pub of participant.videoTrackPublications.values()) {
+          if (pub.isSubscribed && pub.track && !pub.isMuted) {
+            hasVideo = true;
+            break;
+          }
+        }
+      }
+    }
+    this.hasRemoteVideo = hasVideo;
+    this._notifyMediaState();
   }
 
   _notifyState() {
@@ -277,6 +339,8 @@ export class CallManager {
       this.onCallStateChange(this.currentCall, {
         isMuted: this.isMuted,
         isVideoOff: this.isVideoOff,
+        isScreenShareOn: this.isScreenShareOn,
+        hasRemoteVideo: this.hasRemoteVideo,
       });
     }
   }
@@ -286,6 +350,8 @@ export class CallManager {
       this.onMediaStateChange({
         isMuted: this.isMuted,
         isVideoOff: this.isVideoOff,
+        isScreenShareOn: this.isScreenShareOn,
+        hasRemoteVideo: this.hasRemoteVideo,
       });
     }
   }
