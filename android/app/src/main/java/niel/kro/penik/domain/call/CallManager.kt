@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import io.livekit.android.LiveKit
 import io.livekit.android.RoomOptions
 import io.livekit.android.events.RoomEvent
@@ -52,6 +53,7 @@ data class CallUiState(
 
 private const val TAG = "CallManager"
 private const val RING_TIMEOUT_MS = 30_000L
+private const val LIVEKIT_CONNECT_TIMEOUT_MS = 15_000L
 
 @Singleton
 class CallManager @Inject constructor(
@@ -177,6 +179,7 @@ class CallManager @Inject constructor(
         if (ui.phase == CallPhase.IDLE) return
         when (event.reason) {
             "busy" -> toast("Пользователь занят")
+            "offline" -> toast("Пользователь не в сети")
             else -> toast("Звонок отклонен")
         }
         cleanup()
@@ -244,7 +247,7 @@ class CallManager @Inject constructor(
             var candidate: Room? = null
             try {
                 candidate = createRoom()
-                candidate.connect(url, token)
+                withTimeout(LIVEKIT_CONNECT_TIMEOUT_MS) { candidate.connect(url, token) }
                 room = candidate
                 onRoomConnected()
                 return
@@ -255,6 +258,8 @@ class CallManager @Inject constructor(
             }
         }
         toast("Ошибка подключения к серверу звонка")
+        // Tell the server the call is over so both users leave the busy state.
+        webSocketManager.sendCallReject(currentCallId, ui.peerUserId, "declined")
         cleanup()
     }
 
@@ -302,11 +307,20 @@ class CallManager @Inject constructor(
                 is RoomEvent.TrackPublished -> {
                     if (event.participant == room.localParticipant) publishLocalVideoTrack()
                 }
+                is RoomEvent.LocalTrackSubscribed -> {
+                    val t = event.publication.track
+                    if (t is VideoTrack) _localVideoTrack.value = t
+                }
                 is RoomEvent.TrackUnpublished -> {
                     if (event.participant == room.localParticipant) _localVideoTrack.value = null
                 }
                 is RoomEvent.Disconnected -> {
-                    if (ui.phase != CallPhase.IDLE) cleanup()
+                    if (ui.phase != CallPhase.IDLE) {
+                        if (currentCallId.isNotEmpty()) {
+                            webSocketManager.sendCallEnd(currentCallId, ui.peerUserId)
+                        }
+                        cleanup()
+                    }
                 }
                 else -> Unit
             }
