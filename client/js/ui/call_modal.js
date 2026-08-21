@@ -38,15 +38,19 @@ function renderCallModal(callState, mediaState) {
 
   callModalEl.classList.remove('hidden');
 
+  const peerContact = callState.peerContact || {
+    name: `Пользователь #${callState.fromUserId || callState.toUserId || ''}`,
+    nickname: '',
+  };
+  const peerDisplayName = peerContact.name || (peerContact.nickname ? `@${peerContact.nickname}` : 'Пользователь');
+
   if (callState.state === 'INCOMING') {
     callModalEl.innerHTML = `
       <div class="call-card incoming-card">
-        <div class="call-avatar-placeholder">
-          ${SVG_ICONS.phoneAccept}
-        </div>
+        <div class="call-avatar-wrapper" id="incoming-avatar-slot"></div>
         <div class="call-info">
-          <div class="call-title">Входящий звонок</div>
-          <div class="call-subtitle">${callState.isVideo ? 'Видеозвонок' : 'Аудиозвонок'}</div>
+          <div class="call-title">${peerDisplayName}</div>
+          <div class="call-subtitle">Входящий ${callState.isVideo ? 'видеозвонок' : 'аудиозвонок'}</div>
         </div>
         <div class="call-actions">
           <button class="call-btn btn-accept" id="btn-call-accept" title="Принять">
@@ -59,6 +63,9 @@ function renderCallModal(callState, mediaState) {
       </div>
     `;
 
+    const slot = document.getElementById('incoming-avatar-slot');
+    if (slot) slot.appendChild(avatar(peerContact, 88));
+
     document.getElementById('btn-call-accept').addEventListener('click', () => callManager.acceptCall());
     document.getElementById('btn-call-reject').addEventListener('click', () => callManager.rejectCall());
     return;
@@ -67,11 +74,10 @@ function renderCallModal(callState, mediaState) {
   if (callState.state === 'DIALING' || callState.state === 'CONNECTING') {
     callModalEl.innerHTML = `
       <div class="call-card dialing-card">
-        <div class="call-avatar-placeholder pulsing">
-          ${SVG_ICONS.phoneAccept}
-        </div>
+        <div class="call-avatar-wrapper pulsing" id="dialing-avatar-slot"></div>
         <div class="call-info">
-          <div class="call-title">${callState.state === 'DIALING' ? 'Вызов...' : 'Подключение...'}</div>
+          <div class="call-title">${peerDisplayName}</div>
+          <div class="call-subtitle">${callState.state === 'DIALING' ? 'Исходящий вызов...' : 'Подключение...'}</div>
         </div>
         <div class="call-actions">
           <button class="call-btn btn-reject" id="btn-call-cancel" title="Отмена">
@@ -80,6 +86,9 @@ function renderCallModal(callState, mediaState) {
         </div>
       </div>
     `;
+
+    const slot = document.getElementById('dialing-avatar-slot');
+    if (slot) slot.appendChild(avatar(peerContact, 88));
 
     document.getElementById('btn-call-cancel').addEventListener('click', () => callManager.endCall());
     return;
@@ -93,10 +102,9 @@ function renderCallModal(callState, mediaState) {
       <div class="call-active-window ${!hasRemoteVideo ? 'no-remote-video' : ''}">
         <div id="remote-video-container" class="remote-video-container ${!hasRemoteVideo ? 'hidden-stream' : ''}"></div>
         <div id="remote-placeholder-container" class="call-participant-placeholder ${hasRemoteVideo ? 'hidden' : ''}">
-          <div class="call-avatar-placeholder pulsing">
-            ${SVG_ICONS.phoneAccept}
-          </div>
-          <div class="call-status-badge">Собеседник в сети</div>
+          <div class="call-active-avatar-wrap pulsing" id="active-peer-avatar-slot"></div>
+          <div class="call-active-peer-name">${peerDisplayName}</div>
+          <div class="call-status-badge">Звонок идет</div>
         </div>
         <div id="local-video-container" class="local-video-container ${!hasLocalVideo ? 'hidden' : ''}"></div>
         <div class="call-controls-bar">
@@ -115,6 +123,9 @@ function renderCallModal(callState, mediaState) {
         </div>
       </div>
     `;
+
+    const activeSlot = document.getElementById('active-peer-avatar-slot');
+    if (activeSlot) activeSlot.appendChild(avatar(peerContact, 100));
 
     const activeWin = callModalEl.querySelector('.call-active-window');
     if (activeWin) {
@@ -163,6 +174,7 @@ function updateMediaControlsUI(mediaState) {
       localContainer.classList.remove('hidden');
     } else {
       localContainer.classList.add('hidden');
+      localContainer.innerHTML = '';
     }
   }
 
@@ -180,3 +192,4 @@ function updateMediaControlsUI(mediaState) {
     }
   }
 }
+
