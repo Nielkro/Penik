@@ -221,7 +221,6 @@ export class CallManager {
   }
 
   cleanup() {
-    console.log('[call] cleanup');
     this._stopTimer();
     clearTimeout(this._dialTimeout);
     if (this.room) {
@@ -285,7 +284,6 @@ export class CallManager {
   }
 
   _handleCallReject(payload) {
-    console.log('[call] CALL_REJECT received', payload);
     if (!this.currentCall) return;
 
     let reason;
@@ -297,7 +295,6 @@ export class CallManager {
   }
 
   _handleCallEnd() {
-    console.log('[call] CALL_END received');
     if (!this.currentCall) return;
     showToast('Звонок завершен', 'info');
     this.cleanup();
@@ -313,10 +310,10 @@ export class CallManager {
     if (fallbackUrl && fallbackUrl !== primaryUrl) {
       urlsToTry.push(fallbackUrl);
     }
-    console.log(`LiveKit failover: trying ${urlsToTry.length} endpoint(s):`, urlsToTry);
 
     let lastErr = null;
-    for (const url of urlsToTry) {
+    for (let attempt = 0; attempt < urlsToTry.length; attempt++) {
+      const url = urlsToTry[attempt];
       try {
         this.room = new Room({
           adaptiveStream: {
@@ -418,9 +415,12 @@ export class CallManager {
             }
           });
 
-        await this.room.connect(url, token, { validate: false });
+        await this.room.connect(url, token);
 
         if (this.currentCall) {
+          if (attempt > 0) {
+            showToast('Подключено к резервному серверу звонков — качество может быть хуже', 'info');
+          }
           this.currentCall.state = 'ACTIVE';
           this.isVideoOff = !this.currentCall.isVideo;
           this._startTimer();
