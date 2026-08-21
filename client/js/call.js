@@ -1,6 +1,8 @@
 import { Room, RoomEvent, VideoPresets } from 'livekit-client';
 import { ws, OP } from './ws.js';
 import { showToast } from './ui/components.js';
+import { getContact, saveContact } from './storage.js';
+import { getUserById } from './api.js';
 
 export class CallManager {
   constructor() {
@@ -22,17 +24,38 @@ export class CallManager {
     ws.on(OP.CALL_END, () => this._handleCallEnd());
   }
 
-  startCall(toUserId, isVideo = false) {
+  async _resolveContact(userId) {
+    if (!userId) return null;
+    let contact = await getContact(Number(userId));
+    if (!contact || contact.name === 'Неизвестный') {
+      try {
+        const res = await getUserById(String(userId));
+        contact = res.user || res;
+        if (contact) {
+          contact.user_id = Number(userId);
+          await saveContact(contact);
+        }
+      } catch (e) {
+        console.warn('Failed to resolve contact for call:', e);
+      }
+    }
+    return contact || { user_id: Number(userId), name: `Пользователь #${userId}`, nickname: '' };
+  }
+
+  async startCall(toUserId, isVideo = false) {
     if (this.currentCall) {
       showToast('Вы уже находитесь в звонке', 'error');
       return;
     }
+
+    const peerContact = await this._resolveContact(toUserId);
 
     this.currentCall = {
       state: 'DIALING',
       toUserId,
       isVideo,
       callId: null,
+      peerContact,
     };
 
     ws.send(OP.CALL_OFFER, {
@@ -89,6 +112,12 @@ export class CallManager {
     if (!this.room) return;
     this.isVideoOff = !this.isVideoOff;
     await this.room.localParticipant.setCameraEnabled(!this.isVideoOff);
+    if (this.isVideoOff) {
+      const container = document.getElementById('local-video-container');
+      if (container && !this.isScreenShareOn) {
+        container.innerHTML = '';
+      }
+    }
     this._notifyMediaState();
   }
 
@@ -102,10 +131,18 @@ export class CallManager {
         surfaceSwitching: 'include',
       });
       this.isScreenShareOn = nextState;
+      if (!this.isScreenShareOn && this.isVideoOff) {
+        const container = document.getElementById('local-video-container');
+        if (container) container.innerHTML = '';
+      }
       this._notifyMediaState();
     } catch (e) {
       console.warn('Screen share toggled/cancelled:', e);
       this.isScreenShareOn = false;
+      if (this.isVideoOff) {
+        const container = document.getElementById('local-video-container');
+        if (container) container.innerHTML = '';
+      }
       this._notifyMediaState();
     }
   }
@@ -128,7 +165,7 @@ export class CallManager {
     this._notifyState();
   }
 
-  _handleIncomingCall(payload) {
+  async _handleIncomingCall(payload) {
     if (this.currentCall) {
       ws.send(OP.CALL_REJECT, {
         call_id: payload.call_id,
@@ -137,6 +174,8 @@ export class CallManager {
       });
       return;
     }
+
+    const peerContact = await this._resolveContact(payload.from_user_id);
 
     this.currentCall = {
       state: 'INCOMING',
@@ -147,16 +186,20 @@ export class CallManager {
       livekitUrl: payload.livekit_url,
       livekitFallbackUrl: payload.livekit_fallback_url,
       token: payload.token,
+      peerContact,
     };
 
     this._notifyState();
   }
 
-  _handleCallAccepted(payload) {
+  async _handleCallAccepted(payload) {
     if (!this.currentCall || this.currentCall.state !== 'DIALING') return;
 
     this.currentCall.callId = payload.call_id;
     this.currentCall.state = 'CONNECTING';
+    if (!this.currentCall.peerContact && payload.to_user_id) {
+      this.currentCall.peerContact = await this._resolveContact(payload.to_user_id);
+    }
     this._notifyState();
 
     this._connectLiveKit(payload.livekit_url, payload.livekit_fallback_url, payload.token);
@@ -177,7 +220,6 @@ export class CallManager {
   }
 
   async _connectLiveKit(primaryUrl, fallbackUrl, token) {
-    // Legacy call signature check (primaryUrl, token)
     if (!token && typeof fallbackUrl === 'string' && !fallbackUrl.startsWith('ws://') && !fallbackUrl.startsWith('wss://')) {
       token = fallbackUrl;
       fallbackUrl = null;
@@ -209,7 +251,7 @@ export class CallManager {
             videoCodec: 'vp9',
             backupCodec: { codec: 'vp8' },
             videoEncoding: {
-              maxBitrate: 6_000_000, // 6 Mbps Full HD 60FPS
+              maxBitrate: 6_000_000,
               maxFramerate: 60,
             },
             videoSimulcastLayers: [
@@ -217,7 +259,7 @@ export class CallManager {
               VideoPresets.h540,
             ],
             audioPreset: {
-              maxBitrate: 128_000, // 128 kbps HD Audio
+              maxBitrate: 128_000,
             },
             red: true,
             dtx: false,
@@ -235,6 +277,8 @@ export class CallManager {
           })
           .on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
             track.detach();
+            const elements = document.querySelectorAll(`[data-track-sid="${track.sid}"]`);
+            elements.forEach(el => el.remove());
             this._checkRemoteTracks();
           })
           .on(RoomEvent.TrackMuted, (publication, participant) => {
@@ -253,8 +297,15 @@ export class CallManager {
             }
           })
           .on(RoomEvent.LocalTrackUnpublished, (publication) => {
+            if (publication.track) {
+              publication.track.detach();
+            }
             if (publication.source === 'screen_share') {
               this.isScreenShareOn = false;
+              if (this.isVideoOff) {
+                const container = document.getElementById('local-video-container');
+                if (container) container.innerHTML = '';
+              }
               this._notifyMediaState();
             }
           })
@@ -274,7 +325,7 @@ export class CallManager {
         if (this.currentCall && this.currentCall.isVideo) {
           await this.room.localParticipant.setCameraEnabled(true);
         }
-        return; // Successfully connected
+        return;
       } catch (err) {
         console.warn(`Failed to connect to LiveKit URL ${url}:`, err);
         lastErr = err;
@@ -294,6 +345,10 @@ export class CallManager {
     if (track.kind === 'video') {
       const container = document.getElementById('remote-video-container');
       if (container) {
+        // Remove existing element for this track if present
+        const existing = container.querySelector(`[data-track-sid="${track.sid}"]`);
+        if (existing) existing.remove();
+
         const element = track.attach();
         element.dataset.participantId = participant.identity;
         element.dataset.trackSid = track.sid;
@@ -311,6 +366,7 @@ export class CallManager {
     const container = document.getElementById('local-video-container');
     if (!container) return;
 
+    container.innerHTML = '';
     const element = track.attach();
     element.className = 'local-video-element';
     element.muted = true;
@@ -358,3 +414,4 @@ export class CallManager {
 }
 
 export const callManager = new CallManager();
+
