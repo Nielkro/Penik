@@ -3,6 +3,36 @@ import { avatar } from './components.js';
 
 let callModalEl = null;
 let settingsModalEl = null;
+let hideControlsTimer = null;
+
+function stopControlsAutoHide() {
+  clearTimeout(hideControlsTimer);
+  hideControlsTimer = null;
+}
+
+function setupControlsAutoHide(hasVideoStream) {
+  stopControlsAutoHide();
+  const win = callModalEl ? callModalEl.querySelector('.call-active-window') : null;
+  if (!win) return;
+
+  if (!hasVideoStream) {
+    // Plain avatar background: keep the name and timer visible at all times.
+    win.classList.remove('controls-hidden');
+    return;
+  }
+
+  const showControls = () => {
+    win.classList.remove('controls-hidden');
+    clearTimeout(hideControlsTimer);
+    hideControlsTimer = setTimeout(() => win.classList.add('controls-hidden'), 4000);
+  };
+  if (win.dataset.autoHideBound !== '1') {
+    win.dataset.autoHideBound = '1';
+    win.addEventListener('mousemove', showControls);
+    win.addEventListener('click', showControls);
+  }
+  showControls();
+}
 
 const SVG_ICONS = {
   phoneAccept: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
@@ -74,6 +104,7 @@ function updateSpeakingIndicators(activeSpeakers) {
 }
 
 function renderCallModal(callState, mediaState) {
+  stopControlsAutoHide();
   if (!callState) {
     callModalEl.classList.add('hidden');
     callModalEl.innerHTML = '';
@@ -191,6 +222,8 @@ function renderCallModal(callState, mediaState) {
     document.getElementById('btn-toggle-screen').addEventListener('click', () => callManager.toggleScreenShare());
     document.getElementById('btn-call-settings').addEventListener('click', () => openSettingsModal());
     document.getElementById('btn-end-active-call').addEventListener('click', () => callManager.endCall());
+
+    setupControlsAutoHide(hasRemoteVideo);
   }
 }
 
@@ -316,6 +349,7 @@ function updateMediaControlsUI(mediaState) {
       activeWin.classList.add('no-remote-video');
       activeWin.classList.remove('swapped-layout');
     }
+    setupControlsAutoHide(hasRemoteVideo);
   }
 }
 
