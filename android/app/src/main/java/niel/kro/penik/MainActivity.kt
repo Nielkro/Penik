@@ -10,12 +10,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.navigation.compose.rememberNavController
 import dagger.hilt.android.AndroidEntryPoint
@@ -28,6 +31,9 @@ import kotlinx.coroutines.launch
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.FcmTokenRequestBody
 import niel.kro.penik.data.repository.SecureTokenStorage
+import niel.kro.penik.domain.call.CallManager
+import niel.kro.penik.ui.call.CallOverlay
+import niel.kro.penik.ui.notification.CallActionReceiver
 import niel.kro.penik.ui.theme.ThemeManager
 import niel.kro.penik.ui.theme.PenikTheme
 import javax.inject.Inject
@@ -41,6 +47,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var apiService: ApiService
+
+    @Inject
+    lateinit var callManager: CallManager
 
     private var pendingRoute by mutableStateOf<String?>(null)
 
@@ -113,7 +122,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                NavGraph(navController = navController)
+                Box(modifier = Modifier.fillMaxSize()) {
+                    NavGraph(navController = navController)
+                    CallOverlay(callManager = callManager)
+                }
             }
         }
     }
@@ -126,6 +138,13 @@ class MainActivity : ComponentActivity() {
 
     private fun extractNavigationRoute(intent: Intent?) {
         if (intent == null) return
+
+        if (intent.getStringExtra(AppNotificationManager.EXTRA_CALL_ACTION) == CallActionReceiver.ACTION_ANSWER) {
+            callManager.acceptCall()
+            intent.removeExtra(AppNotificationManager.EXTRA_CALL_ACTION)
+            return
+        }
+
         val chatUserId = intent.getLongExtra(AppNotificationManager.EXTRA_CHAT_USER_ID, -1L)
         val chatName = intent.getStringExtra(AppNotificationManager.EXTRA_CHAT_NAME) ?: ""
         if (chatUserId > 0) {

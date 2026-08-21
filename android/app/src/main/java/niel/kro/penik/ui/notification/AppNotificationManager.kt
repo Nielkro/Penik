@@ -52,8 +52,10 @@ class AppNotificationManager @Inject constructor(
 
     companion object {
         const val CHANNEL_ID_MESSAGES = "penik_messages"
+        const val CHANNEL_ID_CALLS = "penik_calls"
         const val GROUP_KEY_MESSAGES = "niel.kro.penik.MESSAGES"
         const val SUMMARY_NOTIFICATION_ID = 999999
+        const val INCOMING_CALL_NOTIFICATION_ID = 900001
 
         const val KEY_TEXT_REPLY = "key_text_reply"
         const val EXTRA_CHAT_USER_ID = "chatUserId"
@@ -61,6 +63,7 @@ class AppNotificationManager @Inject constructor(
         const val EXTRA_GROUP_ID = "groupId"
         const val EXTRA_GROUP_NAME = "groupName"
         const val EXTRA_LAST_MSG_SERVER_ID = "lastMsgServerId"
+        const val EXTRA_CALL_ACTION = "callAction"
 
         @Volatile
         var activeChatKey: String? = null
@@ -125,6 +128,20 @@ class AppNotificationManager @Inject constructor(
             }
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             nm?.createNotificationChannel(channel)
+
+            val callChannel = NotificationChannel(
+                CHANNEL_ID_CALLS,
+                "Звонки",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Уведомления о входящих звонках"
+                // Ringtone and vibration are driven by CallManager while the app process is alive
+                setSound(null, null)
+                enableVibration(false)
+                setShowBadge(true)
+                lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
+            }
+            nm?.createNotificationChannel(callChannel)
         }
     }
 
@@ -142,6 +159,60 @@ class AppNotificationManager @Inject constructor(
         directThreads.clear()
         groupThreads.clear()
         notificationManager.cancelAll()
+    }
+
+    fun showIncomingCallNotification(peerUserId: Long, peerName: String, isVideo: Boolean) {
+        val avatarBitmap = createInitialsAvatar(peerName, peerUserId)
+        val title = if (isVideo) "Входящий видеозвонок" else "Входящий звонок"
+
+        val answerIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(EXTRA_CALL_ACTION, CallActionReceiver.ACTION_ANSWER)
+        }
+        val answerPendingIntent = PendingIntent.getActivity(
+            context,
+            INCOMING_CALL_NOTIFICATION_ID,
+            answerIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val declineIntent = Intent(context, CallActionReceiver::class.java).apply {
+            putExtra(EXTRA_CALL_ACTION, CallActionReceiver.ACTION_DECLINE)
+        }
+        val declinePendingIntent = PendingIntent.getBroadcast(
+            context,
+            INCOMING_CALL_NOTIFICATION_ID + 1,
+            declineIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID_CALLS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(avatarBitmap)
+            .setContentTitle(peerName)
+            .setContentText(title)
+            .setContentIntent(answerPendingIntent)
+            .setFullScreenIntent(answerPendingIntent, true)
+            .addAction(0, "Ответить", answerPendingIntent)
+            .addAction(0, "Отклонить", declinePendingIntent)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setTimeoutAfter(30_000)
+            .build()
+
+        try {
+            notificationManager.notify(INCOMING_CALL_NOTIFICATION_ID, notification)
+        } catch (e: SecurityException) {
+            // POST_NOTIFICATIONS or USE_FULL_SCREEN_INTENT permission not granted yet
+        }
+    }
+
+    fun cancelIncomingCallNotification() {
+        notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID)
     }
 
     suspend fun showDirectMessageNotification(

@@ -113,6 +113,28 @@ sealed class WebSocketEvent {
     data class GroupAvatarUpdate(val groupId: Long, val ts: Long) : WebSocketEvent()
     data class MsgDeleteNotify(val msgId: String, val chatId: Long, val deleteForEveryone: Boolean) : WebSocketEvent()
 
+    data class CallIncoming(
+        val callId: String,
+        val fromUserId: Long,
+        val isVideo: Boolean,
+        val roomName: String,
+        val livekitUrl: String,
+        val livekitFallbackUrl: String?,
+        val token: String
+    ) : WebSocketEvent()
+
+    data class CallAccepted(
+        val callId: String,
+        val toUserId: Long,
+        val roomName: String,
+        val livekitUrl: String,
+        val livekitFallbackUrl: String?,
+        val token: String
+    ) : WebSocketEvent()
+
+    data class CallReject(val callId: String, val toUserId: Long, val reason: String) : WebSocketEvent()
+    data class CallEnd(val callId: String, val toUserId: Long) : WebSocketEvent()
+
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
     object ServerShutdown : WebSocketEvent()
@@ -147,6 +169,12 @@ object Opcode {
     const val GROUP_MESSAGE_DELIVERED: Byte = 0x25
     const val GROUP_MESSAGE_READ: Byte = 0x26
     const val GROUP_AVATAR_UPDATE: Byte = 0x28
+    const val CALL_OFFER: Byte = 0x30
+    const val CALL_INCOMING: Byte = 0x31
+    const val CALL_ACCEPT: Byte = 0x32
+    const val CALL_ACCEPTED: Byte = 0x33
+    const val CALL_REJECT: Byte = 0x34
+    const val CALL_END: Byte = 0x35
 }
 
 private fun MessageUnpacker.readMsgRecvMap(): Map<String, Any?> {
@@ -371,6 +399,10 @@ class WebSocketManager @Inject constructor(
             Opcode.GROUP_KEY_AVAILABLE -> handleGroupKeyAvailable(payload)
             Opcode.GROUP_MEMBER_CHANGED -> handleGroupMemberChanged(payload)
             Opcode.GROUP_AVATAR_UPDATE -> handleGroupAvatarUpdate(payload)
+            Opcode.CALL_INCOMING -> handleCallIncoming(payload)
+            Opcode.CALL_ACCEPTED -> handleCallAccepted(payload)
+            Opcode.CALL_REJECT -> handleCallReject(payload)
+            Opcode.CALL_END -> handleCallEnd(payload)
         }
     }
 
@@ -423,6 +455,133 @@ class WebSocketManager @Inject constructor(
         packer.packString("is_typing"); packer.packBoolean(isTyping)
         packer.close()
         sendFrame(Opcode.TYPING, bos.toByteArray())
+    }
+
+    private fun handleCallIncoming(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val callId = map["call_id"] as? String ?: return
+            val fromUserId = (map["from_user_id"] as? Number)?.toLong() ?: return
+            scope.launch {
+                _events.emit(
+                    WebSocketEvent.CallIncoming(
+                        callId = callId,
+                        fromUserId = fromUserId,
+                        isVideo = map["is_video"] as? Boolean ?: false,
+                        roomName = map["room_name"] as? String ?: "",
+                        livekitUrl = map["livekit_url"] as? String ?: "",
+                        livekitFallbackUrl = map["livekit_fallback_url"] as? String,
+                        token = map["token"] as? String ?: ""
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse CallIncoming frame", e)
+        }
+    }
+
+    private fun handleCallAccepted(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val callId = map["call_id"] as? String ?: return
+            scope.launch {
+                _events.emit(
+                    WebSocketEvent.CallAccepted(
+                        callId = callId,
+                        toUserId = (map["to_user_id"] as? Number)?.toLong() ?: 0L,
+                        roomName = map["room_name"] as? String ?: "",
+                        livekitUrl = map["livekit_url"] as? String ?: "",
+                        livekitFallbackUrl = map["livekit_fallback_url"] as? String,
+                        token = map["token"] as? String ?: ""
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse CallAccepted frame", e)
+        }
+    }
+
+    private fun handleCallReject(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val callId = map["call_id"] as? String ?: return
+            scope.launch {
+                _events.emit(
+                    WebSocketEvent.CallReject(
+                        callId = callId,
+                        toUserId = (map["to_user_id"] as? Number)?.toLong() ?: 0L,
+                        reason = map["reason"] as? String ?: "declined"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse CallReject frame", e)
+        }
+    }
+
+    private fun handleCallEnd(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val callId = map["call_id"] as? String ?: return
+            scope.launch {
+                _events.emit(
+                    WebSocketEvent.CallEnd(
+                        callId = callId,
+                        toUserId = (map["to_user_id"] as? Number)?.toLong() ?: 0L
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse CallEnd frame", e)
+        }
+    }
+
+    fun sendCallOffer(toUserId: Long, isVideo: Boolean) {
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        packer.packMapHeader(2)
+        packer.packString("to_user_id"); packer.packLong(toUserId)
+        packer.packString("is_video"); packer.packBoolean(isVideo)
+        packer.close()
+        sendFrame(Opcode.CALL_OFFER, bos.toByteArray())
+    }
+
+    fun sendCallAccept(callId: String) {
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        packer.packMapHeader(1)
+        packer.packString("call_id"); packer.packString(callId)
+        packer.close()
+        sendFrame(Opcode.CALL_ACCEPT, bos.toByteArray())
+    }
+
+    fun sendCallReject(callId: String, toUserId: Long, reason: String) {
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        packer.packMapHeader(3)
+        packer.packString("call_id"); packer.packString(callId)
+        packer.packString("to_user_id"); packer.packLong(toUserId)
+        packer.packString("reason"); packer.packString(reason)
+        packer.close()
+        sendFrame(Opcode.CALL_REJECT, bos.toByteArray())
+    }
+
+    fun sendCallEnd(callId: String, toUserId: Long) {
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        packer.packMapHeader(2)
+        packer.packString("call_id"); packer.packString(callId)
+        packer.packString("to_user_id"); packer.packLong(toUserId)
+        packer.close()
+        sendFrame(Opcode.CALL_END, bos.toByteArray())
     }
 
     private fun handleGroupAvatarUpdate(payload: ByteArray) {

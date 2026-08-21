@@ -41,6 +41,7 @@ class ChatRoomViewModel @Inject constructor(
     private val apiService: ApiService,
     private val tokenStorage: SecureTokenStorage,
     private val attachmentManager: AttachmentManager,
+    private val callManager: niel.kro.penik.domain.call.CallManager,
     val messageRepository: MessageRepository,
     val chatRepository: ChatRepository,
     val groupRepository: GroupRepository
@@ -50,6 +51,14 @@ class ChatRoomViewModel @Inject constructor(
     private val chatName: String = savedStateHandle.get<String>("chatName") ?: ""
 
     val isSelfChat: Boolean = chatUserId == tokenStorage.getUserId()
+
+    val callState = callManager.state
+
+    fun startCall(isVideo: Boolean) {
+        if (!isSelfChat && chatUserId > 0) {
+            callManager.startCall(chatUserId, chatName, isVideo)
+        }
+    }
 
     val messages = loadMessagesUseCase(chatUserId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

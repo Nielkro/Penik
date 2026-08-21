@@ -89,7 +89,8 @@ class HandleWebSocketEventUseCase @Inject constructor(
     private val groupRepository: GroupRepository,
     private val webSocketManager: WebSocketManager,
     private val tokenStorage: niel.kro.penik.data.repository.SecureTokenStorage,
-    private val appNotificationManager: niel.kro.penik.ui.notification.AppNotificationManager
+    private val appNotificationManager: niel.kro.penik.ui.notification.AppNotificationManager,
+    private val callManager: niel.kro.penik.domain.call.CallManager
 ) {
     suspend operator fun invoke(event: WebSocketEvent) {
         when (event) {
@@ -201,6 +202,10 @@ class HandleWebSocketEventUseCase @Inject constructor(
             is WebSocketEvent.ServerShutdown -> {
                 webSocketManager.closeForServerShutdown()
             }
+            is WebSocketEvent.CallIncoming -> callManager.onIncoming(event)
+            is WebSocketEvent.CallAccepted -> callManager.onAccepted(event)
+            is WebSocketEvent.CallReject -> callManager.onReject(event)
+            is WebSocketEvent.CallEnd -> callManager.onEnd(event)
             else -> {}
         }
     }
