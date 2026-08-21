@@ -84,6 +84,18 @@ func (h *Hub) IsOnline(deviceID int64) bool {
 	return ok
 }
 
+// IsUserOnline reports whether a user has at least one active connection.
+func (h *Hub) IsUserOnline(userID int64) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, c := range h.clients {
+		if c.userID == userID {
+			return true
+		}
+	}
+	return false
+}
+
 // BroadcastAvatarUpdate sends OpUserAvatarUpdate to all active connections for specified device IDs.
 func (h *Hub) BroadcastAvatarUpdate(deviceIDs []int64, payload []byte) {
 	frame := append([]byte{byte(OpUserAvatarUpdate)}, payload...)

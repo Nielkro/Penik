@@ -52,6 +52,18 @@ func (c *Client) handleCallOffer(payload []byte) error {
 		return fmt.Errorf("cannot call yourself")
 	}
 
+	if !c.hub.IsUserOnline(offer.ToUserID) {
+		// Callee has no active connections, so the incoming frame would never
+		// be delivered. Reject right away instead of leaving the caller ringing.
+		rejectPayload, _ := msgpack.Marshal(CallReject{
+			CallID:   "",
+			ToUserID: offer.ToUserID,
+			Reason:   "offline",
+		})
+		c.hub.SendToDeviceFrame(c.deviceID, OpCallReject, rejectPayload)
+		return nil
+	}
+
 	callsMu.Lock()
 	if existingCallID, inCall := userCalls[c.userID]; inCall {
 		callsMu.Unlock()
@@ -157,8 +169,15 @@ func (c *Client) handleCallReject(payload []byte) error {
 
 	callsMu.Lock()
 	ac, ok := activeCalls[reject.CallID]
+	if !ok {
+		// Callers ringing out don't know the call_id yet; fall back to the
+		// sender's registered call so cancellation still releases both users.
+		if callID, inCall := userCalls[c.userID]; inCall {
+			ac, ok = activeCalls[callID]
+		}
+	}
 	if ok {
-		delete(activeCalls, reject.CallID)
+		delete(activeCalls, ac.CallID)
 		delete(userCalls, ac.CallerID)
 		delete(userCalls, ac.CalleeID)
 	}
@@ -170,7 +189,7 @@ func (c *Client) handleCallReject(payload []byte) error {
 			otherUserID = ac.CalleeID
 		}
 		rejectPayload, _ := msgpack.Marshal(CallReject{
-			CallID:   reject.CallID,
+			CallID:   ac.CallID,
 			ToUserID: c.userID,
 			Reason:   reject.Reason,
 		})
@@ -187,8 +206,13 @@ func (c *Client) handleCallEnd(payload []byte) error {
 
 	callsMu.Lock()
 	ac, ok := activeCalls[end.CallID]
+	if !ok {
+		if callID, inCall := userCalls[c.userID]; inCall {
+			ac, ok = activeCalls[callID]
+		}
+	}
 	if ok {
-		delete(activeCalls, end.CallID)
+		delete(activeCalls, ac.CallID)
 		delete(userCalls, ac.CallerID)
 		delete(userCalls, ac.CalleeID)
 	}
@@ -200,7 +224,7 @@ func (c *Client) handleCallEnd(payload []byte) error {
 			otherUserID = ac.CalleeID
 		}
 		endPayload, _ := msgpack.Marshal(CallEnd{
-			CallID:   end.CallID,
+			CallID:   ac.CallID,
 			ToUserID: c.userID,
 		})
 		c.hub.SendToUser(otherUserID, append([]byte{byte(OpCallEnd)}, endPayload...))

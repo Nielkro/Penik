@@ -276,7 +276,10 @@ export class CallManager {
   _handleCallReject(payload) {
     if (!this.currentCall) return;
 
-    const reason = payload.reason === 'busy' ? 'Пользователь занят' : 'Звонок отклонен';
+    let reason;
+    if (payload.reason === 'busy') reason = 'Пользователь занят';
+    else if (payload.reason === 'offline') reason = 'Пользователь не в сети';
+    else reason = 'Звонок отклонен';
     showToast(reason, 'info');
     this.cleanup();
   }
@@ -389,6 +392,15 @@ export class CallManager {
             }
           })
           .on(RoomEvent.Disconnected, () => {
+            // currentCall is nulled by endCall/cleanup, so its presence means
+            // the room dropped unexpectedly: tell the server so both users
+            // leave the busy state and the peer UI closes too.
+            if (this.currentCall) {
+              ws.send(OP.CALL_END, {
+                call_id: this.currentCall.callId || '',
+                to_user_id: this.currentCall.toUserId || this.currentCall.fromUserId,
+              });
+            }
             this.cleanup();
           });
 
@@ -418,6 +430,14 @@ export class CallManager {
 
     console.error('LiveKit connection error across all endpoints:', lastErr);
     showToast('Ошибка подключения к серверу звонка', 'error');
+    // Notify the server so both users leave the busy state.
+    if (this.currentCall) {
+      ws.send(OP.CALL_REJECT, {
+        call_id: this.currentCall.callId || '',
+        to_user_id: this.currentCall.toUserId || this.currentCall.fromUserId,
+        reason: 'declined',
+      });
+    }
     this.cleanup();
   }
 
