@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/oschwald/geoip2-golang"
 	"messenger/server/internal/middleware"
 )
 
@@ -22,12 +24,44 @@ var (
 	geoCacheMu sync.RWMutex
 	geoCache   = make(map[string]geoCacheEntry)
 
+	geoDBMu sync.RWMutex
+	geoDB   *geoip2.Reader
+
 	reservedCIDRs []*net.IPNet
 )
 
 type geoCacheEntry struct {
 	location string
 	expires  time.Time
+}
+
+// InitGeoIP opens a MaxMind GeoLite2-City or DB-IP Lite .mmdb database.
+func InitGeoIP(dbPath string) error {
+	if strings.TrimSpace(dbPath) == "" {
+		return nil
+	}
+	db, err := geoip2.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	geoDBMu.Lock()
+	if geoDB != nil {
+		_ = geoDB.Close()
+	}
+	geoDB = db
+	geoDBMu.Unlock()
+	log.Printf("Loaded GeoIP database: %s", dbPath)
+	return nil
+}
+
+// CloseGeoIP closes the opened GeoIP database reader if any.
+func CloseGeoIP() {
+	geoDBMu.Lock()
+	defer geoDBMu.Unlock()
+	if geoDB != nil {
+		_ = geoDB.Close()
+		geoDB = nil
+	}
 }
 
 func init() {
@@ -93,8 +127,46 @@ type ipAPIResponse struct {
 	City        string `json:"city"`
 }
 
+// locationFromMMDB attempts to resolve IP location via the offline MMDB reader.
+func locationFromMMDB(parsedIP net.IP) string {
+	geoDBMu.RLock()
+	db := geoDB
+	geoDBMu.RUnlock()
+	if db == nil {
+		return ""
+	}
+
+	record, err := db.City(parsedIP)
+	if err != nil {
+		return ""
+	}
+
+	city := strings.TrimSpace(record.City.Names["ru"])
+	if city == "" {
+		city = strings.TrimSpace(record.City.Names["en"])
+	}
+	country := strings.TrimSpace(record.Country.Names["ru"])
+	if country == "" {
+		country = strings.TrimSpace(record.Country.Names["en"])
+	}
+
+	if city != "" && country != "" {
+		if strings.EqualFold(city, country) || strings.Contains(strings.ToLower(city), strings.ToLower(country)) {
+			return city
+		}
+		return city + ", " + country
+	}
+	if city != "" {
+		return city
+	}
+	if country != "" {
+		return country
+	}
+	return ""
+}
+
 // locationFromIP resolves an IP address to a human-readable location string,
-// caching results in memory to avoid repeated lookups.
+// checking the local MaxMind/DB-IP .mmdb database first, and falling back to memory-cached HTTP lookup.
 func locationFromIP(ip string) string {
 	ip = strings.TrimSpace(ip)
 	if ip == "" {
@@ -102,6 +174,13 @@ func locationFromIP(ip string) string {
 	}
 	if isPrivateOrLocal(ip) {
 		return "Локальная сеть"
+	}
+
+	parsedIP := net.ParseIP(ip)
+	if parsedIP != nil {
+		if loc := locationFromMMDB(parsedIP); loc != "" {
+			return loc
+		}
 	}
 
 	geoCacheMu.RLock()

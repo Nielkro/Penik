@@ -38,6 +38,11 @@ func main() {
 	}
 	defer database.Close()
 
+	if err := handlers.InitGeoIP(cfg.GeoIPPath); err != nil {
+		log.Printf("geoip init warning (falling back to external resolver): %v", err)
+	}
+	defer handlers.CloseGeoIP()
+
 	if err := migrateAvatarsToDisk(database, cfg.UploadDir); err != nil {
 		log.Printf("avatar migration error: %v", err)
 	}

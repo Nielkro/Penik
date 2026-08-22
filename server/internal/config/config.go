@@ -21,6 +21,7 @@ type Config struct {
 	AllowedOrigins     string // comma-separated list, "*" for any
 	UploadDir          string
 	VKBotToken         string
+	GeoIPPath          string // Path to GeoLite2-City.mmdb / dbip-city-lite.mmdb (optional)
 	LiveKitURL         string
 	LiveKitFallbackURL string
 	LiveKitAPIKey      string
@@ -100,6 +101,7 @@ func Load() *Config {
 		AllowedOrigins:     getEnv("ALLOWED_ORIGINS", ""),
 		UploadDir:          getEnv("UPLOAD_DIR", "./data/upload"),
 		VKBotToken:         getEnv("VK_BOT_TOKEN", ""),
+		GeoIPPath:          getEnv("GEOIP_PATH", "./data/GeoLite2-City.mmdb"),
 		LiveKitURL:         getEnv("LIVEKIT_URL", ""),
 		LiveKitFallbackURL: getEnv("LIVEKIT_FALLBACK_URL", ""),
 		LiveKitAPIKey:      getEnv("LIVEKIT_API_KEY", defaultLiveKitAPIKey),
