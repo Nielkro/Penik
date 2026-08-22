@@ -1,4 +1,4 @@
-import { apiPatch, apiPut, apiGet, createPairingSession, getPairingSession, uploadPairingHistory, uploadAvatar } from "../api.js";
+import { apiPatch, apiPut, apiGet, apiPost, createPairingSession, getPairingSession, uploadPairingHistory, uploadAvatar } from "../api.js";
 import { getAllMessages, getAllContacts, getAllGroups, getAllGroupMembers, getAllGroupKeys, getAllGroupMessages } from "../storage.js";
 import { deriveSharedSecret, encryptPairingHistory, generateKeyPair } from "../crypto.js";
 import { importPairingHistory } from "../pairing.js";
@@ -179,9 +179,17 @@ export function renderProfile(container) {
   const submitPwBtn = el("button", { class: "btn-primary hidden", style: "margin-right:8px;padding:8px 12px;font-size:12px;cursor:pointer;" }, "Сохранить новый пароль");
   const cancelPwBtn = el("button", { class: "btn-ghost hidden", style: "padding:8px 12px;font-size:12px;cursor:pointer;" }, "Отмена");
 
+  const revokeCheckbox = el("input", { type: "checkbox", id: "pw-revoke-others", style: "margin:0;cursor:pointer;" });
+  const revokeLabel = el("label", {
+    class: "hidden",
+    for: "pw-revoke-others",
+    style: "display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;color:#aaa;cursor:pointer;",
+  }, revokeCheckbox, "Отозвать все сессии кроме текущей");
+
   changePasswordBtn.addEventListener("click", () => {
     oldPwInput.classList.remove("hidden");
     newPwInput.classList.remove("hidden");
+    revokeLabel.classList.remove("hidden");
     submitPwBtn.classList.remove("hidden");
     cancelPwBtn.classList.remove("hidden");
     changePasswordBtn.classList.add("hidden");
@@ -191,8 +199,10 @@ export function renderProfile(container) {
   cancelPwBtn.addEventListener("click", () => {
     oldPwInput.value = "";
     newPwInput.value = "";
+    revokeCheckbox.checked = false;
     oldPwInput.classList.add("hidden");
     newPwInput.classList.add("hidden");
+    revokeLabel.classList.add("hidden");
     submitPwBtn.classList.add("hidden");
     cancelPwBtn.classList.add("hidden");
     changePasswordBtn.classList.remove("hidden");
@@ -217,9 +227,24 @@ export function renderProfile(container) {
 
     try {
       // 1. Change password on the server
-      await apiPatch("/users/me/password", { old_password: oldPassword, new_password: newPassword });
+      const pwRes = await apiPatch("/users/me/password", {
+        old_password: oldPassword,
+        new_password: newPassword,
+        revoke_other_sessions: revokeCheckbox.checked,
+      });
 
       showToast("Пароль успешно изменен!", "success");
+      if (revokeCheckbox.checked) {
+        // The server applies a 24h quarantine: a session younger than a day may
+        // itself be the attacker's, so it is not allowed to evict the others.
+        if (pwRes && pwRes.revoked_other_sessions) {
+          showToast("Остальные сессии отозваны", "success");
+        } else if (pwRes && pwRes.revoke_skipped_reason === "session_too_recent") {
+          showToast("Сессии не отозваны: этот сеанс младше 24 часов", "info");
+        } else {
+          showToast("Не удалось отозвать остальные сессии", "error");
+        }
+      }
       cancelPwBtn.click();
     } catch (err) {
       showToast("Не удалось изменить пароль: " + err.message, "error");
@@ -229,12 +254,38 @@ export function renderProfile(container) {
     }
   });
 
+  // Session revocation is also reachable on its own: a user who suspects a
+  // stolen token should not have to rotate their password to cut it off.
+  const revokeSessionsBtn = el("button", { class: "btn-secondary", style: "width:100%;margin-top:8px;cursor:pointer;" }, "Отозвать все сессии кроме текущей");
+  revokeSessionsBtn.addEventListener("click", async () => {
+    revokeSessionsBtn.disabled = true;
+    const origLabel = revokeSessionsBtn.textContent;
+    revokeSessionsBtn.textContent = "";
+    revokeSessionsBtn.appendChild(spinner());
+    try {
+      await apiPost("/logout/all");
+      showToast("Остальные сессии отозваны", "success");
+    } catch (err) {
+      showToast(
+        err && err.status === 403
+          ? "Этот сеанс младше 24 часов — отзыв пока недоступен"
+          : (err?.message || "Не удалось отозвать сессии"),
+        err && err.status === 403 ? "info" : "error"
+      );
+    } finally {
+      revokeSessionsBtn.disabled = false;
+      revokeSessionsBtn.textContent = origLabel;
+    }
+  });
+
   const pwSection = el("div", { class: "profile-password-section", style: "margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px; width: 100%;" },
     el("h3", { style: "font-size: 14px; margin-bottom: 8px; color: #aaa;" }, "Безопасность"),
     changePasswordBtn,
     oldPwInput,
     newPwInput,
-    el("div", { style: "display:flex;margin-top:8px;" }, submitPwBtn, cancelPwBtn)
+    revokeLabel,
+    el("div", { style: "display:flex;margin-top:8px;" }, submitPwBtn, cancelPwBtn),
+    revokeSessionsBtn
   );
 
   // --- E2EE Key Backup Section ---

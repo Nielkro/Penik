@@ -100,7 +100,7 @@ func Load() *Config {
 		LiveKitAPISecret:   getEnv("LIVEKIT_API_SECRET", defaultLiveKitAPISecret),
 	}
 
-	cfg.SessionTTL = getEnvDuration("SESSION_TTL", 168*time.Hour)
+	cfg.SessionTTL = getEnvDuration("SESSION_TTL", 720*time.Hour)
 
 	// A call token only has to survive from the offer until the callee joins the
 	// room, so it needs nothing like the session lifetime.
