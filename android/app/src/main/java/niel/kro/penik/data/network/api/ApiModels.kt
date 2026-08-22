@@ -280,6 +280,19 @@ data class VkUploadResponse(
     val url: String
 )
 
+/** One-shot VK upload endpoint issued by the server for client-side uploads. */
+@Serializable
+data class VkUploadUrlResponse(
+    @SerialName("upload_url") val uploadUrl: String
+)
+
+/** Opaque `file` token returned by the VK upload server, committed via docs.save. */
+@Serializable
+data class VkSaveRequest(
+    val file: String,
+    val name: String
+)
+
 @Serializable
 data class DeviceResponse(
     val id: Long,

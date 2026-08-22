@@ -154,6 +154,14 @@ interface ApiService {
         @Part file: MultipartBody.Part
     ): Response<VkUploadResponse>
 
+    @GET("attachments/vk-upload-url")
+    suspend fun getVKUploadUrl(): Response<VkUploadUrlResponse>
+
+    @POST("attachments/vk-save")
+    suspend fun saveVKAttachment(
+        @Body body: VkSaveRequest
+    ): Response<VkUploadResponse>
+
     @PUT("devices/me/fcm")
     suspend fun updateFcmToken(
         @Body body: FcmTokenRequestBody

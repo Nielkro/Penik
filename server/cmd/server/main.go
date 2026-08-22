@@ -93,6 +93,11 @@ func main() {
 	// day from one address, which is enough to sweep a small user base.
 	nicknameLookupLimiter := middleware.NewIPRateLimiterN(20, 10*time.Minute)
 
+	// Each direct-upload handshake burns a VK API call pair on the shared bot
+	// token, so the client-side upload flow is capped per user. Sending media
+	// faster than this is not a normal chat pattern.
+	attachmentUploadLimiter := middleware.NewUserRateLimiter(60, time.Minute)
+
 	// Public routes (no auth, but rate limited).
 	mux.Handle("POST /api/v1/register", authRateLimiter.Limit(http.HandlerFunc(handlers.Register(database, cfg))))
 	mux.Handle("POST /api/v1/login", authRateLimiter.Limit(http.HandlerFunc(handlers.Login(database, cfg))))
@@ -128,6 +133,10 @@ func main() {
 		authMW(http.HandlerFunc(handlers.UploadAvatar(database, cfg, hub))))
 	mux.Handle("POST /api/v1/attachments/vk-upload",
 		authMW(http.HandlerFunc(handlers.UploadVKAttachment(cfg))))
+	mux.Handle("GET /api/v1/attachments/vk-upload-url",
+		authMW(attachmentUploadLimiter.Limit(http.HandlerFunc(handlers.IssueVKUploadURL(cfg)))))
+	mux.Handle("POST /api/v1/attachments/vk-save",
+		authMW(attachmentUploadLimiter.Limit(http.HandlerFunc(handlers.SaveVKAttachment(cfg)))))
 	mux.Handle("GET /api/v1/attachments/proxy",
 		authMW(http.HandlerFunc(handlers.ProxyVKAttachment())))
 

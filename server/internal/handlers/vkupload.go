@@ -33,6 +33,55 @@ type vkuploadResponse struct {
 	URL string `json:"url"`
 }
 
+// vkUploadURLResponse hands a short-lived VK upload endpoint to a client that
+// performs the multipart POST itself (mobile flow), so the file bytes never
+// pass through this server.
+type vkUploadURLResponse struct {
+	UploadURL string `json:"upload_url"`
+}
+
+// vkSaveRequest carries the opaque `file` token VK's upload server returns to
+// the client, which only the bot token holder can commit via docs.save.
+type vkSaveRequest struct {
+	File string `json:"file"`
+	Name string `json:"name"`
+}
+
+// maxVKFileTokenLen bounds the opaque upload token echoed back by the client.
+// Real tokens are a few hundred bytes; the cap keeps an oversized body out of
+// the outbound VK API URL.
+const maxVKFileTokenLen = 8192
+
+// vkAPIClient talks to api.vk.com. A shared client with a timeout keeps a
+// hanging VK response from pinning a request goroutine indefinitely.
+var vkAPIClient = &http.Client{Timeout: 30 * time.Second}
+
+// vkAPIBase is the VK API method root. It is a variable so tests can point the
+// upload flow at a stub server instead of the live API.
+var vkAPIBase = "https://api.vk.com/method"
+
+// sanitizeVKFilename reduces a client-supplied name to a plain, bounded file
+// name: no path separators, no control characters, never empty.
+func sanitizeVKFilename(name string) string {
+	name = strings.TrimSpace(name)
+	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
+		name = name[i+1:]
+	}
+	name = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, name)
+	if len(name) > 255 {
+		name = name[:255]
+	}
+	if name == "" {
+		return "encrypted.bin"
+	}
+	return name
+}
+
 // vkAttachmentHosts are the domains the attachment proxy is allowed to reach.
 // A doc link starts on vk.com/vk.ru and ends up on a storage CDN, so every hop
 // is checked against this list — the target URL comes from the client and would
@@ -181,6 +230,9 @@ func ProxyVKAttachment() http.HandlerFunc {
 
 // UploadVKAttachment accepts an encrypted file payload from an authenticated user,
 // uploads it to VK CDN via VK's docs API, and returns the direct CDN URL.
+//
+// This is the web flow: browsers cannot POST to the VK upload server directly
+// (no CORS headers there), so the bytes are relayed through this server.
 func UploadVKAttachment(cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
@@ -207,14 +259,88 @@ func UploadVKAttachment(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		filename := header.Filename
-		if filename == "" {
-			filename = "encrypted.bin"
-		}
+		filename := sanitizeVKFilename(header.Filename)
 
 		cdnURL, err := uploadBytesToVK(fileBytes, filename, cfg.VKBotToken)
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, redactVKToken(err.Error(), cfg.VKBotToken)), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(vkuploadResponse{URL: cdnURL})
+	}
+}
+
+// IssueVKUploadURL hands the caller a one-shot VK upload endpoint so the client
+// uploads the encrypted bytes itself. This is the native (Android) flow: the
+// payload never touches this server, which removes it as a bandwidth and memory
+// bottleneck for large attachments.
+//
+// The returned URL is a VK-signed, single-use endpoint that accepts a multipart
+// POST and answers with an opaque `file` token; that token still has to be
+// committed through SaveVKAttachment, which is the only place the bot token is
+// used. The bot token itself is never exposed.
+func IssueVKUploadURL(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		if userID == 0 {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+
+		if cfg.VKBotToken == "" {
+			http.Error(w, `{"error":"vk upload service not configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+
+		uploadURL, err := fetchVKUploadURL(cfg.VKBotToken)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, redactVKToken(err.Error(), cfg.VKBotToken)), http.StatusBadGateway)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(vkUploadURLResponse{UploadURL: uploadURL})
+	}
+}
+
+// SaveVKAttachment commits a client-side upload: it takes the opaque `file`
+// token the VK upload server returned to the client, calls docs.save with the
+// bot token, and answers with the direct CDN link.
+func SaveVKAttachment(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		if userID == 0 {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+
+		if cfg.VKBotToken == "" {
+			http.Error(w, `{"error":"vk upload service not configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+
+		var req vkSaveRequest
+		if err := json.NewDecoder(io.LimitReader(r.Body, maxVKFileTokenLen+1024)).Decode(&req); err != nil {
+			http.Error(w, `{"error":"invalid json body"}`, http.StatusBadRequest)
+			return
+		}
+
+		req.File = strings.TrimSpace(req.File)
+		if req.File == "" {
+			http.Error(w, `{"error":"missing file token"}`, http.StatusBadRequest)
+			return
+		}
+		if len(req.File) > maxVKFileTokenLen {
+			http.Error(w, `{"error":"file token too long"}`, http.StatusBadRequest)
+			return
+		}
+
+		cdnURL, err := saveVKDoc(req.File, sanitizeVKFilename(req.Name), cfg.VKBotToken)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, redactVKToken(err.Error(), cfg.VKBotToken)), http.StatusBadGateway)
 			return
 		}
 
@@ -237,53 +363,12 @@ func uploadBytesToVK(fileBytes []byte, filename string, botToken string) (string
 }
 
 func tryUploadBytesToVK(fileBytes []byte, filename string, botToken string) (string, error) {
-	var groupID int
-	groupAPI := fmt.Sprintf("https://api.vk.com/method/groups.getById?access_token=%s&v=5.131", url.QueryEscape(botToken))
-	respGroup, err := http.Get(groupAPI)
-	if err == nil {
-		var groupResp vkAPIResponse[[]struct {
-			ID int `json:"id"`
-		}]
-		if json.NewDecoder(respGroup.Body).Decode(&groupResp) == nil && groupResp.Error == nil && len(groupResp.Response) > 0 {
-			groupID = groupResp.Response[0].ID
-		}
-		respGroup.Body.Close()
-	}
-
-	// 2. Get upload URL for docs (using group_id if available, or standard docs.getUploadServer)
-	var uploadServerAPI string
-	if groupID > 0 {
-		uploadServerAPI = fmt.Sprintf(
-			"https://api.vk.com/method/docs.getWallUploadServer?group_id=%d&access_token=%s&v=5.131",
-			groupID,
-			url.QueryEscape(botToken),
-		)
-	} else {
-		uploadServerAPI = fmt.Sprintf(
-			"https://api.vk.com/method/docs.getUploadServer?access_token=%s&v=5.131",
-			url.QueryEscape(botToken),
-		)
-	}
-
-	respUploadServer, err := http.Get(uploadServerAPI)
+	uploadURL, err := fetchVKUploadURL(botToken)
 	if err != nil {
-		cleanErr := strings.ReplaceAll(err.Error(), url.QueryEscape(botToken), "[REDACTED_TOKEN]")
-		cleanErr = strings.ReplaceAll(cleanErr, botToken, "[REDACTED_TOKEN]")
-		return "", fmt.Errorf("upload server lookup failed: %s", cleanErr)
-	}
-	defer respUploadServer.Body.Close()
-
-	var vkResp vkAPIResponse[vkUploadServerInfo]
-	if err := json.NewDecoder(respUploadServer.Body).Decode(&vkResp); err != nil {
-		return "", fmt.Errorf("decode upload server response: %w", err)
-	}
-	if vkResp.Error != nil {
-		return "", fmt.Errorf("VK upload server error (%d): %s", vkResp.Error.ErrorCode, vkResp.Error.ErrorMsg)
+		return "", err
 	}
 
-	uploadURL := vkResp.Response.UploadURL
-
-	// 3. Multipart POST to uploadURL
+	// Multipart POST to uploadURL
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	fileWriter, err := writer.CreateFormFile("file", filename)
@@ -323,19 +408,72 @@ func tryUploadBytesToVK(fileBytes []byte, filename string, botToken string) (str
 		return "", fmt.Errorf("VK rejected uploaded file: %s", string(uploadResponseBody))
 	}
 
-	// 4. Call docs.save to commit the upload
+	return saveVKDoc(fileStr, filename, botToken)
+}
+
+// fetchVKUploadURL asks VK for a one-shot upload endpoint, preferring the
+// group wall server when the bot token belongs to a community.
+func fetchVKUploadURL(botToken string) (string, error) {
+	var groupID int
+	groupAPI := fmt.Sprintf(vkAPIBase+"/groups.getById?access_token=%s&v=5.131", url.QueryEscape(botToken))
+	respGroup, err := vkAPIClient.Get(groupAPI)
+	if err == nil {
+		var groupResp vkAPIResponse[[]struct {
+			ID int `json:"id"`
+		}]
+		if json.NewDecoder(respGroup.Body).Decode(&groupResp) == nil && groupResp.Error == nil && len(groupResp.Response) > 0 {
+			groupID = groupResp.Response[0].ID
+		}
+		respGroup.Body.Close()
+	}
+
+	var uploadServerAPI string
+	if groupID > 0 {
+		uploadServerAPI = fmt.Sprintf(
+			vkAPIBase+"/docs.getWallUploadServer?group_id=%d&access_token=%s&v=5.131",
+			groupID,
+			url.QueryEscape(botToken),
+		)
+	} else {
+		uploadServerAPI = fmt.Sprintf(
+			vkAPIBase+"/docs.getUploadServer?access_token=%s&v=5.131",
+			url.QueryEscape(botToken),
+		)
+	}
+
+	respUploadServer, err := vkAPIClient.Get(uploadServerAPI)
+	if err != nil {
+		return "", fmt.Errorf("upload server lookup failed: %s", redactVKToken(err.Error(), botToken))
+	}
+	defer respUploadServer.Body.Close()
+
+	var vkResp vkAPIResponse[vkUploadServerInfo]
+	if err := json.NewDecoder(respUploadServer.Body).Decode(&vkResp); err != nil {
+		return "", fmt.Errorf("decode upload server response: %w", err)
+	}
+	if vkResp.Error != nil {
+		return "", fmt.Errorf("VK upload server error (%d): %s", vkResp.Error.ErrorCode, vkResp.Error.ErrorMsg)
+	}
+	if vkResp.Response.UploadURL == "" {
+		return "", fmt.Errorf("VK returned an empty upload url")
+	}
+	return vkResp.Response.UploadURL, nil
+}
+
+// saveVKDoc commits an uploaded file token via docs.save and returns the direct
+// document link. The token is opaque and useless without the bot access token,
+// which is why the client may hold it between the two calls.
+func saveVKDoc(fileToken string, filename string, botToken string) (string, error) {
 	saveAPIURL := fmt.Sprintf(
-		"https://api.vk.com/method/docs.save?file=%s&title=%s&access_token=%s&v=5.131",
-		url.QueryEscape(fileStr),
+		vkAPIBase+"/docs.save?file=%s&title=%s&access_token=%s&v=5.131",
+		url.QueryEscape(fileToken),
 		url.QueryEscape(filename),
 		url.QueryEscape(botToken),
 	)
 
-	saveResp, err := http.Get(saveAPIURL)
+	saveResp, err := vkAPIClient.Get(saveAPIURL)
 	if err != nil {
-		cleanErr := strings.ReplaceAll(err.Error(), url.QueryEscape(botToken), "[REDACTED_TOKEN]")
-		cleanErr = strings.ReplaceAll(cleanErr, botToken, "[REDACTED_TOKEN]")
-		return "", fmt.Errorf("docs.save request failed: %s", cleanErr)
+		return "", fmt.Errorf("docs.save request failed: %s", redactVKToken(err.Error(), botToken))
 	}
 	defer saveResp.Body.Close()
 
@@ -366,3 +504,14 @@ func tryUploadBytesToVK(fileBytes []byte, filename string, botToken string) (str
 
 	return "", fmt.Errorf("could not extract direct URL from docs.save response: %v", saveResult)
 }
+
+// redactVKToken strips the bot access token from text that is about to reach a
+// client or the log, in both raw and percent-encoded form.
+func redactVKToken(text, botToken string) string {
+	if botToken == "" {
+		return text
+	}
+	text = strings.ReplaceAll(text, url.QueryEscape(botToken), "[REDACTED_TOKEN]")
+	return strings.ReplaceAll(text, botToken, "[REDACTED_TOKEN]")
+}
+
