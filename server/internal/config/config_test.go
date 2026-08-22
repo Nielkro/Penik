@@ -26,7 +26,7 @@ func TestValidate_ProductionRejectsNonHTTPS(t *testing.T) {
 }
 
 func TestValidate_ProductionAcceptsExplicitHTTPS(t *testing.T) {
-	cfg := &Config{Env: "prod", AllowedOrigins: "https://app.example, https://www.example", LiveKitURL: "wss://livekit.home.penik.ru", LiveKitFallbackURL: "wss://call.api.penik.ru"}
+	cfg := &Config{Env: "prod", AllowedOrigins: "https://app.example, https://www.example", LiveKitURL: "wss://livekit.home.penik.ru", LiveKitFallbackURL: "wss://call.api.penik.ru", LiveKitAPIKey: "APIrealkey", LiveKitAPISecret: "realsecretvalue"}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("explicit https list should pass, got %v", err)
 	}
@@ -52,6 +52,37 @@ func TestIsProduction(t *testing.T) {
 	for env, want := range cases {
 		if got := (&Config{Env: env}).IsProduction(); got != want {
 			t.Errorf("IsProduction(%q) = %v, want %v", env, got, want)
+		}
+	}
+}
+
+func TestValidate_ProductionRejectsDefaultLiveKitCredentials(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			Env:                "production",
+			AllowedOrigins:     "https://app.example",
+			LiveKitURL:         "wss://livekit.home.penik.ru",
+			LiveKitFallbackURL: "wss://call.api.penik.ru",
+			LiveKitAPIKey:      "APIrealkey",
+			LiveKitAPISecret:   "realsecretvalue",
+		}
+	}
+
+	if err := base().Validate(); err != nil {
+		t.Fatalf("real credentials should pass, got %v", err)
+	}
+
+	for _, mutate := range []func(*Config){
+		func(c *Config) { c.LiveKitAPIKey = "devkey" },
+		func(c *Config) { c.LiveKitAPISecret = "secret" },
+		func(c *Config) { c.LiveKitAPIKey = "DevKey" },
+		func(c *Config) { c.LiveKitAPIKey = "" },
+		func(c *Config) { c.LiveKitAPISecret = "  " },
+	} {
+		cfg := base()
+		mutate(cfg)
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("production must reject placeholder credentials (key=%q secret=%q)", cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)
 		}
 	}
 }

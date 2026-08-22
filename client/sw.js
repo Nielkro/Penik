@@ -6,9 +6,12 @@
 // broader WorkerGlobalScope. Narrowing it once gives correct event types below.
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self));
 
-const SW_VERSION = 'v1';
+// Replaced at build time by scripts/build-sw.js so each release ships a worker
+// with different bytes; browsers reinstall a worker only when its bytes change.
+const SW_VERSION = '__SW_VERSION__';
 
 sw.addEventListener('install', () => {
+  console.log(`[sw] installing ${SW_VERSION}`);
   sw.skipWaiting();
 });
 

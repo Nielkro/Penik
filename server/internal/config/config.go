@@ -16,6 +16,8 @@ type Config struct {
 	SessionTTL         time.Duration
 	MaxAvatarSize      int64
 	MaxBodySize        int64
+	MaxUploadSize      int64
+	LiveKitTokenTTL    time.Duration
 	AllowedOrigins     string // comma-separated list, "*" for any
 	UploadDir          string
 	VKBotToken         string
@@ -46,6 +48,10 @@ func (c *Config) Validate() error {
 	if origins == "" || origins == "*" {
 		return fmt.Errorf("ALLOWED_ORIGINS must be an explicit list in production, got %q", c.AllowedOrigins)
 	}
+	if isDefaultLiveKitCredential(c.LiveKitAPIKey, defaultLiveKitAPIKey) ||
+		isDefaultLiveKitCredential(c.LiveKitAPISecret, defaultLiveKitAPISecret) {
+		return fmt.Errorf("LIVEKIT_API_KEY and LIVEKIT_API_SECRET must be set to real credentials in production")
+	}
 	for _, raw := range strings.Split(origins, ",") {
 		o := strings.TrimSpace(raw)
 		if o == "" {
@@ -61,6 +67,18 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+const (
+	defaultLiveKitAPIKey    = "devkey"
+	defaultLiveKitAPISecret = "secret"
+)
+
+// isDefaultLiveKitCredential reports whether a credential is still the built-in
+// development placeholder. Those values ship in the LiveKit docs, so anyone can
+// mint a join token for any room if they survive into production.
+func isDefaultLiveKitCredential(value, placeholder string) bool {
+	return strings.TrimSpace(value) == "" || strings.EqualFold(strings.TrimSpace(value), placeholder)
+}
+
 // Load reads configuration from environment variables (and .env file) with sensible defaults.
 func Load() *Config {
 	loadDotEnv(".env")
@@ -71,22 +89,22 @@ func Load() *Config {
 		Port:               getEnv("PORT", "8143"),
 		DBPath:             getEnv("DB_PATH", "./data/messenger.db"),
 		MaxAvatarSize:      getEnvInt64("MAX_AVATAR_SIZE", 5*1024*1024),
-		MaxBodySize:        getEnvInt64("MAX_BODY_SIZE", 210*1024*1024), // supports uploads up to ~200MB
+		MaxBodySize:        getEnvInt64("MAX_BODY_SIZE", 12*1024*1024),        // ordinary JSON/form requests
+		MaxUploadSize:      getEnvInt64("MAX_UPLOAD_SIZE", 210*1024*1024),   // attachment endpoint only, ~200MB payloads
 		AllowedOrigins:     getEnv("ALLOWED_ORIGINS", "*"),
 		UploadDir:          getEnv("UPLOAD_DIR", "./data/upload"),
 		VKBotToken:         getEnv("VK_BOT_TOKEN", ""),
 		LiveKitURL:         getEnv("LIVEKIT_URL", ""),
 		LiveKitFallbackURL: getEnv("LIVEKIT_FALLBACK_URL", ""),
-		LiveKitAPIKey:      getEnv("LIVEKIT_API_KEY", "devkey"),
-		LiveKitAPISecret:   getEnv("LIVEKIT_API_SECRET", "secret"),
+		LiveKitAPIKey:      getEnv("LIVEKIT_API_KEY", defaultLiveKitAPIKey),
+		LiveKitAPISecret:   getEnv("LIVEKIT_API_SECRET", defaultLiveKitAPISecret),
 	}
 
-	ttlStr := getEnv("SESSION_TTL", "720h")
-	d, err := time.ParseDuration(ttlStr)
-	if err != nil {
-		d = 720 * time.Hour
-	}
-	cfg.SessionTTL = d
+	cfg.SessionTTL = getEnvDuration("SESSION_TTL", 168*time.Hour)
+
+	// A call token only has to survive from the offer until the callee joins the
+	// room, so it needs nothing like the session lifetime.
+	cfg.LiveKitTokenTTL = getEnvDuration("LIVEKIT_TOKEN_TTL", 30*time.Minute)
 
 	return cfg
 }
@@ -94,6 +112,15 @@ func Load() *Config {
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
 	}
 	return fallback
 }

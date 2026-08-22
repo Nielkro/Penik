@@ -112,7 +112,37 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate fcm_token: %w", err)
 	}
 
+	// Indexes are created last: they reference columns the legacy migrations above
+	// may have only just added.
+	if err := createIndexes(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: create indexes: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
+}
+
+// createIndexes adds indexes for the hot lookup paths that would otherwise scan
+// whole tables: device and session lookups by user, direct-message history by
+// participant pair, and undelivered messages per recipient device.
+func createIndexes(database *sql.DB) error {
+	statements := []string{
+		`CREATE INDEX IF NOT EXISTS idx_devices_user ON devices(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(device_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_user_id, recipient_user_id, timestamp)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages(recipient_user_id, sender_user_id, timestamp)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_client_msg ON messages(client_msg_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_recipient_device ON messages(recipient_device_id, delivered)`,
+	}
+	for _, statement := range statements {
+		if _, err := database.Exec(statement); err != nil {
+			return fmt.Errorf("%s: %w", statement, err)
+		}
+	}
+	return nil
 }
 
 // migratePairingSchema upgrades databases created before the pairing columns

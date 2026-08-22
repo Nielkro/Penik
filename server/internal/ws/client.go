@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1293,9 +1294,20 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 	var rawCiphertext []byte
 
 	var clientMsgIdStr sql.NullString
-	err = tx.QueryRowContext(ctx,
-		`SELECT id, sender_user_id, recipient_user_id, ciphertext, client_msg_id FROM messages WHERE client_msg_id=? OR id=?`,
-		req.MsgID, req.MsgID).Scan(&msgID, &senderUserID, &recipientUserID, &rawCiphertext, &clientMsgIdStr)
+	const selectMsg = `SELECT id, sender_user_id, recipient_user_id, ciphertext, client_msg_id FROM messages WHERE `
+
+	// client_msg_id is TEXT and id is INTEGER. Matching both in one OR makes
+	// SQLite coerce across types, so a numeric client_msg_id could resolve to an
+	// unrelated row. Resolve by client id first, then fall back to the server id
+	// only when the value is actually numeric.
+	err = tx.QueryRowContext(ctx, selectMsg+`client_msg_id=?`,
+		req.MsgID).Scan(&msgID, &senderUserID, &recipientUserID, &rawCiphertext, &clientMsgIdStr)
+	if err == sql.ErrNoRows {
+		if serverID, convErr := strconv.ParseInt(req.MsgID, 10, 64); convErr == nil {
+			err = tx.QueryRowContext(ctx, selectMsg+`id=?`,
+				serverID).Scan(&msgID, &senderUserID, &recipientUserID, &rawCiphertext, &clientMsgIdStr)
+		}
+	}
 
 	if err == sql.ErrNoRows {
 		log.Printf("[ws] handleMsgDelete: message %s NOT FOUND in DB", req.MsgID)

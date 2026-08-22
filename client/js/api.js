@@ -108,11 +108,13 @@ async function request(method, path, body, opts = {}) {
 const get = (path, opts) => request('GET', path, undefined, opts);
 const post = (path, body, opts) => request('POST', path, body, opts);
 const patch = (path, body, opts) => request('PATCH', path, body, opts);
+const put = (path, body, opts) => request('PUT', path, body, opts);
 const del = (path, opts) => request('DELETE', path, undefined, opts);
 
 export const apiPost = post;
 export const apiGet  = get;
 export const apiPatch = patch;
+export const apiPut = put;
 export const apiDelete = del;
 
 /* ── Auth ── */
@@ -138,7 +140,7 @@ export async function getMe() {
 }
 
 export async function updateMe({ name }) {
-  return patch('/users/me', { name });
+  return put('/users/me/name', { name });
 }
 
 export async function uploadAvatar(file) {

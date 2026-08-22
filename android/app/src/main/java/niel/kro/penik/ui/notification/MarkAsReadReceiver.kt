@@ -4,14 +4,21 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.repository.ChatRepository
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class MarkAsReadReceiver : BroadcastReceiver() {
+
+    // goAsync() keeps the receiver alive, so the work is launched on a scope
+    // instead of blocking the binder thread with runBlocking: a slow network
+    // round-trip there stalls every other broadcast dispatch and risks an ANR.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Inject lateinit var apiService: ApiService
     @Inject lateinit var chatRepository: ChatRepository
@@ -22,7 +29,7 @@ class MarkAsReadReceiver : BroadcastReceiver() {
         if (chatUserId <= 0) return
 
         val pendingResult = goAsync()
-        runBlocking(Dispatchers.IO) {
+        scope.launch {
             try {
                 // Mark read locally and clear badge.
                 chatRepository.clearUnread(chatUserId)

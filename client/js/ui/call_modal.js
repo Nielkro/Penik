@@ -1,6 +1,19 @@
 import { callManager } from '../call.js';
 import { avatar } from './components.js';
 
+// Peer display names come straight from the other user's profile, so they must
+// never reach innerHTML unescaped: a name like `<img src=x onerror=...>` would
+// otherwise run as soon as the call modal renders.
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
 let callModalEl = null;
 let settingsModalEl = null;
 let hideControlsTimer = null;
@@ -125,7 +138,7 @@ function renderCallModal(callState, mediaState) {
       <div class="call-card incoming-card">
         <div class="call-avatar-wrapper" id="incoming-avatar-slot"></div>
         <div class="call-info">
-          <div class="call-title">${peerDisplayName}</div>
+          <div class="call-title">${esc(peerDisplayName)}</div>
           <div class="call-subtitle">Входящий ${callState.isVideo ? 'видеозвонок' : 'аудиозвонок'}</div>
         </div>
         <div class="call-actions">
@@ -152,7 +165,7 @@ function renderCallModal(callState, mediaState) {
       <div class="call-card dialing-card">
         <div class="call-avatar-wrapper pulsing" id="dialing-avatar-slot"></div>
         <div class="call-info">
-          <div class="call-title">${peerDisplayName}</div>
+          <div class="call-title">${esc(peerDisplayName)}</div>
           <div class="call-subtitle">${callState.state === 'DIALING' ? 'Исходящий вызов...' : 'Подключение...'}</div>
         </div>
         <div class="call-actions">
@@ -178,14 +191,14 @@ function renderCallModal(callState, mediaState) {
       <div class="call-active-window ${!hasRemoteVideo ? 'no-remote-video' : ''}">
         <div class="call-header-bar">
           <div class="call-header-info">
-            <span class="call-peer-title">${peerDisplayName}</span>
+            <span class="call-peer-title">${esc(peerDisplayName)}</span>
             <span class="call-duration-badge" id="call-duration-timer">00:00</span>
           </div>
         </div>
         <div id="remote-video-container" class="remote-video-container ${!hasRemoteVideo ? 'hidden-stream' : ''}"></div>
         <div id="remote-placeholder-container" class="call-participant-placeholder ${hasRemoteVideo ? 'hidden' : ''}">
           <div class="call-active-avatar-wrap pulsing" id="active-peer-avatar-slot"></div>
-          <div class="call-active-peer-name">${peerDisplayName}</div>
+          <div class="call-active-peer-name">${esc(peerDisplayName)}</div>
           <div class="call-voice-wave-container">
             <span class="wave-bar"></span>
             <span class="wave-bar"></span>
@@ -248,19 +261,19 @@ async function openSettingsModal() {
         <div class="settings-group">
           <label>Микрофон</label>
           <select id="select-audio-input" class="call-device-select">
-            ${devices.audioInputs.map(d => `<option value="${d.deviceId}" ${d.deviceId === callManager.selectedAudioInputId ? 'selected' : ''}>${d.label || `Микрофон (${d.deviceId.slice(0, 5)}...)`}</option>`).join('')}
+            ${devices.audioInputs.map(d => `<option value="${esc(d.deviceId)}" ${d.deviceId === callManager.selectedAudioInputId ? 'selected' : ''}>${esc(d.label || `Микрофон (${d.deviceId.slice(0, 5)}...)`)}</option>`).join('')}
           </select>
         </div>
         <div class="settings-group">
           <label>Камера</label>
           <select id="select-video-input" class="call-device-select">
-            ${devices.videoInputs.map(d => `<option value="${d.deviceId}" ${d.deviceId === callManager.selectedVideoInputId ? 'selected' : ''}>${d.label || `Камера (${d.deviceId.slice(0, 5)}...)`}</option>`).join('')}
+            ${devices.videoInputs.map(d => `<option value="${esc(d.deviceId)}" ${d.deviceId === callManager.selectedVideoInputId ? 'selected' : ''}>${esc(d.label || `Камера (${d.deviceId.slice(0, 5)}...)`)}</option>`).join('')}
           </select>
         </div>
         <div class="settings-group">
           <label>Динамики / Наушники</label>
           <select id="select-audio-output" class="call-device-select">
-            ${devices.audioOutputs.map(d => `<option value="${d.deviceId}" ${d.deviceId === callManager.selectedAudioOutputId ? 'selected' : ''}>${d.label || `Динамики (${d.deviceId.slice(0, 5)}...)`}</option>`).join('')}
+            ${devices.audioOutputs.map(d => `<option value="${esc(d.deviceId)}" ${d.deviceId === callManager.selectedAudioOutputId ? 'selected' : ''}>${esc(d.label || `Динамики (${d.deviceId.slice(0, 5)}...)`)}</option>`).join('')}
           </select>
         </div>
       </div>

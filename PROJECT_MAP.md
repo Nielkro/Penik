@@ -158,6 +158,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 - `server/go.mod` — Describes the Go server module and its dependencies.
 - `client/package.json` — Describes npm scripts, dependencies, and build config for the web client.
+- `client/scripts/build-sw.js` — Post-build step that stamps a unique version (git SHA, `SW_VERSION`, or timestamp) into `dist/sw.js` so browsers reinstall the service worker on every release.
 - `client/vite.config.js` — Vite configuration for development and production build of the browser client.
 - `client/tsconfig.json` — Type-check-only TypeScript config for the browser sources: `checkJs` over plain JavaScript with `noEmit`, driven by `npm run typecheck`.
 - `client/tsconfig.sw.json` — Separate type-check config for the service worker, which needs the WebWorker lib instead of DOM.
