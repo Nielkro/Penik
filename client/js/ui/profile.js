@@ -142,8 +142,10 @@ export function renderProfile(container) {
     saveBtn.appendChild(spinner());
 
     try {
+      // The endpoint answers 204, so the api layer returns null: read the name
+      // back defensively and fall through to the value we just sent.
       const res = await apiPut("/users/me/name", { name: newName });
-      const updatedUser = { ...user, name: res.name || newName };
+      const updatedUser = { ...user, name: res?.name || newName };
       setCurrentUser(updatedUser);
       nameDisplay.textContent = updatedUser.name;
 
