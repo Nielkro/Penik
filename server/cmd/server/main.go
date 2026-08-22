@@ -232,7 +232,6 @@ func main() {
 	handler = middleware.RequestLogger(handler)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
-	log.Printf("livekit endpoints: primary=%s fallback=%s", cfg.LiveKitURL, cfg.LiveKitFallbackURL)
 	if cfg.LiveKitURL == cfg.LiveKitFallbackURL {
 		log.Printf("WARNING: LIVEKIT_URL and LIVEKIT_FALLBACK_URL are identical; call failover has no second endpoint to try")
 	}
