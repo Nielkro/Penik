@@ -24,9 +24,9 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/handlers/ws.go` — Authorizes WebSocket upgrades and creates server-side client sessions for real-time event exchange.
 - `server/internal/ws/client.go` — Implements the WebSocket client read/write pump, handling direct messages, key requests, receipt events, offline batching, and presence.
 - `server/internal/ws/group.go` — Receives and routes encrypted group messages, receipts, and offline delivery across group members.
-- `server/internal/ws/hub.go` — Manages the registry of connected devices, broadcasting pre-encoded frames, presence, and shutdown events.
-- `server/internal/ws/call.go` — Manages LiveKit 1:1 call signaling and JWT access token generation.
-- `server/internal/ws/protocol.go` — Defines binary opcodes and MsgPack structures for direct/group messages, keys, pairing, presence, and statuses.
+- `server/internal/ws/hub.go` — Manages the registry of connected devices, broadcasting pre-encoded frames, presence, and shutdown events; also answers which devices a user has connected and whether a device was taken over by a newer connection.
+- `server/internal/ws/call.go` — Manages LiveKit 1:1 call signaling, per-device ring state (an incoming call rings every device of the callee and only the device that answered owns the call), and JWT access token generation.
+- `server/internal/ws/protocol.go` — Defines binary opcodes and MsgPack structures for direct/group messages, keys, pairing, presence, statuses, and call signaling (0x30-0x36).
 - `server/internal/push/fcm.go` — Handles JWT credentials signing and FCM HTTP v1 background push notifications delivery.
 - `server/internal/middleware/auth.go` — Extracts bearer/WebSocket tokens, validates sessions in the DB, and injects user/device IDs into the request context.
 - `server/internal/middleware/cors.go` — Configures CORS, origin checks, and CSRF protection for HTTP requests.
@@ -37,9 +37,9 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ### Browser client transport
 
 - `client/js/api.js` — Unified browser REST client: attaches tokens, serializes JSON, parses errors, and exports APIs for users, messages, pairing, and groups.
-- `client/js/call.js` — LiveKit Web SDK integration and call state manager supporting primary and fallback endpoints.
+- `client/js/call.js` — LiveKit Web SDK integration and call state manager supporting primary and fallback endpoints, plus multi-device ring handling (call_id matching and `CALL_TAKEN`).
 - `client/js/pairing.js` — Decrypts and imports history transferred from Android into the browser IndexedDB stores.
-- `client/js/ws.js` — Manages the browser WebSocket connection: encodes/decodes MsgPack frames, supports opcodes, ping/pong, request queuing, and exponential backoff reconnection.
+- `client/js/ws.js` — Manages the browser WebSocket connection: encodes/decodes MsgPack frames, supports opcodes, ping/pong, request queuing, and exponential backoff reconnection; `connect()` is idempotent and each socket generation is fenced so a stale socket cannot open a second parallel session.
 - `client/js/presence.js` — Publishes user presence events and provides handlers for online status updates.
 
 ### Android client transport
@@ -47,8 +47,8 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiConfig.kt` — Central network configuration object holding server host, port, scheme, base URL, and avatar URL generators.
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiService.kt` — Retrofit contract for the Android client's REST API covering auth, profiles, messages, pairing, groups, keys, and avatars.
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiModels.kt` — Kotlin data models for Retrofit API requests and responses.
-- `android/app/src/main/java/niel/kro/penik/data/network/websocket/WebSocketManager.kt` — Maintains the OkHttp WebSocket connection, binary MsgPack protocol, reconnects, ping/pong, and flow of typed events, including call signaling frames (0x30-0x35).
-- `android/app/src/main/java/niel/kro/penik/domain/call/CallManager.kt` — Singleton 1:1 call state machine (idle/dialing/incoming/connecting/active): LiveKit room connect with primary/fallback failover, mic/camera toggles, ringtone and vibration, ring timeout, call timer, and cleanup on all exit paths.
+- `android/app/src/main/java/niel/kro/penik/data/network/websocket/WebSocketManager.kt` — Maintains the OkHttp WebSocket connection, binary MsgPack protocol, reconnects, ping/pong, and flow of typed events, including call signaling frames (0x30-0x36).
+- `android/app/src/main/java/niel/kro/penik/domain/call/CallManager.kt` — Singleton 1:1 call state machine (idle/dialing/incoming/connecting/active): LiveKit room connect with primary/fallback failover, mic/camera toggles, ringtone and vibration, ring timeout, call timer, call_id matching with `CALL_TAKEN` handling for calls answered on another device, and cleanup on all exit paths.
 - `android/app/src/main/java/niel/kro/penik/data/repository/SecureTokenStorage.kt` — Stores tokens, user/device IDs, and cryptographic keys in secure local storage.
 
 ## UI

@@ -49,6 +49,7 @@ const (
 	OpCallAccepted Opcode = 0x33
 	OpCallReject   Opcode = 0x34
 	OpCallEnd      Opcode = 0x35
+	OpCallTaken    Opcode = 0x36
 )
 
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]
@@ -340,5 +341,15 @@ type CallReject struct {
 type CallEnd struct {
 	CallID   string `msgpack:"call_id"`
 	ToUserID int64  `msgpack:"to_user_id"`
+}
+
+// CallTaken is sent server→client to the callee's other devices once one of them
+// answered or declined. Without it a call answered on the web client keeps
+// ringing on the phone, and a decline there tears down the accepted call.
+type CallTaken struct {
+	CallID string `msgpack:"call_id"`
+	// Reason is "accepted" when another device joined the call and "declined"
+	// when it rejected while at least one device is still ringing.
+	Reason string `msgpack:"reason"`
 }
 

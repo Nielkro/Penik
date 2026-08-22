@@ -349,10 +349,10 @@ function handleRoute() {
     return;
   }
 
-  // Ensure WS is connected if we are logged in
-  if (!ws.connected && (!ws._ws || ws._ws.readyState === WebSocket.CLOSED || ws._ws.readyState === WebSocket.CLOSING)) {
-    ws.connect();
-  }
+  // Ensure WS is connected if we are logged in. ws.connect() is idempotent, so
+  // it is safe to call on every route change: it no-ops while a socket is
+  // opening or open instead of racing boot()'s connection.
+  ws.connect();
 
   if (screen === '#login' || screen === '#register') {
     navigate('#chats');

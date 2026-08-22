@@ -47,7 +47,21 @@ export class CallManager {
     ws.on(OP.CALL_INCOMING, (payload) => this._handleIncomingCall(payload));
     ws.on(OP.CALL_ACCEPTED, (payload) => this._handleCallAccepted(payload));
     ws.on(OP.CALL_REJECT, (payload) => this._handleCallReject(payload));
-    ws.on(OP.CALL_END, () => this._handleCallEnd());
+    ws.on(OP.CALL_END, (payload) => this._handleCallEnd(payload));
+    ws.on(OP.CALL_TAKEN, (payload) => this._handleCallTaken(payload));
+  }
+
+  /**
+   * True when a server frame refers to the call we are currently in. The server
+   * rings every device of the callee, so a frame about a call this device is not
+   * (or no longer) part of must not tear down what is on screen.
+   * @param {{call_id?: string}} payload
+   */
+  _isCurrentCall(payload) {
+    if (!this.currentCall) return false;
+    const incomingId = payload && payload.call_id;
+    if (!incomingId || !this.currentCall.callId) return true;
+    return incomingId === this.currentCall.callId;
   }
 
   async _resolveContact(userId) {
@@ -301,7 +315,7 @@ export class CallManager {
   }
 
   _handleCallReject(payload) {
-    if (!this.currentCall) return;
+    if (!this._isCurrentCall(payload)) return;
 
     let reason;
     if (payload.reason === 'busy') reason = 'Пользователь занят';
@@ -311,9 +325,31 @@ export class CallManager {
     this.cleanup();
   }
 
-  _handleCallEnd() {
-    if (!this.currentCall) return;
+  _handleCallEnd(payload) {
+    if (!this._isCurrentCall(payload)) return;
     showToast('Звонок завершен', 'info');
+    this.cleanup();
+  }
+
+  /**
+   * Another device of this account answered or declined the same incoming call,
+   * so this device just stops ringing without ending the call for the one that
+   * picked up.
+   * @param {{call_id?: string, reason?: string}} payload
+   */
+  _handleCallTaken(payload) {
+    if (!this._isCurrentCall(payload)) return;
+    // Only a ringing/dialing device can be superseded; a device that is already
+    // in the LiveKit room is the one that answered.
+    if (this.currentCall.state !== 'INCOMING' && this.currentCall.state !== 'DIALING') return;
+    showToast(
+      payload && payload.reason === 'declined'
+        ? 'Звонок отклонен на другом устройстве'
+        : 'Звонок принят на другом устройстве',
+      'info'
+    );
+    // Local teardown only: the server already knows this device is out, and
+    // sending a reject here would hang up on the device that answered.
     this.cleanup();
   }
 

@@ -206,6 +206,7 @@ class CallManager @Inject constructor(
 
     fun onReject(event: WebSocketEvent.CallReject) {
         if (ui.phase == CallPhase.IDLE) return
+        if (!isCurrentCall(event.callId)) return
         when (event.reason) {
             "busy" -> toast("Пользователь занят")
             "offline" -> toast("Пользователь не в сети")
@@ -216,12 +217,41 @@ class CallManager @Inject constructor(
 
     fun onEnd(event: WebSocketEvent.CallEnd) {
         if (ui.phase == CallPhase.IDLE) return
+        if (!isCurrentCall(event.callId)) return
         if (ui.phase == CallPhase.INCOMING) {
             stopRinger()
             notificationManager.cancelIncomingCallNotification()
             toast("Звонок отменен")
         }
         cleanup()
+    }
+
+    /**
+     * Another device of this account answered or declined the same incoming
+     * call. Only stop ringing locally: sending a reject here would hang up on
+     * the device that actually picked up.
+     */
+    fun onTaken(event: WebSocketEvent.CallTaken) {
+        if (ui.phase != CallPhase.INCOMING && ui.phase != CallPhase.DIALING) return
+        if (!isCurrentCall(event.callId)) return
+        stopRinger()
+        notificationManager.cancelIncomingCallNotification()
+        toast(
+            if (event.reason == "declined") "Звонок отклонен на другом устройстве"
+            else "Звонок принят на другом устройстве"
+        )
+        cleanup()
+    }
+
+    /**
+     * The server rings every device of the callee, so a frame must be matched
+     * against the call this device is actually in before it is allowed to change
+     * any state.
+     */
+    private fun isCurrentCall(callId: String): Boolean {
+        val known = currentCallId.ifEmpty { callIdOfIncoming }
+        if (callId.isEmpty() || known.isEmpty()) return true
+        return callId == known
     }
 
     // --- Media controls ---

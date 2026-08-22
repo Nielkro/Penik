@@ -86,7 +86,11 @@ func (c *Client) Run(ctx context.Context) {
 	go c.broadcastPresenceConnect(context.Background())
 	defer func() {
 		c.hub.unregister <- c
-		CleanupDeviceCalls(c.hub, c.userID, c.deviceID)
+		// A reconnect that landed before this socket finished tearing down now
+		// owns the device; releasing its call here would kill the live session.
+		if !c.hub.deviceReplaced(c) {
+			CleanupDeviceCalls(c.hub, c.userID, c.deviceID)
+		}
 		c.conn.Close(websocket.StatusNormalClosure, "bye")
 		// Best-effort: record when this device went offline, so last_seen
 		// reflects "last active" rather than only "last connected."
