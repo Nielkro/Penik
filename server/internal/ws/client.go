@@ -87,7 +87,7 @@ func (c *Client) Run(ctx context.Context) {
 	go c.broadcastPresenceConnect(context.Background())
 	defer func() {
 		c.hub.unregister <- c
-		CleanupUserCalls(c.userID)
+		CleanupDeviceCalls(c.hub, c.userID, c.deviceID)
 		c.conn.Close(websocket.StatusNormalClosure, "bye")
 		// Best-effort: record when this device went offline, so last_seen
 		// reflects "last active" rather than only "last connected."
@@ -480,13 +480,20 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 			return fmt.Errorf("lookup device owner: %w", err)
 		}
 
+		// The device list is attacker-controlled, so a device that belongs to
+		// neither participant must be dropped: accepting it would file the
+		// ciphertext under this conversation while delivering it to a third
+		// party's device.
 		var recipientID, chatUserID int64
-		if ownerID == senderUserID {
+		switch ownerID {
+		case senderUserID:
 			recipientID = senderUserID
 			chatUserID = recipientUserID
-		} else {
+		case recipientUserID:
 			recipientID = recipientUserID
 			chatUserID = senderUserID
+		default:
+			continue
 		}
 
 		res, err := tx.ExecContext(ctx,

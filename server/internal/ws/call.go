@@ -16,9 +16,15 @@ import (
 const ringTimeout = 60 * time.Second
 
 type activeCall struct {
-	CallID    string
-	CallerID  int64
-	CalleeID  int64
+	CallID string
+	// Calls belong to a device, not just an account: a user with several
+	// connected devices must not lose an in-progress call because an idle
+	// device dropped its socket. CalleeDeviceID stays 0 until the callee
+	// answers, because the offer rings every device the callee has.
+	CallerDeviceID int64
+	CalleeDeviceID int64
+	CallerID       int64
+	CalleeID       int64
 	RoomName  string
 	IsVideo   bool
 	Accepted  bool
@@ -139,8 +145,9 @@ func (c *Client) handleCallOffer(payload []byte) error {
 	roomName := callID
 
 	ac := &activeCall{
-		CallID:    callID,
-		CallerID:  c.userID,
+		CallID:         callID,
+		CallerDeviceID: c.deviceID,
+		CallerID:       c.userID,
 		CalleeID:  offer.ToUserID,
 		RoomName:  roomName,
 		IsVideo:   offer.IsVideo,
@@ -206,6 +213,7 @@ func (c *Client) handleCallAccept(payload []byte) error {
 
 	callsMu.Lock()
 	ac.Accepted = true
+	ac.CalleeDeviceID = c.deviceID
 	callsMu.Unlock()
 
 	// Generate token for Caller (Initiator)
@@ -297,20 +305,45 @@ func (c *Client) handleCallEnd(payload []byte) error {
 	return nil
 }
 
-// CleanupUserCalls is called when a WebSocket connection drops to clean up any active calls.
-func CleanupUserCalls(userID int64) {
+// CleanupDeviceCalls releases the call a dropping connection was carrying. It is
+// keyed on the device, not the account: tearing down by user id alone lets any
+// other device of the same user kill a live call just by disconnecting. A callee
+// that has not answered yet is only released once no device of theirs is left to
+// ring.
+func CleanupDeviceCalls(hub *Hub, userID, deviceID int64) {
 	callsMu.Lock()
+	defer callsMu.Unlock()
+
 	callID, inCall := userCalls[userID]
 	if !inCall {
-		callsMu.Unlock()
+		return
+	}
+	ac, ok := activeCalls[callID]
+	if !ok {
+		delete(userCalls, userID)
 		return
 	}
 
-	ac, ok := activeCalls[callID]
-	if ok {
-		dropCall(ac)
+	switch {
+	case ac.CallerID == userID:
+		// Legacy state without a bound device falls through to a drop.
+		if ac.CallerDeviceID != 0 && ac.CallerDeviceID != deviceID {
+			return
+		}
+	case ac.CalleeID == userID:
+		if ac.CalleeDeviceID != 0 {
+			if ac.CalleeDeviceID != deviceID {
+				return
+			}
+		} else if hub != nil && hub.IsUserOnlineExcept(userID, deviceID) {
+			// Still ringing on another device of the callee.
+			return
+		}
+	default:
+		return
 	}
-	callsMu.Unlock()
+
+	dropCall(ac)
 }
 
 // expireUnansweredCall releases a call that is still ringing after ringTimeout
