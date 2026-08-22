@@ -119,7 +119,7 @@ export async function getMessage(msgId) {
   if (!res) {
     res = await getMessageByClientId(String(msgId));
   }
-  return res;
+  return unsealMessageRecord(res);
 }
 
 export async function getMessageByClientId(clientMsgId) {
@@ -185,10 +185,26 @@ export async function deleteMessage(msgId) {
 
 export async function saveMessage(message) {
   await openDB();
-  if (message && message.chat_id != null) {
-    message.chat_id = String(message.chat_id);
+  if (!message) return;
+  const toStore = { ...message };
+  if (toStore.chat_id != null) {
+    toStore.chat_id = String(toStore.chat_id);
   }
-  return put(tx("messages", "readwrite"), message);
+  // Seal text if present and not already sealed.
+  if (toStore.text != null && typeof toStore.text === "string") {
+    toStore.sealed_text = await sealString(vaultStore, toStore.text);
+    delete toStore.text;
+  }
+  return put(tx("messages", "readwrite"), toStore);
+}
+
+async function unsealMessageRecord(msg) {
+  if (!msg) return msg;
+  if (msg.sealed_text && isSealed(msg.sealed_text)) {
+    const plain = await openString(vaultStore, msg.sealed_text);
+    return { ...msg, text: plain ?? "" };
+  }
+  return msg;
 }
 
 export async function getMessages(chatId, limit = 50, before = null) {
@@ -204,9 +220,11 @@ export async function getMessages(chatId, limit = 50, before = null) {
     const numId = Number(chatId);
     const beforeTime = before == null ? null : (typeof before === "number" ? before : Number(before));
 
-    const finalize = () => {
+    const finalize = async () => {
       list.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
-      resolve(list.slice(-limit));
+      const sliced = list.slice(-limit);
+      const unsealed = await Promise.all(sliced.map(m => unsealMessageRecord(m)));
+      resolve(unsealed);
     };
 
     const scanKey = (k, next) => {
@@ -247,7 +265,8 @@ export async function getMessages(chatId, limit = 50, before = null) {
 
 export async function getAllMessages() {
   await openDB();
-  return getAll(tx("messages"));
+  const all = await getAll(tx("messages"));
+  return Promise.all(all.map(m => unsealMessageRecord(m)));
 }
 
 export async function getMaxServerMsgId() {
@@ -722,15 +741,22 @@ export async function getGroupKey(groupId, version) {
 
 export async function saveGroupMessage(message) {
   await openDB();
-  return put(tx("group_messages", "readwrite"), {
+  if (!message) return;
+  const toStore = {
     ...message,
     group_id: Number(message.group_id),
-  });
+  };
+  if (toStore.text != null && typeof toStore.text === "string") {
+    toStore.sealed_text = await sealString(vaultStore, toStore.text);
+    delete toStore.text;
+  }
+  return put(tx("group_messages", "readwrite"), toStore);
 }
 
 export async function getGroupMessage(groupId, messageId) {
   await openDB();
-  return get(tx("group_messages"), [Number(groupId), String(messageId)]);
+  const raw = await get(tx("group_messages"), [Number(groupId), String(messageId)]);
+  return unsealMessageRecord(raw);
 }
 
 export async function getGroupMessages(groupId, limit = 50) {
@@ -741,7 +767,7 @@ export async function getGroupMessages(groupId, limit = 50) {
     const idx = store.index("group_id");
     const out = [];
     const req = idx.openCursor(IDBKeyRange.only(gid), "prev");
-    req.onsuccess = (e) => {
+    req.onsuccess = async (e) => {
       const cursor = e.target.result;
       if (cursor && out.length < limit) {
         out.push(cursor.value);
@@ -749,7 +775,8 @@ export async function getGroupMessages(groupId, limit = 50) {
       } else {
         // Sort ascending by server id (falls back to created_at for pending).
         out.sort((a, b) => (a.id || 0) - (b.id || 0) || a.created_at - b.created_at);
-        resolve(out);
+        const unsealed = await Promise.all(out.map(m => unsealMessageRecord(m)));
+        resolve(unsealed);
       }
     };
     req.onerror = (e) => reject(e.target.error);
