@@ -145,6 +145,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (callManager.state.value.phase == niel.kro.penik.domain.call.CallPhase.ACTIVE) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    val params = android.app.PictureInPictureParams.Builder()
+                        .setAspectRatio(android.util.Rational(9, 16))
+                        .build()
+                    enterPictureInPictureMode(params)
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Failed to enter PiP", e)
+                }
+            }
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)

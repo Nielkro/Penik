@@ -59,6 +59,9 @@ import io.livekit.android.room.track.VideoTrack
 import kotlinx.coroutines.delay
 import livekit.org.webrtc.EglBase
 import livekit.org.webrtc.RendererCommon
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import niel.kro.penik.domain.call.CallManager
 import niel.kro.penik.domain.call.CallPhase
 import niel.kro.penik.ui.components.UserAvatar
@@ -75,6 +78,23 @@ fun CallOverlay(callManager: CallManager) {
     LaunchedEffect(Unit) {
         callManager.toasts.collect { text ->
             Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    DisposableEffect(state.phase) {
+        val activity = context as? android.app.Activity
+        val window = activity?.window
+        if (window != null && state.phase != CallPhase.IDLE) {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        }
+        onDispose {
+            if (window != null) {
+                val controller = WindowCompat.getInsetsController(window, window.decorView)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
         }
     }
 
@@ -184,14 +204,21 @@ private fun ActiveCallView(callManager: CallManager) {
         }
     }
 
-    val primary = if (swapped) localTrack else remoteTrack
-    val pip = if (swapped) remoteTrack else localTrack
-    val showLocalPip = pip != null && !(state.cameraOff && !swapped)
+    val primary = if (swapped) (localTrack ?: remoteTrack) else (remoteTrack ?: localTrack)
+    val pip = if (swapped) remoteTrack else (if (remoteTrack != null) localTrack else null)
+    val showPip = pip != null && !state.cameraOff && (primary != pip)
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (primary != null) {
+            val isPrimaryLocal = (primary == localTrack)
             Box(modifier = Modifier.fillMaxSize().clickable { controlsVisible = !controlsVisible }) {
-                VideoRenderer(track = primary, eglBase = callManager.eglBase, mirror = swapped, modifier = Modifier.fillMaxSize())
+                VideoRenderer(
+                    track = primary,
+                    eglBase = callManager.eglBase,
+                    mirror = isPrimaryLocal,
+                    scaleAspectFit = true,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         } else {
             Column(
@@ -228,7 +255,8 @@ private fun ActiveCallView(callManager: CallManager) {
             }
         }
 
-        if (showLocalPip) {
+        if (showPip) {
+            val isPipLocal = (pip == localTrack)
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -241,7 +269,8 @@ private fun ActiveCallView(callManager: CallManager) {
                 VideoRenderer(
                     track = pip,
                     eglBase = callManager.eglBase,
-                    mirror = !swapped,
+                    mirror = isPipLocal,
+                    scaleAspectFit = false,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -277,7 +306,13 @@ private fun ActiveCallView(callManager: CallManager) {
 }
 
 @Composable
-private fun VideoRenderer(track: VideoTrack?, eglBase: EglBase, mirror: Boolean, modifier: Modifier = Modifier) {
+private fun VideoRenderer(
+    track: VideoTrack?,
+    eglBase: EglBase,
+    mirror: Boolean,
+    scaleAspectFit: Boolean = false,
+    modifier: Modifier = Modifier
+) {
     var renderer by remember { mutableStateOf<TextureViewRenderer?>(null) }
 
     AndroidView(
@@ -285,12 +320,21 @@ private fun VideoRenderer(track: VideoTrack?, eglBase: EglBase, mirror: Boolean,
         factory = { ctx ->
             TextureViewRenderer(ctx).apply {
                 init(eglBase.eglBaseContext, null)
-                setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
+                setScalingType(
+                    if (scaleAspectFit) RendererCommon.ScalingType.SCALE_ASPECT_FIT
+                    else RendererCommon.ScalingType.SCALE_ASPECT_FILL
+                )
                 setMirror(mirror)
                 renderer = this
             }
         },
-        update = { view -> view.setMirror(mirror) }
+        update = { view ->
+            view.setMirror(mirror)
+            view.setScalingType(
+                if (scaleAspectFit) RendererCommon.ScalingType.SCALE_ASPECT_FIT
+                else RendererCommon.ScalingType.SCALE_ASPECT_FILL
+            )
+        }
     )
 
     DisposableEffect(track, renderer) {

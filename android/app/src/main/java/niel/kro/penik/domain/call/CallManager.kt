@@ -97,15 +97,8 @@ class CallManager @Inject constructor(
     private val ui get() = _state.value
 
     init {
-        webSocketManager.connectionState
-            .drop(1)
-            .onEach { state ->
-                if (state == ConnectionState.DISCONNECTED && ui.phase != CallPhase.IDLE) {
-                    toast("Соединение потеряно, звонок завершен")
-                    cleanup()
-                }
-            }
-            .launchIn(scope)
+        // LiveKit manages WebRTC media connectivity directly. Temporary WebSocket
+        // disconnects (e.g. backgrounding, network switch) should not instantly drop an active call.
     }
 
     // --- Outgoing ---
@@ -283,7 +276,11 @@ class CallManager @Inject constructor(
             try {
                 room.localParticipant.setCameraEnabled(!next)
                 _state.value = ui.copy(cameraOff = next)
-                publishLocalVideoTrack()
+                if (next) {
+                    _localVideoTrack.value = null
+                } else {
+                    publishLocalVideoTrack()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "toggleCamera failed", e)
                 toast("Не удалось переключить камеру")
@@ -355,40 +352,41 @@ class CallManager @Inject constructor(
                 is RoomEvent.TrackSubscribed -> {
                     val track = event.track
                     if (track is VideoTrack) {
-                        _remoteVideoTrack.value = track
-                        _state.value = ui.copy(hasRemoteVideo = true)
+                        updateRemoteVideoTrack(room)
                     }
                 }
                 is RoomEvent.TrackUnsubscribed -> {
                     if (event.track is VideoTrack) {
-                        _remoteVideoTrack.value = null
-                        _state.value = ui.copy(hasRemoteVideo = false)
+                        updateRemoteVideoTrack(room)
                     }
                 }
                 is RoomEvent.TrackMuted -> {
-                    if (event.publication.source == Track.Source.CAMERA) {
-                        _remoteVideoTrack.value = null
-                        _state.value = ui.copy(hasRemoteVideo = false)
+                    if (event.publication.track is VideoTrack || event.publication.source == Track.Source.CAMERA || event.publication.source == Track.Source.SCREEN_SHARE) {
+                        updateRemoteVideoTrack(room)
                     }
                 }
                 is RoomEvent.TrackUnmuted -> {
-                    if (event.publication.source == Track.Source.CAMERA) {
-                        val t = event.publication.track
-                        if (t is VideoTrack) {
-                            _remoteVideoTrack.value = t
-                            _state.value = ui.copy(hasRemoteVideo = true)
-                        }
+                    if (event.publication.track is VideoTrack || event.publication.source == Track.Source.CAMERA || event.publication.source == Track.Source.SCREEN_SHARE) {
+                        updateRemoteVideoTrack(room)
                     }
                 }
                 is RoomEvent.TrackPublished -> {
-                    if (event.participant == room.localParticipant) publishLocalVideoTrack()
+                    if (event.participant == room.localParticipant) {
+                        publishLocalVideoTrack()
+                    } else {
+                        updateRemoteVideoTrack(room)
+                    }
                 }
                 is RoomEvent.LocalTrackSubscribed -> {
                     val t = event.publication.track
-                    if (t is VideoTrack) _localVideoTrack.value = t
+                    if (t is VideoTrack) publishLocalVideoTrack()
                 }
                 is RoomEvent.TrackUnpublished -> {
-                    if (event.participant == room.localParticipant) _localVideoTrack.value = null
+                    if (event.participant == room.localParticipant) {
+                        publishLocalVideoTrack()
+                    } else {
+                        updateRemoteVideoTrack(room)
+                    }
                 }
                 is RoomEvent.Disconnected -> {
                     // A failed initial connect also emits Disconnected before
@@ -406,6 +404,33 @@ class CallManager @Inject constructor(
         }
     }
 
+    private fun updateRemoteVideoTrack(room: Room) {
+        var chosenTrack: VideoTrack? = null
+        for (participant in room.remoteParticipants.values) {
+            // 1. Prioritize SCREEN_SHARE track if available and unmuted
+            val screenPub = participant.getTrackPublication(Track.Source.SCREEN_SHARE)
+            if (screenPub?.track is VideoTrack && screenPub.muted != true) {
+                chosenTrack = screenPub.track as VideoTrack
+                break
+            }
+            // 2. Fallback to CAMERA track
+            val camPub = participant.getTrackPublication(Track.Source.CAMERA)
+            if (camPub?.track is VideoTrack && camPub.muted != true) {
+                chosenTrack = camPub.track as VideoTrack
+                break
+            }
+            // 3. Fallback to UNKNOWN source publication
+            val unknownPub = participant.getTrackPublication(Track.Source.UNKNOWN)
+            if (unknownPub?.track is VideoTrack && unknownPub.muted != true) {
+                chosenTrack = unknownPub.track as VideoTrack
+                break
+            }
+        }
+
+        _remoteVideoTrack.value = chosenTrack
+        _state.value = ui.copy(hasRemoteVideo = chosenTrack != null)
+    }
+
     private fun publishLocalVideoTrack() {
         val room = room ?: return
         val pub = room.localParticipant.getTrackPublication(Track.Source.CAMERA)
@@ -416,6 +441,7 @@ class CallManager @Inject constructor(
         val room = room ?: return
         _state.value = ui.copy(phase = CallPhase.ACTIVE)
         startTimer()
+        updateRemoteVideoTrack(room)
         try {
             room.localParticipant.setMicrophoneEnabled(true)
             if (ui.isVideo) {
