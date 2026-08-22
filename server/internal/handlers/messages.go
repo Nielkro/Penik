@@ -127,7 +127,12 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 	}
 }
 
-// GetMessageByID handles GET /api/v1/messages/by-id/{id}.
+// GetMessageByID handles GET /api/v1/messages/{id}/envelope.
+//
+// The literal suffix keeps the pattern disjoint from
+// GET /api/v1/messages/{user_id}/status; a /messages/by-id/{id} shape would
+// overlap it ("/messages/by-id/status" matches both) and ServeMux panics on
+// registration.
 //
 // Push notifications carry only a message id (FCM caps a data payload at ~4 KB,
 // so shipping the ciphertext silently lost long messages). The device resolves

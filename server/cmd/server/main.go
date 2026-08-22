@@ -183,7 +183,7 @@ func main() {
 		authMW(http.HandlerFunc(handlers.GetGroupHistoryPacket(database))))
 	mux.Handle("GET /api/v1/messages/history",
 		authMW(http.HandlerFunc(handlers.GetMessageHistory(database))))
-	mux.Handle("GET /api/v1/messages/by-id/{id}",
+	mux.Handle("GET /api/v1/messages/{id}/envelope",
 		authMW(http.HandlerFunc(handlers.GetMessageByID(database))))
 	mux.Handle("GET /api/v1/messages/{user_id}/status",
 		authMW(http.HandlerFunc(handlers.GetMessageStatuses(database))))

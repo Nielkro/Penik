@@ -67,11 +67,11 @@ func TestGetMessageByIDIsDeviceScoped(t *testing.T) {
 	msgID := seedDirectMessage(t, database, chatID, aliceID, aliceDev, bobID, bobDev)
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /api/v1/messages/by-id/{id}", GetMessageByID(database))
+	mux.Handle("GET /api/v1/messages/{id}/envelope", GetMessageByID(database))
 
 	// Addressed device: 200 with the envelope.
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, authedRequest("/api/v1/messages/by-id/"+itoa(msgID), bobID, bobDev))
+	mux.ServeHTTP(rec, authedRequest("/api/v1/messages/"+itoa(msgID)+"/envelope", bobID, bobDev))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("addressee: got %d, want 200 (%s)", rec.Code, rec.Body.String())
 	}
@@ -85,14 +85,14 @@ func TestGetMessageByIDIsDeviceScoped(t *testing.T) {
 
 	// Sender's own device also resolves its copy.
 	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, authedRequest("/api/v1/messages/by-id/"+itoa(msgID), aliceID, aliceDev))
+	mux.ServeHTTP(rec, authedRequest("/api/v1/messages/"+itoa(msgID)+"/envelope", aliceID, aliceDev))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("sender: got %d, want 200", rec.Code)
 	}
 
 	// Same user, wrong device — the copy is not theirs to read.
 	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, authedRequest("/api/v1/messages/by-id/"+itoa(msgID), bobID, bobOtherDev))
+	mux.ServeHTTP(rec, authedRequest("/api/v1/messages/"+itoa(msgID)+"/envelope", bobID, bobOtherDev))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("other device of same user: got %d, want 404", rec.Code)
 	}
@@ -100,13 +100,13 @@ func TestGetMessageByIDIsDeviceScoped(t *testing.T) {
 	// Unrelated user.
 	carolID, carolDev := setupUserDevice(t, database, "byidcarol")
 	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, authedRequest("/api/v1/messages/by-id/"+itoa(msgID), carolID, carolDev))
+	mux.ServeHTTP(rec, authedRequest("/api/v1/messages/"+itoa(msgID)+"/envelope", carolID, carolDev))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("stranger: got %d, want 404", rec.Code)
 	}
 
 	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, authedRequest("/api/v1/messages/by-id/0", bobID, bobDev))
+	mux.ServeHTTP(rec, authedRequest("/api/v1/messages/0/envelope", bobID, bobDev))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("id=0: got %d, want 400", rec.Code)
 	}
