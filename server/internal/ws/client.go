@@ -3,7 +3,6 @@ package ws
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -559,17 +558,18 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 			continue
 		}
 
+		// The push carries a pointer, not the payload. FCM caps a data message at
+		// ~4 KB, so an ordinary attachment or a long message would be dropped by
+		// Google without any error the user could see; the device fetches the
+		// envelope over REST by msg_id instead.
 		push.SendDevicePush(fcmToken, map[string]string{
 			"type":           "direct",
 			"chat_user_id":   fmt.Sprintf("%d", senderUserID),
 			"sender_name":    senderName,
 			"text":           "Новое сообщение",
-			"ciphertext":     base64.StdEncoding.EncodeToString(dev.Ciphertext),
-			"salt":           base64.StdEncoding.EncodeToString(dev.Salt),
-			"nonce":          base64.StdEncoding.EncodeToString(dev.Nonce),
 			"timestamp":      fmt.Sprintf("%d", now*1000),
 			"sender_user_id": fmt.Sprintf("%d", senderUserID),
-			"msg_id":         func() string {
+			"msg_id": func() string {
 				for _, d := range deliveries {
 					if d.deviceID == dev.DeviceID {
 						return fmt.Sprintf("%d", d.msgRecv.MsgID)
@@ -603,6 +603,13 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 
 func (c *Client) handleTyping(ctx context.Context, req *TypingNotify) error {
 	if req.ToUserID <= 0 {
+		return nil
+	}
+	// Typing state is metadata about when someone is at their keyboard, so it may
+	// only be pushed to a peer that already shares a chat or a group with the
+	// sender. Otherwise any account id is enough to spam — or probe — a stranger.
+	related, err := c.db.UsersShareChat(ctx, c.userID, req.ToUserID)
+	if err != nil || !related {
 		return nil
 	}
 	notify := TypingNotify{

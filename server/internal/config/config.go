@@ -41,12 +41,21 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("LIVEKIT_FALLBACK_URL is required and cannot be empty")
 	}
 
-	if !c.IsProduction() {
-		return nil
-	}
+	// ALLOWED_ORIGINS is required in every environment. A wildcard disabled the
+	// CSRF check and the WebSocket origin check at once, so "unset" used to mean
+	// "no origin enforcement at all" — the server refuses to start instead.
 	origins := strings.TrimSpace(c.AllowedOrigins)
 	if origins == "" || origins == "*" {
-		return fmt.Errorf("ALLOWED_ORIGINS must be an explicit list in production, got %q", c.AllowedOrigins)
+		return fmt.Errorf("ALLOWED_ORIGINS must be an explicit comma-separated list, got %q", c.AllowedOrigins)
+	}
+	for _, raw := range strings.Split(origins, ",") {
+		if strings.TrimSpace(raw) == "*" {
+			return fmt.Errorf("ALLOWED_ORIGINS must not contain a wildcard entry")
+		}
+	}
+
+	if !c.IsProduction() {
+		return nil
 	}
 	if isDefaultLiveKitCredential(c.LiveKitAPIKey, defaultLiveKitAPIKey) ||
 		isDefaultLiveKitCredential(c.LiveKitAPISecret, defaultLiveKitAPISecret) {
@@ -56,9 +65,6 @@ func (c *Config) Validate() error {
 		o := strings.TrimSpace(raw)
 		if o == "" {
 			continue
-		}
-		if o == "*" {
-			return fmt.Errorf("ALLOWED_ORIGINS must not contain a wildcard in production")
 		}
 		if !strings.HasPrefix(o, "https://") {
 			return fmt.Errorf("ALLOWED_ORIGINS entry %q must use https:// in production", o)
@@ -91,7 +97,7 @@ func Load() *Config {
 		MaxAvatarSize:      getEnvInt64("MAX_AVATAR_SIZE", 5*1024*1024),
 		MaxBodySize:        getEnvInt64("MAX_BODY_SIZE", 12*1024*1024),        // ordinary JSON/form requests
 		MaxUploadSize:      getEnvInt64("MAX_UPLOAD_SIZE", 210*1024*1024),   // attachment endpoint only, ~200MB payloads
-		AllowedOrigins:     getEnv("ALLOWED_ORIGINS", "*"),
+		AllowedOrigins:     getEnv("ALLOWED_ORIGINS", ""),
 		UploadDir:          getEnv("UPLOAD_DIR", "./data/upload"),
 		VKBotToken:         getEnv("VK_BOT_TOKEN", ""),
 		LiveKitURL:         getEnv("LIVEKIT_URL", ""),

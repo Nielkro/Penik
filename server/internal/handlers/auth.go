@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/argon2"
@@ -78,6 +79,12 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		}
 		if !nicknameRe.MatchString(req.Nickname) {
 			http.Error(w, "nickname must be 3-32 chars: a-z A-Z 0-9 _", http.StatusBadRequest)
+			return
+		}
+		// device_name lands in a list rendered by the user's other clients.
+		req.DeviceName = sanitizeDeviceField(req.DeviceName, maxDeviceFieldRunes)
+		if req.DeviceName == "" {
+			http.Error(w, "device_name is invalid", http.StatusBadRequest)
 			return
 		}
 		if req.IKPub != nil {
@@ -192,13 +199,24 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			http.Error(w, "missing required fields", http.StatusBadRequest)
 			return
 		}
+		// Same normalisation as registration: the value is stored verbatim and
+		// shown in the device list of every one of the user's clients.
+		req.DeviceName = sanitizeDeviceField(req.DeviceName, maxDeviceFieldRunes)
+		if req.DeviceName == "" {
+			http.Error(w, "device_name is invalid", http.StatusBadRequest)
+			return
+		}
 
 		var userID int64
 		var storedHash string
 		err := database.QueryRowContext(r.Context(),
 			`SELECT id, password_hash FROM users WHERE nickname=?`, req.Nickname).
 			Scan(&userID, &storedHash)
+		// An unknown nickname must cost the same as a wrong password: returning
+		// early here skips Argon2 entirely, and the ~100ms gap is enough to
+		// enumerate which accounts exist. Verify against a decoy hash instead.
 		if err != nil {
+			verifyPassword(req.Password, decoyPasswordHash())
 			http.Error(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
@@ -391,4 +409,26 @@ func generateToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+var (
+	decoyHashOnce sync.Once
+	decoyHash     string
+)
+
+// decoyPasswordHash returns a stored-format hash of a random password. It exists
+// only so the login path can spend the same Argon2 work on a nickname that does
+// not exist as on one that does, closing the timing oracle. Built lazily and
+// cached: the derivation itself is the expensive part we want to reuse.
+func decoyPasswordHash() string {
+	decoyHashOnce.Do(func() {
+		filler := make([]byte, 32)
+		if _, err := rand.Read(filler); err != nil {
+			return
+		}
+		if h, err := hashPassword(hex.EncodeToString(filler)); err == nil {
+			decoyHash = h
+		}
+	})
+	return decoyHash
 }

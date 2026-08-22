@@ -95,7 +95,15 @@ func GetUser(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 			return
 		}
 
-		online, lastSeen := userPresence(r.Context(), database, hub, id)
+		// Presence is only disclosed to peers the user actually talks to: an id is
+		// trivially guessable, so an unrestricted online/last_seen turns the API
+		// into a tracker for any account.
+		var online bool
+		var lastSeen int64
+		viewerID := middleware.UserIDFromCtx(r.Context())
+		if related, relErr := database.UsersShareChat(r.Context(), viewerID, id); relErr == nil && related {
+			online, lastSeen = userPresence(r.Context(), database, hub, id)
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
@@ -109,7 +117,7 @@ func GetUser(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 }
 
 // UpdateName handles PUT /api/v1/users/me/name.
-func UpdateName(database *db.DB) http.HandlerFunc {
+func UpdateName(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
 
@@ -120,8 +128,9 @@ func UpdateName(database *db.DB) http.HandlerFunc {
 			http.Error(w, "name required", http.StatusBadRequest)
 			return
 		}
-		if len(body.Name) > 64 {
-			http.Error(w, "name too long (max 64 chars)", http.StatusBadRequest)
+		body.Name = sanitizeDeviceField(body.Name, 64)
+		if body.Name == "" {
+			http.Error(w, "name is invalid", http.StatusBadRequest)
 			return
 		}
 
@@ -132,8 +141,33 @@ func UpdateName(database *db.DB) http.HandlerFunc {
 			return
 		}
 
+		// Peers cache the display name with their chat list and only refresh it
+		// for brand-new chats, so without this push a rename never reaches anyone
+		// who already talks to this user.
+		if hub != nil {
+			go notifyProfileUpdatePeers(context.Background(), database, hub, userID, body.Name)
+		}
+
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// notifyProfileUpdatePeers pushes a renamed display name to every device that
+// shares a chat or a group with the user, plus the user's own devices.
+func notifyProfileUpdatePeers(ctx context.Context, database *db.DB, hub *ws.Hub, userID int64, name string) {
+	deviceIDs := relatedPeerDevices(ctx, database, userID)
+	if len(deviceIDs) == 0 {
+		return
+	}
+	payload, err := msgpack.Marshal(map[string]any{
+		"user_id": userID,
+		"name":    name,
+		"ts":      time.Now().Unix(),
+	})
+	if err != nil {
+		return
+	}
+	hub.BroadcastProfileUpdate(deviceIDs, payload)
 }
 
 // UpdateNickname handles PUT /api/v1/users/me/nickname with a 7-day cooldown.
@@ -248,7 +282,25 @@ func UploadAvatar(database *db.DB, cfg *config.Config, hub *ws.Hub) http.Handler
 }
 
 func notifyAvatarUpdatePeers(ctx context.Context, database *db.DB, hub *ws.Hub, userID int64) {
-	// Find all 1:1 chat partners and group members sharing chats with userID
+	deviceIDs := relatedPeerDevices(ctx, database, userID)
+	if len(deviceIDs) == 0 {
+		return
+	}
+
+	payload, err := msgpack.Marshal(map[string]any{
+		"user_id": userID,
+		"ts":      time.Now().Unix(),
+	})
+	if err != nil {
+		return
+	}
+
+	hub.BroadcastAvatarUpdate(deviceIDs, payload)
+}
+
+// relatedPeerDevices lists the devices of every 1:1 chat partner and group peer
+// of userID, plus the user's own devices — the audience for a profile change.
+func relatedPeerDevices(ctx context.Context, database *db.DB, userID int64) []int64 {
 	query := `
 		SELECT DISTINCT d.id FROM devices d WHERE d.user_id IN (
 			SELECT sender_user_id FROM messages WHERE recipient_user_id = ?
@@ -264,7 +316,7 @@ func notifyAvatarUpdatePeers(ctx context.Context, database *db.DB, hub *ws.Hub, 
 	`
 	rows, err := database.QueryContext(ctx, query, userID, userID, userID, userID)
 	if err != nil {
-		return
+		return nil
 	}
 	defer rows.Close()
 
@@ -275,20 +327,7 @@ func notifyAvatarUpdatePeers(ctx context.Context, database *db.DB, hub *ws.Hub, 
 			deviceIDs = append(deviceIDs, devID)
 		}
 	}
-
-	if len(deviceIDs) == 0 {
-		return
-	}
-
-	payload, err := msgpack.Marshal(map[string]any{
-		"user_id": userID,
-		"ts":      time.Now().Unix(),
-	})
-	if err != nil {
-		return
-	}
-
-	hub.BroadcastAvatarUpdate(deviceIDs, payload)
+	return deviceIDs
 }
 
 // GetAvatar handles GET /api/v1/avatar/:user_id.

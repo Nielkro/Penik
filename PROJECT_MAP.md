@@ -13,7 +13,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/handlers/devices.go` — REST handler `GET /api/v1/devices` listing the authenticated user's devices, flagging the current device and whether each has an active session.
 - `server/internal/handlers/deviceinfo.go` — Helpers deriving a device's platform label, originating IP, and IP-based geolocation resolution and caching.
 - `server/internal/handlers/users.go` — Handlers for user profiles, searching users, changing name/nickname, and avatar operations.
-- `server/internal/handlers/messages.go` — REST access to direct message history, delivery/read receipts, and chat deletion operations.
+- `server/internal/handlers/messages.go` — REST access to direct message history, single-message resolution by id (push notifications carry only an id), delivery/read receipts, and chat deletion operations.
 - `server/internal/handlers/groups.go` — REST lifecycle of groups: creation, retrieval, renaming, deletion, and membership management.
 - `server/internal/handlers/group_keys.go` — REST operations for group key versions and encrypted key envelopes for devices.
 - `server/internal/handlers/group_history.go` — Handles upload and one-time distribution of encrypted group history to new devices.
@@ -128,6 +128,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 - `server/internal/db/schema.sql` — Canonical SQLite schema for users, devices, chats, messages, sessions, pairing, groups, key envelopes, and group history.
 - `server/internal/db/db.go` — Opens SQLite with WAL/foreign keys, applies the schema, and runs legacy structure migrations.
+- `server/internal/db/relations.go` — Answers whether two users share a 1:1 chat or a group; the ACL behind presence and typing disclosure.
 - `server/internal/models/user.go` — Models for users and public server profiles.
 - `server/internal/models/device.go` — Models for user devices and runtime metadata.
 - `server/internal/models/message.go` — Models for direct messages and delivery/read/deletion statuses.

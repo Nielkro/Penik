@@ -83,11 +83,16 @@ func main() {
 	// without impeding normal session setup.
 	keyBundleLimiter := middleware.NewUserRateLimiter(60, time.Minute)
 
+	// Nickname lookups answer "does this account exist" for anyone, so they get a
+	// tighter budget than the login endpoint: 10/min still allows 14k probes a
+	// day from one address, which is enough to sweep a small user base.
+	nicknameLookupLimiter := middleware.NewIPRateLimiterN(20, 10*time.Minute)
+
 	// Public routes (no auth, but rate limited).
 	mux.Handle("POST /api/v1/register", authRateLimiter.Limit(http.HandlerFunc(handlers.Register(database, cfg))))
 	mux.Handle("POST /api/v1/login", authRateLimiter.Limit(http.HandlerFunc(handlers.Login(database, cfg))))
-	mux.Handle("GET /api/v1/users/check", authRateLimiter.Limit(http.HandlerFunc(handlers.CheckNickname(database))))
-	mux.Handle("GET /api/v1/users/{nickname}/profile", authRateLimiter.Limit(http.HandlerFunc(handlers.GetUserByNicknameProfile(database))))
+	mux.Handle("GET /api/v1/users/check", nicknameLookupLimiter.Limit(http.HandlerFunc(handlers.CheckNickname(database))))
+	mux.Handle("GET /api/v1/users/{nickname}/profile", nicknameLookupLimiter.Limit(http.HandlerFunc(handlers.GetUserByNicknameProfile(database))))
 
 	// Avatar (GET is public, PUT requires auth).
 	mux.HandleFunc("GET /api/v1/avatar/{user_id}", handlers.GetAvatar(database, cfg))
@@ -109,7 +114,7 @@ func main() {
 	mux.Handle("GET /api/v1/users/{id}",
 		authMW(http.HandlerFunc(handlers.GetUser(database, hub))))
 	mux.Handle("PUT /api/v1/users/me/name",
-		authMW(http.HandlerFunc(handlers.UpdateName(database))))
+		authMW(http.HandlerFunc(handlers.UpdateName(database, hub))))
 	mux.Handle("PUT /api/v1/users/me/nickname",
 		authMW(http.HandlerFunc(handlers.UpdateNickname(database))))
 	mux.Handle("PATCH /api/v1/users/me/password",
@@ -178,6 +183,8 @@ func main() {
 		authMW(http.HandlerFunc(handlers.GetGroupHistoryPacket(database))))
 	mux.Handle("GET /api/v1/messages/history",
 		authMW(http.HandlerFunc(handlers.GetMessageHistory(database))))
+	mux.Handle("GET /api/v1/messages/by-id/{id}",
+		authMW(http.HandlerFunc(handlers.GetMessageByID(database))))
 	mux.Handle("GET /api/v1/messages/{user_id}/status",
 		authMW(http.HandlerFunc(handlers.GetMessageStatuses(database))))
 	mux.Handle("POST /api/v1/messages/send",
