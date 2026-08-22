@@ -43,7 +43,7 @@ interface ApiService {
 
     // Pushes carry only an id (FCM caps a data message at ~4 KB, so the
     // ciphertext cannot ride along); the device resolves the envelope here.
-    @GET("messages/by-id/{id}")
+    @GET("messages/{id}/envelope")
     suspend fun getMessageById(@Path("id") id: Long): Response<HistoryMessageResponse>
 
     @GET("messages/{userId}/status")
