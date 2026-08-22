@@ -26,6 +26,7 @@ class AuthRepository @Inject constructor(
     private val apiService: ApiService,
     private val tokenStorage: SecureTokenStorage,
              private val e2eeCrypto: E2EECrypto,
+    private val identityPins: niel.kro.penik.data.crypto.IdentityPinStore,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -193,6 +194,9 @@ class AuthRepository @Inject constructor(
 
     fun logout() {
         tokenStorage.clear()
+        // Pins are trust in peers as seen by *this* identity; keeping them past a
+        // logout would warn about a "changed" key on every fresh login.
+        identityPins.clear()
     }
 
     suspend fun uploadKeyBackup(passphrase: String): Result<Unit> {

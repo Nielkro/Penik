@@ -21,6 +21,7 @@ import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.websocket.WebSocketEvent
 import niel.kro.penik.data.network.websocket.WebSocketManager
 import niel.kro.penik.data.crypto.E2EECrypto
+import niel.kro.penik.data.crypto.IdentityPinStore
 import niel.kro.penik.data.network.websocket.E2EDevicePayload
 import android.util.Log
 import java.util.UUID
@@ -36,6 +37,7 @@ class MessageRepository @Inject constructor(
     private val tokenStorage: SecureTokenStorage,
     private val chatRepository: ChatRepository,
     private val e2eeCrypto: E2EECrypto,
+    private val identityPins: IdentityPinStore,
 ) {
     suspend fun exportPairingHistory(secret: ByteArray): String {
         val myId = tokenStorage.getUserId()
@@ -341,8 +343,19 @@ class MessageRepository @Inject constructor(
         val myPrivateIK = tokenStorage.getPrivateKey()
             ?: throw Exception("Private Identity Key not found. Please log in again.")
 
+        // A key bundle does not name the device's owner, so it is recovered from
+        // which bundle the device came out of; pins are per (user, device).
+        val deviceOwners = buildMap {
+            senderBundles.forEach { put(it.deviceId, myId) }
+            recipientBundles.forEach { put(it.deviceId, toUserId) }
+        }
+
         val payloads = allDevices.map { device ->
             val recipientIKPub = java.util.Base64.getDecoder().decode(device.identityKey)
+            // Pin before encrypting: a substituted recipient key is the one case
+            // where the user must learn that this message may be readable by
+            // someone else.
+            identityPins.verify(deviceOwners[device.deviceId] ?: toUserId, device.deviceId, recipientIKPub)
             
             val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, recipientIKPub)
 
@@ -445,6 +458,8 @@ class MessageRepository @Inject constructor(
                 return Pair(text, !sentByMe)
             }
         }
+
+        identityPins.verify(event.fromUserId, event.fromDeviceId, event.fromIdentityKey)
 
         var decryptSuccess = true
         val decryptedText = try {
@@ -729,6 +744,71 @@ class MessageRepository @Inject constructor(
         val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce)
 
         return String(plaintextBytes, Charsets.UTF_8)
+    }
+
+    /**
+     * Resolves a message referenced by a push notification.
+     *
+     * The push only carries the row id, so the envelope is fetched over REST,
+     * decrypted with the sender's identity key and persisted like any incoming
+     * message. Returns the plaintext for the notification body, or null when the
+     * row is gone or cannot be decrypted on this device.
+     */
+    suspend fun resolvePushMessage(msgId: Long): String? {
+        if (msgId <= 0L) return null
+        messageDao.findMessageByServerId(msgId)?.let { return it.text }
+
+        val body = runCatching { apiService.getMessageById(msgId) }.getOrNull()
+            ?.takeIf { it.isSuccessful }?.body() ?: return null
+
+        body.plaintext?.takeIf { it.isNotBlank() }?.let { plain ->
+            persistPushMessage(body, plain)
+            return plain
+        }
+
+        val ciphertext = body.ciphertext ?: return null
+        val saltB64 = body.encryptionSalt ?: return null
+        val nonceB64 = body.encryptionNonce ?: return null
+        val ct = runCatching { android.util.Base64.decode(ciphertext, android.util.Base64.DEFAULT) }.getOrNull() ?: return null
+        val salt = runCatching { android.util.Base64.decode(saltB64, android.util.Base64.DEFAULT) }.getOrNull() ?: return null
+        val nonce = runCatching { android.util.Base64.decode(nonceB64, android.util.Base64.DEFAULT) }.getOrNull() ?: return null
+
+        // The row records the sender device id but not its public key, so every
+        // key in the sender's bundle is tried; only one can produce a valid tag.
+        val bundle = runCatching { apiService.getKeyBundle(body.senderId) }.getOrNull()
+            ?.takeIf { it.isSuccessful }?.body() ?: return null
+        for (device in bundle.devices) {
+            val ik = runCatching { android.util.Base64.decode(device.identityKey, android.util.Base64.DEFAULT) }.getOrNull() ?: continue
+            identityPins.verify(body.senderId, device.deviceId, ik)
+            val text = runCatching {
+                decryptMessagePayload(tokenStorage.getDeviceId(), ik, ct, salt, nonce)
+            }.getOrNull() ?: continue
+            persistPushMessage(body, text)
+            return text
+        }
+        return null
+    }
+
+    private suspend fun persistPushMessage(body: niel.kro.penik.data.network.api.HistoryMessageResponse, text: String) {
+        val myId = tokenStorage.getUserId()
+        val sentByMe = body.senderId == myId
+        messageDao.insertMessage(
+            MessageEntity(
+                localId = if (!body.clientMsgId.isNullOrBlank()) body.clientMsgId!! else "server-${body.msgId}",
+                serverId = body.msgId,
+                chatUserId = body.chatUserId,
+                senderId = body.senderId,
+                text = text,
+                timestamp = body.createdAt,
+                sentByMe = sentByMe,
+                delivered = true,
+                replyToMsgId = body.replyToMsgId
+            )
+        )
+        chatRepository.updateLastMessage(body.chatUserId, text, body.createdAt)
+        if (!sentByMe) {
+            webSocketManager.sendDelivered(body.msgId)
+        }
     }
 
     suspend fun deleteChatMessages(chatUserId: Long) {

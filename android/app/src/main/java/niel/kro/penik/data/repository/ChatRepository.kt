@@ -36,9 +36,33 @@ class ChatRepository @Inject constructor(
                 lastMessage = text,
                 lastMessageTimestamp = timestamp
             ))
-        } else if (timestamp >= (existing.lastMessageTimestamp ?: 0L)) {
+            return
+        }
+        if (timestamp >= (existing.lastMessageTimestamp ?: 0L)) {
             chatDao.updateLastMessage(userId, text, timestamp)
         }
+        // Callers pass the freshly fetched profile alongside the message, but this
+        // branch used to drop it: a contact kept whatever display name it had at
+        // first contact, so a rename never showed up on Android at all. Blank
+        // values still mean "caller has nothing newer", so they never overwrite.
+        val freshName = name.takeIf { it.isNotBlank() && it != existing.name }
+        val freshNickname = nickname.takeIf { it.isNotBlank() && it != existing.nickname }
+        if (freshName != null || freshNickname != null) {
+            chatDao.insertChat(
+                existing.copy(
+                    name = freshName ?: existing.name,
+                    nickname = freshNickname ?: existing.nickname
+                )
+            )
+        }
+    }
+
+    /** Applies a display-name change pushed over the WebSocket (opcode 0x0c). */
+    suspend fun updateContactName(userId: Long, name: String) {
+        if (name.isBlank()) return
+        val existing = chatDao.getChat(userId) ?: return
+        if (existing.name == name) return
+        chatDao.insertChat(existing.copy(name = name))
     }
 
     suspend fun incrementUnread(userId: Long) {
