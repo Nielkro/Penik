@@ -138,6 +138,12 @@ sealed class WebSocketEvent {
     data class CallReject(val callId: String, val toUserId: Long, val reason: String) : WebSocketEvent()
     data class CallEnd(val callId: String, val toUserId: Long) : WebSocketEvent()
 
+    /**
+     * Another device of this account answered or declined the same incoming
+     * call, so this device must stop ringing without ending the call.
+     */
+    data class CallTaken(val callId: String, val reason: String) : WebSocketEvent()
+
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
     object ServerShutdown : WebSocketEvent()
@@ -179,6 +185,7 @@ object Opcode {
     const val CALL_ACCEPTED: Byte = 0x33
     const val CALL_REJECT: Byte = 0x34
     const val CALL_END: Byte = 0x35
+    const val CALL_TAKEN: Byte = 0x36
 }
 
 private fun MessageUnpacker.readMsgRecvMap(): Map<String, Any?> {
@@ -427,6 +434,7 @@ class WebSocketManager @Inject constructor(
             Opcode.CALL_ACCEPTED -> handleCallAccepted(payload)
             Opcode.CALL_REJECT -> handleCallReject(payload)
             Opcode.CALL_END -> handleCallEnd(payload)
+            Opcode.CALL_TAKEN -> handleCallTaken(payload)
         }
     }
 
@@ -579,6 +587,25 @@ class WebSocketManager @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e("WS", "Failed to parse CallEnd frame", e)
+        }
+    }
+
+    private fun handleCallTaken(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val callId = map["call_id"] as? String ?: return
+            scope.launch {
+                _events.emit(
+                    WebSocketEvent.CallTaken(
+                        callId = callId,
+                        reason = map["reason"] as? String ?: "accepted"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse CallTaken frame", e)
         }
     }
 

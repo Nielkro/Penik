@@ -51,11 +51,22 @@ export function resetWrappingKey() {
   _pending = null;
 }
 
+/**
+ * Normalizes binary input to a view WebCrypto accepts. The declared buffer type
+ * matters: `BufferSource` excludes views over a SharedArrayBuffer, so one is
+ * copied into a private buffer instead of being handed over as-is.
+ * @param {unknown} value
+ * @returns {Uint8Array<ArrayBuffer> | null}
+ */
 function toBytes(value) {
-  if (value instanceof Uint8Array) return value;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
-  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-  return null;
+  if (!ArrayBuffer.isView(value)) return null;
+  const view = value instanceof Uint8Array
+    ? value
+    : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  return view.buffer instanceof ArrayBuffer
+    ? /** @type {Uint8Array<ArrayBuffer>} */ (view)
+    : new Uint8Array(view);
 }
 
 // sealBytes wraps raw key material. The record is self-describing so a future

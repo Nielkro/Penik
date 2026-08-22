@@ -46,6 +46,7 @@ export const OP = {
   CALL_ACCEPTED: 0x33,
   CALL_REJECT:   0x34,
   CALL_END:      0x35,
+  CALL_TAKEN:    0x36,
 };
 
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -71,6 +72,14 @@ class WSManager {
     this._queue = [];
     this._requestQueue = Promise.resolve();
     this._lastConnectTime = 0;
+    // Set once the app asks for a connection. REST-driven reconnects must not
+    // create a socket before that, or a request made during boot opens one in
+    // parallel with the connection boot is about to establish.
+    this._started = false;
+    // Monotonic id of the socket generation. Callbacks of a replaced socket
+    // still fire after it is dropped, so they must be ignored instead of
+    // clearing timers or scheduling reconnects for the live one.
+    this._socketSeq = 0;
   }
 
   connect() {
@@ -78,6 +87,14 @@ class WSManager {
     if (!token) return;
 
     this._manualClose = false;
+    this._started = true;
+    // Idempotent: a socket that is already opening or open is the connection we
+    // want. Without this a second call (boot() plus a REST-triggered reconnect)
+    // opened a parallel socket and left the first one registered on the server.
+    if (this._ws && (this._ws.readyState === WebSocket.CONNECTING || this._ws.readyState === WebSocket.OPEN)) {
+      return;
+    }
+    this._clearTimers();
     this._doConnect(token);
   }
 
@@ -87,8 +104,11 @@ class WSManager {
    * reachable and reconnect immediately instead of waiting out the backoff.
    */
   notifyRestSuccess() {
+    // Before the app calls connect() there is no connection to restore; boot
+    // does its own connect once the session is loaded.
+    if (!this._started) return;
     if (this._manualClose || this._connected) return;
-    if (this._ws && this._ws.readyState === WebSocket.CONNECTING) return;
+    if (this._ws && (this._ws.readyState === WebSocket.CONNECTING || this._ws.readyState === WebSocket.OPEN)) return;
     // Throttle reconnects triggered by REST if less than 5 seconds have passed since last connect attempt
     if (Date.now() - this._lastConnectTime < 5000) return;
     const token = getToken();
@@ -100,8 +120,10 @@ class WSManager {
 
   disconnect() {
     this._manualClose = true;
+    this._started = false;
     this._clearTimers();
     if (this._ws) {
+      this._detach(this._ws);
       this._ws.close();
       this._ws = null;
     }
@@ -220,20 +242,51 @@ class WSManager {
 
   /* ── Private ── */
 
+  /**
+   * Drops the handlers of a socket we are abandoning, so its late close/error
+   * callbacks cannot touch the state of the socket that replaced it.
+   */
+  _detach(socket) {
+    if (!socket) return;
+    socket.onopen = null;
+    socket.onmessage = null;
+    socket.onerror = null;
+    socket.onclose = null;
+  }
+
   _doConnect(token) {
     const url = WS_URL;
     this._lastConnectTime = Date.now();
 
+    // Any socket still lingering from an earlier generation is replaced here, so
+    // the server never sees two live sessions for the same device.
+    if (this._ws) {
+      this._detach(this._ws);
+      try { this._ws.close(); } catch (e) { /* already closing */ }
+      this._ws = null;
+    }
+
+    const seq = ++this._socketSeq;
+    /** @type {WebSocket} */
+    let socket;
     try {
-      this._ws = new WebSocket(url, ["access_token", token]);
-      this._ws.binaryType = 'arraybuffer';
+      socket = new WebSocket(url, ["access_token", token]);
+      socket.binaryType = 'arraybuffer';
+      this._ws = socket;
     } catch (e) {
       console.error('[ws] Failed to create WebSocket', e);
       this._scheduleReconnect();
       return;
     }
 
-    this._ws.onopen = () => {
+    const isCurrent = () => this._socketSeq === seq && this._ws === socket;
+
+    socket.onopen = () => {
+      if (!isCurrent()) {
+        this._detach(socket);
+        try { socket.close(); } catch (e) { /* ignore */ }
+        return;
+      }
       console.log('[ws] Connected');
       this._connected = true;
       this._reconnectAttempt = 0;
@@ -245,15 +298,18 @@ class WSManager {
       q.forEach(fn => fn());
     };
 
-    this._ws.onmessage = (ev) => {
+    socket.onmessage = (ev) => {
+      if (!isCurrent()) return;
       this._handleFrame(ev.data);
     };
 
-    this._ws.onerror = (e) => {
+    socket.onerror = (e) => {
+      if (!isCurrent()) return;
       console.warn('[ws] Error', e);
     };
 
-    this._ws.onclose = (ev) => {
+    socket.onclose = (ev) => {
+      if (!isCurrent()) return;
       console.log('[ws] Closed', ev.code, ev.reason);
       this._connected = false;
       this._clearTimers();
@@ -333,10 +389,14 @@ class WSManager {
   }
 
   _scheduleReconnect() {
+    // A pending attempt already owns the backoff; queuing a second timer would
+    // open two sockets when both fire.
+    if (this._reconnectTimer) return;
     const delay = RECONNECT_DELAYS[Math.min(this._reconnectAttempt, RECONNECT_DELAYS.length - 1)];
     this._reconnectAttempt++;
     console.log(`[ws] Reconnecting in ${delay}ms (attempt ${this._reconnectAttempt})`);
     this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
       const token = getToken();
       if (token && !this._manualClose) this._doConnect(token);
     }, delay);

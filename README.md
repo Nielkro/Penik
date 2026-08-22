@@ -121,6 +121,7 @@ REST под `/api/v1/` — регистрация, профили, ключи, �
 | `0x01`–`0x0b` | личные сообщения: отправка, доставка, ack, оффлайн-батч, ping/pong, удаление и очистка чата |
 | `0x10`–`0x1e` | ключи, retry, прочтения, pairing, статусы, аватары, presence, shutdown |
 | `0x20`–`0x28` | группы: сообщения, ack, доставка/прочтение, доступность ключа, смена состава, история, аватар |
+| `0x30`–`0x36` | звонки: offer, incoming, accept/accepted, reject, end, «принято на другом устройстве» |
 
 Точные структуры — в `server/internal/ws/protocol.go`, описание протокола — в `plan/api_protocol.md`.
 
@@ -170,7 +171,7 @@ go test ./...
 
 - [`Docs/README.md`](Docs/README.md) — Главный индекс и навигация по документации
 - [`Docs/REST_API.md`](Docs/REST_API.md) — Подробная спецификация REST API
-- [`Docs/WEBSOCKET.md`](Docs/WEBSOCKET.md) — Бинарный протокол WebSocket (опкоды 0x01–0x28)
+- [`Docs/WEBSOCKET.md`](Docs/WEBSOCKET.md) — Бинарный протокол WebSocket (опкоды 0x01–0x36)
 - [`Docs/ARCHITECTURE.md`](Docs/ARCHITECTURE.md) — Архитектура E2EE, группы, устройства, VK CDN и база данных
 - `PROJECT_MAP.md` — Индекс исходников с назначением каждого файла
 - `plan/api_protocol.md` — REST и WebSocket-протокол

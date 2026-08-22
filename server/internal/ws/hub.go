@@ -87,6 +87,17 @@ func (h *Hub) IsOnline(deviceID int64) bool {
 	return ok
 }
 
+// deviceReplaced reports whether the device of the given connection is now held
+// by a different connection. A client that reconnects before its previous socket
+// finished tearing down would otherwise have the old connection's cleanup cancel
+// the call the new one is carrying.
+func (h *Hub) deviceReplaced(c *Client) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	existing, ok := h.clients[c.deviceID]
+	return ok && existing != c
+}
+
 // IsUserOnlineExcept reports whether a user has an active connection on any
 // device other than the given one. Used while a connection is tearing down, when
 // its own unregister has not been processed yet.
@@ -99,6 +110,21 @@ func (h *Hub) IsUserOnlineExcept(userID, deviceID int64) bool {
 		}
 	}
 	return false
+}
+
+// UserDeviceIDs lists the device ids a user currently has connected. Call
+// signaling needs the concrete devices, not just a boolean: an incoming call
+// rings every device and each one is tracked separately.
+func (h *Hub) UserDeviceIDs(userID int64) []int64 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	var ids []int64
+	for _, c := range h.clients {
+		if c.userID == userID {
+			ids = append(ids, c.deviceID)
+		}
+	}
+	return ids
 }
 
 // IsUserOnline reports whether a user has at least one active connection.

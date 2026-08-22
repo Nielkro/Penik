@@ -25,10 +25,15 @@ type activeCall struct {
 	CalleeDeviceID int64
 	CallerID       int64
 	CalleeID       int64
-	RoomName  string
-	IsVideo   bool
-	Accepted  bool
-	StartedAt time.Time
+	// RingingDevices holds the callee devices that were rung and have neither
+	// answered nor declined yet. A decline from one device only ends the call
+	// once this set is empty, so hanging up on the phone cannot cancel a call
+	// the user already picked up in the browser.
+	RingingDevices map[int64]bool
+	RoomName       string
+	IsVideo        bool
+	Accepted       bool
+	StartedAt      time.Time
 }
 
 // involves reports whether userID is one of the two participants. Call IDs are
@@ -36,6 +41,26 @@ type activeCall struct {
 // rather than trusting the ID alone.
 func (a *activeCall) involves(userID int64) bool {
 	return a != nil && (a.CallerID == userID || a.CalleeID == userID)
+}
+
+// ownedByDevice reports whether the given connection currently speaks for its
+// side of the call. A callee device that neither answered nor is still ringing
+// (for example one that already declined) must not be able to tear the call
+// down for the device that did answer.
+func (a *activeCall) ownedByDevice(userID, deviceID int64) bool {
+	if a == nil {
+		return false
+	}
+	switch userID {
+	case a.CallerID:
+		return a.CallerDeviceID == 0 || a.CallerDeviceID == deviceID
+	case a.CalleeID:
+		if a.CalleeDeviceID != 0 {
+			return a.CalleeDeviceID == deviceID
+		}
+		return a.RingingDevices[deviceID]
+	}
+	return false
 }
 
 // peerOf returns the other participant of the call.
@@ -46,12 +71,40 @@ func (a *activeCall) peerOf(userID int64) int64 {
 	return a.CallerID
 }
 
+// otherRingingDevices lists the callee devices that are still ringing, excluding
+// the given one.
+func (a *activeCall) otherRingingDevices(deviceID int64) []int64 {
+	if a == nil || len(a.RingingDevices) == 0 {
+		return nil
+	}
+	devices := make([]int64, 0, len(a.RingingDevices))
+	for devID := range a.RingingDevices {
+		if devID == deviceID {
+			continue
+		}
+		devices = append(devices, devID)
+	}
+	return devices
+}
+
 // dropCall removes a call and both participants' busy markers. Callers must hold
 // callsMu.
 func dropCall(ac *activeCall) {
 	delete(activeCalls, ac.CallID)
 	delete(userCalls, ac.CallerID)
 	delete(userCalls, ac.CalleeID)
+}
+
+// notifyOtherCalleeDevices tells the callee's remaining devices to stop ringing
+// because another of their devices settled the call.
+func notifyOtherCalleeDevices(hub *Hub, deviceIDs []int64, callID, reason string) {
+	if hub == nil || len(deviceIDs) == 0 {
+		return
+	}
+	payload, _ := msgpack.Marshal(CallTaken{CallID: callID, Reason: reason})
+	for _, devID := range deviceIDs {
+		hub.SendToDeviceFrame(devID, OpCallTaken, payload)
+	}
 }
 
 var (
@@ -116,6 +169,17 @@ func (c *Client) handleCallOffer(payload []byte) error {
 		return nil
 	}
 
+	calleeDevices := c.hub.UserDeviceIDs(offer.ToUserID)
+	if len(calleeDevices) == 0 {
+		rejectPayload, _ := msgpack.Marshal(CallReject{
+			CallID:   "",
+			ToUserID: offer.ToUserID,
+			Reason:   "offline",
+		})
+		c.hub.SendToDeviceFrame(c.deviceID, OpCallReject, rejectPayload)
+		return nil
+	}
+
 	callsMu.Lock()
 	if existingCallID, inCall := userCalls[c.userID]; inCall {
 		callsMu.Unlock()
@@ -148,10 +212,14 @@ func (c *Client) handleCallOffer(payload []byte) error {
 		CallID:         callID,
 		CallerDeviceID: c.deviceID,
 		CallerID:       c.userID,
-		CalleeID:  offer.ToUserID,
-		RoomName:  roomName,
-		IsVideo:   offer.IsVideo,
-		StartedAt: time.Now(),
+		CalleeID:       offer.ToUserID,
+		RingingDevices: make(map[int64]bool, len(calleeDevices)),
+		RoomName:       roomName,
+		IsVideo:        offer.IsVideo,
+		StartedAt:      time.Now(),
+	}
+	for _, devID := range calleeDevices {
+		ac.RingingDevices[devID] = true
 	}
 
 	activeCalls[callID] = ac
@@ -193,7 +261,11 @@ func (c *Client) handleCallOffer(payload []byte) error {
 		Token:              token,
 	})
 
-	c.hub.SendToUser(offer.ToUserID, append([]byte{byte(OpCallIncoming)}, incomingPayload...))
+	// Ring exactly the devices recorded in RingingDevices, so the tracked ring
+	// set cannot drift from what was actually delivered.
+	for _, devID := range calleeDevices {
+		c.hub.SendToDeviceFrame(devID, OpCallIncoming, incomingPayload)
+	}
 	return nil
 }
 
@@ -203,36 +275,49 @@ func (c *Client) handleCallAccept(payload []byte) error {
 		return fmt.Errorf("unmarshal CallAccept: %w", err)
 	}
 
-	callsMu.RLock()
+	callsMu.Lock()
 	ac, ok := activeCalls[accept.CallID]
-	callsMu.RUnlock()
-
 	if !ok || ac.CalleeID != c.userID {
+		callsMu.Unlock()
 		return fmt.Errorf("invalid call or recipient")
 	}
-
-	callsMu.Lock()
+	// Another device of the same user already answered: tell this one to stop
+	// ringing instead of hijacking the established call.
+	if ac.CalleeDeviceID != 0 && ac.CalleeDeviceID != c.deviceID {
+		callID := ac.CallID
+		callsMu.Unlock()
+		takenPayload, _ := msgpack.Marshal(CallTaken{CallID: callID, Reason: "accepted"})
+		c.hub.SendToDeviceFrame(c.deviceID, OpCallTaken, takenPayload)
+		return nil
+	}
 	ac.Accepted = true
 	ac.CalleeDeviceID = c.deviceID
+	// Every other device of the callee stops ringing; the answering device now
+	// solely owns the callee side of the call.
+	otherDevices := ac.otherRingingDevices(c.deviceID)
+	ac.RingingDevices = nil
+	callerID, roomName, callID := ac.CallerID, ac.RoomName, ac.CallID
 	callsMu.Unlock()
 
+	notifyOtherCalleeDevices(c.hub, otherDevices, callID, "accepted")
+
 	// Generate token for Caller (Initiator)
-	callerIdentity := fmt.Sprintf("user_%d", ac.CallerID)
-	token, err := generateLiveKitToken(c.cfg.LiveKitAPIKey, c.cfg.LiveKitAPISecret, ac.RoomName, callerIdentity, c.cfg.LiveKitTokenTTL)
+	callerIdentity := fmt.Sprintf("user_%d", callerID)
+	token, err := generateLiveKitToken(c.cfg.LiveKitAPIKey, c.cfg.LiveKitAPISecret, roomName, callerIdentity, c.cfg.LiveKitTokenTTL)
 	if err != nil {
 		log.Printf("Failed to generate LiveKit token for caller: %v", err)
 	}
 
 	acceptedPayload, _ := msgpack.Marshal(CallAccepted{
-		CallID:             ac.CallID,
+		CallID:             callID,
 		ToUserID:           c.userID,
-		RoomName:           ac.RoomName,
+		RoomName:           roomName,
 		LiveKitURL:         c.cfg.LiveKitURL,
 		LiveKitFallbackURL: c.cfg.LiveKitFallbackURL,
 		Token:              token,
 	})
 
-	c.hub.SendToUser(ac.CallerID, append([]byte{byte(OpCallAccepted)}, acceptedPayload...))
+	c.hub.SendToUser(callerID, append([]byte{byte(OpCallAccepted)}, acceptedPayload...))
 	return nil
 }
 
@@ -256,20 +341,44 @@ func (c *Client) handleCallReject(payload []byte) error {
 			ac, ok = activeCalls[callID]
 		}
 	}
-	if ok {
-		dropCall(ac)
+	if !ok {
+		callsMu.Unlock()
+		return nil
 	}
+
+	// A callee device that no longer owns its side of the call (another device
+	// already answered) must not tear it down; just tell it to stop ringing.
+	if ac.CalleeID == c.userID && !ac.ownedByDevice(c.userID, c.deviceID) {
+		callID := ac.CallID
+		callsMu.Unlock()
+		takenPayload, _ := msgpack.Marshal(CallTaken{CallID: callID, Reason: "accepted"})
+		c.hub.SendToDeviceFrame(c.deviceID, OpCallTaken, takenPayload)
+		return nil
+	}
+	// Declining on one device while others are still ringing only silences that
+	// device: the user may still pick up elsewhere.
+	if ac.CalleeID == c.userID && !ac.Accepted && len(ac.RingingDevices) > 1 {
+		delete(ac.RingingDevices, c.deviceID)
+		callID := ac.CallID
+		callsMu.Unlock()
+		takenPayload, _ := msgpack.Marshal(CallTaken{CallID: callID, Reason: "declined"})
+		c.hub.SendToDeviceFrame(c.deviceID, OpCallTaken, takenPayload)
+		return nil
+	}
+
+	dropCall(ac)
+	callID := ac.CallID
+	otherUserID := ac.peerOf(c.userID)
 	callsMu.Unlock()
 
-	if ok {
-		otherUserID := ac.peerOf(c.userID)
-		rejectPayload, _ := msgpack.Marshal(CallReject{
-			CallID:   ac.CallID,
-			ToUserID: c.userID,
-			Reason:   reject.Reason,
-		})
-		c.hub.SendToUser(otherUserID, append([]byte{byte(OpCallReject)}, rejectPayload...))
-	}
+	rejectPayload, _ := msgpack.Marshal(CallReject{
+		CallID:   callID,
+		ToUserID: c.userID,
+		Reason:   reject.Reason,
+	})
+	// Sent to every device of the peer, which also stops the remaining devices
+	// of a callee ringing when it is the caller who cancels.
+	c.hub.SendToUser(otherUserID, append([]byte{byte(OpCallReject)}, rejectPayload...))
 	return nil
 }
 
@@ -289,19 +398,26 @@ func (c *Client) handleCallEnd(payload []byte) error {
 			ac, ok = activeCalls[callID]
 		}
 	}
-	if ok {
-		dropCall(ac)
+	// A device that neither answered nor is ringing does not own this side of
+	// the call and cannot hang it up for the device that did answer.
+	if ok && !ac.ownedByDevice(c.userID, c.deviceID) {
+		ac, ok = nil, false
 	}
+	if !ok {
+		callsMu.Unlock()
+		return nil
+	}
+
+	dropCall(ac)
+	callID := ac.CallID
+	otherUserID := ac.peerOf(c.userID)
 	callsMu.Unlock()
 
-	if ok {
-		otherUserID := ac.peerOf(c.userID)
-		endPayload, _ := msgpack.Marshal(CallEnd{
-			CallID:   ac.CallID,
-			ToUserID: c.userID,
-		})
-		c.hub.SendToUser(otherUserID, append([]byte{byte(OpCallEnd)}, endPayload...))
-	}
+	endPayload, _ := msgpack.Marshal(CallEnd{
+		CallID:   callID,
+		ToUserID: c.userID,
+	})
+	c.hub.SendToUser(otherUserID, append([]byte{byte(OpCallEnd)}, endPayload...))
 	return nil
 }
 
@@ -312,15 +428,16 @@ func (c *Client) handleCallEnd(payload []byte) error {
 // ring.
 func CleanupDeviceCalls(hub *Hub, userID, deviceID int64) {
 	callsMu.Lock()
-	defer callsMu.Unlock()
 
 	callID, inCall := userCalls[userID]
 	if !inCall {
+		callsMu.Unlock()
 		return
 	}
 	ac, ok := activeCalls[callID]
 	if !ok {
 		delete(userCalls, userID)
+		callsMu.Unlock()
 		return
 	}
 
@@ -328,22 +445,45 @@ func CleanupDeviceCalls(hub *Hub, userID, deviceID int64) {
 	case ac.CallerID == userID:
 		// Legacy state without a bound device falls through to a drop.
 		if ac.CallerDeviceID != 0 && ac.CallerDeviceID != deviceID {
+			callsMu.Unlock()
 			return
 		}
 	case ac.CalleeID == userID:
 		if ac.CalleeDeviceID != 0 {
 			if ac.CalleeDeviceID != deviceID {
+				callsMu.Unlock()
 				return
 			}
-		} else if hub != nil && hub.IsUserOnlineExcept(userID, deviceID) {
-			// Still ringing on another device of the callee.
-			return
+		} else {
+			// Only the dropping device stops ringing; the call survives as long
+			// as any other device of the callee can still answer.
+			delete(ac.RingingDevices, deviceID)
+			if len(ac.RingingDevices) > 0 {
+				callsMu.Unlock()
+				return
+			}
+			if hub != nil && hub.IsUserOnlineExcept(userID, deviceID) {
+				// Legacy state without a tracked ring set.
+				callsMu.Unlock()
+				return
+			}
 		}
 	default:
+		callsMu.Unlock()
 		return
 	}
 
 	dropCall(ac)
+	peerID, endedCallID := ac.peerOf(userID), ac.CallID
+	callsMu.Unlock()
+
+	if hub == nil {
+		return
+	}
+	// Telling the peer the call is over also stops the ringing on every device
+	// of a callee whose caller just vanished.
+	payload, _ := msgpack.Marshal(CallEnd{CallID: endedCallID, ToUserID: userID})
+	hub.SendToUser(peerID, append([]byte{byte(OpCallEnd)}, payload...))
 }
 
 // expireUnansweredCall releases a call that is still ringing after ringTimeout
