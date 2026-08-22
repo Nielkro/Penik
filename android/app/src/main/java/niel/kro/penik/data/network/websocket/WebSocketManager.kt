@@ -109,6 +109,8 @@ sealed class WebSocketEvent {
     )
     data class MsgStatusBatch(val statuses: List<MsgStatusItem>) : WebSocketEvent()
     data class UserAvatarUpdate(val userId: Long, val ts: Long) : WebSocketEvent()
+    /** A peer renamed themselves; opcode 0x0c. */
+    data class UserProfileUpdate(val userId: Long, val name: String) : WebSocketEvent()
     data class PresenceUpdate(val userId: Long, val online: Boolean, val lastSeen: Long) : WebSocketEvent()
     data class TypingNotify(val fromUserId: Long, val isTyping: Boolean) : WebSocketEvent()
     data class GroupAvatarUpdate(val groupId: Long, val ts: Long) : WebSocketEvent()
@@ -150,6 +152,7 @@ object Opcode {
     const val MSG_READ: Byte = 0x18
     const val MSG_DELETE: Byte = 0x0a
     const val MSG_DELETE_NOTIFY: Byte = 0x0b
+    const val USER_PROFILE_UPDATE: Byte = 0x0c
     const val OFFLINE_BATCH: Byte = 0x05
     const val MSG_STATUS_BATCH: Byte = 0x1b
     const val USER_AVATAR_UPDATE: Byte = 0x1c
@@ -217,6 +220,10 @@ class WebSocketManager @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    // Written from OkHttp's callback threads and read from callers, so every
+    // field below needs explicit publication; a stale `token` or `reconnectAttempt`
+    // meant reconnecting with a revoked token or resetting the backoff to zero.
+    @Volatile
     private var webSocket: WebSocket? = null
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -228,13 +235,25 @@ class WebSocketManager @Inject constructor(
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
+    @Volatile
     private var token: String = ""
+
+    @Volatile
     private var reconnectAttempt = 0
+
+    @Volatile
     private var pingJob: kotlinx.coroutines.Job? = null
+
+    @Volatile
     private var manualDisconnect = false
 
+    @Volatile
     private var connectHost: String = ""
+
+    @Volatile
     private var connectPort: Int = 0
+
+    @Volatile
     private var reconnectJob: kotlinx.coroutines.Job? = null
 
     fun connect(host: String, port: Int, token: String) {
@@ -395,6 +414,7 @@ class WebSocketManager @Inject constructor(
             Opcode.CHAT_PURGE -> handleChatPurge(payload)
             Opcode.PAIRING_HISTORY_READY -> handlePairingHistoryReady(payload)
             Opcode.USER_AVATAR_UPDATE -> handleUserAvatarUpdate(payload)
+            Opcode.USER_PROFILE_UPDATE -> handleUserProfileUpdate(payload)
             Opcode.PRESENCE_UPDATE -> handlePresenceUpdate(payload)
             Opcode.TYPING -> handleTyping(payload)
             Opcode.SERVER_SHUTDOWN -> scope.launch { _events.emit(WebSocketEvent.ServerShutdown) }
@@ -407,6 +427,20 @@ class WebSocketManager @Inject constructor(
             Opcode.CALL_ACCEPTED -> handleCallAccepted(payload)
             Opcode.CALL_REJECT -> handleCallReject(payload)
             Opcode.CALL_END -> handleCallEnd(payload)
+        }
+    }
+
+    private fun handleUserProfileUpdate(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val userId = (map["user_id"] as? Number)?.toLong() ?: return
+            val name = map["name"]?.toString().orEmpty()
+            if (name.isBlank()) return
+            scope.launch { _events.emit(WebSocketEvent.UserProfileUpdate(userId, name)) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse user profile update", e)
         }
     }
 

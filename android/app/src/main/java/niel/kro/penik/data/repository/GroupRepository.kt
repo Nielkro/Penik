@@ -27,6 +27,7 @@ import niel.kro.penik.data.network.api.RenameGroupRequest
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.UUID
+import niel.kro.penik.data.crypto.IdentityPinStore
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -45,6 +46,7 @@ class GroupRepository @Inject constructor(
     private val e2ee: E2EECrypto,
     private val groupCrypto: GroupCrypto,
     private val ws: WebSocketManager,
+    private val identityPins: IdentityPinStore,
 ) {
     private val urlB64Flags = Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
 
@@ -99,8 +101,13 @@ class GroupRepository @Inject constructor(
     // Short-lived per-user device-key cache. A single history sync decrypts many
     // messages across key versions; without this, each one re-fetches every
     // member's key bundle, producing a storm of /keys/bundle requests.
-    private val deviceKeyCache = mutableMapOf<Long, List<DeviceKey>>()
-    private val failedKeyVersions = mutableSetOf<Pair<Long, Long>>()
+    //
+    // Both are touched from unrelated coroutines (a history sync, an incoming
+    // WebSocket frame, a push resolution in the FCM service), so plain
+    // HashMap/HashSet risked a corrupted internal table, not just a lost entry.
+    private val deviceKeyCache = java.util.concurrent.ConcurrentHashMap<Long, List<DeviceKey>>()
+    private val failedKeyVersions: MutableSet<Pair<Long, Long>> =
+        java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     fun invalidateDeviceKeyCache() {
         deviceKeyCache.clear()
@@ -116,6 +123,9 @@ class GroupRepository @Inject constructor(
             val keys = mutableListOf<DeviceKey>()
             for (d in devices) {
                 val ik = runCatching { Base64.decode(d.identityKey, Base64.DEFAULT) }.getOrNull() ?: continue
+                // TOFU: a swapped group-member key would otherwise let the server
+                // read every epoch key it wraps for that device.
+                identityPins.verify(uid, d.deviceId, ik)
                 keys.add(DeviceKey(d.deviceId, ik))
             }
             deviceKeyCache[uid] = keys

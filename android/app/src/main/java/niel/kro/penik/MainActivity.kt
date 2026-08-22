@@ -51,6 +51,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var callManager: CallManager
 
+    @Inject
+    lateinit var identityPins: niel.kro.penik.data.crypto.IdentityPinStore
+
     private var pendingRoute by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -119,6 +122,18 @@ class MainActivity : ComponentActivity() {
                     if (route != null) {
                         pendingRoute = null
                         navController.navigate(route)
+                    }
+                }
+
+                // A peer's identity key changing is usually a reinstall, but it is
+                // also what a key substitution looks like, so the user is told.
+                LaunchedEffect(Unit) {
+                    identityPins.changes.collect { change ->
+                        android.widget.Toast.makeText(
+                            this@MainActivity,
+                            "Ключ безопасности собеседника (устройство №${change.deviceId}) изменился",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
                     }
                 }
 

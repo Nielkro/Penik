@@ -201,17 +201,22 @@ func SendMessage(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 			if fcmToken == "" {
 				continue
 			}
-			ct, _ := base64.StdEncoding.DecodeString(dev.Ciphertext)
-			s, _ := base64.StdEncoding.DecodeString(dev.Salt)
-			n, _ := base64.StdEncoding.DecodeString(dev.Nonce)
+			// Pointer only, exactly like the WebSocket send path: the ciphertext
+			// does not fit in FCM's ~4 KB data budget, so the device resolves the
+			// envelope over REST by msg_id.
+			var pushMsgID int64
+			for _, d := range deliveries {
+				if d.deviceID == dev.DeviceID {
+					pushMsgID = d.msgRecv.MsgID
+					break
+				}
+			}
 			push.SendDevicePush(fcmToken, map[string]string{
 				"type":           "direct",
 				"chat_user_id":   fmt.Sprintf("%d", senderUserID),
 				"sender_name":    senderName,
 				"text":           "Новое сообщение",
-				"ciphertext":     base64.StdEncoding.EncodeToString(ct),
-				"salt":           base64.StdEncoding.EncodeToString(s),
-				"nonce":          base64.StdEncoding.EncodeToString(n),
+				"msg_id":         fmt.Sprintf("%d", pushMsgID),
 				"timestamp":      fmt.Sprintf("%d", now*1000),
 				"sender_user_id": fmt.Sprintf("%d", senderUserID),
 			})
