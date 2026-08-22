@@ -346,6 +346,15 @@ func resizeImage(src image.Image, dstW, dstH int) image.Image {
 type updatePasswordRequest struct {
 	OldPassword string `json:"old_password"`
 	NewPassword string `json:"new_password"`
+	// RevokeOtherSessions mirrors the "sign out everywhere else" checkbox. It is
+	// opt-in: changing a password does not by itself prove the other sessions are
+	// hostile, and an unattended revocation would silently drop the user's phone.
+	RevokeOtherSessions bool `json:"revoke_other_sessions"`
+}
+
+type updatePasswordResponse struct {
+	RevokedOtherSessions bool   `json:"revoked_other_sessions"`
+	RevokeSkippedReason  string `json:"revoke_skipped_reason,omitempty"`
 }
 
 // UpdatePassword handles PUT /api/v1/users/me/password.
@@ -390,7 +399,28 @@ func UpdatePassword(database *db.DB) http.HandlerFunc {
 			return
 		}
 
-		w.WriteHeader(http.StatusNoContent)
+		if !req.RevokeOtherSessions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		// The new password is already stored, so a failure here must not fail the
+		// request — it is reported in the body instead. The same 24h quarantine as
+		// POST /logout/all applies: a freshly minted token cannot evict the others.
+		resp := updatePasswordResponse{}
+		token := middleware.TokenFromCtx(r.Context())
+		if token == "" {
+			resp.RevokeSkippedReason = "no_session_token"
+		} else if revoked, revokeErr := revokeOtherSessions(r.Context(), database, userID, token); revokeErr != nil {
+			resp.RevokeSkippedReason = "revoke_failed"
+		} else if !revoked {
+			resp.RevokeSkippedReason = "session_too_recent"
+		} else {
+			resp.RevokedOtherSessions = true
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
 	}
 }
 
