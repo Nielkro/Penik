@@ -7,11 +7,11 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ### Go server
 
 - `server/cmd/server/main.go` — Server entry point: loads config, opens DB, registers REST/WebSocket routes, attaches middleware, and serves the embedded web client.
-- `server/internal/config/config.go` — Loads runtime configuration from environment variables: port, SQLite path, session TTL, size limits, CORS, upload directory, and primary/fallback LiveKit URLs.
+- `server/internal/config/config.go` — Loads runtime configuration from environment variables: port, SQLite path, session TTL, size limits, CORS, upload directory, MaxMind GeoIP database path, and primary/fallback LiveKit URLs.
 - `server/internal/handlers/auth.go` — REST handlers for registration and login; validates credentials and key material, hashes passwords, and creates devices/sessions.
 - `server/internal/handlers/logout.go` — REST handlers revoking the current session token (`/logout`) or the user's other sessions (`/logout/all`); `/logout/all` is rejected with 403 unless the requesting session is older than a day.
 - `server/internal/handlers/devices.go` — REST handler `GET /api/v1/devices` listing the authenticated user's devices, flagging the current device and whether each has an active session.
-- `server/internal/handlers/deviceinfo.go` — Helpers deriving a device's platform label, originating IP, and IP-based geolocation resolution and caching.
+- `server/internal/handlers/deviceinfo.go` — Helpers deriving a device's platform label, originating IP, and IP-based geolocation resolution (MaxMind GeoLite2/DB-IP Lite .mmdb reader with cached fallback).
 - `server/internal/handlers/users.go` — Handlers for user profiles, searching users, changing name/nickname, and avatar operations.
 - `server/internal/handlers/messages.go` — REST access to direct message history, single-message resolution by id (push notifications carry only an id), delivery/read receipts, and chat deletion operations.
 - `server/internal/handlers/groups.go` — REST lifecycle of groups: creation, retrieval, renaming, deletion, and membership management.
