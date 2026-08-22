@@ -26,13 +26,24 @@ func pruneWindows(m map[string][]time.Time, threshold time.Time) {
 }
 
 type IPRateLimiter struct {
-	mu  sync.Mutex
-	ips map[string][]time.Time
+	mu     sync.Mutex
+	ips    map[string][]time.Time
+	max    int
+	window time.Duration
 }
 
 func NewIPRateLimiter() *IPRateLimiter {
+	// Auth endpoints: 10 attempts per minute per address.
+	return NewIPRateLimiterN(10, time.Minute)
+}
+
+// NewIPRateLimiterN builds a per-address limiter with an explicit budget, for
+// endpoints that need a different window than the auth default.
+func NewIPRateLimiterN(max int, window time.Duration) *IPRateLimiter {
 	return &IPRateLimiter{
-		ips: make(map[string][]time.Time),
+		ips:    make(map[string][]time.Time),
+		max:    max,
+		window: window,
 	}
 }
 
@@ -42,7 +53,7 @@ func (l *IPRateLimiter) Limit(next http.Handler) http.Handler {
 
 		l.mu.Lock()
 		now := time.Now()
-		threshold := now.Add(-1 * time.Minute)
+		threshold := now.Add(-l.window)
 
 		if len(l.ips) > 1024 {
 			pruneWindows(l.ips, threshold)
@@ -57,10 +68,9 @@ func (l *IPRateLimiter) Limit(next http.Handler) http.Handler {
 			}
 		}
 
-		// Limit to 10 requests per minute for auth endpoints
-		if len(active) >= 10 {
+		if len(active) >= l.max {
 			l.mu.Unlock()
-			http.Error(w, "Too many requests. Please try again in a minute.", http.StatusTooManyRequests)
+			http.Error(w, "Too many requests. Please try again later.", http.StatusTooManyRequests)
 			return
 		}
 

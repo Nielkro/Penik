@@ -15,13 +15,14 @@ import (
 // WebSocketHandler handles WS /api/v1/ws
 // Auth is validated by the middleware before this handler runs.
 func WebSocketHandler(hub *ws.Hub, database *db.DB, cfg *config.Config) http.HandlerFunc {
-	// Build origin pattern list for WebSocket upgrade check.
+	// Build origin pattern list for WebSocket upgrade check. ALLOWED_ORIGINS is
+	// validated at startup, so the list is never empty in practice; there is no
+	// wildcard branch, because InsecureSkipVerify here would let any page on the
+	// internet open an authenticated socket.
 	var originPatterns []string
-	if cfg.AllowedOrigins != "" && cfg.AllowedOrigins != "*" {
-		for _, o := range strings.Split(cfg.AllowedOrigins, ",") {
-			if s := strings.TrimSpace(o); s != "" {
-				originPatterns = append(originPatterns, s)
-			}
+	for _, o := range strings.Split(cfg.AllowedOrigins, ",") {
+		if s := strings.TrimSpace(o); s != "" && s != "*" {
+			originPatterns = append(originPatterns, s)
 		}
 	}
 
@@ -30,13 +31,8 @@ func WebSocketHandler(hub *ws.Hub, database *db.DB, cfg *config.Config) http.Han
 		deviceID := middleware.DeviceIDFromCtx(r.Context())
 
 		opts := &websocket.AcceptOptions{
-			Subprotocols: []string{"access_token"},
-		}
-		if len(originPatterns) > 0 {
-			opts.OriginPatterns = originPatterns
-		} else {
-			// Dev mode: allow any origin (wildcard)
-			opts.InsecureSkipVerify = true
+			Subprotocols:   []string{"access_token"},
+			OriginPatterns: originPatterns,
 		}
 
 		// The server sets a global write deadline so a stuck HTTP response cannot

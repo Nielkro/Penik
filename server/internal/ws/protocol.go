@@ -31,6 +31,7 @@ const (
 	OpTyping              Opcode = 0x1f
 	OpMsgDelete           Opcode = 0x0a // client→server: delete message (optionally for everyone)
 	OpMsgDeleteNotify     Opcode = 0x0b // server→client: notify peer message was deleted
+	OpUserProfileUpdate   Opcode = 0x0c // server→client: a peer renamed themselves
 
 	OpGroupMessageSend      Opcode = 0x20
 	OpGroupMessageRecv      Opcode = 0x21

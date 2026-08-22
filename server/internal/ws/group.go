@@ -3,7 +3,6 @@ package ws
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -159,6 +158,8 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 			continue
 		}
 
+		// Pointer only — see the direct-message push: the ciphertext does not fit
+		// in FCM's ~4 KB data budget, so the device pulls the row by row_id.
 		push.SendDevicePush(fcmToken, map[string]string{
 			"type":           "group",
 			"group_id":       fmt.Sprintf("%d", msg.GroupID),
@@ -166,9 +167,8 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 			"sender_user_id": fmt.Sprintf("%d", c.userID),
 			"sender_name":    senderName,
 			"text":           "Новое сообщение в группе",
-			"ciphertext":     base64.StdEncoding.EncodeToString(msg.Ciphertext),
-			"salt":           base64.StdEncoding.EncodeToString(msg.Salt),
-			"nonce":          base64.StdEncoding.EncodeToString(msg.Nonce),
+			"row_id":         fmt.Sprintf("%d", rowID),
+			"message_id":     msg.MessageID,
 			"timestamp":      fmt.Sprintf("%d", now*1000),
 		})
 	}

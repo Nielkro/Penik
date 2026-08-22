@@ -113,6 +113,23 @@ func (h *Hub) IsUserOnline(userID int64) bool {
 	return false
 }
 
+// BroadcastProfileUpdate sends OpUserProfileUpdate to the given devices. Without
+// it a display name only ever reaches peers that had no cached chat entry yet, so
+// a rename stayed invisible to everyone already talking to the user.
+func (h *Hub) BroadcastProfileUpdate(deviceIDs []int64, payload []byte) {
+	frame := append([]byte{byte(OpUserProfileUpdate)}, payload...)
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, devID := range deviceIDs {
+		if c, ok := h.clients[devID]; ok {
+			select {
+			case c.send <- frame:
+			default:
+			}
+		}
+	}
+}
+
 // BroadcastAvatarUpdate sends OpUserAvatarUpdate to all active connections for specified device IDs.
 func (h *Hub) BroadcastAvatarUpdate(deviceIDs []int64, payload []byte) {
 	frame := append([]byte{byte(OpUserAvatarUpdate)}, payload...)

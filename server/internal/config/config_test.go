@@ -2,10 +2,21 @@ package config
 
 import "testing"
 
-func TestValidate_DevelopmentAllowsWildcard(t *testing.T) {
-	cfg := &Config{Env: "development", AllowedOrigins: "*", LiveKitURL: "wss://livekit.home.penik.ru", LiveKitFallbackURL: "wss://call.api.penik.ru"}
+// A wildcard origin list disables the CSRF check and the WebSocket origin check,
+// so it is refused in every environment, not only in production.
+func TestValidate_RejectsWildcardEverywhere(t *testing.T) {
+	for _, origins := range []string{"*", "", "   ", "http://localhost:5173,*"} {
+		cfg := &Config{Env: "development", AllowedOrigins: origins, LiveKitURL: "wss://livekit.home.penik.ru", LiveKitFallbackURL: "wss://call.api.penik.ru"}
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("development must reject AllowedOrigins %q", origins)
+		}
+	}
+}
+
+func TestValidate_DevelopmentAllowsPlainHTTPOrigin(t *testing.T) {
+	cfg := &Config{Env: "development", AllowedOrigins: "http://localhost:5173", LiveKitURL: "wss://livekit.home.penik.ru", LiveKitFallbackURL: "wss://call.api.penik.ru"}
 	if err := cfg.Validate(); err != nil {
-		t.Fatalf("development should allow wildcard, got %v", err)
+		t.Fatalf("development should allow an explicit http origin, got %v", err)
 	}
 }
 
@@ -33,12 +44,12 @@ func TestValidate_ProductionAcceptsExplicitHTTPS(t *testing.T) {
 }
 
 func TestValidate_RejectsEmptyLiveKitURLs(t *testing.T) {
-	cfgNoURL := &Config{Env: "development", AllowedOrigins: "*", LiveKitURL: "", LiveKitFallbackURL: "wss://call.api.penik.ru"}
+	cfgNoURL := &Config{Env: "development", AllowedOrigins: "http://localhost:5173", LiveKitURL: "", LiveKitFallbackURL: "wss://call.api.penik.ru"}
 	if err := cfgNoURL.Validate(); err == nil {
 		t.Error("Validate should fail when LiveKitURL is empty")
 	}
 
-	cfgNoFallback := &Config{Env: "development", AllowedOrigins: "*", LiveKitURL: "wss://livekit.home.penik.ru", LiveKitFallbackURL: ""}
+	cfgNoFallback := &Config{Env: "development", AllowedOrigins: "http://localhost:5173", LiveKitURL: "wss://livekit.home.penik.ru", LiveKitFallbackURL: ""}
 	if err := cfgNoFallback.Validate(); err == nil {
 		t.Error("Validate should fail when LiveKitFallbackURL is empty")
 	}

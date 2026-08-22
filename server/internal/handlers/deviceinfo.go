@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"messenger/server/internal/middleware"
 )
@@ -171,19 +173,47 @@ func resolveLocation(clientLocation string, r *http.Request) string {
 	if ip != "" {
 		loc := locationFromIP(ip)
 		if loc != "" {
-			return loc
+			return sanitizeDeviceField(loc, maxDeviceFieldRunes)
 		}
 	}
-	return strings.TrimSpace(clientLocation)
+	return sanitizeDeviceField(clientLocation, maxDeviceFieldRunes)
+}
+
+// maxDeviceFieldRunes bounds every free-text device attribute. The device list is
+// rendered on other clients, so an unbounded field is both a storage sink and a
+// payload carrier.
+const maxDeviceFieldRunes = 64
+
+// sanitizeDeviceField normalises attacker-supplied device metadata
+// (device_name, platform, location): control characters are dropped so the value
+// cannot break out of a log line or a rendered list, and the result is capped.
+func sanitizeDeviceField(s string, maxRunes int) string {
+	s = strings.TrimSpace(s)
+	var b strings.Builder
+	count := 0
+	for _, r := range s {
+		if r == '\n' || r == '\r' || r == '\t' {
+			r = ' '
+		}
+		if unicode.IsControl(r) || !utf8.ValidRune(r) {
+			continue
+		}
+		if count >= maxRunes {
+			break
+		}
+		b.WriteRune(r)
+		count++
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // resolvePlatform prefers the client-supplied platform string and falls back to
 // parsing the request User-Agent when the client sent none.
 func resolvePlatform(clientPlatform string, r *http.Request) string {
 	if strings.TrimSpace(clientPlatform) != "" {
-		return clientPlatform
+		return sanitizeDeviceField(clientPlatform, maxDeviceFieldRunes)
 	}
-	return platformFromUserAgent(r.UserAgent())
+	return sanitizeDeviceField(platformFromUserAgent(r.UserAgent()), maxDeviceFieldRunes)
 }
 
 // platformFromUserAgent derives a coarse, human-readable platform label from a

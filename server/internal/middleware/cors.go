@@ -7,9 +7,10 @@ import (
 	"messenger/server/internal/config"
 )
 
-// CORS returns a middleware that enforces strict same-origin CORS policy.
-// If AllowedOrigins is "*", all origins are accepted (dev mode only).
-// In production always set ALLOWED_ORIGINS to a comma-separated list.
+// CORS returns a middleware that enforces a strict same-origin CORS policy.
+// ALLOWED_ORIGINS is validated at startup, so an empty allow-list here means a
+// misconfiguration: every cross-origin request is rejected rather than waved
+// through, and the CSRF check always runs.
 func CORS(cfg *config.Config) func(http.Handler) http.Handler {
 	allowedList := parseOrigins(cfg.AllowedOrigins)
 
@@ -21,10 +22,7 @@ func CORS(cfg *config.Config) func(http.Handler) http.Handler {
 			w.Header().Add("Vary", "Origin")
 
 			if origin != "" {
-				if allowedList == nil {
-					// Wildcard dev mode
-					w.Header().Set("Access-Control-Allow-Origin", "*")
-				} else if isAllowedOrigin(allowedList, origin) {
+				if isAllowedOrigin(allowedList, origin) {
 					w.Header().Set("Access-Control-Allow-Origin", origin)
 					w.Header().Set("Access-Control-Allow-Credentials", "true")
 				} else {
@@ -45,7 +43,7 @@ func CORS(cfg *config.Config) func(http.Handler) http.Handler {
 
 			// CSRF check: for state-mutating requests that carry cookies or are
 			// non-idempotent, verify the Origin/Referer header matches allowed list.
-			if allowedList != nil && isMutating(r.Method) {
+			if isMutating(r.Method) {
 				if !csrfOK(r, allowedList) {
 					http.Error(w, "CSRF: invalid origin", http.StatusForbidden)
 					return
@@ -57,13 +55,13 @@ func CORS(cfg *config.Config) func(http.Handler) http.Handler {
 	}
 }
 
+// parseOrigins splits the configured list. A "*" entry is dropped rather than
+// honoured: config validation rejects it, and silently treating it as a wildcard
+// would reopen the hole this list exists to close.
 func parseOrigins(raw string) []string {
-	if raw == "" || raw == "*" {
-		return nil // nil = wildcard
-	}
 	var out []string
 	for _, o := range strings.Split(raw, ",") {
-		if s := strings.TrimSpace(o); s != "" {
+		if s := strings.TrimSpace(o); s != "" && s != "*" {
 			out = append(out, s)
 		}
 	}

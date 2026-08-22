@@ -127,6 +127,61 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 	}
 }
 
+// GetMessageByID handles GET /api/v1/messages/by-id/{id}.
+//
+// Push notifications carry only a message id (FCM caps a data payload at ~4 KB,
+// so shipping the ciphertext silently lost long messages). The device resolves
+// the id here. Scoped to the requesting device exactly like the history query: a
+// copy addressed to another device is encrypted under a key this caller does not
+// hold, and must not be handed out.
+func GetMessageByID(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		deviceID := middleware.DeviceIDFromCtx(r.Context())
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil || id <= 0 {
+			http.Error(w, "invalid message id", http.StatusBadRequest)
+			return
+		}
+
+		var m historyMessageResponse
+		err = database.QueryRowContext(r.Context(),
+			`SELECT
+				m.id, m.chat_id, m.sender_user_id, m.recipient_user_id,
+				CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END,
+				m.client_msg_id, m.reply_to_msg_id, m.plaintext, m.timestamp,
+				m.delivered, m.delivered_at, m.read,
+				m.ciphertext, m.encryption_salt, m.encryption_nonce,
+				m.sender_device_id, m.recipient_device_id, m.prekey_id
+			 FROM messages m
+			 JOIN chats c ON c.id = m.chat_id
+			 WHERE m.id = ?
+			   AND m.purge_pending = 0
+			   AND (
+			     (m.sender_user_id = ? AND m.sender_device_id = ? AND m.deleted_by_sender = 0)
+			     OR
+			     (m.recipient_user_id = ? AND m.recipient_device_id = ? AND m.deleted_by_recipient = 0)
+			   )`,
+			userID, id, userID, deviceID, userID, deviceID).
+			Scan(&m.ID, &m.ChatID, &m.SenderID, &m.RecipientID, &m.ChatUserID,
+				&m.ClientMsgID, &m.ReplyToMsgID, &m.Plaintext, &m.Timestamp,
+				&m.Delivered, &m.DeliveredAt, &m.Read,
+				&m.Ciphertext, &m.EncryptionSalt, &m.EncryptionNonce,
+				&m.SenderDeviceID, &m.RecipientDeviceID, &m.PrekeyID)
+		if err == sql.ErrNoRows {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(m)
+	}
+}
+
 func GetMessageStatuses(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
