@@ -130,13 +130,20 @@ func SendMessage(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 				continue // unknown device, skip
 			}
 
+			// The device list is attacker-controlled, so a device that belongs to
+			// neither participant must be dropped: accepting it would file the
+			// ciphertext under this conversation while delivering it to a third
+			// party's device.
 			var recipientID, chatUserID int64
-			if ownerID == senderUserID {
+			switch ownerID {
+			case senderUserID:
 				recipientID = senderUserID
 				chatUserID = req.ToUserID
-			} else {
+			case req.ToUserID:
 				recipientID = req.ToUserID
 				chatUserID = senderUserID
+			default:
+				continue
 			}
 
 			res, err := tx.ExecContext(ctx,

@@ -191,8 +191,8 @@ private fun DialingView(callManager: CallManager, connecting: Boolean) {
 
 @Composable
 private fun ActiveCallView(callManager: CallManager) {
-    val state by callManager.state.collectAsState()
-    val remoteTrack by callManager.remoteVideoTrack.collectAsState()
+    val remoteScreenTrack by callManager.remoteScreenShareTrack.collectAsState()
+    val remoteCamTrack by callManager.remoteCameraTrack.collectAsState()
     val localTrack by callManager.localVideoTrack.collectAsState()
     var swapped by remember { mutableStateOf(false) }
     var controlsVisible by remember { mutableStateOf(true) }
@@ -204,9 +204,27 @@ private fun ActiveCallView(callManager: CallManager) {
         }
     }
 
-    val primary = if (swapped) (localTrack ?: remoteTrack) else (remoteTrack ?: localTrack)
-    val pip = if (swapped) remoteTrack else (if (remoteTrack != null) localTrack else null)
-    val showPip = pip != null && !state.cameraOff && (primary != pip)
+    // Determine default primary and secondary (PiP) tracks:
+    // 1. If screen share exists -> screen share is primary, PiP is remote camera (or local camera)
+    // 2. Else if both local camera and remote camera exist -> local camera is primary, remote camera is PiP
+    // 3. Else if only one stream exists -> that stream is primary, PiP is null
+    val defaultPrimary: VideoTrack?
+    val defaultPip: VideoTrack?
+
+    if (remoteScreenTrack != null) {
+        defaultPrimary = remoteScreenTrack
+        defaultPip = remoteCamTrack ?: localTrack
+    } else if (localTrack != null && remoteCamTrack != null) {
+        defaultPrimary = localTrack
+        defaultPip = remoteCamTrack
+    } else {
+        defaultPrimary = remoteCamTrack ?: localTrack
+        defaultPip = null
+    }
+
+    val primary = if (swapped && defaultPip != null) defaultPip else defaultPrimary
+    val pip = if (swapped && defaultPip != null) defaultPrimary else defaultPip
+    val showPip = pip != null && (primary != pip)
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (primary != null) {
