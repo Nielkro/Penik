@@ -76,6 +76,12 @@ class CallManager @Inject constructor(
     private val _remoteVideoTrack = MutableStateFlow<VideoTrack?>(null)
     val remoteVideoTrack: StateFlow<VideoTrack?> = _remoteVideoTrack.asStateFlow()
 
+    private val _remoteScreenShareTrack = MutableStateFlow<VideoTrack?>(null)
+    val remoteScreenShareTrack: StateFlow<VideoTrack?> = _remoteScreenShareTrack.asStateFlow()
+
+    private val _remoteCameraTrack = MutableStateFlow<VideoTrack?>(null)
+    val remoteCameraTrack: StateFlow<VideoTrack?> = _remoteCameraTrack.asStateFlow()
+
     private val _localVideoTrack = MutableStateFlow<VideoTrack?>(null)
     val localVideoTrack: StateFlow<VideoTrack?> = _localVideoTrack.asStateFlow()
 
@@ -405,30 +411,33 @@ class CallManager @Inject constructor(
     }
 
     private fun updateRemoteVideoTrack(room: Room) {
-        var chosenTrack: VideoTrack? = null
+        var screenTrack: VideoTrack? = null
+        var camTrack: VideoTrack? = null
+
         for (participant in room.remoteParticipants.values) {
-            // 1. Prioritize SCREEN_SHARE track if available and unmuted
             val screenPub = participant.getTrackPublication(Track.Source.SCREEN_SHARE)
             if (screenPub?.track is VideoTrack && screenPub.muted != true) {
-                chosenTrack = screenPub.track as VideoTrack
-                break
+                screenTrack = screenPub.track as VideoTrack
             }
-            // 2. Fallback to CAMERA track
+
             val camPub = participant.getTrackPublication(Track.Source.CAMERA)
             if (camPub?.track is VideoTrack && camPub.muted != true) {
-                chosenTrack = camPub.track as VideoTrack
-                break
+                camTrack = camPub.track as VideoTrack
             }
-            // 3. Fallback to UNKNOWN source publication
-            val unknownPub = participant.getTrackPublication(Track.Source.UNKNOWN)
-            if (unknownPub?.track is VideoTrack && unknownPub.muted != true) {
-                chosenTrack = unknownPub.track as VideoTrack
-                break
+
+            if (camTrack == null) {
+                val unknownPub = participant.getTrackPublication(Track.Source.UNKNOWN)
+                if (unknownPub?.track is VideoTrack && unknownPub.muted != true) {
+                    camTrack = unknownPub.track as VideoTrack
+                }
             }
         }
 
-        _remoteVideoTrack.value = chosenTrack
-        _state.value = ui.copy(hasRemoteVideo = chosenTrack != null)
+        _remoteScreenShareTrack.value = screenTrack
+        _remoteCameraTrack.value = camTrack
+        val primaryTrack = screenTrack ?: camTrack
+        _remoteVideoTrack.value = primaryTrack
+        _state.value = ui.copy(hasRemoteVideo = primaryTrack != null)
     }
 
     private fun publishLocalVideoTrack() {
@@ -544,6 +553,8 @@ class CallManager @Inject constructor(
             }
         }
         _remoteVideoTrack.value = null
+        _remoteScreenShareTrack.value = null
+        _remoteCameraTrack.value = null
         _localVideoTrack.value = null
         livekitUrl = ""
         livekitFallbackUrl = null
