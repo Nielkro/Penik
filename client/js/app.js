@@ -1137,6 +1137,7 @@ function setupGlobalWSListeners() {
     }
     await flushOutbox();
     await syncMessageHistory();
+    await refreshContactProfiles();
     try {
       const groups = await syncGroups();
       for (const g of groups) {
@@ -1153,6 +1154,47 @@ function setupGlobalWSListeners() {
       console.warn('[groups] sync on connect failed', e.message);
     }
   });
+}
+
+// refreshContactProfiles re-reads the display name of every known contact.
+//
+// A rename is pushed live over opcode 0x0c, which by definition misses anyone who
+// was offline at the time: the web client kept the name it first stored forever,
+// while Android happened to be right because its history sync re-fetches the
+// profile per chat. This closes that gap on every reconnect. Failures are
+// per-contact and silent — a stale name is not worth an error toast.
+async function refreshContactProfiles() {
+  let contacts;
+  try {
+    contacts = await getAllContacts();
+  } catch (e) {
+    console.warn('[contacts] profile refresh skipped', e.message);
+    return;
+  }
+  let changed = false;
+  for (const contact of contacts) {
+    const userId = Number(contact.user_id);
+    if (!userId) continue;
+    let profile;
+    try {
+      const res = await getUserById(String(userId));
+      profile = res.user || res;
+    } catch {
+      continue;
+    }
+    if (!profile) continue;
+    const name = profile.name || '';
+    const nickname = profile.nickname || '';
+    if ((!name || name === contact.name) && (!nickname || nickname === contact.nickname)) continue;
+    await saveContact({
+      ...contact,
+      user_id: userId,
+      name: name || contact.name,
+      nickname: nickname || contact.nickname,
+    });
+    changed = true;
+  }
+  if (changed) triggerChatListUpdate();
 }
 
 export async function backupE2EEKeys(passphrase) {
