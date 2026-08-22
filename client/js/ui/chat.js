@@ -1,11 +1,11 @@
 import { apiGet, apiDelete, uploadVKAttachment } from "../api.js";
-import { encryptFileChaCha20, encodeKey } from "../crypto.js";
+import { encryptFileChaCha20, encodeKey, computeSafetyNumber } from "../crypto.js";
 import {
   saveMessage, getMessages, getMessage,
   updateMessageDelivered, getContact, saveContact, getAllContacts,
   deleteChatData, deleteMessage, saveCachedMedia
 } from "../storage.js";
-import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, encryptMessagePayload } from "../app.js";
+import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload } from "../app.js";
 import { OP } from "../ws.js";
 import {
   avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon,
@@ -476,6 +476,11 @@ export async function renderChat(container, userId) {
           }
         }
       }
+      // The user may have navigated away while the profile request was in flight.
+      // Patching a detached header is not merely wasted work: it also rebinds
+      // avatarEl to a node that is no longer on screen, so the next update writes
+      // into a dead subtree.
+      if (!chatWrap.isConnected) return;
       contact = resolved;
       nameEl.textContent = resolved.name || resolved.nickname || "";
       // Leave nickEl to refreshPresence() below — it owns the subtitle once
@@ -493,8 +498,13 @@ export async function renderChat(container, userId) {
     let currentPresenceStatus = "";
     let typingTimer = null;
 
+    // Every subtitle write goes through here, and every one of them is skipped
+    // once the header has left the DOM: presence and typing both arrive
+    // asynchronously and would otherwise keep writing into a detached node after
+    // the user navigated away.
     const updateStatusText = (status) => {
       if (status) currentPresenceStatus = status;
+      if (!chatWrap.isConnected) return;
       if (!typingTimer) nickEl.textContent = currentPresenceStatus;
     };
 
@@ -513,6 +523,10 @@ export async function renderChat(container, userId) {
 
     const unsubTyping = onTypingUpdate(userId, (isTyping) => {
       if (typingTimer) clearTimeout(typingTimer);
+      if (!chatWrap.isConnected) {
+        typingTimer = null;
+        return;
+      }
       if (isTyping) {
         nickEl.textContent = "печатает...";
         nickEl.classList.add("status-typing");
@@ -954,7 +968,11 @@ export async function renderChat(container, userId) {
       await saveMessage(storedMsg);
       await saveContact({ ...contact, last_message: getMessagePreview(payloadStr), last_ts: now });
 
-      pendingAcks.set(String(msgId), { tempId: tempId, userId: userId });
+      // addPendingAck stamps the entry with its enqueue time. A bare
+      // pendingAcks.set() left ts undefined, so the TTL sweep treated the entry as
+      // ancient and dropped it before the ACK arrived — the delivery tick then
+      // stayed on "sending" forever.
+      addPendingAck(msgId, { tempId: tempId, userId: userId });
 
       let sent = false;
       try {
@@ -1026,7 +1044,11 @@ export async function renderChat(container, userId) {
       await saveMessage(storedMsg);
       await saveContact({ ...contact, last_message: getMessagePreview(text), last_ts: now });
 
-      pendingAcks.set(String(msgId), { tempId: tempId, userId: userId });
+      // addPendingAck stamps the entry with its enqueue time. A bare
+      // pendingAcks.set() left ts undefined, so the TTL sweep treated the entry as
+      // ancient and dropped it before the ACK arrived — the delivery tick then
+      // stayed on "sending" forever.
+      addPendingAck(msgId, { tempId: tempId, userId: userId });
 
       let sent = false;
       try {
@@ -1142,6 +1164,10 @@ export async function renderChat(container, userId) {
   obs.observe(document.body, { childList: true, subtree: true });
 }
 
+// calculateSafetyNumber fetches both identity keys and delegates the derivation to
+// the one shared implementation in crypto.js. It used to carry its own copy of the
+// hashing and formatting, which is how the codebase ended up with three variants
+// that could disagree.
 export async function calculateSafetyNumber(userId1, userId2) {
   const bundle1 = await apiGet(`/keys/bundle/${userId1}`);
   const bundle2 = await apiGet(`/keys/bundle/${userId2}`);
@@ -1153,37 +1179,11 @@ export async function calculateSafetyNumber(userId1, userId2) {
     throw new Error("Не удалось получить ключи пользователя 2");
   }
 
-  const ik1 = bundle1.devices[0].identity_key;
-  const ik2 = bundle2.devices[0].identity_key;
-
-  const bytes1 = new Uint8Array(atob(ik1).split("").map(c => c.charCodeAt(0)));
-  const bytes2 = new Uint8Array(atob(ik2).split("").map(c => c.charCodeAt(0)));
-
-  const sorted = [bytes1, bytes2].sort((a, b) => {
-    for (let i = 0; i < 32; i++) {
-      if (a[i] !== b[i]) return a[i] - b[i];
-    }
-    return 0;
-  });
-
-  const concat = new Uint8Array(64);
-  concat.set(sorted[0], 0);
-  concat.set(sorted[1], 32);
-
-  const hashBuffer = await window.crypto.subtle.digest("SHA-256", concat);
-  const hashArray = new Uint8Array(hashBuffer);
-
-  let numStr = "";
-  for (let i = 0; i < hashArray.length; i += 2) {
-    const val = (hashArray[i] << 8) | hashArray[i+1];
-    numStr += String(val).padStart(5, "0").substring(0, 5);
-  }
-
-  const blocks = [];
-  for (let i = 0; i < numStr.length && blocks.length < 5; i += 5) {
-    blocks.push(numStr.substring(i, i + 5));
-  }
-  return blocks.join(" ");
+  const decode = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  return computeSafetyNumber(
+    decode(bundle1.devices[0].identity_key),
+    decode(bundle2.devices[0].identity_key)
+  );
 }
 
 export async function showSafetyExplanationModal(peerId) {

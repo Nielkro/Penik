@@ -112,10 +112,12 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 ## Crypto
 
+- `client/js/vault.js` — Seals local secrets (private identity key, group keys, session token) with a non-extractable AES-GCM key so an IndexedDB dump is not a usable copy.
 - `client/js/crypto.js` — Implements browser cryptography: X25519, HKDF, ChaCha20-Poly1305, direct message E2EE, signatures, safety numbers, key backups, and group encryption.
 - `client/js/pinning.js` — TOFU pinning of peer devices' public identity keys: pins on first sight, displays a warning notification and updates the pin on key change without blocking communication.
 - `client/js/groups.js` — Coordinates client-side group E2EE: epoch key generation, wrapping envelopes for devices, rotation, message encryption, and history synchronization.
 - `android/app/src/main/java/niel/kro/penik/data/crypto/E2EECrypto.kt` — Implements Android E2EE using X25519, HKDF, and ChaCha20-Poly1305, including encryption/decryption of private key backups and file attachment encryption (`encryptFileChaCha20`).
+- `android/app/src/main/java/niel/kro/penik/data/crypto/SafetyNumber.kt` — Single Android definition of the conversation safety number, kept byte-identical to the web implementation.
 - `android/app/src/main/java/niel/kro/penik/data/crypto/GroupCrypto.kt` — Implements group encryption, AAD protocol, derivation of message keys, and wrapping/unwrapping group keys for devices.
 - `android/app/src/main/java/niel/kro/penik/data/local/database/DatabaseEncryption.kt` — Prepares the Android local database encryption key and handles migration for previously unencrypted DBs.
 - `android/app/src/main/java/niel/kro/penik/data/repository/AuthRepository.kt` — Generates and persists stable identity key pairs during register/login, and handles upload/restore of encrypted key backups.

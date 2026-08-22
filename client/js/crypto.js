@@ -197,32 +197,59 @@ export async function verifySignature(publicKeyBytes, signatureBytes, dataBytes)
   }
 }
 
-export async function computeSafetyNumber(ikPubA, ikPubB) {
-  const cleanA = ikPubA.length === 33 && ikPubA[0] === 5 ? ikPubA.slice(1) : ikPubA;
-  const cleanB = ikPubB.length === 33 && ikPubB[0] === 5 ? ikPubB.slice(1) : ikPubB;
+// computeSafetyNumber derives the human-comparable fingerprint of a conversation
+// from the two identity keys.
+//
+// There used to be three implementations of this — a dead SHA-512×12 variant here
+// and two SHA-256×25 copies in the web and Android UIs. A fingerprint that differs
+// between platforms is worse than none: the users compare, see different numbers,
+// and conclude they are being intercepted. This is now the single web definition,
+// byte-for-byte identical to the Android one.
+//
+// Shape: strip the legacy 0x05 type prefix, order the two keys by unsigned byte
+// value (so the result does not depend on who is looking), SHA-256 over the 64
+// concatenated bytes, then 5 groups of 5 digits.
+export const SAFETY_NUMBER_BLOCKS = 5;
 
-  const keys = [cleanA, cleanB].sort((a, b) => {
-    for (let i = 0; i < 32; i++) {
-      if (a[i] !== b[i]) return a[i] - b[i];
-    }
-    return 0;
-  });
+function normalizeIdentityKey(key) {
+  const bytes = key instanceof Uint8Array ? key : new Uint8Array(key);
+  const clean = bytes.length === 33 && bytes[0] === 5 ? bytes.subarray(1) : bytes;
+  if (clean.length !== 32) {
+    throw new Error(`safety number: expected a 32-byte identity key, got ${clean.length}`);
+  }
+  return clean;
+}
+
+// compareUnsigned orders keys by unsigned byte value. Uint8Array elements are
+// already unsigned in JS; the helper exists so the ordering rule is stated in one
+// place and stays aligned with the Kotlin side, where bytes are signed.
+function compareUnsigned(a, b) {
+  for (let i = 0; i < 32; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return 0;
+}
+
+export async function computeSafetyNumber(ikPubA, ikPubB) {
+  const keys = [normalizeIdentityKey(ikPubA), normalizeIdentityKey(ikPubB)].sort(compareUnsigned);
 
   const concatenated = new Uint8Array(64);
   concatenated.set(keys[0], 0);
   concatenated.set(keys[1], 32);
 
-  const hashBuffer = await crypto.subtle.digest("SHA-512", concatenated);
-  const hash = new Uint8Array(hashBuffer);
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", concatenated));
 
-  const groups = [];
-  const view = new DataView(hash.buffer);
-  for (let i = 0; i < 12; i++) {
-    const val = view.getUint32(i * 4, false);
-    const num = String(val % 100000).padStart(5, "0");
-    groups.push(num);
+  let digits = "";
+  for (let i = 0; i + 1 < hash.length && digits.length < SAFETY_NUMBER_BLOCKS * 5; i += 2) {
+    const val = (hash[i] << 8) | hash[i + 1];
+    digits += String(val).padStart(5, "0").substring(0, 5);
   }
-  return groups.join(" ");
+
+  const blocks = [];
+  for (let i = 0; i < digits.length; i += 5) {
+    blocks.push(digits.substring(i, i + 5));
+  }
+  return blocks.join(" ");
 }
 
 export function replacer(key, value) {
