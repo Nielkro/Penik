@@ -59,9 +59,12 @@ func (h *Hub) SendToUser(userID int64, frame []byte) {
 
 // SendToDevice delivers a pre-encoded frame to the given device if it is online.
 func (h *Hub) SendToDevice(deviceID int64, frame []byte) {
+	// The read lock is held across the send, not just the lookup: unregister
+	// closes c.send while holding the write lock, so releasing early would race
+	// with it and panic on a send to a closed channel.
 	h.mu.RLock()
+	defer h.mu.RUnlock()
 	c, ok := h.clients[deviceID]
-	h.mu.RUnlock()
 	if !ok {
 		return
 	}
@@ -82,6 +85,20 @@ func (h *Hub) IsOnline(deviceID int64) bool {
 	_, ok := h.clients[deviceID]
 	h.mu.RUnlock()
 	return ok
+}
+
+// IsUserOnlineExcept reports whether a user has an active connection on any
+// device other than the given one. Used while a connection is tearing down, when
+// its own unregister has not been processed yet.
+func (h *Hub) IsUserOnlineExcept(userID, deviceID int64) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, c := range h.clients {
+		if c.userID == userID && c.deviceID != deviceID {
+			return true
+		}
+	}
+	return false
 }
 
 // IsUserOnline reports whether a user has at least one active connection.
