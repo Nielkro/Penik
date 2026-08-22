@@ -7,6 +7,24 @@ import (
 	"time"
 )
 
+// pruneWindows drops keys whose whole window has expired. Without it the maps
+// grow without bound, so a stream of distinct source addresses would slowly
+// exhaust memory.
+func pruneWindows(m map[string][]time.Time, threshold time.Time) {
+	for key, times := range m {
+		fresh := false
+		for _, t := range times {
+			if t.After(threshold) {
+				fresh = true
+				break
+			}
+		}
+		if !fresh {
+			delete(m, key)
+		}
+	}
+}
+
 type IPRateLimiter struct {
 	mu  sync.Mutex
 	ips map[string][]time.Time
@@ -25,6 +43,10 @@ func (l *IPRateLimiter) Limit(next http.Handler) http.Handler {
 		l.mu.Lock()
 		now := time.Now()
 		threshold := now.Add(-1 * time.Minute)
+
+		if len(l.ips) > 1024 {
+			pruneWindows(l.ips, threshold)
+		}
 
 		// Clean up old entries
 		reqs := l.ips[ip]
@@ -80,6 +102,9 @@ func (l *UserRateLimiter) Limit(next http.Handler) http.Handler {
 		l.mu.Lock()
 		now := time.Now()
 		threshold := now.Add(-l.window)
+		if len(l.hits) > 1024 {
+			pruneWindows(l.hits, threshold)
+		}
 		var active []time.Time
 		for _, t := range l.hits[key] {
 			if t.After(threshold) {

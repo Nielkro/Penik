@@ -1,4 +1,4 @@
-import { apiPatch, apiGet, createPairingSession, getPairingSession, uploadPairingHistory, uploadAvatar } from "../api.js";
+import { apiPatch, apiPut, apiGet, createPairingSession, getPairingSession, uploadPairingHistory, uploadAvatar } from "../api.js";
 import { getAllMessages, getAllContacts, getAllGroups, getAllGroupMembers, getAllGroupKeys, getAllGroupMessages } from "../storage.js";
 import { deriveSharedSecret, encryptPairingHistory, generateKeyPair } from "../crypto.js";
 import { importPairingHistory } from "../pairing.js";
@@ -142,7 +142,7 @@ export function renderProfile(container) {
     saveBtn.appendChild(spinner());
 
     try {
-      const res = await apiPatch("/users/me", { name: newName });
+      const res = await apiPut("/users/me/name", { name: newName });
       const updatedUser = { ...user, name: res.name || newName };
       setCurrentUser(updatedUser);
       nameDisplay.textContent = updatedUser.name;

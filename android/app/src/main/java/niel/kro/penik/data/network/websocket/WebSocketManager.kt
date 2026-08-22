@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
+import niel.kro.penik.data.network.api.ApiConfig
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -301,7 +302,10 @@ class WebSocketManager @Inject constructor(
     private fun doConnect() {
         _connectionState.value = ConnectionState.CONNECTING
         try {
-            val scheme = if (connectPort == 443) "wss" else "ws"
+            // Derived from the REST scheme rather than the port: a non-443 port
+            // (reverse proxy, staging) must still upgrade over TLS, and plaintext
+            // ws:// would expose the session token carried in the protocol header.
+            val scheme = if (ApiConfig.SCHEME == "https") "wss" else "ws"
             val request = Request.Builder()
                 .url("$scheme://$connectHost:$connectPort/api/v1/ws")
                 .header("Sec-WebSocket-Protocol", "access_token, $token")

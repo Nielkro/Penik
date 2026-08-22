@@ -25,7 +25,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 shrinking is on; proguard-rules.pro carries the keep rules for the
+            // reflection-driven libraries (Retrofit, kotlinx.serialization, Room,
+            // MessagePack, LiveKit/WebRTC JNI, Hilt).
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

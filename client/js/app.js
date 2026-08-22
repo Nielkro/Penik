@@ -416,8 +416,14 @@ async function boot() {
 
 boot().catch(err => {
   console.error('Boot error:', err);
-  document.getElementById('app').innerHTML =
-    `<div style="color:#e05252;padding:24px;text-align:center">Не удалось запустить: ${err.message}</div>`;
+  const appEl = document.getElementById('app');
+  if (!appEl) return;
+  appEl.textContent = '';
+  const box = document.createElement('div');
+  box.style.cssText = 'color:#e05252;padding:24px;text-align:center';
+  // textContent, not innerHTML: the message can carry server- or peer-supplied text.
+  box.textContent = `Не удалось запустить: ${err?.message || 'неизвестная ошибка'}`;
+  appEl.appendChild(box);
 });
 
 /* ── Exports for use by UI modules ── */
@@ -595,7 +601,6 @@ async function onMsgRecvGlobal(payload) {
       const attempts = state.retryCounters.get(msgKey) || 0;
       if (attempts < 2) {
         state.retryCounters.set(msgKey, attempts + 1);
-        console.log(`onMsgRecvGlobal: decryption failed, requesting retry for msg ${payload.msg_id} from device ${payload.from_device_id} (attempt ${attempts + 1}/2)`);
         ws.send(0x16, {
           sender_device_id: Number(payload.from_device_id),
           requester_device_id: Number(localStorage.getItem("device_id")),
@@ -738,13 +743,11 @@ async function onMsgReadGlobal(payload) {
 }
 
 async function onMsgDeleteNotifyGlobal(payload) {
-  console.log("[ws] Received OpMsgDeleteNotify:", payload);
   if (!payload?.msg_id) return;
   try {
     await deleteMessage(payload.msg_id);
     const escaped = CSS.escape(String(payload.msg_id));
     const bubbles = document.querySelectorAll(`[data-msg-id="${escaped}"], [data-client-msg-id="${escaped}"]`);
-    console.log(`[ws] Found ${bubbles.length} matching bubbles to remove for msg_id: ${payload.msg_id}`);
     bubbles.forEach(b => b.remove());
     triggerChatListUpdate();
   } catch (e) {
@@ -1054,7 +1057,6 @@ function setupGlobalWSListeners() {
   ws.on(OP.MSG_DELETE_NOTIFY, onMsgDeleteNotifyGlobal);
   ws.on(OP.USER_AVATAR_UPDATE, (payload) => {
     if (payload && payload.user_id) {
-      console.log(`[ws] Received avatar update for user ${payload.user_id}`);
       const ts = payload.ts ? payload.ts * 1000 : Date.now();
       avatarUpdateTimestamps.set(String(payload.user_id), ts);
       triggerChatListUpdate();

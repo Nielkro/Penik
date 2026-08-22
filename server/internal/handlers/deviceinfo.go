@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"messenger/server/internal/middleware"
 )
 
 var (
@@ -57,21 +59,11 @@ func init() {
 	}
 }
 
-// clientIP extracts the best-guess originating IP for a request, honoring a
-// single X-Forwarded-For hop from a trusted reverse proxy before falling back
-// to the raw connection address.
+// clientIP extracts the best-guess originating IP for a request. It delegates
+// to the shared middleware implementation so proxy-header trust rules are
+// applied identically for logging, rate limiting, and device geolocation.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		if ip := strings.TrimSpace(parts[0]); ip != "" {
-			return ip
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return middleware.ClientIP(r)
 }
 
 // isPrivateOrLocal reports whether an IP is loopback, private, link-local, or reserved.
@@ -134,7 +126,7 @@ func locationFromIP(ip string) string {
 }
 
 func fetchLocation(ip string) string {
-	url := fmt.Sprintf("http://ip-api.com/json/%s?lang=ru", ip)
+	url := fmt.Sprintf("https://ip-api.com/json/%s?lang=ru", ip)
 	resp, err := geoClient.Get(url)
 	if err != nil {
 		return ""

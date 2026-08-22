@@ -478,6 +478,10 @@ export async function decryptKeyBackup(encryptedBlob, salt, iv, passphrase) {
       if (iterations === LEGACY_KDF_ITERATIONS) throw e;
     }
   }
+  // Unreachable while the loop ends with LEGACY_KDF_ITERATIONS, but an explicit
+  // throw keeps the contract "returns bytes or throws" from silently degrading
+  // to undefined if the work-factor list changes.
+  throw new Error("Не удалось расшифровать резервную копию ключа");
 }
 
 // ── Group E2EE ──

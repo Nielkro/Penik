@@ -503,7 +503,38 @@ function renderFileCard(container, fileMsg) {
   container.appendChild(fileCard);
 }
 
+// Blob URLs pin their whole decrypted payload in memory until revoked, so the
+// cache is bounded: the oldest entry is revoked once the cap is reached.
+const MAX_CACHED_BLOB_URLS = 40;
 export const decryptedBlobCache = new Map();
+
+// cacheBlobUrl stores a blob URL and revokes the eldest one when the cache is
+// full, releasing the memory the browser holds for it.
+function cacheBlobUrl(sourceUrl, blobUrl) {
+  const previous = decryptedBlobCache.get(sourceUrl);
+  if (previous && previous !== blobUrl) {
+    try { URL.revokeObjectURL(previous); } catch (e) {/* already revoked */}
+  }
+  decryptedBlobCache.set(sourceUrl, blobUrl);
+  while (decryptedBlobCache.size > MAX_CACHED_BLOB_URLS) {
+    const oldest = decryptedBlobCache.keys().next();
+    if (oldest.done || oldest.value === sourceUrl) break;
+    const staleUrl = decryptedBlobCache.get(oldest.value);
+    decryptedBlobCache.delete(oldest.value);
+    if (window._streamMediaCache) window._streamMediaCache.delete(oldest.value);
+    try { URL.revokeObjectURL(staleUrl); } catch (e) {/* already revoked */}
+  }
+}
+
+// revokeCachedBlobUrls releases every cached blob URL — call on logout so the
+// decrypted attachments do not stay alive in the page.
+export function revokeCachedBlobUrls() {
+  for (const url of decryptedBlobCache.values()) {
+    try { URL.revokeObjectURL(url); } catch (e) {/* already revoked */}
+  }
+  decryptedBlobCache.clear();
+  if (window._streamMediaCache) window._streamMediaCache.clear();
+}
 
 // Human-readable names for the MP4 sample entry codes a video track can carry.
 // Only avc1/avc3 (H.264) decode everywhere; HEVC needs hardware support the
@@ -628,7 +659,7 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
       if (!window._streamMediaCache) window._streamMediaCache = new Map();
       window._streamMediaCache.set(fileInfo.url, blobUrl);
 
-      decryptedBlobCache.set(fileInfo.url, blobUrl);
+      cacheBlobUrl(fileInfo.url, blobUrl);
     }
 
     if (isBackgroundFetch) {

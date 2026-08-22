@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"messenger/server/internal/config"
 	"messenger/server/internal/db"
@@ -37,6 +38,13 @@ func WebSocketHandler(hub *ws.Hub, database *db.DB, cfg *config.Config) http.Han
 			// Dev mode: allow any origin (wildcard)
 			opts.InsecureSkipVerify = true
 		}
+
+		// The server sets a global write deadline so a stuck HTTP response cannot
+		// pin a connection forever. A WebSocket outlives any such deadline, so
+		// clear it for this connection before taking over the socket.
+		rc := http.NewResponseController(w)
+		_ = rc.SetWriteDeadline(time.Time{})
+		_ = rc.SetReadDeadline(time.Time{})
 
 		conn, err := websocket.Accept(w, r, opts)
 		if err != nil {

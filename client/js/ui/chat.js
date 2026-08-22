@@ -599,7 +599,6 @@ export async function renderChat(container, userId) {
   function appendMessage(msg, prepend = false) {
     if (msg.plaintext === "[DELETED]") return;
     const lookupId = msg.msg_id || msg.client_msg_id;
-    console.log("[appendMessage] msg_id:", msg.msg_id, "client_msg_id:", msg.client_msg_id, "plaintext prefix:", String(msg.plaintext).slice(0, 60));
     if (lookupId) {
       const escaped = CSS.escape(String(lookupId));
       const existing = messagesEl.querySelector(`[data-msg-id="${escaped}"], [data-client-msg-id="${escaped}"]`);

@@ -25,6 +25,22 @@ export class CallManager {
     this.onMediaStateChange = null;
     this.onActiveSpeakersChange = null;
     this.onTimerTick = null;
+
+    // Teardown callbacks for window-level listeners registered per video tile.
+    // Tiles are recreated on every track publish, so without this the listeners
+    // accumulate for the lifetime of the page.
+    this._tileListenerCleanups = [];
+  }
+
+  _releaseTileListeners() {
+    for (const release of this._tileListenerCleanups) {
+      try {
+        release();
+      } catch (e) {
+        console.warn('Failed to release tile listener:', e);
+      }
+    }
+    this._tileListenerCleanups = [];
   }
 
   init() {
@@ -222,6 +238,7 @@ export class CallManager {
 
   cleanup() {
     this._stopTimer();
+    this._releaseTileListeners();
     clearTimeout(this._dialTimeout);
     if (this.room) {
       try {
@@ -582,17 +599,29 @@ export class CallManager {
       }, 50);
     };
 
-    tile.addEventListener('mousedown', (e) => onStart(e.clientX, e.clientY));
-    window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
-    window.addEventListener('mouseup', onEnd);
+    const onMouseMove = (/** @type {MouseEvent} */ e) => onMove(e.clientX, e.clientY);
+    const onTouchMove = (/** @type {TouchEvent} */ e) => {
+      if (e.touches.length === 1) onMove(e.touches[0].clientX, e.touches[0].clientY);
+    };
 
+    tile.addEventListener('mousedown', (e) => onStart(e.clientX, e.clientY));
     tile.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) onStart(e.touches[0].clientX, e.touches[0].clientY);
     }, { passive: true });
-    window.addEventListener('touchmove', (e) => {
-      if (e.touches.length === 1) onMove(e.touches[0].clientX, e.touches[0].clientY);
-    }, { passive: true });
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('touchmove', onTouchMove, { passive: true });
     window.addEventListener('touchend', onEnd);
+
+    // Registered on window so a drag keeps tracking outside the tile bounds;
+    // released when the call ends.
+    this._tileListenerCleanups.push(() => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onEnd);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onEnd);
+    });
   }
 
   _setPrimaryTile(selectedTile) {

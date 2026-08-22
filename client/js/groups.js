@@ -183,22 +183,35 @@ export async function ensureGroupKey(groupId, version) {
   return promise;
 }
 
+// Identity keys are cached per device, but a device can be re-registered with a
+// fresh key, so entries expire instead of living for the whole page session.
+const DEVICE_IK_TTL_MS = 5 * 60 * 1000;
+/** @type {Map<number, { ik: any, at: number }>} */
 const deviceIKCache = new Map();
+
+function cachedDeviceIK(deviceId) {
+  const entry = deviceIKCache.get(deviceId);
+  if (!entry) return null;
+  if (Date.now() - entry.at > DEVICE_IK_TTL_MS) {
+    deviceIKCache.delete(deviceId);
+    return null;
+  }
+  return entry.ik;
+}
 
 // fetchDeviceIK returns one device's public identity key by scanning the given
 // group's members' key bundles. groupId is passed explicitly so concurrent
 // lookups for different groups cannot race on shared state.
 async function fetchDeviceIK(groupId, deviceId) {
-  if (deviceIKCache.has(deviceId)) {
-    return deviceIKCache.get(deviceId);
-  }
+  const cached = cachedDeviceIK(deviceId);
+  if (cached) return cached;
   const members = await getGroupMembers(groupId).catch(() => []);
   const userIds = members.map(m => m.user_id);
   const devices = await fetchDeviceKeys(userIds.length ? userIds : [myUserId()]);
   for (const d of devices) {
-    deviceIKCache.set(d.device_id, d.ik_pub);
+    deviceIKCache.set(d.device_id, { ik: d.ik_pub, at: Date.now() });
   }
-  return deviceIKCache.get(deviceId) || null;
+  return cachedDeviceIK(deviceId);
 }
 
 /* ── Public API: group lifecycle ── */

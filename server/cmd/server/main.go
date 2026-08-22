@@ -45,11 +45,23 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
+		// Every table with an expiry column is swept here; leaving expired rows
+		// behind grows the database forever and keeps dead session tokens
+		// available to anyone who later reads the file.
+		sweeps := []struct {
+			name  string
+			query string
+		}{
+			{"history packets", `DELETE FROM group_history_packets WHERE expires_at < ?`},
+			{"sessions", `DELETE FROM sessions WHERE expires_at < ?`},
+			{"pairing sessions", `DELETE FROM pairing_sessions WHERE expires_at < ?`},
+		}
 		for range ticker.C {
-			if _, err := database.Exec(
-				`DELETE FROM group_history_packets WHERE expires_at < ?`,
-				time.Now().Unix()); err != nil {
-				log.Printf("db: error sweeping expired history packets: %v", err)
+			now := time.Now().Unix()
+			for _, sweep := range sweeps {
+				if _, err := database.Exec(sweep.query, now); err != nil {
+					log.Printf("db: error sweeping expired %s: %v", sweep.name, err)
+				}
 			}
 		}
 	}()
@@ -200,7 +212,9 @@ func main() {
 
 	// Wrap mux with global middleware (max body, CORS).
 	var handler http.Handler = mux
-	handler = middleware.MaxBodySize(cfg.MaxBodySize)(handler)
+	handler = middleware.MaxBodySize(cfg.MaxBodySize, map[string]int64{
+		"/api/v1/attachments/vk-upload": cfg.MaxUploadSize,
+	})(handler)
 	handler = middleware.CORS(cfg)(handler)
 	handler = middleware.SecurityHeaders(handler)
 	handler = middleware.RequestLogger(handler)
@@ -214,7 +228,7 @@ func main() {
 		Addr:         addr,
 		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 0, // WebSocket connections must not timeout during upgrade
+		WriteTimeout: 30 * time.Second, // WS handler clears its own deadline before upgrading
 		IdleTimeout:  120 * time.Second,
 	}
 
