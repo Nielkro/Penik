@@ -50,7 +50,9 @@ Penik Messenger REST API предоставляет эндпоинты для а
 | | `GET` | `/api/v1/groups/:group_id/messages/history` | Bearer Token | История сообщений группы |
 | | `POST` | `/api/v1/groups/:group_id/history-packets` | Bearer Token | Загрузка одноразового пакета истории для нового участника |
 | | `GET` | `/api/v1/groups/:group_id/history-packets` | Bearer Token | Скачивание и удаление пакета истории |
-| **Attachments** | `POST` | `/api/v1/attachments/vk-upload` | Bearer Token | Загрузка зашифрованного вложения в VK CDN |
+| **Attachments** | `POST` | `/api/v1/attachments/vk-upload` | Bearer Token | Загрузка вложения в VK CDN силами сервера (веб) |
+| | `GET` | `/api/v1/attachments/vk-upload-url` | Bearer Token | Выдача одноразовой ссылки для загрузки клиентом (Android) |
+| | `POST` | `/api/v1/attachments/vk-save` | Bearer Token | Коммит клиентской загрузки, возвращает ссылку на файл |
 | | `GET` | `/api/v1/attachments/proxy` | Bearer Token | Проксирование скачивания вложения из VK |
 | **Messages & Chats** | `GET` | `/api/v1/messages/history` | Bearer Token | История личных сообщений с пользователем |
 | | `GET` | `/api/v1/messages/:user_id/status` | Bearer Token | Статусы доставки/прочтения сообщений |
@@ -186,16 +188,51 @@ Penik Messenger REST API предоставляет эндпоинты для а
 
 ### 4. Вложения (Attachments via VK CDN)
 
-#### `POST /api/v1/attachments/vk-upload`
-Загрузка зашифрованного медиафайла/документа в VK CDN via VK Docs API.
-- **Form Data:** file binary
+Есть два способа загрузки — выбор зависит от платформы.
+
+#### `POST /api/v1/attachments/vk-upload` (веб)
+Сервер сам заливает файл в VK CDN и возвращает только ссылку. Браузер не может
+постить напрямую на upload-сервер VK (там нет CORS-заголовков), поэтому байты
+проходят транзитом через сервер.
+- **Form Data:** `file` — зашифрованные байты
 - **Response (200 OK):**
   ```json
   {
-    "url": "https://vk.com/doc...",
-    "doc_id": "123456_789"
+    "url": "https://vk.com/doc..."
   }
   ```
+
+#### `GET /api/v1/attachments/vk-upload-url` (Android, шаг 1)
+Сервер отдаёт одноразовый upload-эндпоинт VK; сами байты через сервер не идут.
+- **Response (200 OK):**
+  ```json
+  {
+    "upload_url": "https://pu.vk.com/c123/upload_doc?..."
+  }
+  ```
+- Далее клиент сам делает `POST multipart/form-data` (поле `file`) на
+  `upload_url`. VK отвечает JSON с непрозрачным полем `file` — это токен, который
+  бесполезен без токена бота.
+
+#### `POST /api/v1/attachments/vk-save` (Android, шаг 2)
+Сервер коммитит загрузку (`docs.save`) и возвращает прямую ссылку на CDN.
+- **Request Body (JSON):**
+  ```json
+  {
+    "file": "<token из ответа upload-сервера VK>",
+    "name": "photo.enc"
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "url": "https://vk.com/doc..."
+  }
+  ```
+
+#### `GET /api/v1/attachments/proxy`
+Проксирование скачивания: `?url=<ссылка VK>`. Хост проверяется по allowlist,
+страница предпросмотра документа разворачивается в прямую ссылку.
 
 ---
 
@@ -209,3 +246,5 @@ Penik Messenger REST API предоставляет эндпоинты для а
 - **Запросы связок ключей (`/api/v1/keys/bundle/*`)**: 60 запросов / мин.
 - **Модификации групп (`POST/PATCH/DELETE /api/v1/groups/*`)**: 30 запросов / мин.
 - **Ротация ключей группы (`POST /api/v1/groups/*/rotate`)**: 10 запросов / мин.
+- **Клиентская загрузка вложений (`vk-upload-url`, `vk-save`)**: 60 запросов / мин на пользователя.
+

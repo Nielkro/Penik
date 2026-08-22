@@ -191,6 +191,7 @@ private fun DialingView(callManager: CallManager, connecting: Boolean) {
 
 @Composable
 private fun ActiveCallView(callManager: CallManager) {
+    val state by callManager.state.collectAsState()
     val remoteScreenTrack by callManager.remoteScreenShareTrack.collectAsState()
     val remoteCamTrack by callManager.remoteCameraTrack.collectAsState()
     val localTrack by callManager.localVideoTrack.collectAsState()

@@ -20,7 +20,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/handlers/pairing.go` — Creates, presents, and manages pairing sessions for linking new devices and transferring history.
 - `server/internal/handlers/keys.go` — REST handlers for publishing identity/key material, retrieving key bundles, and key backups.
 - `server/internal/handlers/presence.go` — Serves and broadcasts user presence states and active device information.
-- `server/internal/handlers/vkupload.go` — Accepts encrypted attachment payloads and uploads them to VK CDN via VK Docs API; proxies downloads through a VK host allowlist, resolving document preview pages to their direct link.
+- `server/internal/handlers/vkupload.go` — Two attachment upload flows plus the download proxy: the web flow relays encrypted bytes through the server into VK CDN (`vk-upload`), while the native flow issues a one-shot VK upload URL (`vk-upload-url`) and later commits the client's opaque file token via `docs.save` (`vk-save`); downloads are proxied through a VK host allowlist, resolving document preview pages to their direct link.
 - `server/internal/handlers/ws.go` — Authorizes WebSocket upgrades and creates server-side client sessions for real-time event exchange.
 - `server/internal/ws/client.go` — Implements the WebSocket client read/write pump, handling direct messages, key requests, receipt events, offline batching, and presence.
 - `server/internal/ws/group.go` — Receives and routes encrypted group messages, receipts, and offline delivery across group members.
@@ -147,10 +147,10 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/data/repository/MessageRepository.kt` — Synchronizes history, handles direct messages/WebSocket events, encrypts/decrypts payloads, and persists to Room.
 - `android/app/src/main/java/niel/kro/penik/data/repository/ChatRepository.kt` — Repository for the direct chat list and aggregated contact/last message data.
 - `android/app/src/main/java/niel/kro/penik/data/repository/GroupRepository.kt` — Synchronizes groups/members, stores group keys/messages, manages envelopes, rotation, and group history.
-- `android/app/src/main/java/niel/kro/penik/data/repository/AttachmentManager.kt` — Handles file/media upload flow: reads URI bytes via ContentResolver, encrypts payload with ChaCha20-Poly1305 via E2EECrypto, uploads to VK CDN via `POST /attachments/vk-upload`, generates a WebP thumbnail, caches the plaintext locally, and returns a JSON payload string matching the wire format.
+- `android/app/src/main/java/niel/kro/penik/data/repository/AttachmentManager.kt` — Handles file/media upload flow: reads URI bytes via ContentResolver, encrypts payload with ChaCha20-Poly1305 via E2EECrypto, uploads the ciphertext directly to VK (server-issued one-shot URL from `GET /attachments/vk-upload-url`, committed via `POST /attachments/vk-save`) through a token-free OkHttp client, generates a WebP thumbnail, caches the plaintext locally, and returns a JSON payload string matching the wire format.
 - `android/app/src/main/java/niel/kro/penik/data/repository/PresenceBus.kt` — Shared flow of presence updates for UI observers and repositories.
 - `android/app/src/main/java/niel/kro/penik/data/repository/AvatarCacheBus.kt` — Invalidates locally cached avatars after server updates.
-- `android/app/src/main/java/niel/kro/penik/data/di/Modules.kt` — Hilt providers for the local DB, SQLCipher, Retrofit/OkHttp, API, WebSocket, crypto dependencies, and AttachmentManager.
+- `android/app/src/main/java/niel/kro/penik/data/di/Modules.kt` — Hilt providers for the local DB, SQLCipher, Retrofit/OkHttp, API, WebSocket, crypto dependencies, and AttachmentManager; also provides the `@ExternalUploadClient` OkHttp client used for VK uploads, which deliberately carries no session token.
 
 ### Shared application/domain coordination
 

@@ -28,6 +28,16 @@ import javax.inject.Singleton
 import niel.kro.penik.data.crypto.E2EECrypto
 import niel.kro.penik.data.crypto.GroupCrypto
 import niel.kro.penik.BuildConfig
+import javax.inject.Qualifier
+
+
+/**
+ * Marks the OkHttp client used for uploads to third-party hosts (VK), which
+ * must not carry the app's session token.
+ */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class ExternalUploadClient
 
 
 @Module
@@ -131,6 +141,24 @@ object NetworkModule {
             .build()
     }
 
+    /**
+     * Plain client for third-party endpoints (the VK upload server).
+     *
+     * It deliberately carries no session interceptor: attaching our bearer
+     * token to a request aimed at VK would hand the session to a foreign host.
+     * Write timeout is generous because large attachments upload through here.
+     */
+    @Provides
+    @Singleton
+    @ExternalUploadClient
+    fun provideExternalUploadClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(5, TimeUnit.MINUTES)
+            .readTimeout(2, TimeUnit.MINUTES)
+            .build()
+    }
+
     @Provides
     @Singleton
     fun provideApiService(client: OkHttpClient, json: Json): ApiService {
@@ -161,7 +189,11 @@ object CryptoModule {
 
     @Provides
     @Singleton
-    fun provideAttachmentManager(apiService: ApiService, e2eeCrypto: E2EECrypto): AttachmentManager {
-        return AttachmentManager(apiService, e2eeCrypto)
+    fun provideAttachmentManager(
+        apiService: ApiService,
+        e2eeCrypto: E2EECrypto,
+        @ExternalUploadClient uploadClient: OkHttpClient
+    ): AttachmentManager {
+        return AttachmentManager(apiService, e2eeCrypto, uploadClient)
     }
 }
