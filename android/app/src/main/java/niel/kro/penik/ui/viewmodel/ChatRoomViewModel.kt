@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.content.Context
 import android.net.Uri
+import niel.kro.penik.data.crypto.SafetyNumber
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.repository.AttachmentManager
 import niel.kro.penik.data.repository.ChatRepository
@@ -22,7 +23,6 @@ import niel.kro.penik.data.repository.SecureTokenStorage
 import niel.kro.penik.domain.usecase.DeleteMessageUseCase
 import niel.kro.penik.domain.usecase.LoadMessagesUseCase
 import niel.kro.penik.domain.usecase.SendMessageUseCase
-import java.security.MessageDigest
 import javax.inject.Inject
 
 import niel.kro.penik.data.repository.GroupRepository
@@ -203,32 +203,12 @@ class ChatRoomViewModel @Inject constructor(
         val ik2 = bundle2?.devices?.firstOrNull()?.identityKey
             ?: throw Exception("Bundle 2 not found")
 
-        val bytes1 = android.util.Base64.decode(ik1, android.util.Base64.DEFAULT)
-        val bytes2 = android.util.Base64.decode(ik2, android.util.Base64.DEFAULT)
-
-        val sorted = listOf(bytes1, bytes2).sortedWith { a, b ->
-            for (i in 0 until minOf(a.size, b.size)) {
-                if (a[i] != b[i]) return@sortedWith (a[i].toInt() and 0xFF) - (b[i].toInt() and 0xFF)
-            }
-            a.size - b.size
-        }
-
-        val concat = ByteArray(64)
-        System.arraycopy(sorted[0], 0, concat, 0, 32)
-        System.arraycopy(sorted[1], 0, concat, 32, 32)
-
-        val hash = MessageDigest.getInstance("SHA-256").digest(concat)
-
-        val numStr = buildString {
-            var i = 0
-            while (i < hash.size - 1 && length < 25) {
-                val value = ((hash[i].toInt() and 0xFF) shl 8) or (hash[i + 1].toInt() and 0xFF)
-                append(value.toString().padStart(5, '0').take(5))
-                i += 2
-            }
-        }
-
-        return numStr.chunked(5).joinToString(" ")
+        // Derivation lives in SafetyNumber so the web and Android fingerprints
+        // cannot drift apart; this function only resolves the two keys.
+        return SafetyNumber.compute(
+            android.util.Base64.decode(ik1, android.util.Base64.DEFAULT),
+            android.util.Base64.decode(ik2, android.util.Base64.DEFAULT)
+        )
     }
 
     fun forwardMessage(rawText: String, senderName: String, target: niel.kro.penik.ui.components.ForwardTargetItem, onDone: () -> Unit) {

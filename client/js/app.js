@@ -1068,6 +1068,28 @@ function setupGlobalWSListeners() {
       }
     }
   });
+  // A peer's display name is cached with the local contact row and was previously
+  // only refreshed for brand-new chats, so a rename stayed invisible to everyone
+  // already talking to them. The server now pushes it.
+  ws.on(OP.USER_PROFILE_UPDATE, async (payload) => {
+    if (!payload || !payload.user_id || !payload.name) return;
+    const userId = Number(payload.user_id);
+    try {
+      const existing = await getContact(userId);
+      if (existing && existing.name === payload.name) return;
+      await saveContact({ ...(existing || { user_id: userId }), user_id: userId, name: payload.name });
+    } catch (err) {
+      console.warn('[ws] profile update save failed:', err);
+      return;
+    }
+    triggerChatListUpdate();
+    if (_activeChatCallback && String(_activeChatCallback.userId) === String(userId)) {
+      const chatScreen = document.getElementById('screen-chat');
+      if (chatScreen && chatScreen.classList.contains('active')) {
+        renderChat(chatScreen, userId);
+      }
+    }
+  });
   ws.on(OP.PRESENCE_UPDATE, (payload) => {
     if (payload && payload.user_id != null) {
       emitPresenceUpdate(payload.user_id, { online: payload.online, last_seen: payload.last_seen });

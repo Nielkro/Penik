@@ -1,5 +1,5 @@
 import { apiPatch, apiPut, apiGet, apiPost, createPairingSession, getPairingSession, uploadPairingHistory, uploadAvatar } from "../api.js";
-import { getAllMessages, getAllContacts, getAllGroups, getAllGroupMembers, getAllGroupKeys, getAllGroupMessages } from "../storage.js";
+import { getAllMessages, getAllContacts, getAllGroups, getAllGroupMembers, getAllGroupKeysPlain, getAllGroupMessages } from "../storage.js";
 import { deriveSharedSecret, encryptPairingHistory, generateKeyPair } from "../crypto.js";
 import { importPairingHistory } from "../pairing.js";
 const decodeB64Url = s => {
@@ -446,7 +446,9 @@ export function renderProfile(container) {
           const contacts = await getAllContacts();
           const groups = await getAllGroups();
           const groupMembers = await getAllGroupMembers();
-          const rawGroupKeys = await getAllGroupKeys();
+          // Group keys live sealed at rest, so they are unsealed here and
+          // immediately re-encrypted under the pairing secret.
+          const rawGroupKeys = await getAllGroupKeysPlain();
           const groupKeys = rawGroupKeys.map(k => ({
             ...k,
             key: encodeB64Url(k.key)

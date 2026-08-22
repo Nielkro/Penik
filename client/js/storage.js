@@ -1,4 +1,5 @@
 import { ws } from "./ws.js";
+import { sealBytes, openBytes, sealString, openString, isSealed, resetWrappingKey } from "./vault.js";
 
 const DB_NAME = "penik-messenger";
 const DB_VERSION = 8;
@@ -480,6 +481,10 @@ export async function findAndResolvePendingSentMessage(chatId, timestamp, server
 
 export async function clearIndexedDB() {
   await openDB();
+  // The wrapping key is cleared together with the sealed records it opens, so the
+  // cached handle must be dropped or the next login would seal against a key that
+  // is no longer in the database.
+  resetWrappingKey();
   return new Promise((resolve, reject) => {
     const list = ["contacts", "messages", "e2ee_keys", "groups", "group_members", "group_keys", "group_messages"];
     const transaction = _db.transaction(list, "readwrite");
@@ -502,18 +507,41 @@ export async function getIdentityKey() {
   return record ? record.envelope : null;
 }
 
-// The raw private Identity Key is held in IndexedDB (not localStorage) so it is
-// not trivially readable via a synchronous localStorage dump during an XSS. It
-// is stored as raw bytes under a dedicated key in the e2ee_keys store.
+// vaultStore adapts the e2ee_keys object store for vault.js, which needs a way to
+// persist its own non-extractable wrapping key without importing storage internals.
+const vaultStore = {
+  read: async (id) => {
+    await openDB();
+    return get(tx("e2ee_keys"), id);
+  },
+  write: async (record) => {
+    await openDB();
+    return put(tx("e2ee_keys", "readwrite"), record);
+  },
+};
+
+// The private Identity Key never leaves IndexedDB in the clear: it is sealed with
+// the origin's non-extractable wrapping key (see vault.js), so a database dump is
+// not a usable copy of the key.
 export async function saveIKPrivate(privateKey) {
   await openDB();
-  return put(tx("e2ee_keys", "readwrite"), { id: "identity_private_key", privateKey });
+  const sealed = await sealBytes(vaultStore, privateKey);
+  return put(tx("e2ee_keys", "readwrite"), { id: "identity_private_key", sealed });
 }
 
 export async function getIKPrivate() {
   await openDB();
   const record = await get(tx("e2ee_keys"), "identity_private_key");
-  return record ? record.privateKey : null;
+  if (!record) return null;
+  if (isSealed(record.sealed)) return openBytes(vaultStore, record.sealed);
+  // Legacy plaintext record from before the vault: seal it on first read so the
+  // cleartext copy does not survive this session.
+  if (record.privateKey) {
+    const bytes = record.privateKey;
+    await saveIKPrivate(bytes);
+    return bytes;
+  }
+  return null;
 }
 
 export async function saveIKPublic(publicKey) {
@@ -521,17 +549,25 @@ export async function saveIKPublic(publicKey) {
   return put(tx("e2ee_keys", "readwrite"), { id: "identity_public_key", publicKey });
 }
 
-// The session bearer token is kept in IndexedDB rather than localStorage so it
-// is not exposed to a synchronous localStorage dump during an XSS.
+// The session bearer token is sealed for the same reason as the identity key: it
+// is a long-lived credential, and an unencrypted copy in IndexedDB is a
+// take-away credential rather than a page-bound one.
 export async function saveSessionToken(token) {
   await openDB();
-  return put(tx("e2ee_keys", "readwrite"), { id: "session_token", token });
+  const sealed = await sealString(vaultStore, token);
+  return put(tx("e2ee_keys", "readwrite"), { id: "session_token", sealed });
 }
 
 export async function getSessionToken() {
   await openDB();
   const record = await get(tx("e2ee_keys"), "session_token");
-  return record ? record.token : null;
+  if (!record) return null;
+  if (isSealed(record.sealed)) return openString(vaultStore, record.sealed);
+  if (record.token) {
+    await saveSessionToken(record.token);
+    return record.token;
+  }
+  return null;
 }
 
 export async function deleteSessionToken() {
@@ -653,26 +689,35 @@ export async function getGroupMembers(groupId) {
 }
 
 // Group keys are stored keyed by `${group_id}:${key_version}`. The key bytes are
-// held as a Uint8Array; the surrounding e2ee_keys identity envelope already
-// protects the device at rest.
+// sealed with the origin's non-extractable wrapping key (vault.js): a single group
+// key decrypts every message of that key version, so it must not sit in the
+// database as plaintext.
 function groupKeyId(groupId, version) {
   return `${Number(groupId)}:${Number(version)}`;
 }
 
 export async function saveGroupKey(groupId, version, keyBytes) {
   await openDB();
+  const sealed = await sealBytes(vaultStore, keyBytes);
   return put(tx("group_keys", "readwrite"), {
     id: groupKeyId(groupId, version),
     group_id: Number(groupId),
     key_version: Number(version),
-    key: keyBytes,
+    sealed,
   });
 }
 
 export async function getGroupKey(groupId, version) {
   await openDB();
   const rec = await get(tx("group_keys"), groupKeyId(groupId, version));
-  return rec ? rec.key : null;
+  if (!rec) return null;
+  if (isSealed(rec.sealed)) return openBytes(vaultStore, rec.sealed);
+  // Legacy plaintext row: seal it on first read.
+  if (rec.key) {
+    await saveGroupKey(groupId, version, rec.key);
+    return rec.key;
+  }
+  return null;
 }
 
 export async function saveGroupMessage(message) {
@@ -719,6 +764,20 @@ export async function getAllGroupMembers() {
 export async function getAllGroupKeys() {
   await openDB();
   return getAll(tx("group_keys"));
+}
+
+// getAllGroupKeysPlain unseals every group key for pairing export. The result is
+// immediately re-encrypted to the new device's public key, so it must never be
+// written back to storage or logged.
+export async function getAllGroupKeysPlain() {
+  const rows = await getAllGroupKeys();
+  const out = [];
+  for (const row of rows) {
+    const key = isSealed(row.sealed) ? await openBytes(vaultStore, row.sealed) : row.key;
+    if (!key) continue;
+    out.push({ id: row.id, group_id: row.group_id, key_version: row.key_version, key });
+  }
+  return out;
 }
 
 export async function getAllGroupMessages() {
