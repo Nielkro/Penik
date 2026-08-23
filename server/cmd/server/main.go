@@ -139,6 +139,10 @@ func main() {
 		authMW(attachmentUploadLimiter.Limit(http.HandlerFunc(handlers.SaveVKAttachment(cfg)))))
 	mux.Handle("GET /api/v1/attachments/proxy",
 		authMW(http.HandlerFunc(handlers.ProxyVKAttachment())))
+	// Stateless HMAC upload ticket for the VK relay: the browser presents it as
+	// Bearer instead of the relay master token, which never leaves the server.
+	mux.Handle("POST /api/v1/attachments/upload-ticket",
+		authMW(attachmentUploadLimiter.Limit(http.HandlerFunc(handlers.IssueVKUploadTicket(cfg)))))
 
 	mux.Handle("POST /api/v1/keys/init",
 		authMW(http.HandlerFunc(handlers.UploadIdentityKeys(database))))
