@@ -26,3 +26,8 @@ serviceAccountKey*.json
 *.service-account.json
 
 .postman/
+*.mmdb
+*.mmdb.gz
+server/data/*.mmdb
+server/data/*.gz
+server/data/*.tar.gz
