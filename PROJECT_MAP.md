@@ -105,6 +105,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/StartupViewModel.kt` — Determines the initial navigation route based on authorization state.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/DevicesViewModel.kt` — Loads the user's own device list for the devices screen.
 - `android/app/src/main/java/niel/kro/penik/ui/components/Components.kt` — Reusable Compose UI components, including parsing and rendering encrypted file-message payloads as local images with a zoomable full-screen viewer, aspect-ratio-aware inline Media3 video players without attachment labels, or downloadable file attachments.
+- `android/app/src/main/java/niel/kro/penik/ui/components/Stickers.kt` — Sticker picker bottom sheet with tabs and recents, Telegram sticker pack import dialog, sticker pack detail modal, and seamless sticker message rendering.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/DirectReplyReceiver.kt` — BroadcastReceiver handling inline direct replies from the notification shade without opening the app.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/MarkAsReadReceiver.kt` — BroadcastReceiver for the notification "Mark as read" action clearing unread counters and dismissing notifications.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/CallActionReceiver.kt` — BroadcastReceiver handling answer/decline actions from the incoming call notification.
@@ -152,6 +153,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/data/repository/MessageRepository.kt` — Synchronizes history, handles direct messages/WebSocket events, encrypts/decrypts payloads, and persists to Room.
 - `android/app/src/main/java/niel/kro/penik/data/repository/ChatRepository.kt` — Repository for the direct chat list and aggregated contact/last message data.
 - `android/app/src/main/java/niel/kro/penik/data/repository/GroupRepository.kt` — Synchronizes groups/members, stores group keys/messages, manages envelopes, rotation, and group history.
+- `android/app/src/main/java/niel/kro/penik/data/repository/StickerRepository.kt` — Manages sticker packs and individual stickers, Telegram sticker pack import, pack install/uninstall, and local caching of recent stickers.
 - `android/app/src/main/java/niel/kro/penik/data/repository/AttachmentManager.kt` — Handles file/media upload flow: reads URI bytes via ContentResolver, encrypts payload with ChaCha20-Poly1305 via E2EECrypto, uploads the ciphertext directly to VK (server-issued one-shot URL from `GET /attachments/vk-upload-url`, committed via `POST /attachments/vk-save`) through a token-free OkHttp client, generates a WebP thumbnail, caches the plaintext locally, and returns a JSON payload string matching the wire format.
 - `android/app/src/main/java/niel/kro/penik/data/repository/PresenceBus.kt` — Shared flow of presence updates for UI observers and repositories.
 - `android/app/src/main/java/niel/kro/penik/data/repository/AvatarCacheBus.kt` — Invalidates locally cached avatars after server updates.

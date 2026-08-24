@@ -17,4 +17,18 @@ object ApiConfig {
         val base = "$SCHEME://$HOST/api/v1/avatar/$userId"
         return if (avatarKey != null) "$base?t=$avatarKey" else base
     }
+
+    fun getStickerFileUrl(packId: String, fileName: String): String {
+        return "$SCHEME://$HOST/api/v1/stickers/file/$packId/$fileName"
+    }
+
+    fun getFullStickerUrl(urlOrPath: String): String {
+        return if (urlOrPath.startsWith("http://") || urlOrPath.startsWith("https://")) {
+            urlOrPath
+        } else if (urlOrPath.startsWith("/")) {
+            "$SCHEME://$HOST$urlOrPath"
+        } else {
+            "$SCHEME://$HOST/$urlOrPath"
+        }
+    }
 }

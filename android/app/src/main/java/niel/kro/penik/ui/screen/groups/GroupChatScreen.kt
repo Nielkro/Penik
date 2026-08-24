@@ -41,6 +41,9 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
+import niel.kro.penik.ui.components.StickerPickerBottomSheet
+import niel.kro.penik.ui.components.StickerPackDetailDialog
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -138,6 +141,8 @@ fun GroupChatScreen(
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
     var messageToForwardText by remember { mutableStateOf<String?>(null) }
     var messageToForwardSender by remember { mutableStateOf<String?>(null) }
+    var showStickerPicker by remember { mutableStateOf(false) }
+    var selectedStickerPackId by remember { mutableStateOf<String?>(null) }
 
     val contactsList by viewModel.contacts.collectAsState(initial = emptyList())
     val groupsList by viewModel.groupRepository.observeGroups().collectAsState(initial = emptyList())
@@ -369,6 +374,9 @@ fun GroupChatScreen(
                             onForward = {
                                 messageToForwardText = msg.text
                                 messageToForwardSender = displayName
+                            },
+                            onStickerClick = { packId ->
+                                selectedStickerPackId = packId
                             }
                         )
                     }
@@ -516,6 +524,15 @@ fun GroupChatScreen(
                         Icon(
                             imageVector = Icons.Default.AttachFile,
                             contentDescription = "Прикрепить файл",
+                            tint = LocalAppColors.current.textMuted
+                        )
+                    }
+
+                    // Sticker picker button
+                    IconButton(onClick = { showStickerPicker = true }) {
+                        Icon(
+                            imageVector = Icons.Default.SentimentSatisfiedAlt,
+                            contentDescription = "Стикеры",
                             tint = LocalAppColors.current.textMuted
                         )
                     }
@@ -833,6 +850,34 @@ fun GroupChatScreen(
                 TextButton(onClick = { showInviteDialog = false; searchQuery = "" }) {
                     Text("Закрыть", color = LocalAppColors.current.accent)
                 }
+            }
+        )
+    }
+
+    if (showStickerPicker) {
+        StickerPickerBottomSheet(
+            stickerRepository = viewModel.stickerRepository,
+            onDismiss = { showStickerPicker = false },
+            onStickerSelect = { sticker ->
+                val currentReply = activeReply
+                activeReply = null
+                viewModel.sendSticker(sticker, currentReply?.msgId)
+            },
+            onOpenPack = { packId ->
+                selectedStickerPackId = packId
+            }
+        )
+    }
+
+    selectedStickerPackId?.let { packId ->
+        StickerPackDetailDialog(
+            packId = packId,
+            stickerRepository = viewModel.stickerRepository,
+            onDismiss = { selectedStickerPackId = null },
+            onStickerSelect = { sticker ->
+                val currentReply = activeReply
+                activeReply = null
+                viewModel.sendSticker(sticker, currentReply?.msgId)
             }
         )
     }

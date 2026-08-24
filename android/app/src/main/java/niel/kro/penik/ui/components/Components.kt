@@ -393,7 +393,14 @@ fun messagePreview(text: String): String {
         return prefix + "📎 ${attachment.name}"
     }
 
-    // 4. Handle JSON starting with {
+    // 4. Handle Sticker
+    val sticker = parseSticker(trimmed)
+    if (sticker != null) {
+        val emoji = if (sticker.emoji.isNotBlank()) "${sticker.emoji} " else ""
+        return "${emoji}Стикер"
+    }
+
+    // 5. Handle JSON starting with {
     if (trimmed.startsWith("{")) {
         runCatching {
             val root = Json.parseToJsonElement(trimmed).jsonObject
@@ -1572,7 +1579,8 @@ fun MessageBubble(
     onReply: (() -> Unit)? = null,
     onReplyClick: ((String) -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
-    onForward: (() -> Unit)? = null
+    onForward: (() -> Unit)? = null,
+    onStickerClick: ((String) -> Unit)? = null
 ) {
     val isFailed = text.startsWith("[Ошибка расшифрования") || text.startsWith("[Сообщение не расшифровано")
     var isExpanded by remember { mutableStateOf(false) }
@@ -1586,10 +1594,14 @@ fun MessageBubble(
 
     val innerText = fwdInfo?.text ?: text
     val attachment = remember(innerText) { parseFileAttachment(innerText) }
+    val sticker = remember(innerText) { parseSticker(innerText) }
+    val isSticker = sticker != null && !isFailed
     val parsedText = if (attachment != null) attachment.caption else (fwdInfo?.text ?: text)
 
     val bgColor = if (isFailed) {
         Color(0x26EF5350)
+    } else if (isSticker) {
+        Color.Transparent
     } else if (isSentByMe) {
         LocalAppColors.current.sentMessageBg
     } else {
@@ -1630,8 +1642,8 @@ fun MessageBubble(
         contentAlignment = boxAlignment
     ) {
         val hasHeader = (!isSentByMe && senderName != null) || fwdSenderName != null || (replySender != null && replyText != null)
-        val isMediaNoCaption = attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/")) && attachment.caption.isNullOrBlank() && !hasHeader
-        val maxBubbleWidth = if (attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/"))) 300.dp else 280.dp
+        val isMediaNoCaption = (attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/")) && attachment.caption.isNullOrBlank() && !hasHeader) || isSticker
+        val maxBubbleWidth = if (attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/"))) 300.dp else if (isSticker) 200.dp else 280.dp
 
         Box(
             modifier = Modifier
@@ -1666,7 +1678,7 @@ fun MessageBubble(
                     )
                 }
                 .widthIn(max = maxBubbleWidth)
-                .clip(BubbleShape(isSentByMe = isSentByMe))
+                .clip(if (isSticker) RoundedCornerShape(12.dp) else BubbleShape(isSentByMe = isSentByMe))
                 .background(bgColor)
                 .combinedClickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -1842,6 +1854,42 @@ fun MessageBubble(
                                     delivered = delivered,
                                     read = read,
                                     color = if (read) LocalAppColors.current.accent else LocalAppColors.current.textMuted
+                                )
+                            }
+                        }
+                    }
+                } else if (sticker != null) {
+                    Box(
+                        contentAlignment = Alignment.BottomEnd,
+                        modifier = Modifier.size(160.dp)
+                    ) {
+                        StickerMessageView(
+                            payload = sticker,
+                            onClick = {
+                                if (sticker.pack_id.isNotBlank()) {
+                                    onStickerClick?.invoke(sticker.pack_id)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .background(Color(0x73000000), shape = RoundedCornerShape(8.dp))
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = formatTime(timestamp),
+                                fontSize = 10.sp,
+                                color = Color.White
+                            )
+                            if (isSentByMe) {
+                                Spacer(modifier = Modifier.width(3.dp))
+                                MessageTicks(
+                                    delivered = delivered,
+                                    read = read,
+                                    color = if (read) LocalAppColors.current.accent else Color.White.copy(alpha = 0.8f)
                                 )
                             }
                         }
