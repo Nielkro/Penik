@@ -556,7 +556,6 @@ async function onMsgRecvGlobal(payload) {
         return;
       }
     }
-    return;
   }
 
   const inMsg = {
@@ -870,11 +869,14 @@ export async function syncMessageHistory() {
           }
         }
       }
-      // A message fans out to every device; only the copy encrypted for this
-      // device decrypts, the rest fail. Never store an error placeholder —
-      // just skip the copies that don't belong to us.
       if (text.startsWith('[Сообщение не расшифровано')) {
-        continue;
+        const clientMsgId = item.client_msg_id;
+        if (clientMsgId) {
+          const existing = await getMessageByClientId(clientMsgId);
+          if (existing?.plaintext && !existing.plaintext.startsWith('[Сообщение не расшифровано')) {
+            continue;
+          }
+        }
       }
 
       await saveContact({
