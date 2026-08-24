@@ -244,8 +244,25 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 			w.Header().Set("Content-Type", "application/octet-stream")
 		}
 
+		etag := `"` + fileName + `"`
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Last-Modified", info.ModTime().UTC().Format(http.TimeFormat))
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		if match := r.Header.Get("If-None-Match"); match != "" {
+			if strings.Contains(match, etag) || match == "*" {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		}
+		if ifModSince := r.Header.Get("If-Modified-Since"); ifModSince != "" {
+			if t, err := http.ParseTime(ifModSince); err == nil && !info.ModTime().After(t.Add(1*time.Second)) {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		}
+
 		http.ServeFile(w, r, filePath)
 	}
 }
