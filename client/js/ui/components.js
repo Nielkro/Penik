@@ -1549,7 +1549,7 @@ export function showConfirmModal(title, text, confirmText = "Подтверди�
   });
 }
 
-export function showDeleteChatConfirmModal(title = "Удалить чат", text = "Вы действительно хотите удалить этот чат и все сообщения? Это также сбросит криптографическую сессию с пользователем.") {
+export function showDeleteChatConfirmModal(title = "Удалить чат", text = "Вы действительно хотите удалить этот чат и все сообщения? Это также сбросит криптографическую сессию с пользователем.", allowDeleteForEveryone = true) {
   return new Promise((resolve) => {
     const checkboxId = "delete-for-everyone-chk";
     const checkbox = el("input", {
@@ -1563,9 +1563,9 @@ export function showDeleteChatConfirmModal(title = "Удалить чат", text
       style: "font-size:13px;color:#e2e2e9;cursor:pointer;user-select:none;display:flex;align-items:center;"
     }, checkbox, "Удалить также для собеседника");
 
-    const checkboxRow = el("div", {
+    const checkboxRow = allowDeleteForEveryone ? el("div", {
       style: "display:flex;align-items:center;margin-bottom:20px;padding:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:8px;"
-    }, checkboxLabel);
+    }, checkboxLabel) : null;
 
     const cancelBtn = el("button", {
       class: "btn-secondary",
@@ -1592,7 +1592,7 @@ export function showDeleteChatConfirmModal(title = "Удалить чат", text
 
     const closeWithResult = (confirmed) => {
       document.body.removeChild(overlay);
-      resolve({ confirmed, deleteForEveryone: checkbox.checked });
+      resolve({ confirmed, deleteForEveryone: allowDeleteForEveryone && checkbox.checked });
     };
 
     confirmBtn.addEventListener("click", () => closeWithResult(true));

@@ -103,6 +103,10 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
                 )
                 callManager.onIncoming(event)
             } else {
+                if (AppNotificationManager.isAppInForeground) {
+                    // Suppress push notification when the app is actively running in the foreground
+                    return@runBlocking
+                }
                 val chatUserId = data["chat_user_id"]?.toLongOrNull() ?: return@runBlocking
                 val msgServerId = data["msg_id"]?.toLongOrNull() ?: 0L
 
