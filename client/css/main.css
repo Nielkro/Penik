@@ -2054,6 +2054,16 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   border-radius: 4px;
 }
 
+.sticker-tab-add {
+  color: var(--primary, #5b6ef5);
+  font-weight: bold;
+}
+
+.sticker-tab-add:hover {
+  background: var(--primary-alpha, rgba(91, 110, 245, 0.15));
+  color: var(--primary, #5b6ef5);
+}
+
 /* Chat Message Sticker Rendering */
 .msg-sticker-wrapper {
   cursor: pointer;

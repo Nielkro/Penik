@@ -42,6 +42,22 @@ export function svgIcon(pathD, size = 20, color = "currentColor", strokeWidth = 
   return svgEl;
 }
 
+export function stickerIcon(size = 20, color = "currentColor") {
+  const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svgEl.setAttribute("viewBox", "0 0 24 24");
+  svgEl.setAttribute("width", String(size));
+  svgEl.setAttribute("height", String(size));
+  svgEl.setAttribute("fill", "none");
+  svgEl.setAttribute("stroke", color);
+  svgEl.setAttribute("stroke-width", "2");
+  svgEl.setAttribute("stroke-linecap", "round");
+  svgEl.setAttribute("stroke-linejoin", "round");
+  svgEl.style.display = "block";
+  svgEl.style.flexShrink = "0";
+  svgEl.innerHTML = `<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><circle cx="9" cy="13" r="1" fill="currentColor"></circle><circle cx="13" cy="13" r="1" fill="currentColor"></circle><path d="M8.5 16.5c1 1 3 1 4 0"></path>`;
+  return svgEl;
+}
+
 const failedAvatars = new Set();
 
 export function avatar(user, size = 40, forceTimestamp = null) {
