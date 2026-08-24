@@ -488,6 +488,14 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 	}
 	var deliveries []pendingDelivery
 
+	msgTS := now
+	if msg.CreatedAt > 0 {
+		msgTS = msg.CreatedAt
+		if msgTS > 1e11 {
+			msgTS = msgTS / 1000
+		}
+	}
+
 	for _, dev := range msg.Devices {
 		var ownerID int64
 		err := tx.QueryRowContext(ctx, `SELECT user_id FROM devices WHERE id=?`, dev.DeviceID).Scan(&ownerID)
@@ -521,7 +529,7 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 			 ) VALUES(?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, 0)`,
 			chatID, senderUserID, recipientID, msg.MsgID, msg.ReplyToMsgID,
 			dev.Ciphertext, dev.Salt, dev.Nonce,
-			c.deviceID, dev.DeviceID, now)
+			c.deviceID, dev.DeviceID, msgTS)
 		if err != nil {
 			return fmt.Errorf("insert message: %w", err)
 		}
@@ -544,7 +552,7 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 				Ciphertext:        dev.Ciphertext,
 				Salt:              dev.Salt,
 				Nonce:             dev.Nonce,
-				TS:                now,
+				TS:                msgTS,
 			},
 		})
 	}

@@ -1008,15 +1008,21 @@ class WebSocketManager @Inject constructor(
         )
     }
 
-    fun sendEncryptedMessage(toUserId: Long, clientMsgId: String, devices: List<E2EDevicePayload>, replyToMsgId: String? = null) {
+    fun sendEncryptedMessage(toUserId: Long, clientMsgId: String, devices: List<E2EDevicePayload>, replyToMsgId: String? = null, createdAt: Long = 0L) {
         val bos = ByteArrayOutputStream()
         val packer = MessagePack.newDefaultPacker(bos)
-        val mapSize = if (replyToMsgId != null) 4 else 3
+        var mapSize = 3
+        if (replyToMsgId != null) mapSize++
+        if (createdAt > 0L) mapSize++
         packer.packMapHeader(mapSize)
         packer.packString("to_user_id")
         packer.packLong(toUserId)
         packer.packString("msg_id")
         packer.packString(clientMsgId)
+        if (createdAt > 0L) {
+            packer.packString("created_at")
+            packer.packLong(createdAt)
+        }
         if (replyToMsgId != null) {
             packer.packString("reply_to_msg_id")
             packer.packString(replyToMsgId)
