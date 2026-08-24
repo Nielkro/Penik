@@ -1,6 +1,9 @@
 /android/.idea
 /.qwen
 /.antigravitycli
+.kotlin/
+*.kotlin/
+android/.kotlin/
 server/go.sum
 server/data/*.db
 server/data/*.db-shm
