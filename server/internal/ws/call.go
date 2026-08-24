@@ -296,12 +296,7 @@ func (c *Client) handleCallOffer(payload []byte) error {
 				"is_video":             fmt.Sprintf("%v", offer.IsVideo),
 				"room_name":            roomName,
 				"livekit_url":          c.cfg.LiveKitURL,
-				"livekit_fallback_url": func() string {
-					if c.cfg.LiveKitFallbackURL != nil {
-						return *c.cfg.LiveKitFallbackURL
-					}
-					return ""
-				}(),
+				"livekit_fallback_url": c.cfg.LiveKitFallbackURL,
 				"token":     token,
 				"timestamp": fmt.Sprintf("%d", time.Now().Unix()*1000),
 			})
