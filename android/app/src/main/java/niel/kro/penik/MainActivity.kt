@@ -56,6 +56,14 @@ class MainActivity : ComponentActivity() {
 
     private var pendingRoute by mutableStateOf<String?>(null)
 
+    private val callPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        if (results.values.all { it }) {
+            callManager.acceptCall()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ThemeManager.init(this)
@@ -171,8 +179,19 @@ class MainActivity : ComponentActivity() {
         if (intent == null) return
 
         if (intent.getStringExtra(AppNotificationManager.EXTRA_CALL_ACTION) == CallActionReceiver.ACTION_ANSWER) {
-            callManager.acceptCall()
             intent.removeExtra(AppNotificationManager.EXTRA_CALL_ACTION)
+            val needed = mutableListOf(Manifest.permission.RECORD_AUDIO)
+            if (callManager.state.value.isVideo) {
+                needed.add(Manifest.permission.CAMERA)
+            }
+            val missing = needed.filter {
+                checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+            }
+            if (missing.isEmpty()) {
+                callManager.acceptCall()
+            } else {
+                callPermissionLauncher.launch(missing.toTypedArray())
+            }
             return
         }
 
