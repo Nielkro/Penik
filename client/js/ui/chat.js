@@ -1092,6 +1092,7 @@ export async function renderChat(container, userId) {
           to_user_id: Number(userId),
           devices: ciphertexts,
           msg_id: msgId,
+          created_at: Math.floor(now / 1000),
           reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined
         });
         if (!sent) {
@@ -1154,6 +1155,7 @@ export async function renderChat(container, userId) {
           to_user_id: Number(userId),
           devices: ciphertexts,
           msg_id: msgId,
+          created_at: Math.floor(now / 1000),
           reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined
         });
         if (!sent) {

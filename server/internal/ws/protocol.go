@@ -142,6 +142,7 @@ type MsgSendEncrypted struct {
 	ToUserID     int64        `msgpack:"to_user_id"`
 	MsgID        string       `msgpack:"msg_id"`
 	ReplyToMsgID *string      `msgpack:"reply_to_msg_id"`
+	CreatedAt    int64        `msgpack:"created_at,omitempty"`
 	Devices      []E2EPayload `msgpack:"devices"`
 }
 

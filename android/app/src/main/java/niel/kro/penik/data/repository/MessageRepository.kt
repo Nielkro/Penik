@@ -39,6 +39,29 @@ class MessageRepository @Inject constructor(
     private val e2eeCrypto: E2EECrypto,
     private val identityPins: IdentityPinStore,
 ) {
+    private val bundleCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, List<niel.kro.penik.data.network.api.DeviceKeyBundle>>>()
+
+    suspend fun getKeyBundleCached(userId: Long, isSelf: Boolean = false, forceRefresh: Boolean = false): List<niel.kro.penik.data.network.api.DeviceKeyBundle> {
+        val now = System.currentTimeMillis()
+        if (!forceRefresh) {
+            val cached = bundleCache[userId]
+            if (cached != null && cached.first > now) {
+                return cached.second
+            }
+        }
+        val devices = try {
+            val response = if (isSelf) apiService.getKeyBundleSelf(userId) else apiService.getKeyBundle(userId)
+            if (response.isSuccessful) response.body()?.devices ?: emptyList() else emptyList()
+        } catch (e: Exception) {
+            Log.e("PenikMsg", "Failed to fetch key bundle for $userId", e)
+            bundleCache[userId]?.second ?: emptyList()
+        }
+        if (devices.isNotEmpty()) {
+            bundleCache[userId] = Pair(now + 2 * 60 * 1000L, devices)
+        }
+        return devices
+    }
+
     suspend fun exportPairingHistory(secret: ByteArray): String {
         val myId = tokenStorage.getUserId()
         val messages = messageDao.getAllMessages().map { message ->
@@ -311,25 +334,8 @@ class MessageRepository @Inject constructor(
         )
         messageDao.insertMessage(entity)
 
-        val recipientBundles = try {
-            val response = if (isSelfChat) {
-                apiService.getKeyBundleSelf(toUserId)
-            } else {
-                apiService.getKeyBundle(toUserId)
-            }
-            if (response.isSuccessful) response.body()?.devices ?: emptyList() else emptyList()
-        } catch (e: Exception) {
-            Log.e("PenikMsg", "Failed to fetch recipient key bundle", e)
-            emptyList()
-        }
-
-        val senderBundles = try {
-            val response = apiService.getKeyBundleSelf(myId)
-            if (response.isSuccessful) response.body()?.devices ?: emptyList() else emptyList()
-        } catch (e: Exception) {
-            Log.e("PenikMsg", "Failed to fetch sender key bundle", e)
-            emptyList()
-        }
+        val recipientBundles = getKeyBundleCached(toUserId, isSelf = isSelfChat)
+        val senderBundles = if (isSelfChat) emptyList() else getKeyBundleCached(myId, isSelf = true)
 
         val myDeviceId = tokenStorage.getDeviceId()
         val allDevices = if (isSelfChat) {
@@ -372,7 +378,7 @@ class MessageRepository @Inject constructor(
             )
         }
 
-        webSocketManager.sendEncryptedMessage(toUserId, clientMsgId, payloads, resolvedReplyToMsgId)
+        webSocketManager.sendEncryptedMessage(toUserId, clientMsgId, payloads, resolvedReplyToMsgId, createdAt = nowSec)
         return clientMsgId
     }
 

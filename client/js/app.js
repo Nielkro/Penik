@@ -1010,20 +1010,37 @@ export async function decryptMessagePayload(payload) {
   return { text: new TextDecoder().decode(textBytes) };
 }
 
+const bundleMemoryCache = new Map(); // userId -> { bundle, expiresAt }
+export async function getCachedKeyBundle(userId, forceRefresh = false) {
+  const key = String(userId);
+  const now = Date.now();
+  if (!forceRefresh && bundleMemoryCache.has(key)) {
+    const cached = bundleMemoryCache.get(key);
+    if (cached.expiresAt > now) {
+      return cached.bundle;
+    }
+  }
+  const bundle = await apiGet(`/keys/bundle/${userId}`);
+  bundleMemoryCache.set(key, { bundle, expiresAt: now + 2 * 60 * 1000 });
+  return bundle;
+}
+
 export async function encryptMessagePayload(text, recipientUserId, clientMsgId = "", timestamp = 0) {
   const myId = Number(localStorage.getItem("user_id"));
   const myDeviceId = Number(localStorage.getItem("device_id"));
   const isSelfChat = Number(recipientUserId) === myId;
   const tsSec = Number(timestamp) > 1e11 ? Math.floor(Number(timestamp) / 1000) : (Number(timestamp) || Math.floor(Date.now() / 1000));
 
-  const bundleUrl = `/keys/bundle/${recipientUserId}`;
-  const senderBundleUrl = `/keys/bundle/${myId}`;
+  let recipientBundle = await getCachedKeyBundle(recipientUserId);
+  let senderBundle = await getCachedKeyBundle(myId);
 
-  const recipientBundle = await apiGet(bundleUrl);
-  const senderBundle = await apiGet(senderBundleUrl);
+  let recipientDevices = recipientBundle?.devices || [];
+  let senderDevices = senderBundle?.devices || [];
 
-  const recipientDevices = recipientBundle?.devices || [];
-  const senderDevices = senderBundle?.devices || [];
+  if (recipientDevices.length === 0) {
+    recipientBundle = await getCachedKeyBundle(recipientUserId, true);
+    recipientDevices = recipientBundle?.devices || [];
+  }
 
   const filteredSenderDevices = isSelfChat ? [] : senderDevices.filter(d => Number(d.device_id) !== myDeviceId);
   const allDevices = [
@@ -1092,10 +1109,13 @@ export async function flushOutbox() {
         seen.add(id);
         return true;
       });
+      const msgCreatedAt = Number(msg.created_at || Date.now());
+      const tsSec = msgCreatedAt > 1e11 ? Math.floor(msgCreatedAt / 1000) : msgCreatedAt;
       const sent = ws.send(0x01, {
         to_user_id: Number(msg.chat_id),
         devices: uniqueDevices,
         msg_id: clientMsgId,
+        created_at: tsSec,
         reply_to_msg_id: msg.reply_to_msg_id ? String(msg.reply_to_msg_id) : undefined
       });
       if (!sent) {
