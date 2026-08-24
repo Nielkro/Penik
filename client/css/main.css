@@ -656,6 +656,18 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   color: #4ec97a !important;
 }
 
+.msg-status-pending {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.85;
+  margin-left: 2px;
+}
+
+.msg-status-pending svg {
+  display: block;
+}
+
 .msg-out {
   align-self: flex-end;
   background: var(--sent-bg);

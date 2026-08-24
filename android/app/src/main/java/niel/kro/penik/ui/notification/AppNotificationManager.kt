@@ -66,6 +66,9 @@ class AppNotificationManager @Inject constructor(
         const val EXTRA_CALL_ACTION = "callAction"
 
         @Volatile
+        var isAppInForeground: Boolean = false
+
+        @Volatile
         var activeChatKey: String? = null
 
         fun setActiveChat(key: String?) {

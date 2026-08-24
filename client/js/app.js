@@ -962,14 +962,24 @@ export async function decryptMessagePayload(payload) {
 
   const secret = await deriveSharedSecret(myPrivateIK, fromIdentityKey);
 
-  // Candidate AADs in order of priority:
-  const candidateAads = [
-    buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId, tsSec),
-    ...(chatPartnerId && chatPartnerId !== recipientUserId ? [buildPairwiseAAD(senderUserId, chatPartnerId, clientMsgId, tsSec)] : []),
-    ...(rawTs > 1e11 ? [buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId, rawTs)] : []),
-    ...(clientMsgId ? [buildPairwiseAAD(senderUserId, recipientUserId, "", tsSec)] : []),
-    new Uint8Array(0)
-  ];
+  // Candidate AADs in order of priority (including clock drift / network transit delta ±1s to ±5s):
+  const candidateAads = [];
+  const timeOffsets = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5];
+  for (const offset of timeOffsets) {
+    candidateAads.push(buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId, tsSec + offset));
+    if (chatPartnerId && chatPartnerId !== recipientUserId) {
+      candidateAads.push(buildPairwiseAAD(senderUserId, chatPartnerId, clientMsgId, tsSec + offset));
+    }
+  }
+  if (rawTs > 1e11) {
+    candidateAads.push(buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId, rawTs));
+  }
+  if (clientMsgId) {
+    for (const offset of [0, -1, 1]) {
+      candidateAads.push(buildPairwiseAAD(senderUserId, recipientUserId, "", tsSec + offset));
+    }
+  }
+  candidateAads.push(new Uint8Array(0));
 
   let textBytes = null;
   let lastErr = null;
@@ -983,6 +993,19 @@ export async function decryptMessagePayload(payload) {
   }
 
   if (!textBytes) {
+    console.error("[PenikE2EE] Pairwise decryption failed:", {
+      senderUserId,
+      recipientUserId,
+      chatPartnerId,
+      clientMsgId,
+      tsSec,
+      rawTs,
+      fromIdentityKeyLen: fromIdentityKey?.length,
+      ctLen: ciphertext?.length,
+      saltLen: salt?.length,
+      nonceLen: nonce?.length,
+      candidatesCount: candidateAads.length
+    }, lastErr);
     throw lastErr || new Error("Failed to decrypt pairwise message");
   }
 
@@ -1038,6 +1061,77 @@ export async function encryptMessagePayload(text, recipientUserId, clientMsgId =
   return payloads;
 }
 
+async function onMsgAckReceivedGlobal(payload) {
+  const clientMsgId = payload?.msg_id;
+  const serverMsgId = payload?.server_msg_id;
+  if (!clientMsgId || !serverMsgId) return;
+
+  try {
+    const pending = pendingAcks.get(clientMsgId);
+    if (!pending) return;
+    pendingAcks.delete(clientMsgId);
+    await updateMsgIdAndDelivered(clientMsgId, serverMsgId, 0);
+
+    if (_activeChatCallback && String(_activeChatCallback.userId) === String(pending.userId)) {
+      _activeChatCallback.onAck?.(serverMsgId, clientMsgId);
+      const bubble = /** @type {HTMLElement} */ (document.querySelector(`[data-msg-id="${pending.tempId}"]`));
+      if (bubble) {
+        bubble.dataset.msgId = serverMsgId;
+        const statusEl = /** @type {HTMLElement} */ (bubble.querySelector(".msg-status, .msg-status-wrapper"));
+        if (statusEl) {
+          statusEl.dataset.msgId = serverMsgId;
+          statusEl.className = "msg-status-wrapper";
+          statusEl.innerHTML = '<span class="chk chk-1">✓</span>';
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Failed to process MSG_ACK:", err);
+  }
+}
+
+async function onMsgReadGlobal(payload) {
+  if (!payload?.msg_id) return;
+  await updateMessageRead(payload.msg_id);
+  if (_activeChatCallback) _activeChatCallback.onStatus?.(payload.msg_id, "read");
+}
+
+async function onMsgDeleteNotifyGlobal(payload) {
+  if (!payload?.msg_id) return;
+  try {
+    await deleteMessage(payload.msg_id);
+    const escaped = CSS.escape(String(payload.msg_id));
+    const bubbles = document.querySelectorAll(`[data-msg-id="${escaped}"], [data-client-msg-id="${escaped}"]`);
+    bubbles.forEach(b => b.remove());
+  } catch (e) {
+    console.warn("Failed to process msg delete notify:", e);
+  }
+}
+
+async function onOfflineBatchGlobal(payload) {
+  if (payload && payload.msgs && Array.isArray(payload.msgs)) {
+    for (const msg of payload.msgs) {
+      await onMsgRecvGlobal(msg);
+    }
+  }
+}
+
+async function onChatPurgeGlobal(payload) {
+  if (!payload || !payload.chat_user_id) return;
+  const peerId = payload.chat_user_id;
+  try {
+    await clearChatHistory(peerId);
+    if (_activeChatCallback && String(_activeChatCallback.userId) === String(peerId)) {
+      const messagesEl = document.querySelector(".chat-messages");
+      if (messagesEl) messagesEl.innerHTML = "";
+    }
+    triggerChatListUpdate();
+    ws.send(0x09, { chat_user_id: Number(peerId) });
+  } catch (e) {
+    console.warn("Failed to process chat purge:", e);
+  }
+}
+
 export async function flushOutbox() {
   const me = state.currentUser;
   if (!me) return;
@@ -1046,16 +1140,26 @@ export async function flushOutbox() {
     const allMsgs = await getAllMessages();
     const unsent = allMsgs.filter(m => {
       const isMine = String(m.sender_id) === String(myId);
-      const isUnsent = m.delivered === 0;
-      const hasCiphertexts = !!m.ciphertexts;
+      const isUnsent = m.delivered === 0 && (m.pending === 1 || !m.server_acked);
       const isRecent = (Date.now() - (m.created_at || 0)) < 30 * 60 * 1000;
-      return isMine && isUnsent && hasCiphertexts && isRecent;
+      return isMine && isUnsent && isRecent;
     });
     for (const msg of unsent) {
       const clientMsgId = msg.client_msg_id || String(msg.msg_id);
+      let ciphertexts = msg.ciphertexts;
+      if (!ciphertexts || !ciphertexts.length) {
+        try {
+          ciphertexts = await encryptMessagePayload(msg.plaintext || "", msg.chat_id, clientMsgId, msg.created_at || Date.now());
+          msg.ciphertexts = ciphertexts;
+          await saveMessage(msg);
+        } catch (encErr) {
+          console.warn("flushOutbox: failed to encrypt msg", msg.msg_id, encErr);
+          continue;
+        }
+      }
       addPendingAck(clientMsgId, { tempId: msg.msg_id, userId: msg.chat_id });
       const seen = new Set();
-      const uniqueDevices = (msg.ciphertexts || []).filter(d => {
+      const uniqueDevices = (ciphertexts || []).filter(d => {
         const id = Number(d.device_id);
         if (seen.has(id)) return false;
         seen.add(id);

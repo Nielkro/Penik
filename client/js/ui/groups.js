@@ -10,7 +10,7 @@ import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessa
 import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
 import {
   el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence,
-  showToast, spinner, svgIcon, stickerIcon, showConfirmModal, showPromptModal, showFullscreenImage, showForwardModal,
+  showToast, spinner, svgIcon, stickerIcon, clockIcon, showConfirmModal, showPromptModal, showFullscreenImage, showForwardModal,
   setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
 import { onPresenceUpdate } from "../presence.js";
@@ -440,7 +440,7 @@ export async function renderGroup(container, groupId) {
 
     const metaEl = el("div", { class: "msg-meta" },
       timeEl,
-      mine ? el("span", { class: "msg-status" }, msg.delivered ? "✓" : "…") : null,
+      mine ? (msg.delivered ? el("span", { class: "msg-status" }, "✓") : el("span", { class: "msg-status msg-status-pending", title: "Отправляется..." }, clockIcon(12, "currentColor"))) : null,
     );
 
     const bubbleChildren = [];
