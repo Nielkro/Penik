@@ -55,6 +55,9 @@ export function createStickerPicker(onSelect) {
   container.appendChild(contentArea);
   container.appendChild(tabsBar);
 
+  container.addEventListener("click", (e) => e.stopPropagation());
+  container.addEventListener("pointerdown", (e) => e.stopPropagation());
+
   addBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     showImportStickersModal(() => {
