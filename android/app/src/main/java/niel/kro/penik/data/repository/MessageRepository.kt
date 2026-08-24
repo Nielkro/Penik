@@ -552,7 +552,11 @@ class MessageRepository @Inject constructor(
                             fromIdentityKey = msg.fromIdentityKey,
                             ciphertext = msg.ciphertext,
                             salt = msg.salt,
-                            nonce = msg.nonce
+                            nonce = msg.nonce,
+                            senderUserId = msg.fromUserId,
+                            recipientUserId = if (msg.fromUserId == myId) msg.chatUserId else myId,
+                            clientMsgId = msg.clientMsgId ?: "",
+                            timestamp = msg.ts
                         )
                     } catch (e: Exception) {
                         decryptSuccess = false
@@ -587,9 +591,26 @@ class MessageRepository @Inject constructor(
                         replyToMsgId = msg.replyToMsgId
                     ))
                 } else {
-                    val text = existing.text
+                    var text = existing.text
                     val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
-                    if (!isFailed && !isSelfChat) {
+                    if (isFailed) {
+                        try {
+                            val recoveredText = decryptMessagePayload(
+                                myDeviceId = tokenStorage.getDeviceId(),
+                                fromIdentityKey = msg.fromIdentityKey,
+                                ciphertext = msg.ciphertext,
+                                salt = msg.salt,
+                                nonce = msg.nonce,
+                                senderUserId = msg.fromUserId,
+                                recipientUserId = if (msg.fromUserId == myId) msg.chatUserId else myId,
+                                clientMsgId = msg.clientMsgId ?: "",
+                                timestamp = msg.ts
+                            )
+                            messageDao.insertMessage(existing.copy(text = recoveredText))
+                            text = recoveredText
+                        } catch (_: Exception) {}
+                    }
+                    if (!text.startsWith("[Ошибка") && !text.startsWith("[Сообщение не расшифровано") && !isSelfChat) {
                         decryptedList.add(DecryptedOfflineMsg(
                             chatUserId = msg.chatUserId,
                             text = text,
