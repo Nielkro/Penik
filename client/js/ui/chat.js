@@ -8,7 +8,7 @@ import {
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload } from "../app.js";
 import { OP } from "../ws.js";
 import {
-  avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon, stickerIcon,
+  avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon, stickerIcon, clockIcon,
   showDeleteChatConfirmModal, showFullscreenImage, showConfirmModal, showForwardModal,
   setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
@@ -686,10 +686,15 @@ export async function renderChat(container, userId) {
     const isSelfChat = Number(userId) === Number(myId);
     let statusEl = null;
     if (isMine && !isSelfChat) {
-      const isDouble = Boolean(msg.read || msg.delivered);
+      const isPending = Boolean(msg.pending || String(msg.msg_id).startsWith("tmp-") || (msg.delivered === 0 && !msg.server_acked));
+      const isDouble = Boolean(msg.read || (msg.delivered && msg.delivered > 0));
       const isRead = Boolean(msg.read);
-      const statusClass = "msg-status-wrapper" + (isRead ? " msg-status-read" : "");
-      if (isDouble) {
+      const statusClass = "msg-status-wrapper" + (isRead ? " msg-status-read" : "") + (isPending ? " msg-status-pending" : "");
+      if (isPending) {
+        statusEl = el("span", { class: statusClass, title: "Отправляется..." },
+          clockIcon(12, "currentColor")
+        );
+      } else if (isDouble) {
         statusEl = el("span", { class: statusClass },
           el("span", { class: "chk chk-1" }, "✓"),
           el("span", { class: "chk chk-2" }, "✓")
@@ -1037,146 +1042,127 @@ export async function renderChat(container, userId) {
     if (!text) return;
     inputEl.value = "";
     inputEl.style.height = "auto";
+    sendBtn.disabled = true;
 
+    const msgId = crypto.randomUUID();
+    const now = Date.now();
+    const myId = me && (me.id || me.user_id);
     const currentReply = activeReply;
     setActiveReply(null);
 
-    const tempId = `tmp-${Date.now()}`;
-    const now = Date.now();
-    const myId = me && (me.id || me.user_id);
     appendMessage({
-      msg_id: tempId,
+      msg_id: msgId,
+      client_msg_id: msgId,
       sender_id: myId,
       plaintext: text,
       created_at: now,
+      delivered: 0,
+      pending: 1,
       reply_to_msg_id: currentReply ? currentReply.msg_id : null
     });
     scrollDown.scrollToBottom();
 
-    const sendFn = async () => {
-      const ws = getWS();
-      if (!ws || !ws.isConnected()) throw new Error("Нет соединения");
+    let ciphertexts = null;
+    try {
+      ciphertexts = await encryptMessagePayload(text, userId, msgId, now);
+    } catch (encErr) {
+      console.warn("Failed to encrypt message immediately (will retry on flush):", encErr);
+    }
 
-      const msgId = crypto.randomUUID();
+    const storedMsg = {
+      msg_id: msgId,
+      client_msg_id: msgId,
+      chat_id: userId,
+      sender_id: myId,
+      plaintext: text,
+      created_at: now,
+      delivered: 0,
+      pending: 1,
+      ciphertexts: ciphertexts,
+      reply_to_msg_id: currentReply ? currentReply.msg_id : null
+    };
+    await saveMessage(storedMsg);
+    await saveContact({ ...contact, last_message: getMessagePreview(text), last_ts: now });
 
-      // Encrypt payload for all target devices
-      const ciphertexts = await encryptMessagePayload(text, userId, msgId, now);
-
-      const storedMsg = {
-        msg_id: msgId,
-        client_msg_id: msgId,
-        chat_id: userId,
-        sender_id: myId,
-        plaintext: text,
-        created_at: now,
-        delivered: 0,
-        ciphertexts: ciphertexts,
-        reply_to_msg_id: currentReply ? currentReply.msg_id : null
-      };
-      await saveMessage(storedMsg);
-      await saveContact({ ...contact, last_message: getMessagePreview(text), last_ts: now });
-
-      // addPendingAck stamps the entry with its enqueue time. A bare
-      // pendingAcks.set() left ts undefined, so the TTL sweep treated the entry as
-      // ancient and dropped it before the ACK arrived — the delivery tick then
-      // stayed on "sending" forever.
-      addPendingAck(msgId, { tempId: tempId, userId: userId });
-
-      let sent = false;
+    const ws = getWS();
+    if (ws && ws.isConnected() && ciphertexts) {
+      addPendingAck(msgId, { tempId: msgId, userId: userId });
       try {
-        sent = ws.send(0x01, {
+        const sent = ws.send(0x01, {
           to_user_id: Number(userId),
           devices: ciphertexts,
           msg_id: msgId,
           reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined
         });
+        if (!sent) {
+          pendingAcks.delete(String(msgId));
+        }
       } catch (sendErr) {
         console.warn("WebSocket send threw an error:", sendErr);
-      }
-
-      if (!sent) {
         pendingAcks.delete(String(msgId));
-        throw new Error("Не удалось отправить сообщение (ошибка сокета)");
       }
-
-      const oldBubble = messagesEl.querySelector(`[data-msg-id="${tempId}"]`);
-      if (oldBubble) oldBubble.dataset.msgId = msgId;
-    };
-
-    try {
-      await sendFn();
-    } catch (err) {
-      console.error("SendMessage error:", err);
-      const oldBubble = messagesEl.querySelector(`[data-msg-id="${tempId}"]`);
-      if (oldBubble) oldBubble.classList.add("msg-failed");
-      showToast(err.message || "Ошибка отправки", "error");
     }
   }
 
   async function sendSticker(sticker) {
     const payload = JSON.stringify(sticker);
-    const tempId = `tmp-${Date.now()}`;
+    const msgId = crypto.randomUUID();
     const now = Date.now();
     const myId = me && (me.id || me.user_id);
     const currentReply = activeReply;
     setActiveReply(null);
 
     appendMessage({
-      msg_id: tempId,
+      msg_id: msgId,
+      client_msg_id: msgId,
       sender_id: myId,
       plaintext: payload,
       created_at: now,
+      delivered: 0,
+      pending: 1,
       reply_to_msg_id: currentReply ? currentReply.msg_id : null
     });
     scrollDown.scrollToBottom();
 
+    let ciphertexts = null;
     try {
-      const ws = getWS();
-      if (!ws || !ws.isConnected()) throw new Error("Нет соединения с сервером");
+      ciphertexts = await encryptMessagePayload(payload, userId, msgId, now);
+    } catch (encErr) {
+      console.warn("Failed to encrypt sticker immediately:", encErr);
+    }
 
-      const msgId = crypto.randomUUID();
-      const ciphertexts = await encryptMessagePayload(payload, userId, msgId, now);
+    const storedMsg = {
+      msg_id: msgId,
+      client_msg_id: msgId,
+      chat_id: userId,
+      sender_id: myId,
+      plaintext: payload,
+      created_at: now,
+      delivered: 0,
+      pending: 1,
+      ciphertexts: ciphertexts,
+      reply_to_msg_id: currentReply ? currentReply.msg_id : null
+    };
+    await saveMessage(storedMsg);
+    await saveContact({ ...contact, last_message: getMessagePreview(payload), last_ts: now });
 
-      const storedMsg = {
-        msg_id: msgId,
-        client_msg_id: msgId,
-        chat_id: userId,
-        sender_id: myId,
-        plaintext: payload,
-        created_at: now,
-        delivered: 0,
-        ciphertexts: ciphertexts,
-        reply_to_msg_id: currentReply ? currentReply.msg_id : null
-      };
-      await saveMessage(storedMsg);
-      await saveContact({ ...contact, last_message: getMessagePreview(payload), last_ts: now });
-
-      addPendingAck(msgId, { tempId: tempId, userId: userId });
-
-      let sent = false;
+    const ws = getWS();
+    if (ws && ws.isConnected() && ciphertexts) {
+      addPendingAck(msgId, { tempId: msgId, userId: userId });
       try {
-        sent = ws.send(0x01, {
+        const sent = ws.send(0x01, {
           to_user_id: Number(userId),
           devices: ciphertexts,
           msg_id: msgId,
           reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined
         });
+        if (!sent) {
+          pendingAcks.delete(String(msgId));
+        }
       } catch (sendErr) {
         console.warn("WebSocket send error:", sendErr);
-      }
-
-      if (!sent) {
         pendingAcks.delete(String(msgId));
-        throw new Error("Не удалось отправить стикер (ошибка сокета)");
       }
-
-      const oldBubble = messagesEl.querySelector(`[data-msg-id="${tempId}"]`);
-      if (oldBubble) oldBubble.dataset.msgId = msgId;
-    } catch (err) {
-      console.error("sendSticker error:", err);
-      const oldBubble = messagesEl.querySelector(`[data-msg-id="${tempId}"]`);
-      if (oldBubble) oldBubble.classList.add("msg-failed");
-      showToast(err.message || "Ошибка отправки стикера", "error");
     }
   }
 
@@ -1233,21 +1219,24 @@ export async function renderChat(container, userId) {
     },
     (msgId, clientMsgId) => {
       const targetId = clientMsgId || msgId;
-      const statusEl = messagesEl.querySelector(`.msg-status[data-msg-id="${targetId}"]`);
-      if (statusEl) {
-        statusEl.textContent = "✓✓";
-      }
       const bubble = messagesEl.querySelector(`[data-msg-id="${targetId}"]`);
       if (bubble) {
         bubble.dataset.msgId = msgId;
+        const statusWrapper = bubble.querySelector(".msg-status-wrapper");
+        if (statusWrapper) {
+          statusWrapper.dataset.msgId = msgId;
+          statusWrapper.className = "msg-status-wrapper";
+          statusWrapper.innerHTML = '<span class="chk chk-1">✓</span>';
+        }
       }
     },
     (msgId, status) => {
-      const statusEl = messagesEl.querySelector(`.msg-status[data-msg-id="${msgId}"]`);
-      if (statusEl) {
-        statusEl.textContent = "✓✓";
-        if (status === "read") {
-          statusEl.classList.add("msg-status-read");
+      const bubble = messagesEl.querySelector(`[data-msg-id="${msgId}"]`);
+      if (bubble) {
+        const statusWrapper = bubble.querySelector(".msg-status-wrapper");
+        if (statusWrapper) {
+          statusWrapper.className = "msg-status-wrapper" + (status === "read" ? " msg-status-read" : "");
+          statusWrapper.innerHTML = '<span class="chk chk-1">✓</span><span class="chk chk-2">✓</span>';
         }
       }
     }

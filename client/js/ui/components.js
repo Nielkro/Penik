@@ -45,6 +45,10 @@ export function svgIcon(pathD, size = 20, color = "currentColor", strokeWidth = 
   return svgEl;
 }
 
+export function clockIcon(size = 12, color = "currentColor") {
+  return svgIcon("M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z", size, color, 1.8);
+}
+
 export function stickerIcon(size = 22, color = "currentColor") {
   const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svgEl.setAttribute("viewBox", "0 0 24 24");

@@ -793,12 +793,17 @@ class MessageRepository @Inject constructor(
 
         val candidates = buildList {
             if (senderUserId != 0L || recipientUserId != 0L) {
-                add(e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, clientMsgId, tsSec))
+                val offsets = listOf(0L, -1L, 1L, -2L, 2L, -3L, 3L, -4L, 4L, -5L, 5L)
+                for (offset in offsets) {
+                    add(e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, clientMsgId, tsSec + offset))
+                }
                 if (timestamp > 100_000_000_000L) {
                     add(e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, clientMsgId, timestamp))
                 }
                 if (clientMsgId.isNotEmpty()) {
-                    add(e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, "", tsSec))
+                    for (offset in listOf(0L, -1L, 1L)) {
+                        add(e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, "", tsSec + offset))
+                    }
                 }
             }
             add(null) // Fallback for legacy messages or empty AAD
@@ -813,6 +818,14 @@ class MessageRepository @Inject constructor(
                 lastEx = e
             }
         }
+
+        Log.e(
+            "PenikE2EE",
+            "DECRYPTION FAILED: senderUserId=$senderUserId, recipientUserId=$recipientUserId, clientMsgId=$clientMsgId, tsSec=$tsSec, " +
+            "fromIK=${android.util.Base64.encodeToString(fromIdentityKey, android.util.Base64.NO_WRAP)}, " +
+            "ctLen=${ciphertext.size}, saltLen=${salt.size}, nonceLen=${nonce.size}, candidatesTried=${candidates.size}",
+            lastEx
+        )
 
         throw lastEx ?: Exception("Decryption failed")
     }

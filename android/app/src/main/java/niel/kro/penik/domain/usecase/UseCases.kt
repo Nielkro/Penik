@@ -99,7 +99,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 chatRepository.updateLastMessage(event.chatUserId, event.text, niel.kro.penik.data.repository.toMs(event.ts))
                 if (isIncoming) {
                     chatRepository.incrementUnread(event.chatUserId)
-                    appNotificationManager.showDirectMessageNotification(event.chatUserId, event.text, niel.kro.penik.data.repository.toMs(event.ts), msgServerId = event.msgId)
+                    if (niel.kro.penik.ui.notification.AppNotificationManager.activeChatKey != "direct_${event.chatUserId}") {
+                        appNotificationManager.showDirectMessageNotification(event.chatUserId, event.text, niel.kro.penik.data.repository.toMs(event.ts), msgServerId = event.msgId)
+                    }
                 }
             }
             is WebSocketEvent.MsgRecvEncrypted -> {
@@ -110,7 +112,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
                     chatRepository.updateLastMessage(event.chatUserId, text, niel.kro.penik.data.repository.toMs(event.ts))
                     if (isIncoming) {
                         chatRepository.incrementUnread(event.chatUserId)
-                        appNotificationManager.showDirectMessageNotification(event.chatUserId, text, niel.kro.penik.data.repository.toMs(event.ts), msgServerId = event.msgId)
+                        if (niel.kro.penik.ui.notification.AppNotificationManager.activeChatKey != "direct_${event.chatUserId}") {
+                            appNotificationManager.showDirectMessageNotification(event.chatUserId, text, niel.kro.penik.data.repository.toMs(event.ts), msgServerId = event.msgId)
+                        }
                     }
                 }
             }
@@ -130,12 +134,15 @@ class HandleWebSocketEventUseCase @Inject constructor(
                     chatRepository.updateLastMessage(msg.chatUserId, msg.text, niel.kro.penik.data.repository.toMs(msg.ts))
                     if (msg.fromUserId != myId) {
                         chatRepository.incrementUnread(msg.chatUserId)
-                        appNotificationManager.showDirectMessageNotification(
-                            chatUserId = msg.chatUserId,
-                            rawText = msg.text,
-                            timestamp = niel.kro.penik.data.repository.toMs(msg.ts),
-                            msgServerId = msg.msgId
-                        )
+                        if (!niel.kro.penik.ui.notification.AppNotificationManager.isAppInForeground &&
+                            niel.kro.penik.ui.notification.AppNotificationManager.activeChatKey != "direct_${msg.chatUserId}") {
+                            appNotificationManager.showDirectMessageNotification(
+                                chatUserId = msg.chatUserId,
+                                rawText = msg.text,
+                                timestamp = niel.kro.penik.data.repository.toMs(msg.ts),
+                                msgServerId = msg.msgId
+                            )
+                        }
                     }
                 }
             }
@@ -145,12 +152,15 @@ class HandleWebSocketEventUseCase @Inject constructor(
                     chatRepository.updateLastMessage(msg.chatUserId, msg.text, niel.kro.penik.data.repository.toMs(msg.ts))
                     if (msg.isIncoming) {
                         chatRepository.incrementUnread(msg.chatUserId)
-                        appNotificationManager.showDirectMessageNotification(
-                            chatUserId = msg.chatUserId,
-                            rawText = msg.text,
-                            timestamp = niel.kro.penik.data.repository.toMs(msg.ts),
-                            msgServerId = msg.msgId
-                        )
+                        if (!niel.kro.penik.ui.notification.AppNotificationManager.isAppInForeground &&
+                            niel.kro.penik.ui.notification.AppNotificationManager.activeChatKey != "direct_${msg.chatUserId}") {
+                            appNotificationManager.showDirectMessageNotification(
+                                chatUserId = msg.chatUserId,
+                                rawText = msg.text,
+                                timestamp = niel.kro.penik.data.repository.toMs(msg.ts),
+                                msgServerId = msg.msgId
+                            )
+                        }
                     }
                 }
             }
