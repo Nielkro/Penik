@@ -10,6 +10,8 @@ const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self
 // with different bytes; browsers reinstall a worker only when its bytes change.
 const SW_VERSION = '__SW_VERSION__';
 
+const STICKER_CACHE = 'penik-stickers-v1';
+
 sw.addEventListener('install', () => {
   console.log(`[sw] installing ${SW_VERSION}`);
   sw.skipWaiting();
@@ -21,6 +23,29 @@ sw.addEventListener('activate', (event) => {
 
 sw.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+
+  // Cache-First for sticker static assets (instant load, 0 network requests)
+  if (url.pathname.startsWith('/api/v1/stickers/file/')) {
+    event.respondWith(
+      caches.open(STICKER_CACHE).then(async (cache) => {
+        const cached = await cache.match(event.request);
+        if (cached) {
+          return cached;
+        }
+        try {
+          const networkResponse = await fetch(event.request);
+          if (networkResponse && networkResponse.ok) {
+            cache.put(event.request, networkResponse.clone());
+          }
+          return networkResponse;
+        } catch (err) {
+          if (cached) return cached;
+          throw err;
+        }
+      })
+    );
+    return;
+  }
 
   // Intercept stream requests registered under /sw-stream/
   if (url.pathname.startsWith('/sw-stream/')) {
