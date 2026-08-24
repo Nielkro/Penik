@@ -421,7 +421,10 @@ export async function updateMsgIdAndDelivered(oldId, newId, deliveredStatus) {
   await openDB();
   const transaction = _db.transaction(["messages"], "readwrite");
   const store = transaction.objectStore("messages");
-  const msg = await get(store, oldId);
+  let msg = await get(store, oldId);
+  if (!msg && typeof oldId === "string" && !isNaN(Number(oldId))) {
+    msg = await get(store, Number(oldId));
+  }
   if (msg) {
     await del(store, oldId);
     if (!msg.client_msg_id) {
@@ -429,6 +432,8 @@ export async function updateMsgIdAndDelivered(oldId, newId, deliveredStatus) {
     }
     msg.msg_id = newId;
     msg.delivered = deliveredStatus;
+    delete msg.pending;
+    msg.server_acked = true;
     if (deliveredStatus) {
       msg.delivered_at = Date.now();
     }

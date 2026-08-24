@@ -235,8 +235,8 @@ class AppNotificationManager @Inject constructor(
         customAvatarBitmap: Bitmap? = null,
         customImageBitmap: Bitmap? = null
     ) {
-        // Do not notify if the user is actively viewing this direct chat
-        if (activeChatKey == "direct_$chatUserId") return
+        // Do not notify if the app is in the foreground or user is viewing this direct chat
+        if (isAppInForeground || activeChatKey == "direct_$chatUserId") return
 
         val myUserId = secureTokenStorage.getUserId() ?: 0L
         val chatEntity = chatDao.getChat(chatUserId)
@@ -395,8 +395,8 @@ class AppNotificationManager @Inject constructor(
         customAvatarBitmap: Bitmap? = null,
         customImageBitmap: Bitmap? = null
     ) {
-        // Do not notify if the user is actively viewing this group
-        if (activeChatKey == "group_$groupId") return
+        // Do not notify if the app is in the foreground or user is viewing this group
+        if (isAppInForeground || activeChatKey == "group_$groupId") return
 
         val myUserId = secureTokenStorage.getUserId() ?: 0L
         if (senderUserId == myUserId) return
@@ -687,6 +687,11 @@ class AppNotificationManager @Inject constructor(
                         name.isNotEmpty() -> "📎 $name"
                         else -> "📎 Файл"
                     }
+                }
+                if (type == "sticker" || obj.containsKey("sticker")) {
+                    val stickerObj = obj["sticker"]?.jsonObject ?: obj
+                    val emoji = stickerObj["emoji"]?.jsonPrimitive?.content ?: obj["emoji"]?.jsonPrimitive?.content ?: ""
+                    return if (emoji.isNotBlank()) "$emoji Стикер" else "🎨 Стикер"
                 }
                 val text = obj["text"]?.jsonPrimitive?.content
                 if (text != null) return formatMessagePreview(text)

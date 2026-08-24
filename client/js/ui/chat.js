@@ -687,7 +687,7 @@ export async function renderChat(container, userId) {
     let statusEl = null;
     if (isMine && !isSelfChat) {
       const hasServerId = (typeof msg.msg_id === "number") || (typeof msg.msg_id === "string" && /^\d+$/.test(msg.msg_id));
-      const isPending = Boolean(msg.pending === 1 || String(msg.msg_id).startsWith("tmp-") || (!hasServerId && !msg.server_acked));
+      const isPending = !hasServerId && (msg.pending === 1 || String(msg.msg_id).startsWith("tmp-") || !msg.server_acked);
       const isDouble = Boolean(msg.read || (msg.delivered && msg.delivered > 0));
       const isRead = Boolean(msg.read);
       const statusClass = "msg-status-wrapper" + (isRead ? " msg-status-read" : "") + (isPending ? " msg-status-pending" : "");
@@ -806,14 +806,15 @@ export async function renderChat(container, userId) {
           sender: isMine ? "Вы" : (contact.name || contact.nickname || "Собеседник")
         });
       }, async () => {
-        const { confirmed, deleteForEveryone } = await showDeleteChatConfirmModal("Удалить сообщение?", "Вы уверены, что хотите удалить это сообщение?");
+        const canDeleteForEveryone = !isFailed;
+        const { confirmed, deleteForEveryone } = await showDeleteChatConfirmModal("Удалить сообщение?", "Вы уверены, что хотите удалить это сообщение?", canDeleteForEveryone);
         if (!confirmed) return;
         try {
           const realMsgId = (bubble.dataset.msgId && !bubble.dataset.msgId.startsWith("tmp-")) ? bubble.dataset.msgId : (msg.client_msg_id || msg.msg_id || bubble.dataset.clientMsgId || bubble.dataset.msgId);
           await deleteMessage(realMsgId);
           bubble.remove();
 
-          if (deleteForEveryone) {
+          if (deleteForEveryone && canDeleteForEveryone) {
             getWS().send(OP.MSG_DELETE, {
               msg_id: String(realMsgId),
               chat_id: Number(userId),

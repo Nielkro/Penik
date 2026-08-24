@@ -344,6 +344,7 @@ fun ChatRoomScreen(
 
     var messageToDeleteLocalId by remember { mutableStateOf<String?>(null) }
     var deleteForEveryoneChecked by remember { mutableStateOf(false) }
+    var canDeleteForEveryone by remember { mutableStateOf(true) }
 
     messageToDeleteLocalId?.let { localId ->
         AlertDialog(
@@ -365,34 +366,36 @@ fun ChatRoomScreen(
                         color = LocalAppColors.current.textMuted,
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { deleteForEveryoneChecked = !deleteForEveryoneChecked }
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Checkbox(
-                            checked = deleteForEveryoneChecked,
-                            onCheckedChange = { deleteForEveryoneChecked = it },
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = Color(0xFFEF5350),
-                                uncheckedColor = LocalAppColors.current.textMuted
+                    if (canDeleteForEveryone) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { deleteForEveryoneChecked = !deleteForEveryoneChecked }
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Checkbox(
+                                checked = deleteForEveryoneChecked,
+                                onCheckedChange = { deleteForEveryoneChecked = it },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = Color(0xFFEF5350),
+                                    uncheckedColor = LocalAppColors.current.textMuted
+                                )
                             )
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Удалить также для собеседника",
-                            fontSize = 13.sp,
-                            color = LocalAppColors.current.textPrimary
-                        )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Удалить также для собеседника",
+                                fontSize = 13.sp,
+                                color = LocalAppColors.current.textPrimary
+                            )
+                        }
                     }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val forEveryone = deleteForEveryoneChecked
+                        val forEveryone = canDeleteForEveryone && deleteForEveryoneChecked
                         messageToDeleteLocalId = null
                         viewModel.deleteMessage(localId, forEveryone)
                     }
@@ -568,6 +571,7 @@ fun ChatRoomScreen(
                             },
                             onDelete = {
                                 deleteForEveryoneChecked = false
+                                canDeleteForEveryone = !message.text.startsWith("[Сообщение не расшифровано") && !message.text.startsWith("[Ошибка расшифрован")
                                 messageToDeleteLocalId = message.localId
                             },
                             onForward = {
