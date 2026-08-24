@@ -187,15 +187,23 @@ class AppNotificationManager @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val senderIcon = IconCompat.createWithBitmap(avatarBitmap)
+        val person = Person.Builder()
+            .setName(peerName)
+            .setIcon(senderIcon)
+            .setKey(peerUserId.toString())
+            .build()
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_CALLS)
             .setSmallIcon(R.drawable.ic_notification)
-            .setLargeIcon(avatarBitmap)
-            .setContentTitle(peerName)
-            .setContentText(title)
-            .setContentIntent(answerPendingIntent)
+            .setStyle(
+                NotificationCompat.CallStyle.forIncomingCall(
+                    person,
+                    declinePendingIntent,
+                    answerPendingIntent
+                )
+            )
             .setFullScreenIntent(answerPendingIntent, true)
-            .addAction(0, "Ответить", answerPendingIntent)
-            .addAction(0, "Отклонить", declinePendingIntent)
             .setOngoing(true)
             .setAutoCancel(false)
             .setCategory(NotificationCompat.CATEGORY_CALL)
