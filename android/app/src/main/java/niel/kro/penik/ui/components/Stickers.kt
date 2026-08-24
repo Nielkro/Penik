@@ -38,12 +38,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -56,13 +55,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
-import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -104,16 +108,68 @@ fun parseSticker(text: String): StickerPayload? = runCatching {
 }.getOrNull()
 
 @Composable
+fun StickerMediaView(
+    url: String,
+    isVideo: Boolean,
+    modifier: Modifier = Modifier,
+    contentDescription: String = "Стикер"
+) {
+    if (isVideo) {
+        val context = LocalContext.current
+        val exoPlayer = remember(url) {
+            ExoPlayer.Builder(context).build().apply {
+                val mediaItem = MediaItem.fromUri(url)
+                setMediaItem(mediaItem)
+                repeatMode = Player.REPEAT_MODE_ALL
+                volume = 0f
+                prepare()
+                playWhenReady = true
+            }
+        }
+
+        DisposableEffect(exoPlayer) {
+            onDispose {
+                exoPlayer.release()
+            }
+        }
+
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    player = exoPlayer
+                    useController = false
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                }
+            },
+            modifier = modifier
+        )
+    } else {
+        AsyncImage(
+            model = url,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            contentScale = ContentScale.Fit
+        )
+    }
+}
+
+@Composable
 fun StickerMessageView(
     payload: StickerPayload,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isVideo = remember(payload) {
+        payload.file_name?.endsWith(".webm", ignoreCase = true) == true ||
+        payload.url.endsWith(".webm", ignoreCase = true)
+    }
     val fullUrl = remember(payload) {
         if (payload.url.isNotBlank()) {
             ApiConfig.getFullStickerUrl(payload.url)
         } else {
-            val fileName = payload.file_name ?: "${payload.sticker_id}.webp"
+            val fileName = payload.file_name ?: "${payload.sticker_id}.${if (isVideo) "webm" else "webp"}"
             ApiConfig.getStickerFileUrl(payload.pack_id, fileName)
         }
     }
@@ -125,11 +181,11 @@ fun StickerMessageView(
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        AsyncImage(
-            model = fullUrl,
+        StickerMediaView(
+            url = fullUrl,
+            isVideo = isVideo,
             contentDescription = payload.emoji.ifBlank { "Стикер" },
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Fit
+            modifier = Modifier.fillMaxSize()
         )
     }
 }
