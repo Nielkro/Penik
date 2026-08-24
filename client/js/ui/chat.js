@@ -5,7 +5,7 @@ import {
   updateMessageDelivered, getContact, saveContact, getAllContacts,
   deleteChatData, deleteMessage, saveCachedMedia
 } from "../storage.js";
-import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload } from "../app.js";
+import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload, syncMessageHistory } from "../app.js";
 import { OP } from "../ws.js";
 import {
   avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon, stickerIcon, clockIcon,
@@ -686,7 +686,8 @@ export async function renderChat(container, userId) {
     const isSelfChat = Number(userId) === Number(myId);
     let statusEl = null;
     if (isMine && !isSelfChat) {
-      const isPending = Boolean(msg.pending || String(msg.msg_id).startsWith("tmp-") || (msg.delivered === 0 && !msg.server_acked));
+      const hasServerId = (typeof msg.msg_id === "number") || (typeof msg.msg_id === "string" && /^\d+$/.test(msg.msg_id));
+      const isPending = Boolean(msg.pending === 1 || String(msg.msg_id).startsWith("tmp-") || (!hasServerId && !msg.server_acked));
       const isDouble = Boolean(msg.read || (msg.delivered && msg.delivered > 0));
       const isRead = Boolean(msg.read);
       const statusClass = "msg-status-wrapper" + (isRead ? " msg-status-read" : "") + (isPending ? " msg-status-pending" : "");
@@ -868,6 +869,77 @@ export async function renderChat(container, userId) {
   requestAnimationFrame(() => {
     scrollDown.scrollToBottom();
     setTimeout(() => scrollDown.scrollToBottom(), 100);
+  });
+
+  let isLoadingOlder = false;
+  let hasMoreOlder = true;
+
+  async function loadOlderHistory() {
+    if (isLoadingOlder || !hasMoreOlder) return;
+    isLoadingOlder = true;
+    const oldest = messages[0];
+    if (!oldest) {
+      isLoadingOlder = false;
+      return;
+    }
+    const oldestTs = oldest.created_at || Date.now();
+    const oldestServerId = typeof oldest.msg_id === "number" ? oldest.msg_id : (oldest.server_id || null);
+
+    // 1. Try local IndexedDB
+    let olderLocal = [];
+    try {
+      olderLocal = await getMessages(userId, 50, oldestTs);
+    } catch (e) {
+      olderLocal = [];
+    }
+
+    if (olderLocal.length > 0) {
+      const scrollHeightBefore = messagesEl.scrollHeight;
+      const scrollTopBefore = messagesEl.scrollTop;
+      
+      messages = [...olderLocal, ...messages];
+      olderLocal.slice().reverse().forEach(m => appendMessage(m, true));
+      
+      messagesEl.scrollTop = messagesEl.scrollHeight - scrollHeightBefore + scrollTopBefore;
+      isLoadingOlder = false;
+      return;
+    }
+
+    // 2. If local DB had no more older messages, query server with before_id
+    if (oldestServerId) {
+      try {
+        const fetched = await syncMessageHistory({
+          chat_user_id: userId,
+          before_id: oldestServerId,
+          limit: 50
+        });
+        if (!fetched || fetched.length === 0) {
+          hasMoreOlder = false;
+        } else {
+          const freshLocal = await getMessages(userId, 50, oldestTs);
+          if (freshLocal.length > 0) {
+            const scrollHeightBefore = messagesEl.scrollHeight;
+            const scrollTopBefore = messagesEl.scrollTop;
+            messages = [...freshLocal, ...messages];
+            freshLocal.slice().reverse().forEach(m => appendMessage(m, true));
+            messagesEl.scrollTop = messagesEl.scrollHeight - scrollHeightBefore + scrollTopBefore;
+          } else {
+            hasMoreOlder = false;
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch older history from server:", err);
+      }
+    } else {
+      hasMoreOlder = false;
+    }
+    isLoadingOlder = false;
+  }
+
+  messagesEl.addEventListener("scroll", () => {
+    if (messagesEl.scrollTop < 60) {
+      loadOlderHistory();
+    }
   });
 
   // ── Send ──────────────────────────────────────────────────────────────────
