@@ -1894,8 +1894,44 @@ fun MessageBubble(
                             }
                         }
                     }
+                } else if (isFailed) {
+                    Row(
+                        modifier = Modifier.padding(top = 1.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "🔒 Сообщение не расшифровано",
+                            color = Color(0xFFEF5350),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        IconButton(
+                            onClick = { onDelete?.invoke() },
+                            modifier = Modifier.size(24.dp).padding(start = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Удалить локально",
+                                tint = Color(0xFFEF5350),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.align(Alignment.End).padding(top = 2.dp)
+                    ) {
+                        Text(
+                            text = formatTime(timestamp),
+                            fontSize = 10.sp,
+                            color = Color(0xFFEF5350).copy(alpha = 0.7f)
+                        )
+                    }
                 } else {
-                    val isSingleLineShort = !isFailed && !parsedText.contains('\n') && parsedText.length <= 35
+                    val isSingleLineShort = !parsedText.contains('\n') && parsedText.length <= 35
                     if (isSingleLineShort) {
                         Row(
                             modifier = Modifier
