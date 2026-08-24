@@ -75,6 +75,13 @@ object DatabaseModule {
                 PenikDatabase.MIGRATION_6_7,
                 PenikDatabase.MIGRATION_7_8,
             )
+            .addCallback(object : androidx.room.RoomDatabase.Callback() {
+                override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                    super.onOpen(db)
+                    db.execSQL("UPDATE messages SET timestamp = timestamp * 1000 WHERE timestamp < 10000000000")
+                    db.execSQL("UPDATE chats SET lastMessageTimestamp = lastMessageTimestamp * 1000 WHERE lastMessageTimestamp > 0 AND lastMessageTimestamp < 10000000000")
+                }
+            })
             .build()
     }
 

@@ -419,7 +419,7 @@ class MessageRepository @Inject constructor(
             chatUserId = event.chatUserId,
             senderId = event.fromUserId,
             text = event.text,
-            timestamp = event.ts,
+            timestamp = toMs(event.ts),
             sentByMe = sentByMe,
             delivered = true
         )
@@ -495,7 +495,7 @@ class MessageRepository @Inject constructor(
             chatUserId = event.chatUserId,
             senderId = event.fromUserId,
             text = decryptedText,
-            timestamp = event.ts,
+            timestamp = toMs(event.ts),
             sentByMe = sentByMe,
             delivered = true,
             replyToMsgId = event.replyToMsgId
@@ -518,7 +518,7 @@ class MessageRepository @Inject constructor(
                         chatUserId = msg.chatUserId,
                         senderId = msg.fromUserId,
                         text = msg.text,
-                        timestamp = msg.ts,
+                        timestamp = toMs(msg.ts),
                         sentByMe = msg.fromUserId == myId,
                         delivered = true
                     ))
@@ -560,7 +560,13 @@ class MessageRepository @Inject constructor(
                     }
                     // Only expose self-chat messages that we successfully decrypted.
                     if (!isSelfChat) {
-                        decryptedList.add(DecryptedOfflineMsg(msg.chatUserId, decryptedText, msg.ts))
+                        decryptedList.add(DecryptedOfflineMsg(
+                            chatUserId = msg.chatUserId,
+                            text = decryptedText,
+                            ts = msg.ts,
+                            isIncoming = msg.fromUserId != myId,
+                            msgId = msg.msgId
+                        ))
                     }
                     add(MessageEntity(
                         localId = if (!msg.clientMsgId.isNullOrBlank()) msg.clientMsgId else "server-${msg.msgId}",
@@ -568,7 +574,7 @@ class MessageRepository @Inject constructor(
                         chatUserId = msg.chatUserId,
                         senderId = msg.fromUserId,
                         text = decryptedText,
-                        timestamp = msg.ts,
+                        timestamp = toMs(msg.ts),
                         sentByMe = msg.fromUserId == myId,
                         delivered = true,
                         replyToMsgId = msg.replyToMsgId
@@ -577,7 +583,13 @@ class MessageRepository @Inject constructor(
                     val text = existing.text
                     val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
                     if (!isFailed && !isSelfChat) {
-                        decryptedList.add(DecryptedOfflineMsg(msg.chatUserId, text, msg.ts))
+                        decryptedList.add(DecryptedOfflineMsg(
+                            chatUserId = msg.chatUserId,
+                            text = text,
+                            ts = msg.ts,
+                            isIncoming = msg.fromUserId != myId,
+                            msgId = msg.msgId
+                        ))
                     }
                 }
             }
@@ -594,7 +606,7 @@ class MessageRepository @Inject constructor(
 
     suspend fun syncHistory() {
         try {
-            val response = apiService.getMessageHistory(limit = 100)
+            val response = apiService.getMessageHistory(limit = 500)
             if (response.isSuccessful) {
                 val messages = response.body() ?: emptyList()
                 val myId = tokenStorage.getUserId()
@@ -799,13 +811,13 @@ class MessageRepository @Inject constructor(
                 chatUserId = body.chatUserId,
                 senderId = body.senderId,
                 text = text,
-                timestamp = body.createdAt,
+                timestamp = toMs(body.createdAt),
                 sentByMe = sentByMe,
                 delivered = true,
                 replyToMsgId = body.replyToMsgId
             )
         )
-        chatRepository.updateLastMessage(body.chatUserId, text, body.createdAt)
+        chatRepository.updateLastMessage(body.chatUserId, text, toMs(body.createdAt))
         if (!sentByMe) {
             webSocketManager.sendDelivered(body.msgId)
         }
@@ -860,7 +872,9 @@ class MessageRepository @Inject constructor(
 data class DecryptedOfflineMsg(
     val chatUserId: Long,
     val text: String,
-    val ts: Long
+    val ts: Long,
+    val isIncoming: Boolean,
+    val msgId: Long
 )
 
 private data class HistoryMsgDecrypted(
@@ -869,3 +883,7 @@ private data class HistoryMsgDecrypted(
     val senderId: Long,
     val createdAt: Long
 )
+
+fun toMs(timestamp: Long): Long {
+    return if (timestamp in 1L..9_999_999_999L) timestamp * 1000L else timestamp
+}
