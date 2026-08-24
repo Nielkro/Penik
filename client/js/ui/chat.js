@@ -473,9 +473,11 @@ export async function renderChat(container, userId) {
   });
 
   const onDocClick = (e) => {
-    if (!stickerPicker.element.contains(e.target) && e.target !== stickerBtn && !stickerBtn.contains(e.target)) {
-      stickerPicker.toggle(false);
+    const path = e.composedPath ? e.composedPath() : [];
+    if (path.includes(stickerPicker.element) || path.includes(stickerBtn) || stickerPicker.element.contains(e.target) || stickerBtn.contains(e.target)) {
+      return;
     }
+    stickerPicker.toggle(false);
   };
   document.addEventListener("click", onDocClick);
 
