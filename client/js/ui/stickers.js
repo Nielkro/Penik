@@ -40,9 +40,11 @@ export function createStickerPicker(onSelect) {
 
   const header = el("div", { class: "sticker-picker-header" });
   const title = el("span", { class: "sticker-picker-title" }, "Стикеры");
-  const addBtn = el("button", { class: "btn-icon btn-add-pack", title: "Импорт из Telegram" }, [
-    svgIcon(ICON_PLUS, 18)
-  ]);
+  const addBtn = el("button", {
+    class: "btn-add-pack",
+    title: "Импортировать стикерпак из Telegram",
+    style: "display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--primary-alpha, rgba(91,110,245,0.15));color:var(--primary, #5b6ef5);border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;"
+  }, svgIcon(ICON_PLUS, 14, "var(--primary, #5b6ef5)"), "Импорт");
   header.appendChild(title);
   header.appendChild(addBtn);
 
@@ -115,8 +117,9 @@ export function createStickerPicker(onSelect) {
     // Add pack button tab at the end of tabs bar
     const addTab = el("button", {
       class: "sticker-tab sticker-tab-add",
-      title: "Импортировать стикерпак"
-    }, [svgIcon(ICON_PLUS, 18)]);
+      title: "Импортировать стикерпак",
+      style: "display:flex;align-items:center;justify-content:center;color:var(--primary, #5b6ef5);"
+    }, [svgIcon(ICON_PLUS, 18, "var(--primary, #5b6ef5)")]);
     addTab.addEventListener("click", (e) => {
       e.stopPropagation();
       showImportStickersModal(() => {
@@ -132,7 +135,18 @@ export function createStickerPicker(onSelect) {
     if (activeTab === "recent") {
       const recents = getRecentStickers();
       if (recents.length === 0) {
-        contentArea.appendChild(el("div", { class: "sticker-picker-empty" }, "Здесь будут ваши недавние стикеры"));
+        const emptyWrap = el("div", { class: "sticker-picker-empty", style: "display:flex;flex-direction:column;align-items:center;gap:12px;margin:auto;text-align:center;" });
+        emptyWrap.appendChild(el("p", { style: "margin:0;color:var(--text-muted);font-size:13px;" }, "Здесь будут ваши недавние стикеры"));
+        const importBtn = el("button", {
+          class: "btn btn-primary",
+          style: "padding:8px 16px;font-size:13px;border-radius:10px;display:inline-flex;align-items:center;gap:6px;"
+        }, svgIcon(ICON_PLUS, 16, "#fff"), "Импорт из Telegram");
+        importBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          showImportStickersModal(() => loadPacks());
+        });
+        emptyWrap.appendChild(importBtn);
+        contentArea.appendChild(emptyWrap);
         return;
       }
       const grid = el("div", { class: "stickers-grid" });

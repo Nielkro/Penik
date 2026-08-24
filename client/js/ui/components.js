@@ -38,23 +38,52 @@ export function svgIcon(pathD, size = 20, color = "currentColor", strokeWidth = 
   svgEl.setAttribute("stroke-linejoin", "round");
   svgEl.style.display = "block";
   svgEl.style.flexShrink = "0";
-  svgEl.innerHTML = `<path d="${pathD}"></path>`;
+
+  const pathEl = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  pathEl.setAttribute("d", pathD);
+  svgEl.appendChild(pathEl);
   return svgEl;
 }
 
-export function stickerIcon(size = 20, color = "currentColor") {
+export function stickerIcon(size = 22, color = "currentColor") {
   const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svgEl.setAttribute("viewBox", "0 0 24 24");
   svgEl.setAttribute("width", String(size));
   svgEl.setAttribute("height", String(size));
   svgEl.setAttribute("fill", "none");
-  svgEl.setAttribute("stroke", color);
-  svgEl.setAttribute("stroke-width", "2");
-  svgEl.setAttribute("stroke-linecap", "round");
-  svgEl.setAttribute("stroke-linejoin", "round");
   svgEl.style.display = "block";
   svgEl.style.flexShrink = "0";
-  svgEl.innerHTML = `<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><circle cx="9" cy="13" r="1" fill="currentColor"></circle><circle cx="13" cy="13" r="1" fill="currentColor"></circle><path d="M8.5 16.5c1 1 3 1 4 0"></path>`;
+
+  // Telegram-style smiley: clean circle outline + filled dot eyes + curved mouth
+  const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  circle.setAttribute("cx", "12");
+  circle.setAttribute("cy", "12");
+  circle.setAttribute("r", "9.5");
+  circle.setAttribute("stroke", color);
+  circle.setAttribute("stroke-width", "2");
+  svgEl.appendChild(circle);
+
+  const eyeLeft = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  eyeLeft.setAttribute("cx", "8.5");
+  eyeLeft.setAttribute("cy", "10");
+  eyeLeft.setAttribute("r", "1.5");
+  eyeLeft.setAttribute("fill", color);
+  svgEl.appendChild(eyeLeft);
+
+  const eyeRight = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  eyeRight.setAttribute("cx", "15.5");
+  eyeRight.setAttribute("cy", "10");
+  eyeRight.setAttribute("r", "1.5");
+  eyeRight.setAttribute("fill", color);
+  svgEl.appendChild(eyeRight);
+
+  const mouth = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  mouth.setAttribute("d", "M8 14.5c1.2 1.8 2.8 2.5 4 2.5s2.8-.7 4-2.5");
+  mouth.setAttribute("stroke", color);
+  mouth.setAttribute("stroke-width", "2");
+  mouth.setAttribute("stroke-linecap", "round");
+  svgEl.appendChild(mouth);
+
   return svgEl;
 }
 
