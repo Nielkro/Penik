@@ -31,13 +31,13 @@ type envelopeUploadRequest struct {
 	Envelopes []envelopeItem `json:"envelopes"`
 }
 
-// activeDevices returns all device IDs belonging to active members of the group.
+// activeDevices returns all device IDs belonging to active and pending members of the group.
 // This is the recipient set a rotating client must build envelopes for.
 func activeDevices(database *db.DB, r *http.Request, groupID int64) ([]map[string]int64, error) {
 	rows, err := database.QueryContext(r.Context(),
 		`SELECT d.id, d.user_id FROM devices d
 		 JOIN group_members gm ON gm.user_id = d.user_id
-		 WHERE gm.group_id=? AND gm.status=?`, groupID, statusActive)
+		 WHERE gm.group_id=? AND gm.status IN (?,?)`, groupID, statusActive, statusPending)
 	if err != nil {
 		return nil, err
 	}

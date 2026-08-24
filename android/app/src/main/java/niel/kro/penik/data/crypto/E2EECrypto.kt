@@ -112,6 +112,25 @@ class E2EECrypto {
         return agreement.generateSecret()
     }
 
+    fun buildPairwiseAad(senderUserId: Long, recipientUserId: Long, clientMsgId: String = "", timestamp: Long = 0L): ByteArray {
+        val fields = listOf(
+            "1",
+            senderUserId.toString(),
+            recipientUserId.toString(),
+            clientMsgId,
+            timestamp.toString()
+        )
+        val bos = java.io.ByteArrayOutputStream()
+        for (field in fields) {
+            val bytes = field.toByteArray(Charsets.UTF_8)
+            val lenBytes = ByteArray(4)
+            java.nio.ByteBuffer.wrap(lenBytes).putInt(bytes.size)
+            bos.write(lenBytes)
+            bos.write(bytes)
+        }
+        return bos.toByteArray()
+    }
+
     fun encrypt(plaintext: ByteArray, sharedSecret: ByteArray, info: String = "penik-pairwise-message-v1", aad: ByteArray? = null): E2EEncrypted {
         val salt = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val derivedKeyBytes = hkdfDerive(salt, sharedSecret, info.toByteArray(Charsets.UTF_8), 32)
@@ -140,10 +159,10 @@ class E2EECrypto {
             val derivedKey = SecretKeySpec(derivedKeyBytes, "ChaCha20")
             
             val cipher = try {
-            Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
-        } catch (e: Exception) {
-            Cipher.getInstance("ChaCha20-Poly1305")
-        }
+                Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
+            } catch (e: Exception) {
+                Cipher.getInstance("ChaCha20-Poly1305")
+            }
             val spec = IvParameterSpec(nonce)
             cipher.init(Cipher.DECRYPT_MODE, derivedKey, spec)
             if (aad != null) {
@@ -151,6 +170,11 @@ class E2EECrypto {
             }
             return cipher.doFinal(ciphertext)
         } catch (e: Exception) {
+            if (aad != null) {
+                try {
+                    return decrypt(ciphertext, sharedSecret, salt, nonce, info, null)
+                } catch (_: Exception) {}
+            }
             if (info == "penik-pairwise-message-v1") {
                 return decrypt(ciphertext, sharedSecret, salt, nonce, "PenikE2EE", aad)
             }

@@ -17,7 +17,7 @@ import { renderSearch } from './ui/search.js';
 import { renderSettings, renderDevices } from './ui/settings.js';
 import { initTheme } from './theme.js';
 import {
-  deriveSharedSecret, e2eeEncrypt, e2eeDecrypt,
+  deriveSharedSecret, e2eeEncrypt, e2eeDecrypt, buildPairwiseAAD,
   encryptKeyBackup, decryptKeyBackup, derivePublicKey, generateKeyPair
 } from './crypto.js';
 import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
@@ -950,13 +950,20 @@ export async function decryptMessagePayload(payload) {
     throw new Error("Приватный ключ не найден");
   }
 
+  const myId = Number(localStorage.getItem("user_id"));
+  const senderUserId = Number(payload.from_user_id ?? payload.sender_user_id ?? payload.sender_id ?? pinUserId ?? 0);
+  const recipientUserId = Number(payload.to_user_id ?? payload.recipient_user_id ?? myId);
+  const clientMsgId = payload.client_msg_id || payload.msg_id || "";
+  const timestamp = Number(payload.timestamp || payload.created_at || 0);
+
+  const aad = buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId, timestamp);
   const secret = await deriveSharedSecret(myPrivateIK, fromIdentityKey);
-  const textBytes = await e2eeDecrypt(ciphertext, secret, salt, nonce, "penik-pairwise-message-v1");
+  const textBytes = await e2eeDecrypt(ciphertext, secret, salt, nonce, "penik-pairwise-message-v1", aad);
 
   return { text: new TextDecoder().decode(textBytes) };
 }
 
-export async function encryptMessagePayload(text, recipientUserId) {
+export async function encryptMessagePayload(text, recipientUserId, clientMsgId = "", timestamp = 0) {
   const myId = Number(localStorage.getItem("user_id"));
   const myDeviceId = Number(localStorage.getItem("device_id"));
   const isSelfChat = Number(recipientUserId) === myId;
@@ -981,6 +988,8 @@ export async function encryptMessagePayload(text, recipientUserId) {
     throw new Error("Private Identity Key not found");
   }
 
+  const aad = buildPairwiseAAD(myId, recipientUserId, clientMsgId, timestamp);
+
   const payloads = [];
   for (const device of allDevices) {
     const recipientIKPub = new Uint8Array(atob(device.identity_key).split("").map(c => c.charCodeAt(0)));
@@ -989,7 +998,7 @@ export async function encryptMessagePayload(text, recipientUserId) {
     await verifyPeerIdentityKey(device.owner_user_id, device.device_id, recipientIKPub);
 
     const secret = await deriveSharedSecret(myPrivateIK, recipientIKPub);
-    const { ciphertext, salt, nonce } = await e2eeEncrypt(text, secret, "penik-pairwise-message-v1");
+    const { ciphertext, salt, nonce } = await e2eeEncrypt(text, secret, "penik-pairwise-message-v1", aad);
 
     payloads.push({
       device_id: Number(device.device_id),

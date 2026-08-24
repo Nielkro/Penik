@@ -310,14 +310,15 @@ class GroupRepository @Inject constructor(
         // and relays. Server and web work in Unix seconds — sending milliseconds
         // here made the recipient's AAD mismatch and decryption fail.
         val createdAt = System.currentTimeMillis() / 1000
+        val senderUserId = myUserId()
         val enc = groupCrypto.encryptMessage(
-            text.toByteArray(Charsets.UTF_8), groupKey, groupId, version, messageId, createdAt
+            text.toByteArray(Charsets.UTF_8), groupKey, groupId, version, senderUserId, messageId, createdAt
         )
 
         dao.upsertMessage(
             GroupMessageEntity(
                 groupId = groupId, messageId = messageId, serverId = 0,
-                senderUserId = myUserId(), senderDeviceId = myDeviceId(),
+                senderUserId = senderUserId, senderDeviceId = myDeviceId(),
                 keyVersion = version, text = text, createdAt = createdAt,
                 sentByMe = true, delivered = false,
                 replyToMsgId = replyToMsgId
@@ -351,7 +352,7 @@ class GroupRepository @Inject constructor(
         }
         val text = runCatching {
             String(
-                groupCrypto.decryptMessage(ciphertext, groupKey, salt, nonce, groupId, keyVersion, messageId, createdAt),
+                groupCrypto.decryptMessage(ciphertext, groupKey, salt, nonce, groupId, keyVersion, senderUserId, messageId, createdAt),
                 Charsets.UTF_8,
             )
         }.getOrElse {

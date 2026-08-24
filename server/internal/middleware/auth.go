@@ -28,10 +28,11 @@ func Auth(database *db.DB) func(http.Handler) http.Handler {
 				return
 			}
 
+			tokenHash := db.HashSessionToken(token)
 			var userID, deviceID int64
 			var expiresAt int64
 			err := database.QueryRowContext(r.Context(),
-				`SELECT user_id, device_id, expires_at FROM sessions WHERE token=?`, token).
+				`SELECT user_id, device_id, expires_at FROM sessions WHERE token=? OR token=?`, tokenHash, token).
 				Scan(&userID, &deviceID, &expiresAt)
 			if err != nil || time.Now().Unix() > expiresAt {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)

@@ -163,9 +163,10 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 		expiresAt := time.Now().Add(cfg.SessionTTL).Unix()
+		tokenHash := db.HashSessionToken(token)
 		_, err = tx.ExecContext(r.Context(),
 			`INSERT INTO sessions(token,user_id,device_id,created_at,expires_at) VALUES(?,?,?,?,?)`,
-			token, userID, deviceID, now, expiresAt)
+			tokenHash, userID, deviceID, now, expiresAt)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -335,9 +336,10 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 		expiresAt := time.Now().Add(cfg.SessionTTL).Unix()
+		tokenHash := db.HashSessionToken(token)
 		_, err = tx.ExecContext(r.Context(),
 			`INSERT INTO sessions(token,user_id,device_id,created_at,expires_at) VALUES(?,?,?,?,?)`,
-			token, userID, deviceID, now, expiresAt)
+			tokenHash, userID, deviceID, now, expiresAt)
 		if err != nil {
 			loginInternalError(w, "insert session", err)
 			return
