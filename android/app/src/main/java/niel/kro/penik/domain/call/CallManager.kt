@@ -141,6 +141,9 @@ class CallManager @Inject constructor(
 
     fun onIncoming(event: WebSocketEvent.CallIncoming) {
         if (ui.phase != CallPhase.IDLE) {
+            if (event.callId == callIdOfIncoming) {
+                return
+            }
             webSocketManager.sendCallReject(event.callId, event.fromUserId, "busy")
             return
         }
