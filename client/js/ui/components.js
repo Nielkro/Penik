@@ -328,7 +328,11 @@ export function renderStickerContent(container, sticker) {
     ? `Стикер (${sticker.emoji}) — нажмите для полноэкранного просмотра, удерживайте для пака`
     : "Нажмите для полноэкранного просмотра, удерживайте для пака";
 
-  const isVideo = Boolean(sticker.is_video || (sticker.file_name && sticker.file_name.endsWith(".webm")));
+  const isVideo = Boolean(
+    sticker.is_video ||
+    (sticker.file_name && sticker.file_name.endsWith(".webm")) ||
+    (sticker.url && sticker.url.endsWith(".webm"))
+  );
   const url = sticker.url || `/api/v1/stickers/file/${sticker.pack_id}/${sticker.file_name || (sticker.id + (isVideo ? '.webm' : '.webp'))}`;
 
   if (isVideo) {
@@ -337,9 +341,24 @@ export function renderStickerContent(container, sticker) {
     video.autoplay = true;
     video.loop = true;
     video.muted = true;
+    video.defaultMuted = true;
     video.playsInline = true;
+    video.setAttribute("autoplay", "");
+    video.setAttribute("loop", "");
+    video.setAttribute("muted", "");
+    video.setAttribute("playsinline", "");
+    video.setAttribute("preload", "auto");
     video.className = "msg-sticker-media";
+    video.addEventListener("loadeddata", () => {
+      video.play().catch(() => {});
+    });
+    video.addEventListener("canplay", () => {
+      video.play().catch(() => {});
+    });
     wrapper.appendChild(video);
+    setTimeout(() => {
+      video.play().catch(() => {});
+    }, 50);
   } else {
     const img = document.createElement("img");
     img.src = url;

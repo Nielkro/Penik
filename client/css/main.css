@@ -2078,6 +2078,15 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   overflow: visible !important;
 }
 
+.msg-bubble.sticker-message .msg-text,
+.msg-bubble.msg-sticker-bubble .msg-text {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
 .msg-bubble.sticker-message .msg-sticker-wrapper,
 .msg-bubble.msg-sticker-bubble .msg-sticker-wrapper {
   cursor: pointer;
