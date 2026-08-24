@@ -284,3 +284,11 @@ export function getGroupHistory(groupId, { limit = 100, before_id } = {}) {
 
 export function uploadGroupHistoryPackets(groupId, packets) { return post(`/groups/${groupId}/history-packets`, { packets }); }
 export function getGroupHistoryPacket(groupId) { return get(`/groups/${groupId}/history-packets`); }
+
+// Stickers API
+export function getMyStickers() { return get('/stickers/my'); }
+export function getStickerPack(id) { return get(`/stickers/pack/${encodeURIComponent(id)}`); }
+export function installStickerPack(id) { return post(`/stickers/pack/${encodeURIComponent(id)}/install`); }
+export function uninstallStickerPack(id) { return del(`/stickers/pack/${encodeURIComponent(id)}/install`); }
+export function importTelegramStickerPack(url) { return post('/stickers/import/telegram', { url }); }
+

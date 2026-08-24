@@ -15,6 +15,7 @@ import {
 } from "./components.js";
 import { onPresenceUpdate } from "../presence.js";
 import { getMessagePreview, getMessagePreviewInfo } from "./chat.js";
+import { createStickerPicker } from "./stickers.js";
 
 // Role labels in Russian for the members UI.
 const ROLE_LABEL = { owner: "владелец", admin: "админ", member: "участник" };
@@ -296,7 +297,29 @@ export async function renderGroup(container, groupId) {
     }
   });
 
-  const inputRow = el("div", { class: "chat-input-row" }, attachBtn, fileInput, inputEl, sendBtn);
+  const stickerBtn = el("button", {
+    class: "icon-btn chat-sticker-btn",
+    title: "Стикеры",
+    style: "background:transparent;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
+  }, "😊");
+
+  const stickerPicker = createStickerPicker((sticker) => {
+    sendGroupSticker(sticker);
+  });
+
+  stickerBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    stickerPicker.toggle();
+  });
+
+  const onDocClick = (e) => {
+    if (!stickerPicker.element.contains(e.target) && e.target !== stickerBtn && !stickerBtn.contains(e.target)) {
+      stickerPicker.toggle(false);
+    }
+  };
+  document.addEventListener("click", onDocClick);
+
+  const inputRow = el("div", { class: "chat-input-row", style: "position: relative;" }, attachBtn, fileInput, stickerBtn, stickerPicker.element, inputEl, sendBtn);
   const chatWrap = el("div", { class: "chat-wrap" }, header, messagesEl, inputRow);
   container.appendChild(chatWrap);
   const scrollDown = attachScrollDownButton(messagesEl);
@@ -430,16 +453,20 @@ export async function renderGroup(container, groupId) {
     }
 
     let isMediaMsg = false;
+    let isStickerMsg = false;
     if (typeof msg.plaintext === "string" && msg.plaintext.startsWith("{")) {
       try {
         const p = JSON.parse(msg.plaintext);
+        if (p.type === "sticker") {
+          isStickerMsg = true;
+        }
         if (p.type === "file" && p.file && ((p.file.mime || "").startsWith("image/") || (p.file.mime || "").startsWith("video/")) && mine && !p.text && !p.fwd_from) {
           isMediaMsg = true;
         }
       } catch (e) {}
     }
 
-    const bubble = el("div", { class: `msg-bubble ${mine ? "msg-out" : "msg-in"}${isMediaMsg ? " msg-media-bubble" : ""}`, "data-mid": key },
+    const bubble = el("div", { class: `msg-bubble ${mine ? "msg-out" : "msg-in"}${isMediaMsg ? " msg-media-bubble" : ""}${isStickerMsg ? " sticker-message msg-sticker-bubble" : ""}`, "data-mid": key },
       ...bubbleChildren
     );
     wireMsgCopy(bubble, () => msg.plaintext || "", () => {
@@ -619,6 +646,24 @@ export async function renderGroup(container, groupId) {
       });
     } catch (e) {
       showToast(e.message || "Не удалось отправить", "error");
+    }
+  }
+
+  async function sendGroupSticker(sticker) {
+    const payloadStr = JSON.stringify(sticker);
+    const currentReply = activeReply;
+    setActiveReply(null);
+
+    const createdAt = Date.now();
+    try {
+      const messageId = await sendGroupMessage(groupId, payloadStr, currentReply ? currentReply.msg_id : null);
+      appendMessage({
+        message_id: messageId, sender_user_id: myId,
+        plaintext: payloadStr, created_at: createdAt, delivered: 0,
+        reply_to_msg_id: currentReply ? currentReply.msg_id : null
+      });
+    } catch (e) {
+      showToast(e.message || "Не удалось отправить стикер", "error");
     }
   }
   sendBtn.addEventListener("click", doSend);
