@@ -39,9 +39,9 @@ class MessageRepository @Inject constructor(
     private val e2eeCrypto: E2EECrypto,
     private val identityPins: IdentityPinStore,
 ) {
-    private val bundleCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, List<niel.kro.penik.data.network.api.DeviceKeyBundle>>>()
+    private val bundleCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, List<niel.kro.penik.data.network.api.DeviceBundle>>>()
 
-    suspend fun getKeyBundleCached(userId: Long, isSelf: Boolean = false, forceRefresh: Boolean = false): List<niel.kro.penik.data.network.api.DeviceKeyBundle> {
+    suspend fun getKeyBundleCached(userId: Long, isSelf: Boolean = false, forceRefresh: Boolean = false): List<niel.kro.penik.data.network.api.DeviceBundle> {
         val now = System.currentTimeMillis()
         if (!forceRefresh) {
             val cached = bundleCache[userId]
@@ -49,7 +49,7 @@ class MessageRepository @Inject constructor(
                 return cached.second
             }
         }
-        val devices = try {
+        val devices: List<niel.kro.penik.data.network.api.DeviceBundle> = try {
             val response = if (isSelf) apiService.getKeyBundleSelf(userId) else apiService.getKeyBundle(userId)
             if (response.isSuccessful) response.body()?.devices ?: emptyList() else emptyList()
         } catch (e: Exception) {
@@ -334,11 +334,11 @@ class MessageRepository @Inject constructor(
         )
         messageDao.insertMessage(entity)
 
-        val recipientBundles = getKeyBundleCached(toUserId, isSelf = isSelfChat)
-        val senderBundles = if (isSelfChat) emptyList() else getKeyBundleCached(myId, isSelf = true)
+        val recipientBundles: List<niel.kro.penik.data.network.api.DeviceBundle> = getKeyBundleCached(toUserId, isSelf = isSelfChat)
+        val senderBundles: List<niel.kro.penik.data.network.api.DeviceBundle> = if (isSelfChat) emptyList() else getKeyBundleCached(myId, isSelf = true)
 
         val myDeviceId = tokenStorage.getDeviceId()
-        val allDevices = if (isSelfChat) {
+        val allDevices: List<niel.kro.penik.data.network.api.DeviceBundle> = if (isSelfChat) {
             recipientBundles.filter { it.deviceId != myDeviceId }
         } else {
             (recipientBundles + senderBundles).filter { it.deviceId != myDeviceId }
@@ -351,7 +351,7 @@ class MessageRepository @Inject constructor(
 
         // A key bundle does not name the device's owner, so it is recovered from
         // which bundle the device came out of; pins are per (user, device).
-        val deviceOwners = buildMap {
+        val deviceOwners: Map<Long, Long> = buildMap {
             senderBundles.forEach { put(it.deviceId, myId) }
             recipientBundles.forEach { put(it.deviceId, toUserId) }
         }
