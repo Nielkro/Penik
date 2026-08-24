@@ -638,15 +638,24 @@ class MessageRepository @Inject constructor(
         return decryptedList
     }
 
-    suspend fun syncHistory() {
+    suspend fun syncHistory(chatUserId: Long? = null, beforeId: Long? = null, limit: Int = 500) {
         try {
-            val response = apiService.getMessageHistory(limit = 500)
+            val maxServerId = if (chatUserId == null && beforeId == null) {
+                messageDao.getAllMessages().mapNotNull { it.serverId }.maxOrNull()
+            } else null
+
+            val response = apiService.getMessageHistory(
+                limit = limit,
+                beforeId = beforeId,
+                afterId = maxServerId,
+                chatUserId = chatUserId
+            )
             if (response.isSuccessful) {
                 val messages = response.body() ?: emptyList()
                 val myId = tokenStorage.getUserId()
                 val newMessages = mutableListOf<HistoryMsgDecrypted>()
                 val bundleCache = mutableMapOf<Long, niel.kro.penik.data.network.api.KeyBundleResponse?>()
-                Log.d("PenikMsg", "syncHistory: received ${messages.size} history items from server")
+                Log.d("PenikMsg", "syncHistory: received ${messages.size} history items from server (afterId=$maxServerId, beforeId=$beforeId, chatUserId=$chatUserId)")
                 val entities = buildList {
                     messages.forEach { msg ->
                         if (msg.senderId == myId && !msg.clientMsgId.isNullOrBlank()) {

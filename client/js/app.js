@@ -772,11 +772,32 @@ async function onMsgStatusBatchGlobal(payload) {
   }
 }
 
-export async function syncMessageHistory() {
+export async function syncMessageHistory(options = {}) {
   try {
-    const limit = 100;
-    const history = await apiGet(`/messages/history?limit=${limit}`);
-    if (!history || !Array.isArray(history) || history.length === 0) return;
+    const limit = options.limit || 500;
+    let url = `/messages/history?limit=${limit}`;
+    if (options.before_id) {
+      url += `&before_id=${options.before_id}`;
+    } else if (options.after_id) {
+      url += `&after_id=${options.after_id}`;
+    } else {
+      const allLocal = await getAllMessages();
+      let maxServerId = 0;
+      for (const m of allLocal) {
+        const idNum = Number(m.msg_id);
+        if (Number.isInteger(idNum) && idNum > maxServerId) {
+          maxServerId = idNum;
+        }
+      }
+      if (maxServerId > 0) {
+        url += `&after_id=${maxServerId}`;
+      }
+    }
+    if (options.chat_user_id) {
+      url += `&chat_user_id=${options.chat_user_id}`;
+    }
+    const history = await apiGet(url);
+    if (!history || !Array.isArray(history) || history.length === 0) return [];
 
     const me = state.currentUser;
     if (!me) return;
