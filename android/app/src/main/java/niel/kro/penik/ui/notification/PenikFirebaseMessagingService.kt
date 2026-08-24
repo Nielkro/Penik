@@ -39,6 +39,9 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
     @Inject
     lateinit var groupRepository: GroupRepository
 
+    @Inject
+    lateinit var callManager: niel.kro.penik.domain.call.CallManager
+
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         runBlocking {
@@ -79,6 +82,25 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
                     overrideGroupName = data["group_name"],
                     overrideSenderName = data["sender_name"]
                 )
+            } else if (type == "call") {
+                val callId = data["call_id"] ?: return@runBlocking
+                val fromUserId = data["from_user_id"]?.toLongOrNull() ?: return@runBlocking
+                val isVideo = data["is_video"] == "true"
+                val roomName = data["room_name"] ?: return@runBlocking
+                val livekitUrl = data["livekit_url"] ?: return@runBlocking
+                val livekitFallbackUrl = data["livekit_fallback_url"]
+                val token = data["token"] ?: return@runBlocking
+
+                val event = WebSocketEvent.CallIncoming(
+                    callId = callId,
+                    fromUserId = fromUserId,
+                    isVideo = isVideo,
+                    roomName = roomName,
+                    livekitUrl = livekitUrl,
+                    livekitFallbackUrl = livekitFallbackUrl,
+                    token = token
+                )
+                callManager.onIncoming(event)
             } else {
                 val chatUserId = data["chat_user_id"]?.toLongOrNull() ?: return@runBlocking
                 val msgServerId = data["msg_id"]?.toLongOrNull() ?: 0L

@@ -8,6 +8,7 @@ import (
 
 	"github.com/livekit/protocol/auth"
 	"github.com/shamaton/msgpack/v2"
+	"messenger/server/internal/push"
 )
 
 // ringTimeout bounds how long an unanswered offer may hold both participants in
@@ -157,20 +158,27 @@ func (c *Client) handleCallOffer(payload []byte) error {
 		return nil
 	}
 
-	if !c.hub.IsUserOnline(offer.ToUserID) {
-		// Callee has no active connections, so the incoming frame would never
-		// be delivered. Reject right away instead of leaving the caller ringing.
-		rejectPayload, _ := msgpack.Marshal(CallReject{
-			CallID:   "",
-			ToUserID: offer.ToUserID,
-			Reason:   "offline",
-		})
-		c.hub.SendToDeviceFrame(c.deviceID, OpCallReject, rejectPayload)
-		return nil
+	rows, err := c.db.Query("SELECT id, fcm_token FROM devices WHERE user_id=?", offer.ToUserID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var calleeDevices []int64
+	var fcmTokens []string
+	for rows.Next() {
+		var devID int64
+		var fcmToken string
+		if err := rows.Scan(&devID, &fcmToken); err == nil {
+			calleeDevices = append(calleeDevices, devID)
+			if fcmToken != "" {
+				fcmTokens = append(fcmTokens, fcmToken)
+			}
+		}
 	}
 
-	calleeDevices := c.hub.UserDeviceIDs(offer.ToUserID)
-	if len(calleeDevices) == 0 {
+	isOnline := c.hub.IsUserOnline(offer.ToUserID)
+	if len(calleeDevices) == 0 || (!isOnline && len(fcmTokens) == 0) {
 		rejectPayload, _ := msgpack.Marshal(CallReject{
 			CallID:   "",
 			ToUserID: offer.ToUserID,
@@ -266,6 +274,37 @@ func (c *Client) handleCallOffer(payload []byte) error {
 	for _, devID := range calleeDevices {
 		c.hub.SendToDeviceFrame(devID, OpCallIncoming, incomingPayload)
 	}
+
+	var senderName string
+	_ = c.db.QueryRow("SELECT name FROM users WHERE id = ?", c.userID).Scan(&senderName)
+	if senderName == "" {
+		senderName = "Пользователь"
+	}
+
+	for _, devID := range calleeDevices {
+		var fcmToken string
+		_ = c.db.QueryRow("SELECT fcm_token FROM devices WHERE id=?", devID).Scan(&fcmToken)
+		if fcmToken != "" {
+			push.SendDevicePush(fcmToken, map[string]string{
+				"type":                 "call",
+				"call_id":              callID,
+				"from_user_id":         fmt.Sprintf("%d", c.userID),
+				"sender_name":          senderName,
+				"is_video":             fmt.Sprintf("%v", offer.IsVideo),
+				"room_name":            roomName,
+				"livekit_url":          c.cfg.LiveKitURL,
+				"livekit_fallback_url": func() string {
+					if c.cfg.LiveKitFallbackURL != nil {
+						return *c.cfg.LiveKitFallbackURL
+					}
+					return ""
+				}(),
+				"token":     token,
+				"timestamp": fmt.Sprintf("%d", time.Now().Unix()*1000),
+			})
+		}
+	}
+
 	return nil
 }
 
