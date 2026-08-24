@@ -796,52 +796,67 @@ export async function renderChat(container, userId) {
     if (msg.client_msg_id) {
       bubble.dataset.clientMsgId = msg.client_msg_id;
     }
-    if (!isFailed) {
-      wireMsgCopy(bubble, () => msg.plaintext || "", () => {
-        const info = getMessagePreviewInfo(msg.plaintext || "");
-        setActiveReply({
-          msg_id: msg.client_msg_id || msg.msg_id || bubble.dataset.msgId,
-          text: info.text,
-          thumb: info.thumb,
-          sender: isMine ? "Вы" : (contact.name || contact.nickname || "Собеседник")
-        });
-      }, async () => {
-        const canDeleteForEveryone = !isFailed;
-        const { confirmed, deleteForEveryone } = await showDeleteChatConfirmModal("Удалить сообщение?", "Вы уверены, что хотите удалить это сообщение?", canDeleteForEveryone);
-        if (!confirmed) return;
+    wireMsgCopy(bubble, () => msg.plaintext || "", () => {
+      if (isFailed) return;
+      const info = getMessagePreviewInfo(msg.plaintext || "");
+      setActiveReply({
+        msg_id: msg.client_msg_id || msg.msg_id || bubble.dataset.msgId,
+        text: info.text,
+        thumb: info.thumb,
+        sender: isMine ? "Вы" : (contact.name || contact.nickname || "Собеседник")
+      });
+    }, async () => {
+      if (isFailed) {
+        // Delete immediately without confirmation modal
         try {
           const realMsgId = (bubble.dataset.msgId && !bubble.dataset.msgId.startsWith("tmp-")) ? bubble.dataset.msgId : (msg.client_msg_id || msg.msg_id || bubble.dataset.clientMsgId || bubble.dataset.msgId);
           await deleteMessage(realMsgId);
           bubble.remove();
-
-          if (deleteForEveryone && canDeleteForEveryone) {
-            getWS().send(OP.MSG_DELETE, {
-              msg_id: String(realMsgId),
-              chat_id: Number(userId),
-              delete_for_everyone: true
-            });
-          }
-
           triggerChatListUpdate();
           showToast("Сообщение удалено");
         } catch (err) {
-          console.error("Failed to delete message error:", err);
-          showToast("Не удалось удалить сообщение", "error");
+          showToast(err.message || "Не удалось удалить", "error");
         }
-      }, () => {
-        const senderName = isMine ? (me?.name || "Вы") : (contact.name || contact.nickname || "Собеседник");
-        showForwardModal(msg.plaintext || "", senderName);
-      });
-    }
+        return;
+      }
+
+      const { confirmed, deleteForEveryone } = await showDeleteChatConfirmModal("Удалить сообщение?", "Вы уверены, что хотите удалить это сообщение?", true);
+      if (!confirmed) return;
+      try {
+        const realMsgId = (bubble.dataset.msgId && !bubble.dataset.msgId.startsWith("tmp-")) ? bubble.dataset.msgId : (msg.client_msg_id || msg.msg_id || bubble.dataset.clientMsgId || bubble.dataset.msgId);
+        await deleteMessage(realMsgId);
+        bubble.remove();
+
+        if (deleteForEveryone) {
+          getWS().send(OP.MSG_DELETE, {
+            msg_id: String(realMsgId),
+            chat_id: Number(userId),
+            delete_for_everyone: true
+          });
+        }
+
+        triggerChatListUpdate();
+        showToast("Сообщение удалено");
+      } catch (err) {
+        console.error("Failed to delete message error:", err);
+        showToast("Не удалось удалить сообщение", "error");
+      }
+    }, () => {
+      if (isFailed) return;
+      const senderName = isMine ? (me?.name || "Вы") : (contact.name || contact.nickname || "Собеседник");
+      showForwardModal(msg.plaintext || "", senderName);
+    });
 
     if (isFailed) {
       const delBtn = el("button", { class: "msg-del-btn", title: "Удалить локально" }, svgIcon("M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2", 14, "var(--danger)"));
       delBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
         try {
-          await deleteMessage(msg.msg_id);
+          const realMsgId = (bubble.dataset.msgId && !bubble.dataset.msgId.startsWith("tmp-")) ? bubble.dataset.msgId : (msg.client_msg_id || msg.msg_id || bubble.dataset.clientMsgId || bubble.dataset.msgId);
+          await deleteMessage(realMsgId);
           bubble.remove();
           triggerChatListUpdate();
+          showToast("Сообщение удалено");
         } catch (err) {
           showToast(err.message || "Не удалось удалить", "error");
         }

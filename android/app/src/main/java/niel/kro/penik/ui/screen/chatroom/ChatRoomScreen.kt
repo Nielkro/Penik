@@ -570,9 +570,14 @@ fun ChatRoomScreen(
                                 }
                             },
                             onDelete = {
-                                deleteForEveryoneChecked = false
-                                canDeleteForEveryone = !message.text.startsWith("[Сообщение не расшифровано") && !message.text.startsWith("[Ошибка расшифрован")
-                                messageToDeleteLocalId = message.localId
+                                val isUndecrypted = message.text.startsWith("[Сообщение не расшифровано") || message.text.startsWith("[Ошибка расшифрован")
+                                if (isUndecrypted) {
+                                    viewModel.deleteMessage(message.localId, deleteForEveryone = false)
+                                } else {
+                                    deleteForEveryoneChecked = false
+                                    canDeleteForEveryone = true
+                                    messageToDeleteLocalId = message.localId
+                                }
                             },
                             onForward = {
                                 messageToForwardText = message.text
