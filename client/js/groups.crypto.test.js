@@ -95,6 +95,17 @@ async function run() {
   assert(!bytesEqual(base, buildGroupAAD(1, 1, 10, 'm2', 1)), 'AAD sensitive to messageId');
   assert(!bytesEqual(base, buildGroupAAD(1, 1, 10, 'm', 2)), 'AAD sensitive to createdAt');
 
+  const expectedGroupAad = new Uint8Array([
+    0, 0, 0, 1, 50, // '2'
+    0, 0, 0, 1, 55, // '7'
+    0, 0, 0, 1, 50, // '2'
+    0, 0, 0, 2, 49, 48, // '1', '0'
+    0, 0, 0, 5, 109, 115, 103, 45, 49, // 'msg-1'
+    0, 0, 0, 10, 49, 55, 48, 48, 48, 48, 48, 48, 48, 48 // '1700000000'
+  ]);
+  const groupAadVec = buildGroupAAD(7, 2, 10, 'msg-1', 1700000000);
+  assert(bytesEqual(groupAadVec, expectedGroupAad), 'Group AAD v2 matches Android byte-for-byte');
+
   const kpA = await generateKeyPair();
   const kpB = await generateKeyPair();
   const secretA = await deriveSharedSecret(kpA.privateKey, kpB.publicKey);

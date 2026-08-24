@@ -76,4 +76,38 @@ class E2EECryptoTest {
         assertFalse(enc1.salt.contentEquals(enc2.salt))
         assertFalse(enc1.nonce.contentEquals(enc2.nonce))
     }
+
+    @Test
+    fun testBuildPairwiseAadByteExactTestVector() {
+        val aad = crypto.buildPairwiseAad(10L, 20L, "msg-dm-1", 1_700_000_000L)
+        val expected = byteArrayOf(
+            0, 0, 0, 1, '1'.code.toByte(),
+            0, 0, 0, 2, '1'.code.toByte(), '0'.code.toByte(),
+            0, 0, 0, 2, '2'.code.toByte(), '0'.code.toByte(),
+            0, 0, 0, 8, 'm'.code.toByte(), 's'.code.toByte(), 'g'.code.toByte(), '-'.code.toByte(), 'd'.code.toByte(), 'm'.code.toByte(), '-'.code.toByte(), '1'.code.toByte(),
+            0, 0, 0, 10, '1'.code.toByte(), '7'.code.toByte(), '0'.code.toByte(), '0'.code.toByte(), '0'.code.toByte(), '0'.code.toByte(), '0'.code.toByte(), '0'.code.toByte(), '0'.code.toByte(), '0'.code.toByte()
+        )
+        assertArrayEquals(expected, aad)
+    }
+
+    @Test
+    fun testPairwiseEncryptDecryptWithAad() {
+        val (alicePrivate, alicePublic) = crypto.generateX25519KeyPair()
+        val (bobPrivate, bobPublic) = crypto.generateX25519KeyPair()
+        val aliceSecret = crypto.deriveSharedSecret(alicePrivate, bobPublic)
+        val bobSecret = crypto.deriveSharedSecret(bobPrivate, alicePublic)
+
+        val plaintext = "Hello Penik DM!".toByteArray(Charsets.UTF_8)
+        val aad = crypto.buildPairwiseAad(10L, 20L, "msg-dm-1", 1_700_000_000L)
+        val enc = crypto.encrypt(plaintext, aliceSecret, aad = aad)
+
+        val decrypted = crypto.decrypt(enc.ciphertext, bobSecret, enc.salt, enc.nonce, aad = aad)
+        assertArrayEquals(plaintext, decrypted)
+
+        // Wrong sender in AAD fails decrypt
+        val wrongAad = crypto.buildPairwiseAad(999L, 20L, "msg-dm-1", 1_700_000_000L)
+        assertThrows(Exception::class.java) {
+            crypto.decrypt(enc.ciphertext, bobSecret, enc.salt, enc.nonce, aad = wrongAad)
+        }
+    }
 }

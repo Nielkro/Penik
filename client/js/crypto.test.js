@@ -2,7 +2,8 @@ import {
   generateKeyPair,
   deriveSharedSecret,
   e2eeEncrypt,
-  e2eeDecrypt
+  e2eeDecrypt,
+  buildPairwiseAAD
 } from './crypto.js';
 
 // Setup global crypto for older Node versions if needed
@@ -118,6 +119,42 @@ async function runTests() {
     console.log("Test 4: Randomness test passed.");
   } catch (e) {
     console.error("Test 4: Randomness test failed:", e);
+    failed++;
+  }
+
+  // Test 5: Pairwise AAD and Cross-platform byte-exact vector
+  try {
+    const alice = await generateKeyPair();
+    const bob = await generateKeyPair();
+    const sharedSecret = await deriveSharedSecret(alice.privateKey, bob.publicKey);
+    const plaintext = new TextEncoder().encode("Hello Penik DM!");
+    const aad = buildPairwiseAAD(10, 20, "msg-dm-1", 1700000000);
+
+    const expectedPairwiseAad = new Uint8Array([
+      0, 0, 0, 1, 49, // '1'
+      0, 0, 0, 2, 49, 48, // '1', '0'
+      0, 0, 0, 2, 50, 48, // '2', '0'
+      0, 0, 0, 8, 109, 115, 103, 45, 100, 109, 45, 49, // 'msg-dm-1'
+      0, 0, 0, 10, 49, 55, 48, 48, 48, 48, 48, 48, 48, 48 // '1700000000'
+    ]);
+    assertArrayEquals(aad, expectedPairwiseAad, "Pairwise AAD matches Android byte-for-byte");
+
+    const enc = await e2eeEncrypt(plaintext, sharedSecret, "penik-pairwise-message-v1", aad);
+    const dec = await e2eeDecrypt(enc.ciphertext, sharedSecret, enc.salt, enc.nonce, "penik-pairwise-message-v1", aad);
+    assertArrayEquals(plaintext, dec, "Decrypted with AAD matches plaintext");
+
+    let failedTamper = false;
+    try {
+      const wrongAad = buildPairwiseAAD(999, 20, "msg-dm-1", 1700000000);
+      await e2eeDecrypt(enc.ciphertext, sharedSecret, enc.salt, enc.nonce, "penik-pairwise-message-v1", wrongAad);
+    } catch {
+      failedTamper = true;
+    }
+    assert(failedTamper, "Tampered pairwise AAD fails decryption");
+
+    console.log("Test 5: Pairwise AAD and cross-platform vectors passed.");
+  } catch (e) {
+    console.error("Test 5: Pairwise AAD test failed:", e);
     failed++;
   }
 
