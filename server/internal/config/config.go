@@ -23,6 +23,8 @@ type Config struct {
 	VKBotToken         string
 	RelayTicketSecret  string // HMAC secret shared with the VK relay for upload tickets
 	GeoIPPath          string // Path to GeoLite2-City.mmdb / dbip-city-lite.mmdb (optional)
+	TelegramBotToken   string
+	StickersDir        string
 	LiveKitURL         string
 	LiveKitFallbackURL string
 	LiveKitAPIKey      string
@@ -104,6 +106,8 @@ func Load() *Config {
 		VKBotToken:         getEnv("VK_BOT_TOKEN", ""),
 		RelayTicketSecret:  getEnv("RELAY_TICKET_SECRET", ""),
 		GeoIPPath:          getEnv("GEOIP_PATH", "./data/GeoLite2-City.mmdb"),
+		TelegramBotToken:   getEnv("TELEGRAM_BOT_TOKEN", ""),
+		StickersDir:        getEnv("STICKERS_DIR", "./data/stickers"),
 		LiveKitURL:         getEnv("LIVEKIT_URL", ""),
 		LiveKitFallbackURL: getEnv("LIVEKIT_FALLBACK_URL", ""),
 		LiveKitAPIKey:      getEnv("LIVEKIT_API_KEY", defaultLiveKitAPIKey),

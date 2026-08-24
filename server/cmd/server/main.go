@@ -211,6 +211,19 @@ func main() {
 		authMW(http.HandlerFunc(handlers.MarkMessagesRead(database, hub))))
 	mux.Handle("DELETE /api/v1/chats/{peer_id}",
 		authMW(http.HandlerFunc(handlers.DeleteChat(database, hub))))
+	mux.Handle("GET /api/v1/stickers/my",
+		authMW(http.HandlerFunc(handlers.HandleGetMyStickerPacks(database))))
+	mux.Handle("GET /api/v1/stickers/pack/{id}",
+		authMW(http.HandlerFunc(handlers.HandleGetStickerPack(database))))
+	mux.Handle("POST /api/v1/stickers/pack/{id}/install",
+		authMW(http.HandlerFunc(handlers.HandleInstallStickerPack(database))))
+	mux.Handle("DELETE /api/v1/stickers/pack/{id}/install",
+		authMW(http.HandlerFunc(handlers.HandleUninstallStickerPack(database))))
+	mux.Handle("POST /api/v1/stickers/import/telegram",
+		authMW(http.HandlerFunc(handlers.HandleImportTelegramStickerPack(cfg, database))))
+	mux.Handle("GET /api/v1/stickers/file/{pack_id}/{file_name}",
+		handlers.HandleServeStickerFile(cfg))
+
 	mux.Handle("GET /api/v1/ws",
 		authMW(http.HandlerFunc(handlers.WebSocketHandler(hub, database, cfg))))
 

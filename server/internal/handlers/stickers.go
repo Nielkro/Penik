@@ -1,0 +1,256 @@
+package handlers
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"messenger/server/internal/config"
+	"messenger/server/internal/db"
+	"messenger/server/internal/middleware"
+	"messenger/server/internal/stickers"
+)
+
+// HandleGetMyStickerPacks lists all sticker packs installed by the authenticated user.
+func HandleGetMyStickerPacks(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		if userID == 0 {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+
+		rows, err := database.QueryContext(r.Context(), `
+			SELECT p.id, p.title, p.author_id, p.cover_sticker_id, p.is_animated, p.is_video, p.created_at
+			FROM sticker_packs p
+			JOIN user_sticker_packs u ON p.id = u.pack_id
+			WHERE u.user_id = ?
+			ORDER BY u.sort_order ASC, u.installed_at ASC
+		`, userID)
+		if err != nil {
+			http.Error(w, `{"error":"failed to query sticker packs"}`, http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		var packs []stickers.StickerPack
+		for rows.Next() {
+			var p stickers.StickerPack
+			var isAnim, isVid int
+			if err := rows.Scan(&p.ID, &p.Title, &p.AuthorID, &p.CoverStickerID, &isAnim, &isVid, &p.CreatedAt); err != nil {
+				continue
+			}
+			p.IsAnimated = isAnim == 1
+			p.IsVideo = isVid == 1
+			packs = append(packs, p)
+		}
+		if packs == nil {
+			packs = []stickers.StickerPack{}
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(packs)
+	}
+}
+
+// HandleGetStickerPack fetches the full sticker pack metadata including its stickers.
+func HandleGetStickerPack(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		packID := r.PathValue("id")
+		if packID == "" {
+			http.Error(w, `{"error":"missing pack id"}`, http.StatusBadRequest)
+			return
+		}
+
+		var p stickers.StickerPack
+		var isAnim, isVid int
+		err := database.QueryRowContext(r.Context(), `
+			SELECT id, title, author_id, cover_sticker_id, is_animated, is_video, created_at
+			FROM sticker_packs
+			WHERE id = ?
+		`, packID).Scan(&p.ID, &p.Title, &p.AuthorID, &p.CoverStickerID, &isAnim, &isVid, &p.CreatedAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, `{"error":"sticker pack not found"}`, http.StatusNotFound)
+			return
+		} else if err != nil {
+			http.Error(w, `{"error":"failed to query pack"}`, http.StatusInternalServerError)
+			return
+		}
+		p.IsAnimated = isAnim == 1
+		p.IsVideo = isVid == 1
+
+		rows, err := database.QueryContext(r.Context(), `
+			SELECT id, emoji, file_name, width, height, sort_order
+			FROM stickers
+			WHERE pack_id = ?
+			ORDER BY sort_order ASC
+		`, packID)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var s stickers.Sticker
+				s.PackID = packID
+				if err := rows.Scan(&s.ID, &s.Emoji, &s.FileName, &s.Width, &s.Height, &s.SortOrder); err == nil {
+					s.URL = "/api/v1/stickers/file/" + packID + "/" + s.FileName
+					p.Stickers = append(p.Stickers, s)
+				}
+			}
+		}
+		if p.Stickers == nil {
+			p.Stickers = []stickers.Sticker{}
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(p)
+	}
+}
+
+// HandleInstallStickerPack adds a sticker pack to the user's collection.
+func HandleInstallStickerPack(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		if userID == 0 {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+
+		packID := r.PathValue("id")
+		if packID == "" {
+			http.Error(w, `{"error":"missing pack id"}`, http.StatusBadRequest)
+			return
+		}
+
+		var exists int
+		if err := database.QueryRowContext(r.Context(), "SELECT 1 FROM sticker_packs WHERE id = ?", packID).Scan(&exists); err != nil {
+			http.Error(w, `{"error":"sticker pack not found"}`, http.StatusNotFound)
+			return
+		}
+
+		now := time.Now().Unix()
+		_, err := database.ExecContext(r.Context(), `
+			INSERT OR IGNORE INTO user_sticker_packs (user_id, pack_id, sort_order, installed_at)
+			VALUES (?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM user_sticker_packs WHERE user_id = ?), ?)
+		`, userID, packID, userID, now)
+		if err != nil {
+			http.Error(w, `{"error":"failed to install sticker pack"}`, http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "installed"})
+	}
+}
+
+// HandleUninstallStickerPack removes a sticker pack from the user's collection.
+func HandleUninstallStickerPack(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		if userID == 0 {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+
+		packID := r.PathValue("id")
+		if packID == "" {
+			http.Error(w, `{"error":"missing pack id"}`, http.StatusBadRequest)
+			return
+		}
+
+		_, err := database.ExecContext(r.Context(), "DELETE FROM user_sticker_packs WHERE user_id = ? AND pack_id = ?", userID, packID)
+		if err != nil {
+			http.Error(w, `{"error":"failed to uninstall sticker pack"}`, http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "uninstalled"})
+	}
+}
+
+type importTelegramReq struct {
+	URL string `json:"url"`
+}
+
+// HandleImportTelegramStickerPack downloads and persists a Telegram sticker set.
+func HandleImportTelegramStickerPack(cfg *config.Config, database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		if userID == 0 {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+
+		if cfg.TelegramBotToken == "" {
+			http.Error(w, `{"error":"TELEGRAM_BOT_TOKEN is not configured on the server"}`, http.StatusBadRequest)
+			return
+		}
+
+		var req importTelegramReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
+			http.Error(w, `{"error":"invalid request body, missing url"}`, http.StatusBadRequest)
+			return
+		}
+
+		pack, err := stickers.ImportTelegramPack(cfg.TelegramBotToken, cfg.StickersDir, req.URL, userID, database.DB)
+		if err != nil {
+			http.Error(w, `{"error":`+strconvQuote(err.Error())+`}`, http.StatusBadRequest)
+			return
+		}
+
+		for i := range pack.Stickers {
+			pack.Stickers[i].URL = "/api/v1/stickers/file/" + pack.ID + "/" + pack.Stickers[i].FileName
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(pack)
+	}
+}
+
+// HandleServeStickerFile serves static sticker files with aggressive caching.
+func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		packID := filepath.Clean(r.PathValue("pack_id"))
+		fileName := filepath.Clean(r.PathValue("file_name"))
+		if packID == "." || fileName == "." || strings.Contains(packID, "..") || strings.Contains(fileName, "..") {
+			http.Error(w, "invalid path", http.StatusBadRequest)
+			return
+		}
+
+		filePath := filepath.Join(cfg.StickersDir, packID, fileName)
+		info, err := os.Stat(filePath)
+		if os.IsNotExist(err) || info.IsDir() {
+			http.Error(w, "sticker not found", http.StatusNotFound)
+			return
+		}
+
+		ext := strings.ToLower(filepath.Ext(fileName))
+		switch ext {
+		case ".webp":
+			w.Header().Set("Content-Type", "image/webp")
+		case ".png":
+			w.Header().Set("Content-Type", "image/png")
+		case ".webm":
+			w.Header().Set("Content-Type", "video/webm")
+		case ".tgs":
+			w.Header().Set("Content-Type", "application/x-tgsticker")
+		case ".json":
+			w.Header().Set("Content-Type", "application/json")
+		default:
+			w.Header().Set("Content-Type", "application/octet-stream")
+		}
+
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		http.ServeFile(w, r, filePath)
+	}
+}
+
+func strconvQuote(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
