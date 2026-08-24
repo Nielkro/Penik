@@ -43,20 +43,28 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 		userID := middleware.UserIDFromCtx(r.Context())
 		deviceID := middleware.DeviceIDFromCtx(r.Context())
 
-		limitStr := r.URL.Query().Get("limit")
-
 		limit := 100
-
-		if limitStr != "" {
+		if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
 				limit = l
-				if limit > 500 {
-					limit = 500
+				if limit > 1000 {
+					limit = 1000
 				}
 			}
 		}
-		rows, err := database.QueryContext(r.Context(),
-			`SELECT
+
+		var beforeID, afterID, chatUserID int64
+		if bStr := r.URL.Query().Get("before_id"); bStr != "" {
+			beforeID, _ = strconv.ParseInt(bStr, 10, 64)
+		}
+		if aStr := r.URL.Query().Get("after_id"); aStr != "" {
+			afterID, _ = strconv.ParseInt(aStr, 10, 64)
+		}
+		if cStr := r.URL.Query().Get("chat_user_id"); cStr != "" {
+			chatUserID, _ = strconv.ParseInt(cStr, 10, 64)
+		}
+
+		query := `SELECT
 				m.id,
 				m.chat_id,
 				m.sender_user_id,
@@ -84,10 +92,31 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
               AND (m.sender_user_id != m.recipient_user_id OR m.recipient_device_id = ?))
              OR
              (m.recipient_user_id = ? AND m.recipient_device_id = ? AND m.deleted_by_recipient = 0)
-			   )
-			 ORDER BY m.id DESC
-			 LIMIT ?`,
-			userID, deviceID, userID, deviceID, deviceID, userID, deviceID, limit)
+			   )`
+		args := []any{userID, deviceID, userID, deviceID, deviceID, userID, deviceID}
+
+		if beforeID > 0 {
+			query += " AND m.id < ?"
+			args = append(args, beforeID)
+		}
+		if afterID > 0 {
+			query += " AND m.id > ?"
+			args = append(args, afterID)
+		}
+		if chatUserID > 0 {
+			if chatUserID == userID {
+				query += " AND c.user1_id = ? AND c.user2_id = ?"
+				args = append(args, userID, userID)
+			} else {
+				query += " AND ((c.user1_id = ? AND c.user2_id = ?) OR (c.user1_id = ? AND c.user2_id = ?))"
+				args = append(args, userID, chatUserID, chatUserID, userID)
+			}
+		}
+
+		query += " ORDER BY m.id DESC LIMIT ?"
+		args = append(args, limit)
+
+		rows, err := database.QueryContext(r.Context(), query, args...)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return

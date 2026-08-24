@@ -38,7 +38,10 @@ interface ApiService {
 
     @GET("messages/history")
     suspend fun getMessageHistory(
-        @Query("limit") limit: Int = 100
+        @Query("limit") limit: Int = 100,
+        @Query("before_id") beforeId: Long? = null,
+        @Query("after_id") afterId: Long? = null,
+        @Query("chat_user_id") chatUserId: Long? = null,
     ): Response<List<HistoryMessageResponse>>
 
     // Pushes carry only an id (FCM caps a data message at ~4 KB, so the
