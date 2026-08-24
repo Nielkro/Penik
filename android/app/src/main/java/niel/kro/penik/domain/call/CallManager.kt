@@ -39,6 +39,8 @@ import niel.kro.penik.data.network.websocket.ConnectionState
 import niel.kro.penik.data.network.websocket.WebSocketEvent
 import niel.kro.penik.data.network.websocket.WebSocketManager
 import niel.kro.penik.ui.notification.AppNotificationManager
+import kotlinx.coroutines.flow.first
+import niel.kro.penik.data.repository.SecureTokenStorage
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -66,7 +68,8 @@ class CallManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val webSocketManager: WebSocketManager,
     private val apiService: ApiService,
-    private val notificationManager: AppNotificationManager
+    private val notificationManager: AppNotificationManager,
+    private val tokenStorage: SecureTokenStorage
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -178,16 +181,55 @@ class CallManager @Inject constructor(
         notificationManager.cancelIncomingCallNotification()
         currentCallId = callIdOfIncoming
         _state.value = ui.copy(phase = CallPhase.CONNECTING)
-        webSocketManager.sendCallAccept(callIdOfIncoming)
-        scope.launch { connectLiveKit() }
+        scope.launch {
+            val token = tokenStorage.getToken()
+            if (token != null && webSocketManager.connectionState.value == ConnectionState.DISCONNECTED) {
+                Log.d(TAG, "acceptCall: WebSocket disconnected. Reconnecting...")
+                webSocketManager.connect(
+                    niel.kro.penik.data.network.api.ApiConfig.HOST,
+                    niel.kro.penik.data.network.api.ApiConfig.PORT,
+                    token
+                )
+            }
+            if (webSocketManager.connectionState.value != ConnectionState.CONNECTED) {
+                Log.d(TAG, "acceptCall: WebSocket connecting. Waiting...")
+                runCatching {
+                    withTimeout(6000) {
+                        webSocketManager.connectionState.first { it == ConnectionState.CONNECTED }
+                    }
+                }
+            }
+            Log.d(TAG, "acceptCall: WebSocket is connected. Sending CallAccept.")
+            webSocketManager.sendCallAccept(callIdOfIncoming)
+            connectLiveKit()
+        }
     }
 
     fun rejectCall() {
         if (ui.phase != CallPhase.INCOMING) return
-        webSocketManager.sendCallReject(callIdOfIncoming, ui.peerUserId, "declined")
         stopRinger()
         notificationManager.cancelIncomingCallNotification()
+        val callId = callIdOfIncoming
+        val peerId = ui.peerUserId
         cleanup()
+        scope.launch {
+            val token = tokenStorage.getToken()
+            if (token != null && webSocketManager.connectionState.value == ConnectionState.DISCONNECTED) {
+                webSocketManager.connect(
+                    niel.kro.penik.data.network.api.ApiConfig.HOST,
+                    niel.kro.penik.data.network.api.ApiConfig.PORT,
+                    token
+                )
+            }
+            if (webSocketManager.connectionState.value != ConnectionState.CONNECTED) {
+                runCatching {
+                    withTimeout(4000) {
+                        webSocketManager.connectionState.first { it == ConnectionState.CONNECTED }
+                    }
+                }
+            }
+            webSocketManager.sendCallReject(callId, peerId, "declined")
+        }
     }
 
     // --- Peer responses ---
