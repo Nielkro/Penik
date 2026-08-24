@@ -70,7 +70,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -80,6 +82,62 @@ import niel.kro.penik.data.network.api.StickerItemResponse
 import niel.kro.penik.data.network.api.StickerPackResponse
 import niel.kro.penik.data.repository.StickerRepository
 import niel.kro.penik.ui.theme.LocalAppColors
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.File
+
+private val stickerHttpClient by lazy {
+    OkHttpClient.Builder().build()
+}
+
+@Composable
+fun rememberCachedStickerFile(url: String): File? {
+    val context = LocalContext.current
+    var cachedFile by remember(url) {
+        val cacheDir = File(context.cacheDir, "stickers")
+        val fileName = "stk_" + url.hashCode().toString() + "_" + url.substringAfterLast("/", "sticker.webm")
+        val targetFile = File(cacheDir, fileName)
+        if (targetFile.exists() && targetFile.length() > 0) {
+            mutableStateOf<File?>(targetFile)
+        } else {
+            mutableStateOf<File?>(null)
+        }
+    }
+
+    LaunchedEffect(url) {
+        if (url.isBlank() || cachedFile != null) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            try {
+                val cacheDir = File(context.cacheDir, "stickers").apply { mkdirs() }
+                val fileName = "stk_" + url.hashCode().toString() + "_" + url.substringAfterLast("/", "sticker.webm")
+                val targetFile = File(cacheDir, fileName)
+                if (targetFile.exists() && targetFile.length() > 0) {
+                    cachedFile = targetFile
+                    return@withContext
+                }
+                val request = Request.Builder().url(url).build()
+                stickerHttpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val tempFile = File(cacheDir, "$fileName.tmp")
+                        response.body?.byteStream()?.use { input ->
+                            tempFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        if (tempFile.exists() && tempFile.length() > 0) {
+                            tempFile.renameTo(targetFile)
+                            cachedFile = targetFile
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("StickerMedia", "Failed to download sticker $url", e)
+            }
+        }
+    }
+
+    return cachedFile
+}
 
 @Serializable
 data class StickerPayload(
@@ -120,35 +178,46 @@ fun StickerMediaView(
 ) {
     if (isVideo) {
         val context = LocalContext.current
-        val exoPlayer = remember(url) {
-            ExoPlayer.Builder(context).build().apply {
-                val mediaItem = MediaItem.fromUri(url)
-                setMediaItem(mediaItem)
-                repeatMode = Player.REPEAT_MODE_ALL
-                volume = 0f
-                prepare()
-                playWhenReady = true
-            }
-        }
+        val cachedFile = rememberCachedStickerFile(url)
 
-        DisposableEffect(exoPlayer) {
-            onDispose {
-                exoPlayer.release()
-            }
-        }
-
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = false
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        if (cachedFile != null && cachedFile.exists()) {
+            val exoPlayer = remember(cachedFile.absolutePath) {
+                ExoPlayer.Builder(context).build().apply {
+                    val mediaItem = MediaItem.fromUri(Uri.fromFile(cachedFile))
+                    setMediaItem(mediaItem)
+                    repeatMode = Player.REPEAT_MODE_ALL
+                    volume = 0f
+                    prepare()
+                    playWhenReady = true
                 }
-            },
-            modifier = modifier
-        )
+            }
+
+            DisposableEffect(exoPlayer) {
+                onDispose {
+                    exoPlayer.release()
+                }
+            }
+
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = false
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    }
+                },
+                modifier = modifier
+            )
+        } else {
+            AsyncImage(
+                model = url,
+                contentDescription = contentDescription,
+                modifier = modifier,
+                contentScale = ContentScale.Fit
+            )
+        }
     } else {
         AsyncImage(
             model = url,
