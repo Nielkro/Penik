@@ -324,7 +324,9 @@ export function renderStickerContent(container, sticker) {
   container.replaceChildren();
   const wrapper = document.createElement("div");
   wrapper.className = "msg-sticker-wrapper";
-  wrapper.title = sticker.emoji ? `Стикер (${sticker.emoji}) — нажмите для просмотра пака` : "Нажмите для просмотра стикерпака";
+  wrapper.title = sticker.emoji
+    ? `Стикер (${sticker.emoji}) — нажмите для полноэкранного просмотра, удерживайте для пака`
+    : "Нажмите для полноэкранного просмотра, удерживайте для пака";
 
   const isVideo = Boolean(sticker.is_video || (sticker.file_name && sticker.file_name.endsWith(".webm")));
   const url = sticker.url || `/api/v1/stickers/file/${sticker.pack_id}/${sticker.file_name || (sticker.id + (isVideo ? '.webm' : '.webp'))}`;
@@ -347,11 +349,69 @@ export function renderStickerContent(container, sticker) {
     wrapper.appendChild(img);
   }
 
-  wrapper.addEventListener("click", (e) => {
-    e.stopPropagation();
+  let longPressTimer = null;
+  let isLongPress = false;
+  let startX = 0;
+  let startY = 0;
+
+  function clearTimer() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }
+
+  function openPackModal() {
     if (sticker.pack_id) {
       import("./stickers.js").then((m) => m.showStickerPackModal(sticker.pack_id));
     }
+  }
+
+  wrapper.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    isLongPress = false;
+    startX = e.clientX;
+    startY = e.clientY;
+    clearTimer();
+    longPressTimer = setTimeout(() => {
+      isLongPress = true;
+      openPackModal();
+    }, 450);
+  });
+
+  wrapper.addEventListener("pointermove", (e) => {
+    if (longPressTimer) {
+      const dx = Math.abs(e.clientX - startX);
+      const dy = Math.abs(e.clientY - startY);
+      if (dx > 8 || dy > 8) {
+        clearTimer();
+      }
+    }
+  });
+
+  wrapper.addEventListener("pointerup", () => {
+    clearTimer();
+  });
+
+  wrapper.addEventListener("pointercancel", () => {
+    clearTimer();
+  });
+
+  wrapper.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearTimer();
+    openPackModal();
+  });
+
+  wrapper.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (isLongPress) {
+      isLongPress = false;
+      return;
+    }
+    clearTimer();
+    showFullscreenMedia(url, isVideo);
   });
 
   container.appendChild(wrapper);
