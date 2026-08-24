@@ -728,11 +728,31 @@ private fun formatFileSize(size: Long?): String = when {
     else -> String.format(Locale.getDefault(), "%.1f МБ", size / (1024f * 1024f))
 }
 
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface TokenStorageEntryPoint {
+    fun secureTokenStorage(): niel.kro.penik.data.repository.SecureTokenStorage
+}
+
 private suspend fun downloadAndDecryptAttachment(context: Context, attachment: FileAttachment): File =
     withContext(Dispatchers.IO) {
         val cacheDir = File(context.cacheDir, "attachments").apply { mkdirs() }
         val extension = attachment.name.substringAfterLast('.', "").take(16)
+        
+        val isVK = attachment.url.contains("vk.com") || 
+                   attachment.url.contains("vk.ru") || 
+                   attachment.url.contains("userapi.com") || 
+                   attachment.url.contains("vkuserphoto.ru") || 
+                   attachment.url.contains("vkuseraudio.net") || 
+                   attachment.url.contains("vkuservideo.net") || 
+                   attachment.url.contains("vkuserlive.net") || 
+                   attachment.url.contains("vk-cdn.net")
+
         val fullUrl = when {
+            isVK -> {
+                val encodedUrl = java.net.URLEncoder.encode(attachment.url, "UTF-8")
+                "${niel.kro.penik.data.network.api.ApiConfig.BASE_URL}attachments/proxy?url=$encodedUrl"
+            }
             attachment.url.startsWith("http://") || attachment.url.startsWith("https://") -> attachment.url
             attachment.url.startsWith("/") -> "${niel.kro.penik.data.network.api.ApiConfig.SCHEME}://${niel.kro.penik.data.network.api.ApiConfig.HOST}${attachment.url}"
             else -> "${niel.kro.penik.data.network.api.ApiConfig.SCHEME}://${niel.kro.penik.data.network.api.ApiConfig.HOST}/${attachment.url}"
@@ -743,11 +763,20 @@ private suspend fun downloadAndDecryptAttachment(context: Context, attachment: F
         val output = File(cacheDir, "$digest${if (extension.isBlank()) "" else ".$extension"}")
         if (output.isFile && output.length() > 0) return@withContext output
 
+        val entryPoint = dagger.hilt.android.EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            TokenStorageEntryPoint::class.java
+        )
+        val token = entryPoint.secureTokenStorage().getToken()
+
         val encrypted = (URL(fullUrl).openConnection() as HttpURLConnection).run {
             connectTimeout = 20_000
             readTimeout = 40_000
             instanceFollowRedirects = true
             setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            if (!token.isNullOrBlank()) {
+                setRequestProperty("Authorization", "Bearer $token")
+            }
             inputStream.use { it.readBytes() }
         }
         val key = Base64.getDecoder().decode(attachment.key)
