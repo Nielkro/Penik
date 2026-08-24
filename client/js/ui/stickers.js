@@ -152,6 +152,10 @@ export function createStickerPicker(onSelect) {
         contentArea.appendChild(emptyWrap);
         return;
       }
+      const packHeader = el("div", { class: "sticker-pack-preview-header" });
+      packHeader.appendChild(el("span", { class: "pack-name" }, "Недавние"));
+      contentArea.appendChild(packHeader);
+
       const grid = el("div", { class: "stickers-grid" });
       for (const s of recents) {
         grid.appendChild(createStickerItem(s));
