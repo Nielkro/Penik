@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"sync"
@@ -168,12 +169,14 @@ func (c *Client) handleCallOffer(payload []byte) error {
 	var fcmTokens []string
 	for rows.Next() {
 		var devID int64
-		var fcmToken string
+		var fcmToken sql.NullString
 		if err := rows.Scan(&devID, &fcmToken); err == nil {
 			calleeDevices = append(calleeDevices, devID)
-			if fcmToken != "" {
-				fcmTokens = append(fcmTokens, fcmToken)
+			if fcmToken.Valid && fcmToken.String != "" {
+				fcmTokens = append(fcmTokens, fcmToken.String)
 			}
+		} else {
+			log.Printf("[ws] Scan callee device error: %v", err)
 		}
 	}
 
@@ -282,10 +285,10 @@ func (c *Client) handleCallOffer(payload []byte) error {
 	}
 
 	for _, devID := range calleeDevices {
-		var fcmToken string
+		var fcmToken sql.NullString
 		_ = c.db.QueryRow("SELECT fcm_token FROM devices WHERE id=?", devID).Scan(&fcmToken)
-		if fcmToken != "" {
-			push.SendDevicePush(fcmToken, map[string]string{
+		if fcmToken.Valid && fcmToken.String != "" {
+			push.SendDevicePush(fcmToken.String, map[string]string{
 				"type":                 "call",
 				"call_id":              callID,
 				"from_user_id":         fmt.Sprintf("%d", c.userID),
