@@ -20,7 +20,7 @@ import javax.crypto.spec.SecretKeySpec
 class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
 
     companion object {
-        const val PROTOCOL_VERSION = 1
+        const val PROTOCOL_VERSION = 2
         private const val MESSAGE_INFO = "penik-group-message-v1"
     }
 
@@ -28,9 +28,29 @@ class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
         ByteArray(32).also { SecureRandom().nextBytes(it) }
 
     /** AAD header, byte-identical to buildGroupAAD in the web client. */
-    fun buildAad(groupId: Long, keyVersion: Long, messageId: String, createdAt: Long): ByteArray {
+    fun buildAad(groupId: Long, keyVersion: Long, senderUserId: Long, messageId: String, createdAt: Long): ByteArray {
         val fields = listOf(
             PROTOCOL_VERSION.toString(),
+            groupId.toString(),
+            keyVersion.toString(),
+            senderUserId.toString(),
+            messageId,
+            createdAt.toString()
+        )
+        val bos = java.io.ByteArrayOutputStream()
+        for (field in fields) {
+            val bytes = field.toByteArray(Charsets.UTF_8)
+            val lenBytes = ByteArray(4)
+            java.nio.ByteBuffer.wrap(lenBytes).putInt(bytes.size)
+            bos.write(lenBytes)
+            bos.write(bytes)
+        }
+        return bos.toByteArray()
+    }
+
+    fun buildAadv1(groupId: Long, keyVersion: Long, messageId: String, createdAt: Long): ByteArray {
+        val fields = listOf(
+            "1",
             groupId.toString(),
             keyVersion.toString(),
             messageId,
@@ -52,13 +72,14 @@ class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
         groupKey: ByteArray,
         groupId: Long,
         keyVersion: Long,
+        senderUserId: Long,
         messageId: String,
         createdAt: Long,
     ): E2EEncrypted {
         val salt = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val nonce = ByteArray(12).also { SecureRandom().nextBytes(it) }
         val messageKey = hkdf(salt, groupKey, MESSAGE_INFO.toByteArray(Charsets.UTF_8), 32)
-        val aad = buildAad(groupId, keyVersion, messageId, createdAt)
+        val aad = buildAad(groupId, keyVersion, senderUserId, messageId, createdAt)
 
         val cipher = chaChaPoly1305()
         cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(messageKey, "ChaCha20"), IvParameterSpec(nonce))
@@ -74,16 +95,26 @@ class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
         nonce: ByteArray,
         groupId: Long,
         keyVersion: Long,
+        senderUserId: Long,
         messageId: String,
         createdAt: Long,
     ): ByteArray {
         val messageKey = hkdf(salt, groupKey, MESSAGE_INFO.toByteArray(Charsets.UTF_8), 32)
-        val aad = buildAad(groupId, keyVersion, messageId, createdAt)
+        val aad = buildAad(groupId, keyVersion, senderUserId, messageId, createdAt)
 
         val cipher = chaChaPoly1305()
         cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(messageKey, "ChaCha20"), IvParameterSpec(nonce))
         cipher.updateAAD(aad)
-        return cipher.doFinal(ciphertext)
+        return try {
+            cipher.doFinal(ciphertext)
+        } catch (e: Exception) {
+            // Fallback for legacy v1 AAD
+            val aadv1 = buildAadv1(groupId, keyVersion, messageId, createdAt)
+            val c2 = chaChaPoly1305()
+            c2.init(Cipher.DECRYPT_MODE, SecretKeySpec(messageKey, "ChaCha20"), IvParameterSpec(nonce))
+            c2.updateAAD(aadv1)
+            c2.doFinal(ciphertext)
+        }
     }
 
     /** Wrap a group key for one recipient device using the pairwise shared secret. */

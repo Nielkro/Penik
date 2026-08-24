@@ -2,8 +2,10 @@ package db
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -119,7 +121,19 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: create indexes: %w", err)
 	}
 
+	if err := migrateSessions(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate sessions: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
+}
+
+// HashSessionToken derives a hex-encoded SHA-256 hash for session tokens so
+// tokens are never persisted in plaintext in SQLite.
+func HashSessionToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
 }
 
 // createIndexes adds indexes for the hot lookup paths that would otherwise scan
@@ -810,6 +824,30 @@ func migrateFcmToken(database *sql.DB) error {
 		if _, err := database.Exec("ALTER TABLE devices ADD COLUMN fcm_token TEXT NOT NULL DEFAULT ''"); err != nil {
 			return fmt.Errorf("add fcm_token to devices: %w", err)
 		}
+	}
+	return nil
+}
+
+// migrateSessions ensures all session tokens in the database are stored as SHA-256 hex hashes.
+func migrateSessions(database *sql.DB) error {
+	rows, err := database.Query("SELECT token FROM sessions")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var toMigrate []string
+	for rows.Next() {
+		var tok string
+		if err := rows.Scan(&tok); err == nil {
+			if len(tok) != 64 { // Plaintext token rather than sha256 hex hash
+				toMigrate = append(toMigrate, tok)
+			}
+		}
+	}
+	for _, tok := range toMigrate {
+		hash := HashSessionToken(tok)
+		_, _ = database.Exec("UPDATE sessions SET token=? WHERE token=?", hash, tok)
 	}
 	return nil
 }

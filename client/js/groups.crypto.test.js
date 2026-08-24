@@ -52,42 +52,48 @@ async function run() {
 
   const key = generateGroupKey();
   const plaintext = new TextEncoder().encode('привет группа');
-  const enc = await groupEncrypt(plaintext, key, 7, 2, 'msg-1', 1700000000);
+  const enc = await groupEncrypt(plaintext, key, 7, 2, 10, 'msg-1', 1700000000);
   assert(enc.salt.length === 32, 'salt is 32 bytes');
   assert(enc.nonce.length === 12, 'nonce is 12 bytes');
   assert(!bytesEqual(enc.ciphertext, plaintext), 'ciphertext differs from plaintext');
-  const dec = await groupDecrypt(enc.ciphertext, key, enc.salt, enc.nonce, 7, 2, 'msg-1', 1700000000);
+  const dec = await groupDecrypt(enc.ciphertext, key, enc.salt, enc.nonce, 7, 2, 10, 'msg-1', 1700000000);
   assert(bytesEqual(dec, plaintext), 'round trip recovers plaintext');
 
-  const a = await groupEncrypt(plaintext, key, 1, 1, 'm', 1);
-  const b = await groupEncrypt(plaintext, key, 1, 1, 'm', 1);
+  const a = await groupEncrypt(plaintext, key, 1, 1, 10, 'm', 1);
+  const b = await groupEncrypt(plaintext, key, 1, 1, 10, 'm', 1);
   assert(!bytesEqual(a.salt, b.salt) && !bytesEqual(a.nonce, b.nonce), 'fresh salt and nonce');
   assert(!bytesEqual(a.ciphertext, b.ciphertext), 'identical messages produce different ciphertext');
 
   const other = generateGroupKey();
   await assertThrows(
-    () => groupDecrypt(enc.ciphertext, other, enc.salt, enc.nonce, 7, 2, 'msg-1', 1700000000),
+    () => groupDecrypt(enc.ciphertext, other, enc.salt, enc.nonce, 7, 2, 10, 'msg-1', 1700000000),
     'wrong group key fails to decrypt'
   );
 
   await assertThrows(
-    () => groupDecrypt(enc.ciphertext, key, enc.salt, enc.nonce, 7, 2, 'msg-evil', 1700000000),
+    () => groupDecrypt(enc.ciphertext, key, enc.salt, enc.nonce, 7, 2, 10, 'msg-evil', 1700000000),
     'tampered AAD fails authentication'
+  );
+
+  await assertThrows(
+    () => groupDecrypt(enc.ciphertext, key, enc.salt, enc.nonce, 7, 2, 999, 'msg-1', 1700000000),
+    'forged sender fails authentication'
   );
 
   const tampered = Uint8Array.from(enc.ciphertext);
   tampered[0] ^= 0xff;
   await assertThrows(
-    () => groupDecrypt(tampered, key, enc.salt, enc.nonce, 7, 2, 'msg-1', 1700000000),
+    () => groupDecrypt(tampered, key, enc.salt, enc.nonce, 7, 2, 10, 'msg-1', 1700000000),
     'tampered ciphertext fails authentication'
   );
 
-  const base = buildGroupAAD(1, 1, 'm', 1);
-  assert(bytesEqual(base, buildGroupAAD(1, 1, 'm', 1)), 'AAD is deterministic');
-  assert(!bytesEqual(base, buildGroupAAD(2, 1, 'm', 1)), 'AAD sensitive to groupId');
-  assert(!bytesEqual(base, buildGroupAAD(1, 2, 'm', 1)), 'AAD sensitive to keyVersion');
-  assert(!bytesEqual(base, buildGroupAAD(1, 1, 'm2', 1)), 'AAD sensitive to messageId');
-  assert(!bytesEqual(base, buildGroupAAD(1, 1, 'm', 2)), 'AAD sensitive to createdAt');
+  const base = buildGroupAAD(1, 1, 10, 'm', 1);
+  assert(bytesEqual(base, buildGroupAAD(1, 1, 10, 'm', 1)), 'AAD is deterministic');
+  assert(!bytesEqual(base, buildGroupAAD(2, 1, 10, 'm', 1)), 'AAD sensitive to groupId');
+  assert(!bytesEqual(base, buildGroupAAD(1, 2, 10, 'm', 1)), 'AAD sensitive to keyVersion');
+  assert(!bytesEqual(base, buildGroupAAD(1, 1, 999, 'm', 1)), 'AAD sensitive to senderUserId');
+  assert(!bytesEqual(base, buildGroupAAD(1, 1, 10, 'm2', 1)), 'AAD sensitive to messageId');
+  assert(!bytesEqual(base, buildGroupAAD(1, 1, 10, 'm', 2)), 'AAD sensitive to createdAt');
 
   const kpA = await generateKeyPair();
   const kpB = await generateKeyPair();

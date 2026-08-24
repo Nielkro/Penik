@@ -401,6 +401,36 @@ export async function hkdfDerive(salt, ikm, info, length) {
   return new Uint8Array(derivedBits);
 }
 
+export const PAIRWISE_PROTOCOL_VERSION = 1;
+
+// buildPairwiseAAD binds message context (sender, recipient, clientMsgId, timestamp) into the AEAD tag.
+export function buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId = "", timestamp = 0) {
+  const fields = [
+    PAIRWISE_PROTOCOL_VERSION,
+    String(senderUserId || 0),
+    String(recipientUserId || 0),
+    String(clientMsgId || ""),
+    String(timestamp || 0),
+  ];
+
+  const chunks = [];
+  for (const field of fields) {
+    const bytes = new TextEncoder().encode(String(field));
+    const len = new Uint8Array(4);
+    new DataView(len.buffer).setUint32(0, bytes.length, false);
+    chunks.push(len, bytes);
+  }
+
+  const totalLen = chunks.reduce((sum, c) => sum + c.length, 0);
+  const out = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
 export async function e2eeEncrypt(plaintext, sharedSecret, info = "penik-pairwise-message-v1", aad = new Uint8Array(0)) {
   const salt = crypto.getRandomValues(new Uint8Array(32));
   const nonce = crypto.getRandomValues(new Uint8Array(12));
@@ -415,8 +445,18 @@ export async function e2eeEncrypt(plaintext, sharedSecret, info = "penik-pairwis
 
 export async function e2eeDecrypt(ciphertext, sharedSecret, salt, nonce, info = "penik-pairwise-message-v1", aad = new Uint8Array(0)) {
   const derivedKey = await hkdfDerive(salt, sharedSecret, info, 32);
-  
-  return await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext, aad);
+  try {
+    return await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext, aad);
+  } catch (e) {
+    if (aad && aad.length > 0) {
+      try {
+        return await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext, new Uint8Array(0));
+      } catch {
+        // rethrow original error
+      }
+    }
+    throw e;
+  }
 }
 
 export async function encryptPairingHistory(data, sharedSecret) {
@@ -518,14 +558,41 @@ export async function decryptKeyBackup(encryptedBlob, salt, iv, passphrase) {
 // keys never repeat even if a nonce collides. The group key itself is delivered
 // to each device wrapped (encrypted) with that device's pairwise shared secret.
 
-export const GROUP_PROTOCOL_VERSION = 1;
+export const GROUP_PROTOCOL_VERSION = 2;
 
-// buildGroupAAD binds the immutable message header into the AEAD tag using length-prefixed encoding.
-// sender_user_id is intentionally NOT included: the server assigns sender
-// authoritatively, so a client-supplied sender cannot be verified.
-export function buildGroupAAD(groupId, keyVersion, messageId, createdAt) {
+// buildGroupAAD binds the immutable message header (including sender_user_id) into the AEAD tag.
+export function buildGroupAAD(groupId, keyVersion, senderUserId, messageId, createdAt) {
   const fields = [
     GROUP_PROTOCOL_VERSION,
+    String(groupId),
+    String(keyVersion),
+    String(senderUserId || 0),
+    String(messageId),
+    String(createdAt),
+  ];
+
+  const chunks = [];
+  for (const field of fields) {
+    const bytes = new TextEncoder().encode(String(field));
+    const len = new Uint8Array(4);
+    new DataView(len.buffer).setUint32(0, bytes.length, false);
+    chunks.push(len, bytes);
+  }
+
+  const totalLen = chunks.reduce((sum, c) => sum + c.length, 0);
+  const out = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+// buildGroupAADv1 is kept for backward compatibility with v1 group messages.
+export function buildGroupAADv1(groupId, keyVersion, messageId, createdAt) {
+  const fields = [
+    1,
     String(groupId),
     String(keyVersion),
     String(messageId),
@@ -576,23 +643,32 @@ export function generateGroupKey() {
 }
 
 // groupEncrypt encrypts a plaintext message under the group key for the given
-// epoch. Returns { ciphertext, salt, nonce } — all Uint8Array. createdAt must be
-// the same value stored on the message so the AAD verifies on decrypt.
-export async function groupEncrypt(plaintext, groupKey, groupId, keyVersion, messageId, createdAt) {
+// epoch. Returns { ciphertext, salt, nonce } — all Uint8Array.
+export async function groupEncrypt(plaintext, groupKey, groupId, keyVersion, senderUserId, messageId, createdAt) {
   const salt = crypto.getRandomValues(new Uint8Array(32));
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   const messageKey = await hkdfDerive(salt, groupKey, "penik-group-message-v1", 32);
   const plaintextBytes = typeof plaintext === "string" ? new TextEncoder().encode(plaintext) : plaintext;
-  const aad = buildGroupAAD(groupId, keyVersion, messageId, createdAt);
+  const aad = buildGroupAAD(groupId, keyVersion, senderUserId, messageId, createdAt);
   const ciphertext = await chacha20Poly1305Encrypt(messageKey, nonce, plaintextBytes, aad);
   return { ciphertext, salt, nonce };
 }
 
-// groupDecrypt reverses groupEncrypt. Throws if the AAD or tag does not verify.
-export async function groupDecrypt(ciphertext, groupKey, salt, nonce, groupId, keyVersion, messageId, createdAt) {
+// groupDecrypt reverses groupEncrypt with automatic v1 fallback. Throws if the AAD or tag does not verify.
+export async function groupDecrypt(ciphertext, groupKey, salt, nonce, groupId, keyVersion, senderUserId, messageId, createdAt) {
   const messageKey = await hkdfDerive(salt, groupKey, "penik-group-message-v1", 32);
-  const aad = buildGroupAAD(groupId, keyVersion, messageId, createdAt);
-  return chacha20Poly1305Decrypt(messageKey, nonce, ciphertext, aad);
+  const aad = buildGroupAAD(groupId, keyVersion, senderUserId, messageId, createdAt);
+  try {
+    return await chacha20Poly1305Decrypt(messageKey, nonce, ciphertext, aad);
+  } catch (e) {
+    // Fallback to legacy v1 AAD
+    try {
+      const aadv1 = buildGroupAADv1(groupId, keyVersion, messageId, createdAt);
+      return await chacha20Poly1305Decrypt(messageKey, nonce, ciphertext, aadv1);
+    } catch {
+      throw e;
+    }
+  }
 }
 
 // wrapGroupKeyForDevice encrypts a group key for one recipient device using the

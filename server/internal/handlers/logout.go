@@ -24,8 +24,9 @@ func Logout(database *db.DB) http.HandlerFunc {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		tokenHash := db.HashSessionToken(token)
 		if _, err := database.ExecContext(r.Context(),
-			`DELETE FROM sessions WHERE token=?`, token); err != nil {
+			`DELETE FROM sessions WHERE token=? OR token=?`, tokenHash, token); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
@@ -39,16 +40,17 @@ func Logout(database *db.DB) http.HandlerFunc {
 // owner out of every other device is worse than making them wait. Returns false
 // when the quarantine blocks the revocation.
 func revokeOtherSessions(ctx context.Context, database *db.DB, userID int64, token string) (bool, error) {
+	tokenHash := db.HashSessionToken(token)
 	var createdAt int64
 	if err := database.QueryRowContext(ctx,
-		`SELECT created_at FROM sessions WHERE token=?`, token).Scan(&createdAt); err != nil {
+		`SELECT created_at FROM sessions WHERE token=? OR token=?`, tokenHash, token).Scan(&createdAt); err != nil {
 		return false, err
 	}
 	if time.Now().Unix()-createdAt <= oneDaySeconds {
 		return false, nil
 	}
 	if _, err := database.ExecContext(ctx,
-		`DELETE FROM sessions WHERE user_id=? AND token<>?`, userID, token); err != nil {
+		`DELETE FROM sessions WHERE user_id=? AND token<>? AND token<>?`, userID, tokenHash, token); err != nil {
 		return false, err
 	}
 	return true, nil

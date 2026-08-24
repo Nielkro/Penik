@@ -984,7 +984,7 @@ export async function renderChat(container, userId) {
       if (!ws || !ws.isConnected()) throw new Error("Нет соединения");
 
       const msgId = crypto.randomUUID();
-      const ciphertexts = await encryptMessagePayload(payloadStr, userId);
+      const ciphertexts = await encryptMessagePayload(payloadStr, userId, msgId, now);
 
       const storedMsg = {
         msg_id: msgId,
@@ -1060,7 +1060,7 @@ export async function renderChat(container, userId) {
       const msgId = crypto.randomUUID();
 
       // Encrypt payload for all target devices
-      const ciphertexts = await encryptMessagePayload(text, userId);
+      const ciphertexts = await encryptMessagePayload(text, userId, msgId, now);
 
       const storedMsg = {
         msg_id: msgId,
@@ -1135,7 +1135,7 @@ export async function renderChat(container, userId) {
       if (!ws || !ws.isConnected()) throw new Error("Нет соединения с сервером");
 
       const msgId = crypto.randomUUID();
-      const ciphertexts = await encryptMessagePayload(payload, userId);
+      const ciphertexts = await encryptMessagePayload(payload, userId, msgId, now);
 
       const storedMsg = {
         msg_id: msgId,

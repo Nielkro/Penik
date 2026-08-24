@@ -350,6 +350,9 @@ class MessageRepository @Inject constructor(
             recipientBundles.forEach { put(it.deviceId, toUserId) }
         }
 
+        val nowSec = System.currentTimeMillis() / 1000
+        val aad = e2eeCrypto.buildPairwiseAad(myId, toUserId, clientMsgId, nowSec)
+
         val payloads = allDevices.map { device ->
             val recipientIKPub = java.util.Base64.getDecoder().decode(device.identityKey)
             // Pin before encrypting: a substituted recipient key is the one case
@@ -359,7 +362,7 @@ class MessageRepository @Inject constructor(
             
             val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, recipientIKPub)
 
-            val encrypted = e2eeCrypto.encrypt(text.toByteArray(Charsets.UTF_8), secret)
+            val encrypted = e2eeCrypto.encrypt(text.toByteArray(Charsets.UTF_8), secret, aad = aad)
 
             E2EDevicePayload(
                 deviceId = device.deviceId,
@@ -468,7 +471,11 @@ class MessageRepository @Inject constructor(
                 fromIdentityKey = event.fromIdentityKey,
                 ciphertext = event.ciphertext,
                 salt = event.salt,
-                nonce = event.nonce
+                nonce = event.nonce,
+                senderUserId = event.fromUserId,
+                recipientUserId = if (sentByMe) event.chatUserId else myId,
+                clientMsgId = event.clientMsgId ?: "",
+                timestamp = event.ts
             )
         } catch (e: Exception) {
             decryptSuccess = false
@@ -747,13 +754,23 @@ class MessageRepository @Inject constructor(
         fromIdentityKey: ByteArray,
         ciphertext: ByteArray,
         salt: ByteArray,
-        nonce: ByteArray
+        nonce: ByteArray,
+        senderUserId: Long = 0L,
+        recipientUserId: Long = 0L,
+        clientMsgId: String = "",
+        timestamp: Long = 0L
     ): String {
         val myPrivateIK = tokenStorage.getPrivateKey()
             ?: throw Exception("Identity Key private key not found locally")
         val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, fromIdentityKey)
 
-        val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce)
+        val aad = if (senderUserId != 0L || recipientUserId != 0L) {
+            e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, clientMsgId, timestamp)
+        } else {
+            null
+        }
+
+        val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, aad = aad)
 
         return String(plaintextBytes, Charsets.UTF_8)
     }

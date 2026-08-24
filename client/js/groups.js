@@ -274,32 +274,25 @@ export async function declineInvitation(groupId) {
   await deleteGroupData(groupId);
 }
 
-// inviteMember adds a user then pre-stages the current group key for their
-// devices: we wrap the existing key on the current version and upload envelopes,
-// rather than rotating. The invitee fetches it on accept and uses it for new
-// messages sent after they join.
+// inviteMember adds a user and rotates the group key version so the invitee
+// only receives the new epoch key and cannot decrypt prior backlog.
 //
 // When shareHistory is set, we deliver the pre-join backlog via variant B: our
 // locally held plaintext is re-encrypted per invitee device under the pairwise
-// secret and uploaded as a one-shot history packet, instead of sharing old
-// group keys. See shareHistoryWithInvitee.
+// secret and uploaded as a one-shot history packet. See shareHistoryWithInvitee.
 export async function inviteMember(groupId, userId, { shareHistory = false } = {}) {
   await inviteGroupMember(groupId, userId);
   await refreshMembers(groupId);
 
-  const devices = await fetchDeviceKeys([userId]);
-  if (!devices.length) return;
+  // Rotate group key epoch: generates next version and uploads envelopes for all
+  // active members and the newly invited member.
+  const newVersion = await rotateAndDistribute(groupId);
 
-  const g = await dbGetGroup(groupId);
-  const current = g ? Number(g.current_key_version) : await currentVersion(groupId);
-
-  // Stage the current version so the invitee can read messages sent after join.
-  const groupKey = await ensureGroupKey(groupId, current);
-  const envelopes = await wrapKeyForDevices(groupKey, devices, groupId, current);
-  await uploadGroupEnvelopes(groupId, current, envelopes);
-
-  if (shareHistory) {
-    await shareHistoryWithInvitee(groupId, userId, devices);
+  if (shareHistory && newVersion) {
+    const devices = await fetchDeviceKeys([userId]);
+    if (devices.length) {
+      await shareHistoryWithInvitee(groupId, userId, devices);
+    }
   }
 }
 
@@ -489,12 +482,13 @@ export async function sendGroupMessage(groupId, text, replyToMsgId = null) {
   // relays. The server works in Unix seconds, so encode seconds here — mixing
   // milliseconds made the recipient's AAD mismatch and decryption fail.
   const createdAt = Math.floor(Date.now() / 1000);
-  const { ciphertext, salt, nonce } = await groupEncrypt(text, groupKey, groupId, version, messageId, createdAt);
+  const senderUserId = myUserId();
+  const { ciphertext, salt, nonce } = await groupEncrypt(text, groupKey, groupId, version, senderUserId, messageId, createdAt);
 
   const localRecord = {
     group_id: groupId, message_id: messageId, id: 0,
     reply_to_msg_id: replyToMsgId,
-    sender_user_id: myUserId(), sender_device_id: myDeviceId(),
+    sender_user_id: senderUserId, sender_device_id: myDeviceId(),
     key_version: version, plaintext: text, created_at: createdAt, delivered: 0,
   };
   await saveGroupMessage(localRecord);
@@ -547,7 +541,7 @@ export async function decryptIncoming(frame) {
   try {
     const pt = await groupDecrypt(
       toU8(frame.ciphertext), groupKey, toU8(frame.salt), toU8(frame.nonce),
-      groupId, version, messageId, Number(frame.created_at),
+      groupId, version, Number(frame.sender_user_id), messageId, Number(frame.created_at),
     );
     text = new TextDecoder().decode(pt);
   } catch (e) {

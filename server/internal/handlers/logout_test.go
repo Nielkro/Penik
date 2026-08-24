@@ -17,7 +17,7 @@ func seedSession(t *testing.T, database *db.DB, userID, deviceID int64, token st
 	now := time.Now().Unix()
 	_, err := database.Exec(
 		`INSERT INTO sessions(token,user_id,device_id,created_at,expires_at) VALUES(?,?,?,?,?)`,
-		token, userID, deviceID, now, now+3600,
+		db.HashSessionToken(token), userID, deviceID, now, now+3600,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestLogoutRevokesOnlyCurrentToken(t *testing.T) {
 	if err := database.QueryRow(`SELECT token FROM sessions WHERE user_id=?`, userID).Scan(&remaining); err != nil {
 		t.Fatal(err)
 	}
-	if remaining != "tok-other" {
+	if remaining != db.HashSessionToken("tok-other") && remaining != "tok-other" {
 		t.Fatalf("wrong session revoked, remaining=%s", remaining)
 	}
 }
@@ -107,7 +107,7 @@ func seedSessionAge(t *testing.T, database *db.DB, userID, deviceID int64, token
 	now := time.Now().Unix()
 	_, err := database.Exec(
 		`INSERT INTO sessions(token,user_id,device_id,created_at,expires_at) VALUES(?,?,?,?,?)`,
-		token, userID, deviceID, now-ageSeconds, now+3600,
+		db.HashSessionToken(token), userID, deviceID, now-ageSeconds, now+3600,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -116,8 +116,9 @@ func seedSessionAge(t *testing.T, database *db.DB, userID, deviceID int64, token
 
 func sessionExists(t *testing.T, database *db.DB, token string) bool {
 	t.Helper()
+	tokenHash := db.HashSessionToken(token)
 	var n int
-	if err := database.QueryRow(`SELECT COUNT(*) FROM sessions WHERE token=?`, token).Scan(&n); err != nil {
+	if err := database.QueryRow(`SELECT COUNT(*) FROM sessions WHERE token=? OR token=?`, tokenHash, token).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n > 0
