@@ -1888,8 +1888,10 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   position: absolute;
   bottom: calc(100% + 12px);
   right: 16px;
-  width: 360px;
-  height: 400px;
+  width: 390px;
+  max-width: calc(100vw - 24px);
+  height: 425px;
+  max-height: calc(100vh - 120px);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -1953,7 +1955,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 .sticker-picker-content {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
 }
@@ -1977,19 +1979,20 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 .stickers-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  gap: 10px;
 }
 
 .sticker-grid-item {
   background: transparent;
   border: none;
-  padding: 6px;
-  border-radius: 10px;
+  padding: 4px;
+  border-radius: 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   aspect-ratio: 1;
+  min-height: 74px;
   transition: transform 0.15s ease, background 0.15s ease;
 }
 
