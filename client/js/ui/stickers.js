@@ -38,13 +38,13 @@ export function createStickerPicker(onSelect) {
 
   const container = el("div", { class: "sticker-picker-container hidden" });
 
-  const header = el("div", { class: "sticker-picker-header" });
-  const title = el("span", { class: "sticker-picker-title" }, "Стикеры");
+  const header = el("div", { class: "sticker-picker-header", style: "display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);box-sizing:border-box;" });
+  const title = el("span", { class: "sticker-picker-title", style: "font-weight:600;font-size:14px;color:var(--text);" }, "Стикеры");
   const addBtn = el("button", {
     class: "btn-add-pack",
     title: "Импортировать стикерпак из Telegram",
-    style: "display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--primary-alpha, rgba(91,110,245,0.15));color:var(--primary, #5b6ef5);border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;"
-  }, svgIcon(ICON_PLUS, 14, "var(--primary, #5b6ef5)"), "Импорт");
+    style: "display:flex;align-items:center;gap:4px;padding:4px 8px;background:rgba(91,110,245,0.15);color:#5b6ef5;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;"
+  }, svgIcon(ICON_PLUS, 14, "#5b6ef5"), "Импорт");
   header.appendChild(title);
   header.appendChild(addBtn);
 
@@ -118,8 +118,8 @@ export function createStickerPicker(onSelect) {
     const addTab = el("button", {
       class: "sticker-tab sticker-tab-add",
       title: "Импортировать стикерпак",
-      style: "display:flex;align-items:center;justify-content:center;color:var(--primary, #5b6ef5);"
-    }, [svgIcon(ICON_PLUS, 18, "var(--primary, #5b6ef5)")]);
+      style: "display:flex;align-items:center;justify-content:center;color:#5b6ef5;cursor:pointer;"
+    }, [svgIcon(ICON_PLUS, 18, "#5b6ef5")]);
     addTab.addEventListener("click", (e) => {
       e.stopPropagation();
       showImportStickersModal(() => {
@@ -135,11 +135,11 @@ export function createStickerPicker(onSelect) {
     if (activeTab === "recent") {
       const recents = getRecentStickers();
       if (recents.length === 0) {
-        const emptyWrap = el("div", { class: "sticker-picker-empty", style: "display:flex;flex-direction:column;align-items:center;gap:12px;margin:auto;text-align:center;" });
+        const emptyWrap = el("div", { class: "sticker-picker-empty", style: "display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;margin:auto;text-align:center;padding:24px 16px;" });
         emptyWrap.appendChild(el("p", { style: "margin:0;color:var(--text-muted);font-size:13px;" }, "Здесь будут ваши недавние стикеры"));
         const importBtn = el("button", {
           class: "btn btn-primary",
-          style: "padding:8px 16px;font-size:13px;border-radius:10px;display:inline-flex;align-items:center;gap:6px;"
+          style: "padding:8px 18px;font-size:13px;border-radius:10px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;"
         }, svgIcon(ICON_PLUS, 16, "#fff"), "Импорт из Telegram");
         importBtn.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -184,8 +184,8 @@ export function createStickerPicker(onSelect) {
   }
 
   function createStickerItem(s, pack) {
-    const isVideo = pack?.is_video || s.file_name?.endsWith('.webm');
-    const isTgs = pack?.is_animated || s.file_name?.endsWith('.tgs');
+    const isVideo = Boolean(pack?.is_video || s.file_name?.endsWith('.webm'));
+    const isTgs = Boolean(pack?.is_animated || s.file_name?.endsWith('.tgs'));
     const url = s.url || `/api/v1/stickers/file/${s.pack_id}/${s.file_name || (s.id + (isVideo ? '.webm' : (isTgs ? '.tgs' : '.webp')))}`;
 
     const item = el("button", { class: "sticker-grid-item", title: s.emoji || "" });
@@ -254,10 +254,15 @@ export function createStickerPicker(onSelect) {
  * Opens a modal showing all stickers in a pack with an Install/Uninstall action.
  */
 export async function showStickerPackModal(packId, onUpdate) {
-  const overlay = el("div", { class: "modal-overlay active" });
-  const modal = el("div", { class: "modal-content sticker-pack-modal" });
-  modal.appendChild(spinner());
-  overlay.appendChild(modal);
+  const modalBox = el("div", {
+    style: "background:#1e1e24;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:20px;width:100%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.6);display:flex;flex-direction:column;max-height:80vh;"
+  });
+
+  const overlay = el("div", {
+    style: "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;"
+  }, modalBox);
+
+  modalBox.appendChild(spinner());
   document.body.appendChild(overlay);
 
   const close = () => {
@@ -274,20 +279,23 @@ export async function showStickerPackModal(packId, onUpdate) {
     try { myPacks = await getMyStickers(); } catch {}
     const isInstalled = myPacks.some(p => p.id === pack.id);
 
-    modal.innerHTML = "";
+    modalBox.innerHTML = "";
 
-    const header = el("div", { class: "modal-header" });
-    header.appendChild(el("h3", {}, pack.title));
-    const closeBtn = el("button", { class: "btn-icon modal-close-btn" }, [svgIcon(ICON_CLOSE, 18)]);
-    closeBtn.addEventListener("click", close);
-    header.appendChild(closeBtn);
-    modal.appendChild(header);
+    const header = el("div", { style: "display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;" },
+      el("h3", { style: "margin:0;font-size:17px;color:#fff;font-weight:600;" }, pack.title),
+      el("button", {
+        class: "btn-icon",
+        style: "background:transparent;border:none;color:rgba(255,255,255,0.6);cursor:pointer;padding:4px;"
+      }, svgIcon(ICON_CLOSE, 18, "currentColor"))
+    );
+    header.querySelector("button").addEventListener("click", close);
+    modalBox.appendChild(header);
 
-    const body = el("div", { class: "modal-body sticker-pack-modal-body" });
+    const body = el("div", { style: "flex:1;overflow-y:auto;margin-bottom:16px;padding-right:4px;" });
     const grid = el("div", { class: "stickers-grid" });
 
     for (const s of (pack.stickers || [])) {
-      const isVideo = pack.is_video || s.file_name?.endsWith('.webm');
+      const isVideo = Boolean(pack.is_video || s.file_name?.endsWith('.webm'));
       const url = s.url || `/api/v1/stickers/file/${pack.id}/${s.file_name}`;
       const item = el("div", { class: "sticker-grid-item preview-only" });
 
@@ -300,11 +308,12 @@ export async function showStickerPackModal(packId, onUpdate) {
     }
 
     body.appendChild(grid);
-    modal.appendChild(body);
+    modalBox.appendChild(body);
 
-    const footer = el("div", { class: "modal-footer" });
+    const footer = el("div", { style: "display:flex;gap:10px;justify-content:flex-end;" });
     const actionBtn = el("button", {
-      class: `btn ${isInstalled ? "btn-secondary" : "btn-primary"}`
+      class: `btn ${isInstalled ? "btn-secondary" : "btn-primary"}`,
+      style: "width:100%;padding:10px;font-size:14px;border-radius:10px;font-weight:600;"
     }, isInstalled ? "Удалить стикерпак" : "Добавить стикерпак");
 
     actionBtn.addEventListener("click", async () => {
@@ -326,14 +335,14 @@ export async function showStickerPackModal(packId, onUpdate) {
     });
 
     footer.appendChild(actionBtn);
-    modal.appendChild(footer);
+    modalBox.appendChild(footer);
   } catch (err) {
-    modal.innerHTML = `
-      <div class="modal-header"><h3>Ошибка</h3></div>
-      <div class="modal-body"><p>Не удалось загрузить информацию о стикерпаке.</p></div>
-      <div class="modal-footer"><button class="btn btn-secondary" id="err-close-btn">Закрыть</button></div>
-    `;
-    modal.querySelector("#err-close-btn")?.addEventListener("click", close);
+    modalBox.innerHTML = "";
+    modalBox.appendChild(el("h3", { style: "margin-top:0;color:#fff;font-size:16px;" }, "Ошибка"));
+    modalBox.appendChild(el("p", { style: "color:rgba(255,255,255,0.7);font-size:14px;" }, "Не удалось загрузить информацию о стикерпаке."));
+    const closeBtn = el("button", { class: "btn btn-secondary", style: "align-self:flex-end;margin-top:12px;" }, "Закрыть");
+    closeBtn.addEventListener("click", close);
+    modalBox.appendChild(closeBtn);
   }
 }
 
@@ -341,39 +350,57 @@ export async function showStickerPackModal(packId, onUpdate) {
  * Modal to import a sticker pack from Telegram by link or name.
  */
 export function showImportStickersModal(onSuccess) {
-  const overlay = el("div", { class: "modal-overlay active" });
-  const modal = el("div", { class: "modal-content import-stickers-modal" });
+  const input = el("input", {
+    type: "text",
+    class: "input",
+    placeholder: "https://t.me/addstickers/Doge",
+    style: "width:100%;box-sizing:border-box;margin-bottom:16px;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:14px;outline:none;"
+  });
 
-  modal.innerHTML = `
-    <div class="modal-header">
-      <h3>Импорт стикеров из Telegram</h3>
-      <button class="btn-icon modal-close-btn">${svgIcon(ICON_CLOSE, 18).outerHTML}</button>
-    </div>
-    <div class="modal-body">
-      <p class="text-secondary" style="margin-bottom: 16px;">
-        Вставьте ссылку на стикерпак вида <code>t.me/addstickers/pack_name</code> или просто название пака.
-      </p>
-      <div class="form-group">
-        <label for="tg-sticker-url">Ссылка или название</label>
-        <input type="text" id="tg-sticker-url" class="input" placeholder="https://t.me/addstickers/Doge" autofocus />
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary btn-cancel">Отмена</button>
-      <button class="btn btn-primary btn-import">Импортировать</button>
-    </div>
-  `;
+  const cancelBtn = el("button", {
+    class: "btn btn-secondary",
+    style: "flex:1;padding:10px;border-radius:10px;font-size:14px;cursor:pointer;"
+  }, "Отмена");
 
-  overlay.appendChild(modal);
+  const importBtn = el("button", {
+    class: "btn btn-primary",
+    style: "flex:1;padding:10px;border-radius:10px;font-size:14px;cursor:pointer;font-weight:600;"
+  }, "Импортировать");
+
+  const closeBtn = el("button", {
+    class: "btn-icon",
+    style: "background:transparent;border:none;color:rgba(255,255,255,0.6);cursor:pointer;padding:4px;"
+  }, svgIcon(ICON_CLOSE, 18, "currentColor"));
+
+  const header = el("div", { style: "display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;" },
+    el("h3", { style: "margin:0;font-size:17px;color:#fff;font-weight:600;" }, "Импорт стикеров из Telegram"),
+    closeBtn
+  );
+
+  const modalBox = el("div", {
+    style: "background:#1e1e24;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.6);display:flex;flex-direction:column;box-sizing:border-box;"
+  },
+    header,
+    el("p", { style: "margin:0 0 16px;color:rgba(255,255,255,0.7);font-size:13px;line-height:1.4;" },
+      "Вставьте ссылку на стикерпак (например, ",
+      el("code", { style: "background:rgba(255,255,255,0.08);padding:2px 4px;border-radius:4px;" }, "t.me/addstickers/pack_name"),
+      ") или просто его название."
+    ),
+    input,
+    el("div", { style: "display:flex;gap:10px;" }, cancelBtn, importBtn)
+  );
+
+  const overlay = el("div", {
+    style: "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;"
+  }, modalBox);
+
   document.body.appendChild(overlay);
+  setTimeout(() => input.focus(), 50);
 
   const close = () => overlay.remove();
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
-  modal.querySelector(".modal-close-btn")?.addEventListener("click", close);
-  modal.querySelector(".btn-cancel")?.addEventListener("click", close);
-
-  const input = modal.querySelector("#tg-sticker-url");
-  const importBtn = modal.querySelector(".btn-import");
+  closeBtn.addEventListener("click", close);
+  cancelBtn.addEventListener("click", close);
 
   const doImport = async () => {
     const val = input.value.trim();
@@ -383,6 +410,7 @@ export function showImportStickersModal(onSuccess) {
     }
 
     importBtn.disabled = true;
+    cancelBtn.disabled = true;
     importBtn.textContent = "Импортируем...";
 
     try {
@@ -393,6 +421,7 @@ export function showImportStickersModal(onSuccess) {
     } catch (err) {
       showToast(err.message || "Ошибка импорта стикерпака", "error");
       importBtn.disabled = false;
+      cancelBtn.disabled = false;
       importBtn.textContent = "Импортировать";
     }
   };
@@ -400,5 +429,6 @@ export function showImportStickersModal(onSuccess) {
   importBtn.addEventListener("click", doImport);
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") doImport();
+    if (e.key === "Escape") close();
   });
 }
