@@ -332,3 +332,32 @@ data class RestSendMessageResponse(
     @SerialName("msg_id") val msgId: Long,
     @SerialName("client_msg_id") val clientMsgId: String
 )
+
+@Serializable
+data class StickerPackResponse(
+    val id: String,
+    val title: String,
+    @SerialName("author_id") val authorId: Long = 0,
+    @SerialName("cover_sticker_id") val coverStickerId: String? = null,
+    @SerialName("is_animated") val isAnimated: Boolean = false,
+    @SerialName("is_video") val isVideo: Boolean = false,
+    @SerialName("created_at") val createdAt: Long = 0,
+    val stickers: List<StickerItemResponse> = emptyList()
+)
+
+@Serializable
+data class StickerItemResponse(
+    val id: String,
+    @SerialName("pack_id") val packId: String = "",
+    val emoji: String = "",
+    @SerialName("file_name") val fileName: String = "",
+    val width: Int = 0,
+    val height: Int = 0,
+    @SerialName("sort_order") val sortOrder: Int = 0,
+    val url: String? = null
+)
+
+@Serializable
+data class ImportTelegramStickersRequest(
+    val url: String
+)

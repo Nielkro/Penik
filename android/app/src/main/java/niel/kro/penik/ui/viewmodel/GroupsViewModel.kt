@@ -99,6 +99,7 @@ class GroupChatViewModel @Inject constructor(
     val chatRepository: ChatRepository,
     val messageRepository: MessageRepository,
     private val attachmentManager: AttachmentManager,
+    val stickerRepository: niel.kro.penik.data.repository.StickerRepository,
     savedStateHandle: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
 
@@ -138,6 +139,21 @@ class GroupChatViewModel @Inject constructor(
         viewModelScope.launch {
             val id = runCatching { groupRepository.sendMessage(groupId, text.trim(), replyToMsgId) }.getOrNull()
             if (id == null) _error.value = "Не удалось отправить сообщение"
+        }
+    }
+
+    fun sendSticker(sticker: niel.kro.penik.data.network.api.StickerItemResponse, replyToMsgId: String? = null) {
+        val fileName = sticker.fileName.ifBlank { "${sticker.id}.webp" }
+        val payload = buildJsonObject {
+            put("type", "sticker")
+            put("pack_id", sticker.packId)
+            put("sticker_id", sticker.id)
+            put("emoji", sticker.emoji)
+            put("url", "/api/v1/stickers/file/${sticker.packId}/$fileName")
+        }.toString()
+        viewModelScope.launch {
+            val id = runCatching { groupRepository.sendMessage(groupId, payload, replyToMsgId) }.getOrNull()
+            if (id == null) _error.value = "Не удалось отправить стикер"
         }
     }
 

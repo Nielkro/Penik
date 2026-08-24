@@ -44,7 +44,8 @@ class ChatRoomViewModel @Inject constructor(
     private val callManager: niel.kro.penik.domain.call.CallManager,
     val messageRepository: MessageRepository,
     val chatRepository: ChatRepository,
-    val groupRepository: GroupRepository
+    val groupRepository: GroupRepository,
+    val stickerRepository: niel.kro.penik.data.repository.StickerRepository
 ) : ViewModel() {
 
     private val chatUserId: Long = savedStateHandle.get<Long>("chatUserId") ?: 0L
@@ -144,6 +145,20 @@ class ChatRoomViewModel @Inject constructor(
         if (text.isBlank()) return
         viewModelScope.launch {
             sendMessageUseCase(chatUserId, text, chatName, replyToMsgId)
+        }
+    }
+
+    fun sendSticker(sticker: niel.kro.penik.data.network.api.StickerItemResponse, replyToMsgId: String? = null) {
+        val fileName = sticker.fileName.ifBlank { "${sticker.id}.webp" }
+        val payload = buildJsonObject {
+            put("type", "sticker")
+            put("pack_id", sticker.packId)
+            put("sticker_id", sticker.id)
+            put("emoji", sticker.emoji)
+            put("url", "/api/v1/stickers/file/${sticker.packId}/$fileName")
+        }.toString()
+        viewModelScope.launch {
+            sendMessageUseCase(chatUserId, payload, chatName, replyToMsgId)
         }
     }
 

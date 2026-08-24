@@ -36,6 +36,9 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
+import niel.kro.penik.ui.components.StickerPickerBottomSheet
+import niel.kro.penik.ui.components.StickerPackDetailDialog
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -294,6 +297,8 @@ fun ChatRoomScreen(
 
     var messageToForwardText by remember { mutableStateOf<String?>(null) }
     var messageToForwardSender by remember { mutableStateOf<String?>(null) }
+    var showStickerPicker by remember { mutableStateOf(false) }
+    var selectedStickerPackId by remember { mutableStateOf<String?>(null) }
 
     val contactsList by viewModel.chatRepository.getAllChats().collectAsState(initial = emptyList())
     val groupsList by viewModel.groupRepository.observeGroups().collectAsState(initial = emptyList())
@@ -568,6 +573,9 @@ fun ChatRoomScreen(
                             onForward = {
                                 messageToForwardText = message.text
                                 messageToForwardSender = if (message.sentByMe) "Вы" else chatName
+                            },
+                            onStickerClick = { packId ->
+                                selectedStickerPackId = packId
                             }
                         )
                     }
@@ -691,6 +699,15 @@ fun ChatRoomScreen(
                         )
                     }
 
+                    // Sticker picker button
+                    IconButton(onClick = { showStickerPicker = true }) {
+                        Icon(
+                            imageVector = Icons.Default.SentimentSatisfiedAlt,
+                            contentDescription = "Стикеры",
+                            tint = LocalAppColors.current.textMuted
+                        )
+                    }
+
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = {
@@ -732,6 +749,34 @@ fun ChatRoomScreen(
                 }
             }
         }
+    }
+
+    if (showStickerPicker) {
+        StickerPickerBottomSheet(
+            stickerRepository = viewModel.stickerRepository,
+            onDismiss = { showStickerPicker = false },
+            onStickerSelect = { sticker ->
+                val currentReply = activeReply
+                activeReply = null
+                viewModel.sendSticker(sticker, currentReply?.msgId)
+            },
+            onOpenPack = { packId ->
+                selectedStickerPackId = packId
+            }
+        )
+    }
+
+    selectedStickerPackId?.let { packId ->
+        StickerPackDetailDialog(
+            packId = packId,
+            stickerRepository = viewModel.stickerRepository,
+            onDismiss = { selectedStickerPackId = null },
+            onStickerSelect = { sticker ->
+                val currentReply = activeReply
+                activeReply = null
+                viewModel.sendSticker(sticker, currentReply?.msgId)
+            }
+        )
     }
 
     niel.kro.penik.ui.components.FullscreenImageViewer(

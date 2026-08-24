@@ -176,4 +176,29 @@ interface ApiService {
     suspend fun markMessagesRead(
         @Path("userId") userId: Long
     ): Response<Unit>
+
+    /* ── Stickers ── */
+
+    @GET("stickers/my")
+    suspend fun getMyStickers(): Response<List<StickerPackResponse>>
+
+    @GET("stickers/pack/{id}")
+    suspend fun getStickerPack(
+        @Path("id") packId: String
+    ): Response<StickerPackResponse>
+
+    @POST("stickers/pack/{id}/install")
+    suspend fun installStickerPack(
+        @Path("id") packId: String
+    ): Response<Unit>
+
+    @DELETE("stickers/pack/{id}/uninstall")
+    suspend fun uninstallStickerPack(
+        @Path("id") packId: String
+    ): Response<Unit>
+
+    @POST("stickers/import/telegram")
+    suspend fun importTelegramStickerPack(
+        @Body body: ImportTelegramStickersRequest
+    ): Response<StickerPackResponse>
 }
