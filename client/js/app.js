@@ -713,20 +713,18 @@ async function onMsgAckReceivedGlobal(payload) {
   pendingAcks.delete(String(clientMsgId));
 
   try {
-    // Server stored the message (single check). Real delivery (double check)
-    // arrives later via MSG_DELIVERED once the recipient's device receives it.
-    // Resolve by the record's own key (client_msg_id / UUID), NOT pending.tempId
-    // — the latter is only the DOM placeholder id and never matches the stored
-    // key, so the DB record would otherwise stay unresolved with a string id.
     await updateMsgIdAndDelivered(clientMsgId, serverMsgId, 0);
 
     if (_activeChatCallback && String(_activeChatCallback.userId) === String(pending.userId)) {
+      _activeChatCallback.onAck?.(serverMsgId, clientMsgId);
       const bubble = /** @type {HTMLElement} */ (document.querySelector(`[data-msg-id="${pending.tempId}"]`));
       if (bubble) {
         bubble.dataset.msgId = serverMsgId;
-        const statusEl = /** @type {HTMLElement} */ (bubble.querySelector(".msg-status"));
+        const statusEl = /** @type {HTMLElement} */ (bubble.querySelector(".msg-status, .msg-status-wrapper"));
         if (statusEl) {
           statusEl.dataset.msgId = serverMsgId;
+          statusEl.className = "msg-status-wrapper";
+          statusEl.innerHTML = '<span class="chk chk-1">✓</span>';
         }
       }
     }
@@ -1059,77 +1057,6 @@ export async function encryptMessagePayload(text, recipientUserId, clientMsgId =
   }
 
   return payloads;
-}
-
-async function onMsgAckReceivedGlobal(payload) {
-  const clientMsgId = payload?.msg_id;
-  const serverMsgId = payload?.server_msg_id;
-  if (!clientMsgId || !serverMsgId) return;
-
-  try {
-    const pending = pendingAcks.get(clientMsgId);
-    if (!pending) return;
-    pendingAcks.delete(clientMsgId);
-    await updateMsgIdAndDelivered(clientMsgId, serverMsgId, 0);
-
-    if (_activeChatCallback && String(_activeChatCallback.userId) === String(pending.userId)) {
-      _activeChatCallback.onAck?.(serverMsgId, clientMsgId);
-      const bubble = /** @type {HTMLElement} */ (document.querySelector(`[data-msg-id="${pending.tempId}"]`));
-      if (bubble) {
-        bubble.dataset.msgId = serverMsgId;
-        const statusEl = /** @type {HTMLElement} */ (bubble.querySelector(".msg-status, .msg-status-wrapper"));
-        if (statusEl) {
-          statusEl.dataset.msgId = serverMsgId;
-          statusEl.className = "msg-status-wrapper";
-          statusEl.innerHTML = '<span class="chk chk-1">✓</span>';
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Failed to process MSG_ACK:", err);
-  }
-}
-
-async function onMsgReadGlobal(payload) {
-  if (!payload?.msg_id) return;
-  await updateMessageRead(payload.msg_id);
-  if (_activeChatCallback) _activeChatCallback.onStatus?.(payload.msg_id, "read");
-}
-
-async function onMsgDeleteNotifyGlobal(payload) {
-  if (!payload?.msg_id) return;
-  try {
-    await deleteMessage(payload.msg_id);
-    const escaped = CSS.escape(String(payload.msg_id));
-    const bubbles = document.querySelectorAll(`[data-msg-id="${escaped}"], [data-client-msg-id="${escaped}"]`);
-    bubbles.forEach(b => b.remove());
-  } catch (e) {
-    console.warn("Failed to process msg delete notify:", e);
-  }
-}
-
-async function onOfflineBatchGlobal(payload) {
-  if (payload && payload.msgs && Array.isArray(payload.msgs)) {
-    for (const msg of payload.msgs) {
-      await onMsgRecvGlobal(msg);
-    }
-  }
-}
-
-async function onChatPurgeGlobal(payload) {
-  if (!payload || !payload.chat_user_id) return;
-  const peerId = payload.chat_user_id;
-  try {
-    await clearChatHistory(peerId);
-    if (_activeChatCallback && String(_activeChatCallback.userId) === String(peerId)) {
-      const messagesEl = document.querySelector(".chat-messages");
-      if (messagesEl) messagesEl.innerHTML = "";
-    }
-    triggerChatListUpdate();
-    ws.send(0x09, { chat_user_id: Number(peerId) });
-  } catch (e) {
-    console.warn("Failed to process chat purge:", e);
-  }
 }
 
 export async function flushOutbox() {
