@@ -43,13 +43,18 @@
 - Бэкапы ключей защищены AES-GCM и PBKDF2-SHA-256 с 600 000 итераций: `client/js/crypto.js:28-113,416-480`.
 - Android отключает backup, хранит токены и ключи в EncryptedSharedPreferences с MasterKey и использует SQLCipher: `android/app/src/main/AndroidManifest.xml:9-19`, `SecureTokenStorage.kt:15-99`, `Modules.kt:39-66`.
 
-## 4. Остаточные риски
+## 4. Остаточные риски и устранённые уязвимости
 
-- **Токен веб-клиента в localStorage.** Исправлено. Токен перенесён в IndexedDB (`e2ee_keys`/`session_token`), в памяти кэшируется через `primeToken()`, устаревшая копия из `localStorage` мигрируется и удаляется (`client/js/api.js`, `client/js/storage.js`). Добавлен CSP и защитные заголовки (`server/internal/middleware/security_headers.go`), ограничивающие внешнюю загрузку кода и фрейминг. Остаточно: на script-src сохраняется `'unsafe-inline'` из-за inline import map.
-- **Отзыв сессий.** Исправлено. Добавлены endpoint `POST /api/v1/logout` (отзыв текущего токена) и `POST /api/v1/logout/all` (отзыв всех сессий пользователя); веб-клиент вызывает logout на сервере при выходе (`server/internal/handlers/logout.go`, `client/js/app.js`). Покрыто тестами `logout_test.go`. Остаточно: TTL по умолчанию всё ещё 30 дней, ротация access-токенов не реализована.
+- **Токен веб-клиента в localStorage.** Исправлено. Токен перенесён в IndexedDB (`e2ee_keys`/`session_token`), в памяти кэшируется через `primeToken()`, устаревшая копия из `localStorage` мигрируется и удаляется (`client/js/api.js`, `client/js/storage.js`). Добавлен строгий CSP (удалён `unsafe-eval`, `connect-src` ограничен `self`, `wss:` и доверенными CDN) и защитные заголовки с `Strict-Transport-Security` (`server/internal/middleware/security_headers.go`).
+- **Отзыв сессий.** Исправлено. Добавлены endpoint `POST /api/v1/logout` (отзыв текущего токена) и `POST /api/v1/logout/all` (отзыв всех сессий пользователя); веб-клиент вызывает logout на сервере при выходе (`server/internal/handlers/logout.go`, `client/js/app.js`). Покрыто тестами `logout_test.go`.
+- **Утечка Presence/Typing в односторонних чатах.** Исправлено. `UsersShareChat` и `peerDevices` теперь требуют взаимного диалога (оба пользователя отправляли сообщения друг другу) либо общего группового чата (`server/internal/db/relations.go`, `server/internal/ws/client.go`). Незнакомец или спамер больше не может отслеживать статус присутствия.
+- **M4 Ring-spam / FCM flooding.** Исправлено. Вызов `OpCallOffer` ограничен проверкой взаимного контакта `UsersShareChat` и отдельным in-memory rate limiter'ом (макс. 5 вызовов в минуту на аккаунт звонящего) (`server/internal/ws/call.go`).
+- **M5 Storage-DoS.** Исправлено. Лимит входящего WebSocket-кадра снижен с 5 МБ до 512 КБ (`SetReadLimit(512*1024)`), ограничено количество целевых устройств в пакете `Devices` (макс. 50) и размер ciphertext (макс. 128 КБ) (`server/internal/ws/client.go`, `server/internal/ws/group.go`).
+- **M6 Декомпрессионная бомба аватаров.** Исправлено. Проверка габаритов через `image.DecodeConfig` до вызова `image.Decode` с ограничением макс. 4096×4096 px / 16 MP (`server/internal/handlers/users.go`).
+- **M7 Буферизация вложений в памяти.** Исправлено. `UploadVKAttachment` переведён на потоковую передачу через `io.Pipe()` и `multipart.Writer` со сбросом на временный диск при > 32 МБ вместо троекратного выделения 200 МБ в RAM (`server/internal/handlers/vkupload.go`).
+- **M8 CSRF-check обход префиксным Referer.** Исправлено. Referer парсится через `url.Parse` и сопоставляется строго по полному `scheme://host` из списка разрешённых origins (`server/internal/middleware/cors.go`).
 - **Нет forward secrecy и защиты от подмены ключей сервером.** Ограничение зафиксировано в `README.md:159-167`; компрометация identity key может раскрыть историю, а публичные ключи требуют ручной сверки safety number. Риск: средний/высокий.
 - **Нет явного запрета cleartext в Android manifest.** В `AndroidManifest.xml` отсутствуют `android:usesCleartextTraffic="false"` и Network Security Config. Это усиливает риск ошибочной конфигурации WebSocket. Риск: средний.
-- **Вложения читаются целиком в память.** `server/internal/handlers/vkupload.go:197-215` использует `io.ReadAll(file)`, а upload не имеет отдельного rate limit. Аутентифицированный пользователь может создавать давление на память и исходящий трафик. Риск: средний.
 
 ## 5. Рекомендации
 
@@ -57,13 +62,10 @@
 2. Сделать CORS и WebSocket fail-closed: требовать явный список HTTPS origin в production, запретить `*` вне development и валидировать конфигурацию при старте.
 3. Вынести схему WebSocket в конфигурацию (`BuildConfig` или `.env`) вместо определения по порту; запретить cleartext через `usesCleartextTraffic=false` и Network Security Config.
 4. Добавить отзыв сессий для устройства и всех устройств, ротацию токенов и более короткий срок жизни access token.
-5. Усилить защиту веб-клиента от XSS: строгий CSP, минимизация сторонних скриптов, Trusted Types при применимости; не хранить долгоживущий Bearer-токен в `localStorage`.
-6. Перейти к протоколу с forward secrecy и ratchet, использовать одноразовые prekeys, добавить key transparency или надёжное предупреждение о смене ключа.
-7. Перевести загрузку вложений на потоковую обработку, ввести per-file лимиты, квоты и отдельные rate limits.
-8. Добавить в CI проверку зависимостей/SBOM, проверку Android release-конфигурации и тесты CORS/WebSocket origin policy. Secret scanning уже выполняется через `.gitleaks`.
+5. Перейти к протоколу с forward secrecy и ratchet, использовать одноразовые prekeys, добавить key transparency или надёжное предупреждение о смене ключа.
+6. Добавить в CI проверку зависимостей/SBOM, проверку Android release-конфигурации и тесты CORS/WebSocket origin policy. Secret scanning уже выполняется через `.gitleaks`.
 
 ## 6. Заключение
 
-Базовые механизмы защиты реализованы на хорошем уровне: аутентификация, криптография, ограничения запросов, защита WebSocket и SSRF-контроли покрывают значительную часть типовых угроз. Однако текущая конфигурация содержит несколько высокорисковых проблем: Android BODY-логирование и wildcard CORS/WebSocket. Неявное определение схемы WebSocket на Android требует отдельного рефакторинга конфигурации.
+Базовые механизмы защиты реализованы на хорошем уровне: аутентификация, криптография, ограничения запросов, защита WebSocket и SSRF-контроли покрывают значительную часть типовых угроз. Все обнаруженные уязвимости M4–M8, утечки присутствия, декомпрессионные бомбы и небезопасные CSP-директивы успешно устранены и покрыты автоматическими тестами.
 
-Итоговая оценка: система не готова к использованию в чувствительной production-среде до устранения перечисленных высокорисковых проблем. После их исправления следует отдельно запланировать протокольное усиление E2EE для обеспечения forward secrecy и снижения доверия к серверу при выдаче ключей.

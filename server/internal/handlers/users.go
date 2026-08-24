@@ -236,6 +236,26 @@ func UploadAvatar(database *db.DB, cfg *config.Config, hub *ws.Hub) http.Handler
 			return
 		}
 
+		// Guard against image decompression bombs: check dimensions before allocating memory.
+		imgCfg, _, cfgErr := image.DecodeConfig(bytes.NewReader(data))
+		if cfgErr != nil {
+			var webpCfgErr error
+			imgCfg, webpCfgErr = webp.DecodeConfig(bytes.NewReader(data))
+			if webpCfgErr != nil {
+				http.Error(w, "invalid image format (PNG, JPEG, WebP accepted)", http.StatusUnsupportedMediaType)
+				return
+			}
+		}
+
+		const maxDimension = 4096
+		const maxPixels = 4096 * 4096 // 16 megapixels max
+		if imgCfg.Width <= 0 || imgCfg.Height <= 0 ||
+			imgCfg.Width > maxDimension || imgCfg.Height > maxDimension ||
+			int64(imgCfg.Width)*int64(imgCfg.Height) > maxPixels {
+			http.Error(w, "image dimensions too large (max 4096×4096)", http.StatusBadRequest)
+			return
+		}
+
 		// Validate and decode image (PNG, JPEG, GIF, WebP).
 		img, _, err := image.Decode(bytes.NewReader(data))
 		if err != nil {

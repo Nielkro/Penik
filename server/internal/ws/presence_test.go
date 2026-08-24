@@ -39,12 +39,17 @@ func TestPeerDevices1To1(t *testing.T) {
 	_, strangerDev := mkUserDevice(t, database, "stranger")
 
 	now := time.Now().Unix()
-	if _, err := database.Exec(`INSERT INTO chats(user1_id,user2_id,created_at) VALUES(?,?,?)`, aliceID, bobID, now); err != nil {
+	if _, err := database.Exec(`INSERT INTO chats(id,user1_id,user2_id,created_at) VALUES(1,?,?,?)`, aliceID, bobID, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.Exec(
 		`INSERT INTO messages(chat_id, sender_user_id, recipient_user_id, timestamp, delivered) VALUES(1, ?, ?, ?, 0)`,
 		aliceID, bobID, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(
+		`INSERT INTO messages(chat_id, sender_user_id, recipient_user_id, timestamp, delivered) VALUES(1, ?, ?, ?, 0)`,
+		bobID, aliceID, now); err != nil {
 		t.Fatal(err)
 	}
 
