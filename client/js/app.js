@@ -952,13 +952,37 @@ export async function decryptMessagePayload(payload) {
 
   const myId = Number(localStorage.getItem("user_id"));
   const senderUserId = Number(payload.from_user_id ?? payload.sender_user_id ?? payload.sender_id ?? pinUserId ?? 0);
-  const recipientUserId = Number(payload.to_user_id ?? payload.recipient_user_id ?? myId);
-  const clientMsgId = payload.client_msg_id || payload.msg_id || "";
-  const timestamp = Number(payload.timestamp || payload.created_at || 0);
+  const chatPartnerId = Number(payload.chat_user_id ?? payload.chat_id ?? (senderUserId === myId ? 0 : senderUserId));
+  const recipientUserId = Number(payload.to_user_id ?? payload.recipient_user_id ?? (senderUserId === myId ? chatPartnerId : myId));
+  const clientMsgId = payload.client_msg_id || (typeof payload.msg_id === "string" && isNaN(Number(payload.msg_id)) ? payload.msg_id : "");
+  const rawTs = Number(payload.timestamp ?? payload.created_at ?? payload.ts ?? 0);
+  const tsSec = rawTs > 1e11 ? Math.floor(rawTs / 1000) : rawTs;
 
-  const aad = buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId, timestamp);
   const secret = await deriveSharedSecret(myPrivateIK, fromIdentityKey);
-  const textBytes = await e2eeDecrypt(ciphertext, secret, salt, nonce, "penik-pairwise-message-v1", aad);
+
+  // Candidate AADs in order of priority:
+  const candidateAads = [
+    buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId, tsSec),
+    ...(chatPartnerId && chatPartnerId !== recipientUserId ? [buildPairwiseAAD(senderUserId, chatPartnerId, clientMsgId, tsSec)] : []),
+    ...(rawTs > 1e11 ? [buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId, rawTs)] : []),
+    ...(clientMsgId ? [buildPairwiseAAD(senderUserId, recipientUserId, "", tsSec)] : []),
+    new Uint8Array(0)
+  ];
+
+  let textBytes = null;
+  let lastErr = null;
+  for (const aad of candidateAads) {
+    try {
+      textBytes = await e2eeDecrypt(ciphertext, secret, salt, nonce, "penik-pairwise-message-v1", aad);
+      break;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  if (!textBytes) {
+    throw lastErr || new Error("Failed to decrypt pairwise message");
+  }
 
   return { text: new TextDecoder().decode(textBytes) };
 }
@@ -967,6 +991,7 @@ export async function encryptMessagePayload(text, recipientUserId, clientMsgId =
   const myId = Number(localStorage.getItem("user_id"));
   const myDeviceId = Number(localStorage.getItem("device_id"));
   const isSelfChat = Number(recipientUserId) === myId;
+  const tsSec = Number(timestamp) > 1e11 ? Math.floor(Number(timestamp) / 1000) : (Number(timestamp) || Math.floor(Date.now() / 1000));
 
   const bundleUrl = `/keys/bundle/${recipientUserId}`;
   const senderBundleUrl = `/keys/bundle/${myId}`;
@@ -977,18 +1002,18 @@ export async function encryptMessagePayload(text, recipientUserId, clientMsgId =
   const recipientDevices = recipientBundle?.devices || [];
   const senderDevices = senderBundle?.devices || [];
 
-    const filteredSenderDevices = isSelfChat ? [] : senderDevices.filter(d => Number(d.device_id) !== myDeviceId);
-    const allDevices = [
-      ...recipientDevices.map(d => ({ ...d, owner_user_id: recipientUserId })),
-      ...filteredSenderDevices.map(d => ({ ...d, owner_user_id: myId })),
-    ];
+  const filteredSenderDevices = isSelfChat ? [] : senderDevices.filter(d => Number(d.device_id) !== myDeviceId);
+  const allDevices = [
+    ...recipientDevices.map(d => ({ ...d, owner_user_id: recipientUserId })),
+    ...filteredSenderDevices.map(d => ({ ...d, owner_user_id: myId })),
+  ];
 
   const myPrivateIK = await loadPrivateIK();
   if (!myPrivateIK) {
     throw new Error("Private Identity Key not found");
   }
 
-  const aad = buildPairwiseAAD(myId, recipientUserId, clientMsgId, timestamp);
+  const aad = buildPairwiseAAD(myId, recipientUserId, clientMsgId, tsSec);
 
   const payloads = [];
   for (const device of allDevices) {

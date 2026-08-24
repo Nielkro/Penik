@@ -764,15 +764,32 @@ class MessageRepository @Inject constructor(
             ?: throw Exception("Identity Key private key not found locally")
         val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, fromIdentityKey)
 
-        val aad = if (senderUserId != 0L || recipientUserId != 0L) {
-            e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, clientMsgId, timestamp)
-        } else {
-            null
+        val tsSec = if (timestamp > 100_000_000_000L) timestamp / 1000 else timestamp
+
+        val candidates = buildList {
+            if (senderUserId != 0L || recipientUserId != 0L) {
+                add(e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, clientMsgId, tsSec))
+                if (timestamp > 100_000_000_000L) {
+                    add(e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, clientMsgId, timestamp))
+                }
+                if (clientMsgId.isNotEmpty()) {
+                    add(e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, "", tsSec))
+                }
+            }
+            add(null) // Fallback for legacy messages or empty AAD
         }
 
-        val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, aad = aad)
+        var lastEx: Exception? = null
+        for (candidate in candidates) {
+            try {
+                val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, aad = candidate)
+                return String(plaintextBytes, Charsets.UTF_8)
+            } catch (e: Exception) {
+                lastEx = e
+            }
+        }
 
-        return String(plaintextBytes, Charsets.UTF_8)
+        throw lastEx ?: Exception("Decryption failed")
     }
 
     /**
