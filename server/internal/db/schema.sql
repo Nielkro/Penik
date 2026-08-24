@@ -220,3 +220,36 @@ CREATE TABLE IF NOT EXISTS group_history_packets (
 
 CREATE INDEX IF NOT EXISTS idx_group_history_packets_expiry
     ON group_history_packets(expires_at);
+
+CREATE TABLE IF NOT EXISTS sticker_packs (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    author_id INTEGER NOT NULL DEFAULT 0,
+    cover_sticker_id TEXT NOT NULL DEFAULT '',
+    is_animated INTEGER NOT NULL DEFAULT 0,
+    is_video INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS stickers (
+    id TEXT NOT NULL,
+    pack_id TEXT NOT NULL REFERENCES sticker_packs(id) ON DELETE CASCADE,
+    emoji TEXT NOT NULL DEFAULT '',
+    file_name TEXT NOT NULL,
+    width INTEGER NOT NULL DEFAULT 512,
+    height INTEGER NOT NULL DEFAULT 512,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (pack_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_stickers_pack ON stickers(pack_id, sort_order);
+
+CREATE TABLE IF NOT EXISTS user_sticker_packs (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pack_id TEXT NOT NULL REFERENCES sticker_packs(id) ON DELETE CASCADE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    installed_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, pack_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_sticker_packs ON user_sticker_packs(user_id, sort_order);
