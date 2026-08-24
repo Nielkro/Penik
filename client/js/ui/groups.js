@@ -10,7 +10,7 @@ import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessa
 import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
 import {
   el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence,
-  showToast, spinner, showConfirmModal, showPromptModal, showFullscreenImage, showForwardModal,
+  showToast, spinner, svgIcon, stickerIcon, showConfirmModal, showPromptModal, showFullscreenImage, showForwardModal,
   setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
 import { onPresenceUpdate } from "../presence.js";
@@ -300,8 +300,8 @@ export async function renderGroup(container, groupId) {
   const stickerBtn = el("button", {
     class: "icon-btn chat-sticker-btn",
     title: "Стикеры",
-    style: "background:transparent;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
-  }, "😊");
+    style: "background:transparent;border:none;color:var(--text-muted);cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
+  }, stickerIcon(20));
 
   const stickerPicker = createStickerPicker((sticker) => {
     sendGroupSticker(sticker);

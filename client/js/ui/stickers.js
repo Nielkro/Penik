@@ -22,6 +22,10 @@ export function addRecentSticker(sticker) {
   } catch {}
 }
 
+const ICON_PLUS = "M12 5v14M5 12h14";
+const ICON_CLOCK = "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z";
+const ICON_CLOSE = "M18 6L6 18M6 6l12 12";
+
 /**
  * Creates the sticker picker popover component.
  * @param {(sticker: object) => void} onSelect
@@ -37,7 +41,7 @@ export function createStickerPicker(onSelect) {
   const header = el("div", { class: "sticker-picker-header" });
   const title = el("span", { class: "sticker-picker-title" }, "Стикеры");
   const addBtn = el("button", { class: "btn-icon btn-add-pack", title: "Импорт из Telegram" }, [
-    svgIcon("plus", 18)
+    svgIcon(ICON_PLUS, 18)
   ]);
   header.appendChild(title);
   header.appendChild(addBtn);
@@ -73,7 +77,7 @@ export function createStickerPicker(onSelect) {
     const recentTab = el("button", {
       class: `sticker-tab ${activeTab === "recent" ? "active" : ""}`,
       title: "Недавние"
-    }, [svgIcon("clock", 18)]);
+    }, [svgIcon(ICON_CLOCK, 18)]);
     recentTab.addEventListener("click", () => {
       activeTab = "recent";
       renderTabs();
@@ -107,6 +111,19 @@ export function createStickerPicker(onSelect) {
       });
       tabsBar.appendChild(tabBtn);
     }
+
+    // Add pack button tab at the end of tabs bar
+    const addTab = el("button", {
+      class: "sticker-tab sticker-tab-add",
+      title: "Импортировать стикерпак"
+    }, [svgIcon(ICON_PLUS, 18)]);
+    addTab.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showImportStickersModal(() => {
+        loadPacks();
+      });
+    });
+    tabsBar.appendChild(addTab);
   }
 
   async function renderContent() {
@@ -247,7 +264,7 @@ export async function showStickerPackModal(packId, onUpdate) {
 
     const header = el("div", { class: "modal-header" });
     header.appendChild(el("h3", {}, pack.title));
-    const closeBtn = el("button", { class: "btn-icon modal-close-btn" }, [svgIcon("close", 18)]);
+    const closeBtn = el("button", { class: "btn-icon modal-close-btn" }, [svgIcon(ICON_CLOSE, 18)]);
     closeBtn.addEventListener("click", close);
     header.appendChild(closeBtn);
     modal.appendChild(header);
@@ -316,7 +333,7 @@ export function showImportStickersModal(onSuccess) {
   modal.innerHTML = `
     <div class="modal-header">
       <h3>Импорт стикеров из Telegram</h3>
-      <button class="btn-icon modal-close-btn">${svgIcon("close", 18).outerHTML}</button>
+      <button class="btn-icon modal-close-btn">${svgIcon(ICON_CLOSE, 18).outerHTML}</button>
     </div>
     <div class="modal-body">
       <p class="text-secondary" style="margin-bottom: 16px;">

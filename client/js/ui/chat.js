@@ -8,7 +8,7 @@ import {
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload } from "../app.js";
 import { OP } from "../ws.js";
 import {
-  avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon,
+  avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon, stickerIcon,
   showDeleteChatConfirmModal, showFullscreenImage, showConfirmModal, showForwardModal,
   setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
@@ -460,8 +460,8 @@ export async function renderChat(container, userId) {
   const stickerBtn = el("button", {
     class: "icon-btn chat-sticker-btn",
     title: "Стикеры",
-    style: "background:transparent;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
-  }, "😊");
+    style: "background:transparent;border:none;color:var(--text-muted);cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
+  }, stickerIcon(20));
 
   const stickerPicker = createStickerPicker((sticker) => {
     sendSticker(sticker);
