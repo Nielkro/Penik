@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -246,6 +245,12 @@ func UploadVKAttachment(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
+		// Parse multipart with 32MB in-memory buffer, remainder streams to temp file on disk
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			http.Error(w, `{"error":"failed to parse multipart form"}`, http.StatusBadRequest)
+			return
+		}
+
 		file, header, err := r.FormFile("file")
 		if err != nil {
 			http.Error(w, `{"error":"missing file field"}`, http.StatusBadRequest)
@@ -253,15 +258,9 @@ func UploadVKAttachment(cfg *config.Config) http.HandlerFunc {
 		}
 		defer file.Close()
 
-		fileBytes, err := io.ReadAll(file)
-		if err != nil {
-			http.Error(w, `{"error":"failed to read upload data"}`, http.StatusInternalServerError)
-			return
-		}
-
 		filename := sanitizeVKFilename(header.Filename)
 
-		cdnURL, err := uploadBytesToVK(fileBytes, filename, cfg.VKBotToken)
+		cdnURL, err := uploadStreamToVK(file, filename, cfg.VKBotToken)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":%q}`, redactVKToken(err.Error(), cfg.VKBotToken)), http.StatusInternalServerError)
 			return
@@ -330,7 +329,7 @@ func SaveVKAttachment(cfg *config.Config) http.HandlerFunc {
 
 		req.File = strings.TrimSpace(req.File)
 		if req.File == "" {
-			http.Error(w, `{"error":"missing file token"}`, http.StatusBadRequest)
+			http.Error(w, `{"error":"missing file parameter"}`, http.StatusBadRequest)
 			return
 		}
 		if len(req.File) > maxVKFileTokenLen {
@@ -338,7 +337,9 @@ func SaveVKAttachment(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		cdnURL, err := saveVKDoc(req.File, sanitizeVKFilename(req.Name), cfg.VKBotToken)
+		filename := sanitizeVKFilename(req.Name)
+
+		cdnURL, err := saveVKDoc(req.File, filename, cfg.VKBotToken)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":%q}`, redactVKToken(err.Error(), cfg.VKBotToken)), http.StatusBadGateway)
 			return
@@ -349,51 +350,53 @@ func SaveVKAttachment(cfg *config.Config) http.HandlerFunc {
 	}
 }
 
-func uploadBytesToVK(fileBytes []byte, filename string, botToken string) (string, error) {
-	var lastErr error
-	for attempt := 1; attempt <= 3; attempt++ {
-		cdnURL, err := tryUploadBytesToVK(fileBytes, filename, botToken)
-		if err == nil {
-			return cdnURL, nil
-		}
-		lastErr = err
-		time.Sleep(time.Duration(attempt*300) * time.Millisecond)
-	}
-	return "", lastErr
-}
-
-func tryUploadBytesToVK(fileBytes []byte, filename string, botToken string) (string, error) {
+func uploadStreamToVK(fileReader io.Reader, filename string, botToken string) (string, error) {
 	uploadURL, err := fetchVKUploadURL(botToken)
 	if err != nil {
 		return "", err
 	}
 
-	// Multipart POST to uploadURL
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	fileWriter, err := writer.CreateFormFile("file", filename)
-	if err != nil {
-		return "", fmt.Errorf("create form file: %w", err)
-	}
-	if _, err := fileWriter.Write(fileBytes); err != nil {
-		return "", fmt.Errorf("write bytes to form: %w", err)
-	}
-	writer.Close()
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
 
-	req, err := http.NewRequest("POST", uploadURL, body)
+	errChan := make(chan error, 1)
+	go func() {
+		defer pw.Close()
+		fileWriter, err := writer.CreateFormFile("file", filename)
+		if err != nil {
+			errChan <- fmt.Errorf("create form file: %w", err)
+			return
+		}
+		if _, err := io.Copy(fileWriter, fileReader); err != nil {
+			errChan <- fmt.Errorf("stream copy to form: %w", err)
+			return
+		}
+		if err := writer.Close(); err != nil {
+			errChan <- fmt.Errorf("close multipart writer: %w", err)
+			return
+		}
+		errChan <- nil
+	}()
+
+	req, err := http.NewRequest("POST", uploadURL, pr)
 	if err != nil {
+		pr.Close()
 		return "", fmt.Errorf("create POST request: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 10 * time.Minute}
 	uploadResp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("POST to VK upload server failed: %w", err)
 	}
 	defer uploadResp.Body.Close()
 
-	uploadResponseBody, err := io.ReadAll(uploadResp.Body)
+	if pipeErr := <-errChan; pipeErr != nil {
+		return "", pipeErr
+	}
+
+	uploadResponseBody, err := io.ReadAll(io.LimitReader(uploadResp.Body, 1024*1024))
 	if err != nil {
 		return "", fmt.Errorf("read upload response: %w", err)
 	}

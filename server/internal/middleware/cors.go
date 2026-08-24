@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"messenger/server/internal/config"
@@ -90,12 +91,12 @@ func csrfOK(r *http.Request, allowed []string) bool {
 		return isAllowedOrigin(allowed, origin)
 	}
 	if referer := r.Header.Get("Referer"); referer != "" {
-		for _, a := range allowed {
-			if strings.HasPrefix(referer, a) {
-				return true
-			}
+		refURL, err := url.Parse(referer)
+		if err != nil || refURL.Scheme == "" || refURL.Host == "" {
+			return false
 		}
-		return false
+		refOrigin := refURL.Scheme + "://" + refURL.Host
+		return isAllowedOrigin(allowed, refOrigin)
 	}
 	// No Origin/Referer — allow (same-origin curl/mobile clients).
 	return true

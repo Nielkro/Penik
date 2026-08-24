@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -135,6 +136,34 @@ func generateLiveKitToken(apiKey, apiSecret, roomName, participantIdentity strin
 	return at.ToJWT()
 }
 
+var (
+	callLimitMu  sync.Mutex
+	callAttempts = make(map[int64][]time.Time)
+)
+
+func allowCallAttempt(callerID int64) bool {
+	callLimitMu.Lock()
+	defer callLimitMu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-1 * time.Minute)
+
+	var valid []time.Time
+	for _, t := range callAttempts[callerID] {
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
+	}
+	// Max 5 call offers per minute per caller account
+	if len(valid) >= 5 {
+		callAttempts[callerID] = valid
+		return false
+	}
+	valid = append(valid, now)
+	callAttempts[callerID] = valid
+	return true
+}
+
 func (c *Client) handleCallOffer(payload []byte) error {
 	var offer CallOffer
 	if err := msgpack.Unmarshal(payload, &offer); err != nil {
@@ -145,15 +174,24 @@ func (c *Client) handleCallOffer(payload []byte) error {
 		return fmt.Errorf("cannot call yourself")
 	}
 
-	// Confirm the callee is a real account before reserving call state for them.
-	// User IDs are sequential, so an unchecked offer lets a caller pin arbitrary
-	// ids into userCalls.
-	var calleeExists int
-	if err := c.db.QueryRow(`SELECT 1 FROM users WHERE id=?`, offer.ToUserID).Scan(&calleeExists); err != nil {
+	if !allowCallAttempt(c.userID) {
 		rejectPayload, _ := msgpack.Marshal(CallReject{
 			CallID:   "",
 			ToUserID: offer.ToUserID,
-			Reason:   "offline",
+			Reason:   "busy",
+		})
+		c.hub.SendToDeviceFrame(c.deviceID, OpCallReject, rejectPayload)
+		return nil
+	}
+
+	// Confirm the callee is a real account and shares a relationship with caller
+	// before reserving call state or waking up devices via FCM pushes.
+	related, err := c.db.UsersShareChat(context.Background(), c.userID, offer.ToUserID)
+	if err != nil || !related {
+		rejectPayload, _ := msgpack.Marshal(CallReject{
+			CallID:   "",
+			ToUserID: offer.ToUserID,
+			Reason:   "declined",
 		})
 		c.hub.SendToDeviceFrame(c.deviceID, OpCallReject, rejectPayload)
 		return nil

@@ -52,7 +52,13 @@ func TestHandleTypingRequiresRelationship(t *testing.T) {
 		t.Fatal("typing leaked to a stranger")
 	}
 
-	if _, err := database.Exec(`INSERT INTO chats(user1_id,user2_id,created_at) VALUES(?,?,?)`, aliceID, bobID, now); err != nil {
+	if _, err := database.Exec(`INSERT INTO chats(id,user1_id,user2_id,created_at) VALUES(1,?,?,?)`, aliceID, bobID, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`INSERT INTO messages(chat_id,sender_user_id,recipient_user_id,timestamp) VALUES(1,?,?,?)`, aliceID, bobID, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`INSERT INTO messages(chat_id,sender_user_id,recipient_user_id,timestamp) VALUES(1,?,?,?)`, bobID, aliceID, now); err != nil {
 		t.Fatal(err)
 	}
 	if err := alice.handleTyping(context.Background(), req); err != nil {

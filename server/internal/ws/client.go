@@ -81,7 +81,7 @@ func newClient(h *Hub, conn *websocket.Conn, userID, deviceID int64, database *d
 // Run starts the read and write pumps, registers with the hub, sends offline
 // batch, and waits until the connection closes.
 func (c *Client) Run(ctx context.Context) {
-	c.conn.SetReadLimit(5 * 1024 * 1024) // 5 MB max WebSocket frame limit
+	c.conn.SetReadLimit(512 * 1024) // 512 KB max WebSocket frame limit
 	c.hub.register <- c
 	go c.broadcastPresenceConnect(context.Background())
 	defer func() {
@@ -93,10 +93,15 @@ func (c *Client) Run(ctx context.Context) {
 		}
 		c.conn.Close(websocket.StatusNormalClosure, "bye")
 		// Best-effort: record when this device went offline, so last_seen
-		// reflects "last active" rather than only "last connected."
+		// reflects when the connection actually dropped.
 		now := time.Now().Unix()
-		_, _ = c.db.Exec(`UPDATE devices SET last_seen=? WHERE id=?`, now, c.deviceID)
-		go c.broadcastPresenceDisconnect(context.Background(), now)
+		_, _ = c.db.ExecContext(context.Background(),
+			`UPDATE devices SET is_active=0, last_seen=? WHERE id=?`, now, c.deviceID)
+		// Only push an offline frame if the user has no remaining online devices;
+		// otherwise peers see a transient offline whenever a background tab drops.
+		if !c.hub.IsUserOnline(c.userID) {
+			go c.broadcastPresenceDisconnect(context.Background(), now)
+		}
 	}()
 
 	// Send offline messages immediately.
@@ -404,6 +409,15 @@ func minFloat(a, b float64) float64 {
 }
 
 func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error {
+	if len(msg.Devices) == 0 || len(msg.Devices) > 50 {
+		return fmt.Errorf("invalid devices count (1..50)")
+	}
+	for _, dev := range msg.Devices {
+		if len(dev.Ciphertext) > 128*1024 {
+			return fmt.Errorf("ciphertext payload too large (max 128KB)")
+		}
+	}
+
 	now := time.Now().Unix()
 
 	senderUserID := c.userID
@@ -1037,13 +1051,13 @@ func (c *Client) broadcastPresenceFrame(ctx context.Context, online bool, lastSe
 	c.hub.BroadcastPresence(deviceIDs, payload)
 }
 
-// peerDevices finds all devices belonging to users who share a 1:1 chat or a
+// peerDevices finds all devices belonging to users who share a mutual 1:1 chat or a
 // group with c.userID, so they can be notified of this user's presence changes.
 func (c *Client) peerDevices(ctx context.Context) []int64 {
 	query := `
 		SELECT DISTINCT d.id FROM devices d WHERE d.user_id IN (
 			SELECT sender_user_id FROM messages WHERE recipient_user_id = ?
-			UNION
+			INTERSECT
 			SELECT recipient_user_id FROM messages WHERE sender_user_id = ?
 			UNION
 			SELECT user_id FROM group_members WHERE group_id IN (

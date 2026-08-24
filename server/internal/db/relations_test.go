@@ -48,11 +48,25 @@ func TestUsersShareChat(t *testing.T) {
 	check(alice, alice, true, "self")
 	check(0, bob, false, "unauthenticated viewer")
 
-	if _, err := database.Exec(`INSERT INTO chats(user1_id,user2_id,created_at) VALUES(?,?,?)`, alice, bob, now); err != nil {
+	cr, err := database.Exec(`INSERT INTO chats(user1_id,user2_id,created_at) VALUES(?,?,?)`, alice, bob, now)
+	if err != nil {
 		t.Fatal(err)
 	}
-	check(alice, bob, true, "chat as (user1,user2)")
-	check(bob, alice, true, "chat reversed")
+	chatID, _ := cr.LastInsertId()
+
+	// One-way message: Alice writes to Bob, but Bob hasn't replied yet.
+	if _, err := database.Exec(`INSERT INTO messages(chat_id,sender_user_id,recipient_user_id,timestamp) VALUES(?,?,?,?)`, chatID, alice, bob, now); err != nil {
+		t.Fatal(err)
+	}
+	check(alice, bob, false, "one-way message: not mutual yet")
+	check(bob, alice, false, "one-way message reversed: not mutual yet")
+
+	// Bob replies to Alice -> now it is mutual!
+	if _, err := database.Exec(`INSERT INTO messages(chat_id,sender_user_id,recipient_user_id,timestamp) VALUES(?,?,?,?)`, chatID, bob, alice, now); err != nil {
+		t.Fatal(err)
+	}
+	check(alice, bob, true, "mutual messages (alice -> bob & bob -> alice)")
+	check(bob, alice, true, "mutual messages reversed")
 	check(alice, carol, false, "still a stranger")
 
 	// A shared group is the second relationship kind.

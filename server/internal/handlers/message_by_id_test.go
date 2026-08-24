@@ -149,7 +149,16 @@ func TestGetUserHidesPresenceFromStrangers(t *testing.T) {
 		t.Fatalf("stranger saw last_seen=%v, want 0", v)
 	}
 
-	if _, err := database.Exec(`INSERT INTO chats(user1_id,user2_id,created_at) VALUES(?,?,?)`, aliceID, bobID, time.Now().Unix()); err != nil {
+	cr, err := database.Exec(`INSERT INTO chats(user1_id,user2_id,created_at) VALUES(?,?,?)`, aliceID, bobID, time.Now().Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	chatID, _ := cr.LastInsertId()
+	now := time.Now().Unix()
+	if _, err := database.Exec(`INSERT INTO messages(chat_id,sender_user_id,recipient_user_id,timestamp) VALUES(?,?,?,?)`, chatID, aliceID, bobID, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`INSERT INTO messages(chat_id,sender_user_id,recipient_user_id,timestamp) VALUES(?,?,?,?)`, chatID, bobID, aliceID, now); err != nil {
 		t.Fatal(err)
 	}
 	if v := lastSeenFor(aliceID, aliceDev); v == 0 {

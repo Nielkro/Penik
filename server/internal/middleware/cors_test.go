@@ -67,4 +67,13 @@ func TestCORSAllowsConfiguredOrigin(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("preflight: got %d, want 204", rec.Code)
 	}
+
+	// Referer with allowed origin as prefix must be rejected (M8 bypass prevention)
+	rec = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodPost, "/api/v1/messages/send", nil)
+	r.Header.Set("Referer", "https://penik.example.attacker.com/csrf")
+	h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("prefix bypass referer: got %d, want 403", rec.Code)
+	}
 }

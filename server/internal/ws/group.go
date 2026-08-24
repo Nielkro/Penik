@@ -38,6 +38,9 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 		return fmt.Errorf("group message: missing created_at")
 	}
 	nowUnix := time.Now().Unix()
+	if len(msg.Ciphertext) == 0 || len(msg.Ciphertext) > 128*1024 {
+		return fmt.Errorf("group message: invalid ciphertext size (max 128KB)")
+	}
 	if msg.CreatedAt > nowUnix+maxGroupClockSkew ||
 		msg.CreatedAt < nowUnix-maxGroupTimestampAge {
 		return fmt.Errorf("group message: created_at out of acceptable range")
