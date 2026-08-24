@@ -663,7 +663,11 @@ class MessageRepository @Inject constructor(
                                         fromIdentityKey = senderIK,
                                         ciphertext = ciphertextBytes,
                                         salt = saltBytes,
-                                        nonce = nonceBytes
+                                        nonce = nonceBytes,
+                                        senderUserId = msg.senderId,
+                                        recipientUserId = if (msg.senderId == myId) msg.chatUserId else myId,
+                                        clientMsgId = msg.clientMsgId ?: "",
+                                        timestamp = msg.createdAt
                                     )
                                 } catch (e: Exception) {
                                     Log.e("PenikMsg", "FAILED TO DECRYPT HISTORY MSG msgId=${msg.msgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, clientMsgId=${msg.clientMsgId}", e)
@@ -823,11 +827,32 @@ class MessageRepository @Inject constructor(
         // key in the sender's bundle is tried; only one can produce a valid tag.
         val bundle = runCatching { apiService.getKeyBundle(body.senderId) }.getOrNull()
             ?.takeIf { it.isSuccessful }?.body() ?: return null
-        for (device in bundle.devices) {
+
+        val myId = tokenStorage.getUserId()
+        val myDeviceId = tokenStorage.getDeviceId()
+        val recipientUserId = if (body.senderId == myId) body.chatUserId else myId
+
+        val targetDevices = if (body.senderDeviceId != null && body.senderDeviceId > 0) {
+            bundle.devices.filter { it.deviceId == body.senderDeviceId } + bundle.devices.filter { it.deviceId != body.senderDeviceId }
+        } else {
+            bundle.devices
+        }
+
+        for (device in targetDevices) {
             val ik = runCatching { android.util.Base64.decode(device.identityKey, android.util.Base64.DEFAULT) }.getOrNull() ?: continue
             identityPins.verify(body.senderId, device.deviceId, ik)
             val text = runCatching {
-                decryptMessagePayload(tokenStorage.getDeviceId(), ik, ct, salt, nonce)
+                decryptMessagePayload(
+                    myDeviceId = myDeviceId,
+                    fromIdentityKey = ik,
+                    ciphertext = ct,
+                    salt = salt,
+                    nonce = nonce,
+                    senderUserId = body.senderId,
+                    recipientUserId = recipientUserId,
+                    clientMsgId = body.clientMsgId ?: "",
+                    timestamp = body.createdAt
+                )
             }.getOrNull() ?: continue
             persistPushMessage(body, text)
             return text
