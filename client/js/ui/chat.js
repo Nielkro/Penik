@@ -16,6 +16,7 @@ import { syncGroups, getAllGroups, getGroupMessages, onGroupUpdate } from "../gr
 import { buildGroupListItem, showCreateGroupModal } from "./groups.js";
 import { onPresenceUpdate, onTypingUpdate } from "../presence.js";
 import { callManager } from "../call.js";
+import { createStickerPicker } from "./stickers.js";
 
 
 
@@ -40,6 +41,9 @@ export function getMessagePreviewInfo(plaintext) {
         const fromPrefix = parsed.from ? `↪ ${parsed.from}: ` : "↪ Переслано: ";
         const inner = getMessagePreviewInfo(parsed.text || "");
         return { text: prefix + fromPrefix + inner.text, thumb: inner.thumb, isMedia: inner.isMedia };
+      }
+      if (parsed.type === "sticker") {
+        return { text: prefix + (parsed.emoji ? `${parsed.emoji} Стикер` : "🖼 Стикер"), thumb: null, isMedia: false };
       }
       if ((parsed.type === "file" || parsed.file) && (parsed.file || parsed.url)) {
         const fileObj = parsed.file || parsed;
@@ -453,7 +457,29 @@ export async function renderChat(container, userId) {
     }
   });
 
-  const inputRow   = el("div", { class: "chat-input-row" }, attachBtn, fileInput, inputEl, sendBtn);
+  const stickerBtn = el("button", {
+    class: "icon-btn chat-sticker-btn",
+    title: "Стикеры",
+    style: "background:transparent;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
+  }, "😊");
+
+  const stickerPicker = createStickerPicker((sticker) => {
+    sendSticker(sticker);
+  });
+
+  stickerBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    stickerPicker.toggle();
+  });
+
+  const onDocClick = (e) => {
+    if (!stickerPicker.element.contains(e.target) && e.target !== stickerBtn && !stickerBtn.contains(e.target)) {
+      stickerPicker.toggle(false);
+    }
+  };
+  document.addEventListener("click", onDocClick);
+
+  const inputRow   = el("div", { class: "chat-input-row", style: "position: relative;" }, attachBtn, fileInput, stickerBtn, stickerPicker.element, inputEl, sendBtn);
   // messagesEl is mounted first so attachScrollDownButton can wrap it in place.
   const chatWrap   = el("div", { class: "chat-wrap" }, header, messagesEl, inputRow);
   container.appendChild(chatWrap);
@@ -738,11 +764,15 @@ export async function renderChat(container, userId) {
     }
 
     let isMediaMsg = false;
+    let isStickerMsg = false;
     if (typeof msg.plaintext === "string") {
       const trimmed = msg.plaintext.trim();
       if (trimmed.startsWith("{")) {
         try {
           const p = JSON.parse(trimmed);
+          if (p.type === "sticker") {
+            isStickerMsg = true;
+          }
           if (p.type === "file" && p.file && ((p.file.mime || "").startsWith("image/") || (p.file.mime || "").startsWith("video/"))) {
             isMediaMsg = true;
           }
@@ -750,7 +780,7 @@ export async function renderChat(container, userId) {
       }
     }
 
-    const bubbleClass = `msg-bubble ${isMine ? "msg-out" : "msg-in"}${isFailed ? " msg-failed" : ""}${isMediaMsg ? " msg-media-bubble" : ""}`;
+    const bubbleClass = `msg-bubble ${isMine ? "msg-out" : "msg-in"}${isFailed ? " msg-failed" : ""}${isMediaMsg ? " msg-media-bubble" : ""}${isStickerMsg ? " sticker-message msg-sticker-bubble" : ""}`;
     const bubble = el("div", { class: bubbleClass },
       ...bubbleChildren
     );
@@ -1081,6 +1111,73 @@ export async function renderChat(container, userId) {
     }
   }
 
+  async function sendSticker(sticker) {
+    const payload = JSON.stringify(sticker);
+    const tempId = `tmp-${Date.now()}`;
+    const now = Date.now();
+    const myId = me && (me.id || me.user_id);
+    const currentReply = activeReply;
+    setActiveReply(null);
+
+    appendMessage({
+      msg_id: tempId,
+      sender_id: myId,
+      plaintext: payload,
+      created_at: now,
+      reply_to_msg_id: currentReply ? currentReply.msg_id : null
+    });
+    scrollDown.scrollToBottom();
+
+    try {
+      const ws = getWS();
+      if (!ws || !ws.isConnected()) throw new Error("Нет соединения с сервером");
+
+      const msgId = crypto.randomUUID();
+      const ciphertexts = await encryptMessagePayload(payload, userId);
+
+      const storedMsg = {
+        msg_id: msgId,
+        client_msg_id: msgId,
+        chat_id: userId,
+        sender_id: myId,
+        plaintext: payload,
+        created_at: now,
+        delivered: 0,
+        ciphertexts: ciphertexts,
+        reply_to_msg_id: currentReply ? currentReply.msg_id : null
+      };
+      await saveMessage(storedMsg);
+      await saveContact({ ...contact, last_message: getMessagePreview(payload), last_ts: now });
+
+      addPendingAck(msgId, { tempId: tempId, userId: userId });
+
+      let sent = false;
+      try {
+        sent = ws.send(0x01, {
+          to_user_id: Number(userId),
+          devices: ciphertexts,
+          msg_id: msgId,
+          reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined
+        });
+      } catch (sendErr) {
+        console.warn("WebSocket send error:", sendErr);
+      }
+
+      if (!sent) {
+        pendingAcks.delete(String(msgId));
+        throw new Error("Не удалось отправить стикер (ошибка сокета)");
+      }
+
+      const oldBubble = messagesEl.querySelector(`[data-msg-id="${tempId}"]`);
+      if (oldBubble) oldBubble.dataset.msgId = msgId;
+    } catch (err) {
+      console.error("sendSticker error:", err);
+      const oldBubble = messagesEl.querySelector(`[data-msg-id="${tempId}"]`);
+      if (oldBubble) oldBubble.classList.add("msg-failed");
+      showToast(err.message || "Ошибка отправки стикера", "error");
+    }
+  }
+
   sendBtn.addEventListener("click", sendMessage);
   inputEl.addEventListener("keydown", e => {
     if (e.key !== "Enter") return;
@@ -1157,6 +1254,7 @@ export async function renderChat(container, userId) {
   // Cleanup
   const obs = new MutationObserver(() => {
     if (!container.isConnected) {
+      document.removeEventListener("click", onDocClick);
       setActiveChatCallback(null);
       obs.disconnect();
     }

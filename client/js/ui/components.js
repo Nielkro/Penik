@@ -223,6 +223,10 @@ export function setMsgTextContent(el, text) {
         el.appendChild(bodyEl);
         return;
       }
+      if (parsed && parsed.type === "sticker") {
+        renderStickerContent(el, parsed);
+        return;
+      }
       if (parsed && (parsed.type === "file" || parsed.file) && (parsed.file?.url || parsed.url)) {
         if (!parsed.file) parsed.file = { ...parsed };
         if (parsed.fwd_from) {
@@ -269,6 +273,43 @@ export function setMsgTextContent(el, text) {
   if (last < s.length) {
     el.appendChild(document.createTextNode(s.slice(last)));
   }
+}
+
+export function renderStickerContent(container, sticker) {
+  container.replaceChildren();
+  const wrapper = document.createElement("div");
+  wrapper.className = "msg-sticker-wrapper";
+  wrapper.title = sticker.emoji ? `Стикер (${sticker.emoji}) — нажмите для просмотра пака` : "Нажмите для просмотра стикерпака";
+
+  const isVideo = Boolean(sticker.is_video || (sticker.file_name && sticker.file_name.endsWith(".webm")));
+  const url = sticker.url || `/api/v1/stickers/file/${sticker.pack_id}/${sticker.file_name || (sticker.id + (isVideo ? '.webm' : '.webp'))}`;
+
+  if (isVideo) {
+    const video = document.createElement("video");
+    video.src = url;
+    video.autoplay = true;
+    video.loop = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.className = "msg-sticker-media";
+    wrapper.appendChild(video);
+  } else {
+    const img = document.createElement("img");
+    img.src = url;
+    img.className = "msg-sticker-media";
+    img.loading = "lazy";
+    img.alt = sticker.emoji || "стикер";
+    wrapper.appendChild(img);
+  }
+
+  wrapper.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (sticker.pack_id) {
+      import("./stickers.js").then((m) => m.showStickerPackModal(sticker.pack_id));
+    }
+  });
+
+  container.appendChild(wrapper);
 }
 
 // describeUndecodableVideo reads back the already-decrypted blob and returns a
