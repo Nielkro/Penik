@@ -415,7 +415,7 @@ export async function renderGroup(container, groupId) {
             const isParentMine = Number(parent.sender_user_id) === Number(myId);
             const parentSenderId = Number(parent.sender_user_id);
             const senderName = isParentMine ? "Вы" : (nameById.get(parentSenderId) || parent.sender_name || `#${parentSenderId}`);
-            const info = getMessagePreviewInfo(parent.plaintext || "");
+            const info = getMessagePreviewInfo(parent.plaintext || parent.text || "");
             replyRefEl.querySelector(".reply-ref-sender").textContent = senderName;
             replyRefEl.querySelector(".reply-ref-text").textContent = info.text;
             if (info.thumb) {

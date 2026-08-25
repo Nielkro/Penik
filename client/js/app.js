@@ -622,7 +622,11 @@ async function onMsgRecvGlobal(payload) {
 
 async function onMsgAckGlobal(payload) {
   try {
-    await updateMessageDelivered(payload.msg_id, 1);
+    if (payload.client_msg_id && payload.msg_id) {
+      await updateMsgIdAndDelivered(payload.client_msg_id, payload.msg_id, 1);
+    } else if (payload.msg_id) {
+      await updateMessageDelivered(payload.msg_id, 1);
+    }
   } catch (e) {}
 
   if (_activeChatCallback) {
