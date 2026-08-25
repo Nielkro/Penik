@@ -570,7 +570,7 @@ export async function renderGroup(container, groupId) {
       decryptedBlobCache.set(cdnUrl, localBlobUrl);
       saveCachedMedia(cdnUrl, localBlob, file.type).catch(() => {});
 
-      // 3. Generate thumbnail if image
+      // 3. Generate thumbnail if image or video
       let thumbBase64 = null;
       if (file.type.startsWith("image/")) {
         try {
@@ -591,6 +591,54 @@ export async function renderGroup(container, groupId) {
             };
             img.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
             img.src = url;
+          });
+        } catch (e) {}
+      } else if (file.type.startsWith("video/")) {
+        try {
+          thumbBase64 = await new Promise((resolve) => {
+            const video = document.createElement("video");
+            const vUrl = URL.createObjectURL(file);
+            video.src = vUrl;
+            video.muted = true;
+            video.playsInline = true;
+            video.preload = "auto";
+            let resolved = false;
+            const finish = (res) => {
+              if (resolved) return;
+              resolved = true;
+              URL.revokeObjectURL(vUrl);
+              resolve(res);
+            };
+            const timer = setTimeout(() => finish(null), 3000);
+
+            const capture = () => {
+              try {
+                const canvas = document.createElement("canvas");
+                let w = video.videoWidth || 180;
+                let h = video.videoHeight || 180;
+                const maxSide = 180;
+                if (w > maxSide || h > maxSide) {
+                  if (w > h) { h = Math.round((h * maxSide) / w); w = maxSide; }
+                  else { w = Math.round((w * maxSide) / h); h = maxSide; }
+                }
+                canvas.width = w; canvas.height = h;
+                canvas.getContext("2d").drawImage(video, 0, 0, w, h);
+                clearTimeout(timer);
+                finish(canvas.toDataURL("image/webp", 0.35));
+              } catch (_) {
+                finish(null);
+              }
+            };
+
+            video.onseeked = capture;
+            video.onloadeddata = () => {
+              if (video.videoWidth && video.videoHeight) capture();
+              else video.currentTime = 0.1;
+            };
+            video.onloadedmetadata = () => {
+              video.currentTime = 0.1;
+            };
+            video.onerror = () => finish(null);
           });
         } catch (e) {}
       }

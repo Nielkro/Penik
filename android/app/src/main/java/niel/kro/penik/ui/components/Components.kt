@@ -1771,10 +1771,11 @@ fun MessageBubble(
                 if (replySender != null && replyText != null) {
                     val replyInfo = remember(replyText) { parseReplyContent(replyText) }
                     val replyThumbBitmap = remember(replyInfo?.thumbBase64) {
-                        replyInfo?.thumbBase64?.let { thumbStr ->
+                        replyInfo?.thumbBase64?.takeIf { it.isNotBlank() }?.let { thumbStr ->
                             runCatching {
-                                val base64Data = if (thumbStr.contains(",")) thumbStr.substringAfter(",") else thumbStr
-                                val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+                                val cleanData = (if (thumbStr.contains(",")) thumbStr.substringAfter(",") else thumbStr).trim()
+                                val bytes = runCatching { android.util.Base64.decode(cleanData, android.util.Base64.DEFAULT) }
+                                    .getOrElse { android.util.Base64.decode(cleanData, android.util.Base64.URL_SAFE) }
                                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
                             }.getOrNull()
                         }
@@ -1939,9 +1940,11 @@ fun MessageBubble(
                     val isSingleLineShort = !parsedText.contains('\n') && parsedText.length <= 35
                     if (isSingleLineShort) {
                         Row(
-                            modifier = Modifier.padding(top = 1.dp),
+                            modifier = Modifier
+                                .then(if (replySender != null) Modifier.fillMaxWidth() else Modifier)
+                                .padding(top = 1.dp),
                             verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = Arrangement.Start
+                            horizontalArrangement = if (replySender != null) Arrangement.SpaceBetween else Arrangement.Start
                         ) {
                             ClickableLinkedText(
                                 text = parsedText,

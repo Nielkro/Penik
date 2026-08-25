@@ -448,10 +448,11 @@ fun GroupChatScreen(
                 activeReply?.let { reply ->
                     val replyInfo = remember(reply.text) { parseReplyContent(reply.text) }
                     val replyThumbBitmap: ImageBitmap? = remember(replyInfo?.thumbBase64) {
-                        replyInfo?.thumbBase64?.let { thumbStr ->
+                        replyInfo?.thumbBase64?.takeIf { it.isNotBlank() }?.let { thumbStr ->
                             runCatching {
-                                val base64Data = if (thumbStr.contains(",")) thumbStr.substringAfter(",") else thumbStr
-                                val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+                                val cleanData = (if (thumbStr.contains(",")) thumbStr.substringAfter(",") else thumbStr).trim()
+                                val bytes = runCatching { android.util.Base64.decode(cleanData, android.util.Base64.DEFAULT) }
+                                    .getOrElse { android.util.Base64.decode(cleanData, android.util.Base64.URL_SAFE) }
                                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
                             }.getOrNull()
                         }
