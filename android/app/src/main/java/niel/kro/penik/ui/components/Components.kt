@@ -2048,33 +2048,6 @@ fun MessageBubble(
                     }
                 }
             }
-
-            if (isMediaNoCaption) {
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(bottom = 6.dp, end = 6.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.Black.copy(alpha = 0.55f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = formatTime(timestamp),
-                        color = Color.White,
-                        fontSize = 10.sp
-                    )
-                    if (isSentByMe) {
-                        Spacer(modifier = Modifier.width(3.dp))
-                        val statusColor = if (read) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.85f)
-                        MessageTicks(
-                            delivered = delivered,
-                            read = read,
-                            color = statusColor
-                        )
-                    }
-                }
-            }
         }
     }
 }
