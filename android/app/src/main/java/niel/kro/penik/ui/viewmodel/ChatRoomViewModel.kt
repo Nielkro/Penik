@@ -15,6 +15,7 @@ import android.content.Context
 import android.net.Uri
 import niel.kro.penik.data.crypto.SafetyNumber
 import niel.kro.penik.data.network.api.ApiService
+import niel.kro.penik.data.local.entity.MessageEntity
 import niel.kro.penik.data.repository.AttachmentManager
 import niel.kro.penik.data.repository.ChatRepository
 import niel.kro.penik.data.repository.MessageRepository

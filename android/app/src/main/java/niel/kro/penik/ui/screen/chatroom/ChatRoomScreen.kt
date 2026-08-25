@@ -121,6 +121,7 @@ fun ChatRoomScreen(
     val editingMessage by viewModel.editingMessage.collectAsState()
     val isSelfChat = viewModel.isSelfChat
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
+    var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
 
     LaunchedEffect(editingMessage) {
         editingMessage?.let {
@@ -178,7 +179,6 @@ fun ChatRoomScreen(
     }
 
     var previousSize by remember { mutableStateOf(0) }
-    var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
     var isInitialScrollDone by remember(chatUserId) { mutableStateOf(false) }
 
     LaunchedEffect(messages.size) {

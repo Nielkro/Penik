@@ -1,6 +1,6 @@
 import { getToken, setToken, primeToken, getUserById, apiGet, apiPost } from './api.js';
 import {
-  openDB, saveMessage, updateMessageRead,
+  openDB, saveMessage, updateMessageRead, updateMessageText,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
   findAndResolvePendingSentMessage, deleteChatData, deleteMessage,

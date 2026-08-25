@@ -139,6 +139,7 @@ fun GroupChatScreen(
     val editingMessage by viewModel.editingMessage.collectAsState()
     val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
     var inputText by remember { mutableStateOf("") }
+    var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
 
     LaunchedEffect(editingMessage) {
         editingMessage?.let {
@@ -149,7 +150,6 @@ fun GroupChatScreen(
     var showMembersDialog by remember { mutableStateOf(false) }
     var showInviteDialog by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
-    var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
