@@ -20,22 +20,18 @@ object SafetyNumber {
 
     private const val BLOCKS = 5
 
-    fun compute(identityKeyA: ByteArray, identityKeyB: ByteArray): String {
-        val a = normalize(identityKeyA)
-        val b = normalize(identityKeyB)
-        val first: ByteArray
-        val second: ByteArray
-        if (compareUnsigned(a, b) <= 0) {
-            first = a
-            second = b
-        } else {
-            first = b
-            second = a
-        }
+    fun compute(identityKeysA: List<ByteArray>, identityKeysB: List<ByteArray>): String {
+        val allKeys = (identityKeysA + identityKeysB)
+            .filter { it.isNotEmpty() }
+            .map { normalize(it) }
+            .sortedWith { a, b -> compareUnsigned(a, b) }
 
-        val concat = ByteArray(64)
-        System.arraycopy(first, 0, concat, 0, 32)
-        System.arraycopy(second, 0, concat, 32, 32)
+        require(allKeys.isNotEmpty()) { "safety number: no identity keys provided" }
+
+        val concat = ByteArray(allKeys.size * 32)
+        allKeys.forEachIndexed { index, key ->
+            System.arraycopy(key, 0, concat, index * 32, 32)
+        }
 
         val hash = MessageDigest.getInstance("SHA-256").digest(concat)
 
@@ -48,6 +44,10 @@ object SafetyNumber {
         }
 
         return digits.toString().chunked(5).joinToString(" ")
+    }
+
+    fun compute(identityKeyA: ByteArray, identityKeyB: ByteArray): String {
+        return compute(listOf(identityKeyA), listOf(identityKeyB))
     }
 
     private fun normalize(key: ByteArray): ByteArray {

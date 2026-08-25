@@ -361,10 +361,20 @@ class MessageRepository @Inject constructor(
 
         val payloads = allDevices.map { device ->
             val recipientIKPub = java.util.Base64.getDecoder().decode(device.identityKey)
-            // Pin before encrypting: a substituted recipient key is the one case
-            // where the user must learn that this message may be readable by
-            // someone else.
-            identityPins.verify(deviceOwners[device.deviceId] ?: toUserId, device.deviceId, recipientIKPub)
+            val targetUserId = deviceOwners[device.deviceId] ?: toUserId
+            val pinResult = identityPins.verify(targetUserId, device.deviceId, recipientIKPub)
+            if (pinResult == niel.kro.penik.data.crypto.IdentityPinStore.Result.UPDATED) {
+                val sysEntity = niel.kro.penik.data.local.entity.MessageEntity(
+                    localId = "sys-keychange-${System.currentTimeMillis()}-$targetUserId",
+                    chatUserId = targetUserId,
+                    senderId = 0,
+                    text = "⚠️ Код безопасности изменился!",
+                    timestamp = System.currentTimeMillis() - 1,
+                    sentByMe = false,
+                    delivered = true
+                )
+                messageDao.insertMessage(sysEntity)
+            }
             
             val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, recipientIKPub)
 
@@ -468,7 +478,19 @@ class MessageRepository @Inject constructor(
             }
         }
 
-        identityPins.verify(event.fromUserId, event.fromDeviceId, event.fromIdentityKey)
+        val pinResult = identityPins.verify(event.fromUserId, event.fromDeviceId, event.fromIdentityKey)
+        if (pinResult == niel.kro.penik.data.crypto.IdentityPinStore.Result.UPDATED) {
+            val sysEntity = niel.kro.penik.data.local.entity.MessageEntity(
+                localId = "sys-keychange-${System.currentTimeMillis()}-${event.fromUserId}",
+                chatUserId = event.chatUserId,
+                senderId = 0,
+                text = "⚠️ Код безопасности изменился!",
+                timestamp = toMs(event.ts) - 1,
+                sentByMe = false,
+                delivered = true
+            )
+            messageDao.insertMessage(sysEntity)
+        }
 
         var decryptSuccess = true
         val decryptedText = try {
