@@ -954,28 +954,33 @@ export function wireMsgCopy(bubble, getText, onReply, onDelete, onForward) {
               showToast("Текст скопирован");
               return;
             }
-            // If image and we have decrypted blob or can copy image blob
+            // If image, always copy image bitmap to clipboard
             if ((f.mime || "").startsWith("image/")) {
-              const blobUrl = decryptedBlobCache.get(f.url);
+              let blobUrl = decryptedBlobCache.get(f.url) || bubble.querySelector("img")?.src || f.thumb;
+              if (!blobUrl && f.url && f.key) {
+                try {
+                  blobUrl = await downloadAndDecryptFile(f, false);
+                } catch (_) {}
+              }
               if (blobUrl && navigator.clipboard?.write && window.ClipboardItem) {
                 try {
-                  const res = await fetch(blobUrl);
-                  const blob = await res.blob();
-                  let itemBlob = blob;
-                  if (blob.type !== "image/png") {
-                    const img = new Image();
-                    img.src = blobUrl;
-                    await new Promise((r) => { img.onload = r; img.onerror = r; });
-                    const canvas = document.createElement("canvas");
-                    canvas.width = img.naturalWidth || img.width;
-                    canvas.height = img.naturalHeight || img.height;
-                    const ctx = canvas.getContext("2d");
-                    ctx.drawImage(img, 0, 0);
-                    itemBlob = await new Promise((r) => canvas.toBlob(r, "image/png"));
-                  }
-                  if (itemBlob) {
+                  const img = new Image();
+                  img.crossOrigin = "anonymous";
+                  const imgLoaded = new Promise((resolve, reject) => {
+                    img.onload = () => resolve(img);
+                    img.onerror = (e) => reject(e);
+                  });
+                  img.src = blobUrl;
+                  await imgLoaded;
+                  const canvas = document.createElement("canvas");
+                  canvas.width = img.naturalWidth || img.width || 300;
+                  canvas.height = img.naturalHeight || img.height || 300;
+                  const ctx = canvas.getContext("2d");
+                  ctx.drawImage(img, 0, 0);
+                  const pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+                  if (pngBlob) {
                     await navigator.clipboard.write([
-                      new ClipboardItem({ [itemBlob.type]: itemBlob })
+                      new ClipboardItem({ "image/png": pngBlob })
                     ]);
                     showToast("Изображение скопировано");
                     return;
