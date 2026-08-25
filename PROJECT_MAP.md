@@ -95,7 +95,6 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/screen/pairing/PairingScannerScreen.kt` — Screen for scanning and processing QR pairing sessions for new devices.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/settings/SettingsScreen.kt` — Settings screen with a light/dark theme switch and navigation to the devices screen.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/settings/DevicesScreen.kt` — Separate screen listing the user's own devices.
-- `android/app/src/main/java/niel/kro/penik/ui/screen/settings/NotificationDebugScreen.kt` — Notification testing and debug menu screen for previewing text messages, photo attachments, video attachments, and multi-message conversation threads.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/AuthViewModel.kt` — Manages login/registration state and actions.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ChatRoomViewModel.kt` — Subscribes the chat room to messages, handles sending, and processes statuses.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ChatsListViewModel.kt` — Loads and observes the direct chat list.

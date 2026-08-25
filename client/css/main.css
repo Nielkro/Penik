@@ -510,6 +510,30 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   color: var(--text-muted);
 }
 
+.chat-safety {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  margin-left: 8px;
+  border-radius: var(--r-sm);
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid rgba(91, 110, 245, 0.35);
+  cursor: pointer;
+  transition: background var(--ease), border-color var(--ease), transform var(--ease), opacity var(--ease);
+}
+
+.chat-safety:hover {
+  background: rgba(91, 110, 245, 0.28);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.chat-safety svg {
+  stroke: var(--accent) !important;
+}
+
 .chat-messages-wrap {
   position: relative;
   flex: 1;

@@ -8,7 +8,15 @@ const decodeB64Url = s => {
   const binary = atob(padded);
   return Uint8Array.from(binary, c => c.charCodeAt(0));
 };
-const encodeB64Url = b => btoa(String.fromCharCode(...b)).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
+const encodeB64Url = b => {
+  const bytes = b instanceof Uint8Array ? b : new Uint8Array(b);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+};
 const pack = ({ ciphertext, salt, nonce }) => new TextEncoder().encode(JSON.stringify({ ciphertext: encodeB64Url(ciphertext), salt: encodeB64Url(salt), nonce: encodeB64Url(nonce) }));
 import { navigate, getCurrentUser, setCurrentUser, logout, backupE2EEKeys, restoreE2EEKeys } from "../app.js";
 import { avatar, el, showToast, spinner } from "./components.js";

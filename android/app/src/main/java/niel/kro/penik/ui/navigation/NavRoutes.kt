@@ -7,7 +7,6 @@ sealed class Screen(val route: String) {
     object Main : Screen("main")
     object Settings : Screen("settings")
     object Devices : Screen("devices")
-    object NotificationDebug : Screen("notification_debug")
     object PairingScanner : Screen("pairing/scanner")
     object ChatRoom : Screen("chat/{chatUserId}/{chatName}") {
         fun createRoute(chatUserId: Long, chatName: String): String {

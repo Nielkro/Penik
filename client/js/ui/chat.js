@@ -371,12 +371,9 @@ export async function renderChat(container, userId) {
   const safetyBtn = isSelfChat ? null : el("button", {
     class: "icon-btn chat-safety",
     title: "Код безопасности E2EE",
-    style: "margin-left: 8px; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; padding: 4px;"
-  }, svgIcon("M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", 20, "var(--text-muted)"));
+  }, svgIcon("M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", 18, "var(--accent)"));
   
   if (safetyBtn) {
-    safetyBtn.addEventListener("mouseenter", () => { safetyBtn.style.opacity = "1"; });
-    safetyBtn.addEventListener("mouseleave", () => { safetyBtn.style.opacity = "0.7"; });
     safetyBtn.addEventListener("click", () => showSafetyExplanationModal(userId));
   }
 
