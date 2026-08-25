@@ -1008,11 +1008,14 @@ export async function renderChat(container, userId) {
 
       // 3. Generate thumbnail if image or video
       let thumbBase64 = null;
-      if (file.type.startsWith("image/")) {
+      const isImgFile = (file.type && file.type.startsWith("image/")) || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name);
+      const isVidFile = (file.type && file.type.startsWith("video/")) || /\.(mp4|mov|webm|mkv|avi)$/i.test(file.name);
+
+      if (isImgFile) {
         try {
           thumbBase64 = await createThumbnailBase64(file);
         } catch (e) {}
-      } else if (file.type.startsWith("video/")) {
+      } else if (isVidFile) {
         try {
           thumbBase64 = await new Promise((resolve) => {
             const video = document.createElement("video");
@@ -1025,25 +1028,30 @@ export async function renderChat(container, userId) {
             const finish = (res) => {
               if (resolved) return;
               resolved = true;
-              URL.revokeObjectURL(vUrl);
+              try { URL.revokeObjectURL(vUrl); } catch (_) {}
               resolve(res);
             };
-            const timer = setTimeout(() => finish(null), 3000);
+            const timer = setTimeout(() => finish(null), 4000);
 
             const capture = () => {
               try {
+                if (!video.videoWidth || !video.videoHeight) {
+                  return;
+                }
                 const canvas = document.createElement("canvas");
-                let w = video.videoWidth || 180;
-                let h = video.videoHeight || 180;
+                let w = video.videoWidth;
+                let h = video.videoHeight;
                 const maxSide = 180;
                 if (w > maxSide || h > maxSide) {
                   if (w > h) { h = Math.round((h * maxSide) / w); w = maxSide; }
                   else { w = Math.round((w * maxSide) / h); h = maxSide; }
                 }
-                canvas.width = w; canvas.height = h;
-                canvas.getContext("2d").drawImage(video, 0, 0, w, h);
+                canvas.width = Math.max(1, w);
+                canvas.height = Math.max(1, h);
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 clearTimeout(timer);
-                finish(canvas.toDataURL("image/webp", 0.35));
+                finish(canvas.toDataURL("image/jpeg", 0.6));
               } catch (_) {
                 finish(null);
               }
@@ -1052,12 +1060,16 @@ export async function renderChat(container, userId) {
             video.onseeked = capture;
             video.onloadeddata = () => {
               if (video.videoWidth && video.videoHeight) capture();
-              else video.currentTime = 0.1;
+              else {
+                try { video.currentTime = 0.001; } catch (_) { capture(); }
+              }
             };
             video.onloadedmetadata = () => {
-              video.currentTime = 0.1;
+              try { video.currentTime = 0.001; } catch (_) { capture(); }
             };
+            video.oncanplay = capture;
             video.onerror = () => finish(null);
+            try { video.load(); } catch (_) {}
           });
         } catch (e) {}
       }
@@ -1081,11 +1093,12 @@ export async function renderChat(container, userId) {
       const currentReply = activeReply;
       setActiveReply(null);
 
-      const tempId = `tmp-${Date.now()}`;
+      const msgId = crypto.randomUUID();
       const now = Date.now();
       const myId = me && (me.id || me.user_id);
       appendMessage({
-        msg_id: tempId,
+        msg_id: msgId,
+        client_msg_id: msgId,
         sender_id: myId,
         plaintext: payloadStr,
         created_at: now,
@@ -1096,7 +1109,6 @@ export async function renderChat(container, userId) {
       const ws = getWS();
       if (!ws || !ws.isConnected()) throw new Error("Нет соединения");
 
-      const msgId = crypto.randomUUID();
       const ciphertexts = await encryptMessagePayload(payloadStr, userId, msgId, now);
 
       const storedMsg = {
@@ -1117,7 +1129,7 @@ export async function renderChat(container, userId) {
       // pendingAcks.set() left ts undefined, so the TTL sweep treated the entry as
       // ancient and dropped it before the ACK arrived — the delivery tick then
       // stayed on "sending" forever.
-      addPendingAck(msgId, { tempId: tempId, userId: userId });
+      addPendingAck(msgId, { tempId: msgId, userId: userId });
 
       let sent = false;
       try {
@@ -1136,8 +1148,6 @@ export async function renderChat(container, userId) {
         throw new Error("Не удалось отправить файл (ошибка сокета)");
       }
 
-      const oldBubble = messagesEl.querySelector(`[data-msg-id="${tempId}"]`);
-      if (oldBubble) oldBubble.dataset.msgId = msgId;
       showToast("Файл отправлен!", "success");
     } catch (err) {
       console.error("handleFileUpload error:", err);

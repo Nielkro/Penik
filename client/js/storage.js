@@ -117,22 +117,18 @@ export async function getMessage(msgId) {
       res = await get(tx("messages"), Number(msgId));
     }
   }
-  if (!res) {
-    res = await getMessageByClientId(String(msgId));
-  }
-  if (!res) {
-    const all = await getAll(tx("messages"));
-    const targetStr = String(msgId);
-    const targetNum = Number(msgId);
-    const found = all.find(m => 
-      String(m.msg_id) === targetStr || 
-      String(m.server_id) === targetStr || 
-      String(m.client_msg_id) === targetStr ||
-      (!isNaN(targetNum) && (m.server_id === targetNum || m.msg_id === targetNum))
-    );
-    if (found) res = found;
-  }
-  return unsealMessageRecord(res);
+  if (res) return unsealMessageRecord(res);
+
+  const all = await getAllMessages();
+  const targetStr = String(msgId);
+  const targetNum = Number(msgId);
+  const found = all.find(m => 
+    String(m.msg_id) === targetStr || 
+    String(m.server_id) === targetStr || 
+    String(m.client_msg_id) === targetStr ||
+    (!isNaN(targetNum) && (m.server_id === targetNum || m.msg_id === targetNum))
+  );
+  return found || null;
 }
 
 export async function getMessageByClientId(clientMsgId) {

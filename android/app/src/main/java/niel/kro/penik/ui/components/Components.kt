@@ -714,18 +714,28 @@ internal data class ReplyParsedInfo(
 
 internal fun parseReplyContent(rawText: String?): ReplyParsedInfo? {
     if (rawText.isNullOrBlank()) return null
-    val attachment = parseFileAttachment(rawText)
+    val fwdInfo = parseForwardedInfo(rawText)
+    val textToParse = fwdInfo?.text ?: rawText
+    val prefix = if (fwdInfo != null) "↪ ${fwdInfo.from}: " else ""
+
+    val sticker = parseSticker(textToParse)
+    if (sticker != null) {
+        val label = if (sticker.emoji.isNotBlank()) "${sticker.emoji} Стикер" else "🖼 Стикер"
+        return ReplyParsedInfo(displayText = prefix + label, thumbBase64 = null)
+    }
+
+    val attachment = parseFileAttachment(textToParse)
     if (attachment != null) {
         val isImage = attachment.mime.startsWith("image/")
         val isVideo = attachment.mime.startsWith("video/")
         val label = when {
-            isImage -> if (attachment.caption.isNotBlank()) attachment.caption else "Фотография"
-            isVideo -> if (attachment.caption.isNotBlank()) attachment.caption else "Видео"
-            else -> if (attachment.caption.isNotBlank()) attachment.caption else attachment.name.ifBlank { "Файл" }
+            isImage -> if (attachment.caption.isNotBlank()) "📷 ${attachment.caption}" else "📷 Фотография"
+            isVideo -> if (attachment.caption.isNotBlank()) "🎬 ${attachment.caption}" else "🎬 Видео"
+            else -> if (attachment.caption.isNotBlank()) "📎 ${attachment.caption}" else "📎 ${attachment.name.ifBlank { "Файл" }}"
         }
-        return ReplyParsedInfo(displayText = label, thumbBase64 = attachment.thumb)
+        return ReplyParsedInfo(displayText = prefix + label, thumbBase64 = attachment.thumb)
     }
-    return ReplyParsedInfo(displayText = rawText, thumbBase64 = null)
+    return ReplyParsedInfo(displayText = prefix + textToParse, thumbBase64 = null)
 }
 
 private fun formatFileSize(size: Long?): String = when {
