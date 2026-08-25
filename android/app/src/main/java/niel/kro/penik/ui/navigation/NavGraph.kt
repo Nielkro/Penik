@@ -14,7 +14,6 @@ import niel.kro.penik.ui.screen.groups.GroupChatScreen
 import niel.kro.penik.ui.screen.groups.GroupSettingsScreen
 import niel.kro.penik.ui.screen.settings.SettingsScreen
 import niel.kro.penik.ui.screen.settings.DevicesScreen
-import niel.kro.penik.ui.screen.settings.NotificationDebugScreen
 import niel.kro.penik.ui.viewmodel.StartupViewModel
 import niel.kro.penik.ui.screen.pairing.PairingScannerScreen
 
@@ -63,17 +62,12 @@ fun NavGraph(
         composable(Screen.Settings.route) {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
-                onDevices = { navController.navigate(Screen.Devices.route) },
-                onNotificationDebug = { navController.navigate(Screen.NotificationDebug.route) }
+                onDevices = { navController.navigate(Screen.Devices.route) }
             )
         }
 
         composable(Screen.Devices.route) {
             DevicesScreen(onBack = { navController.popBackStack() })
-        }
-
-        composable(Screen.NotificationDebug.route) {
-            NotificationDebugScreen(onBack = { navController.popBackStack() })
         }
 
         composable(Screen.PairingScanner.route) {

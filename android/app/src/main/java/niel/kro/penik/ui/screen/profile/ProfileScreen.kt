@@ -143,37 +143,6 @@ fun ProfileScreen(
             fontSize = 13.sp
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Text(
-            text = "Мои устройства",
-            color = LocalAppColors.current.textMuted,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        if (uiState.devicesLoading && uiState.devices.isEmpty()) {
-            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = LocalAppColors.current.accent)
-        } else {
-            uiState.devices.forEach { device ->
-                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                    Text(
-                        text = device.deviceName.ifBlank { "Устройство" } +
-                            if (device.isCurrent) "  · это устройство" else "",
-                        color = LocalAppColors.current.textPrimary,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = if (device.hasSession) "в сети" else "нет активной сессии",
-                        color = if (device.hasSession) LocalAppColors.current.accent else LocalAppColors.current.textMuted,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        }
-
         Spacer(modifier = Modifier.weight(1f))
 
         Button(
