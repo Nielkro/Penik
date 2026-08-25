@@ -34,6 +34,15 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.border
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -510,10 +519,60 @@ fun GroupChatScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(8.dp),
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .background(
+                            color = LocalAppColors.current.inputBg,
+                            shape = RoundedCornerShape(24.dp)
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = LocalAppColors.current.border.copy(alpha = 0.6f),
+                            shape = RoundedCornerShape(24.dp)
+                        )
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Attachment picker button
+                    // Sticker picker button on the LEFT
+                    IconButton(
+                        onClick = { showStickerPicker = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SentimentSatisfiedAlt,
+                            contentDescription = "Стикеры",
+                            tint = LocalAppColors.current.textMuted,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    // Text input field
+                    BasicTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 6.dp, vertical = 6.dp),
+                        textStyle = TextStyle(
+                            color = LocalAppColors.current.textPrimary,
+                            fontSize = 15.sp
+                        ),
+                        cursorBrush = SolidColor(LocalAppColors.current.accent),
+                        maxLines = 5,
+                        decorationBox = { innerTextField ->
+                            Box(contentAlignment = Alignment.CenterStart) {
+                                if (inputText.isEmpty()) {
+                                    Text(
+                                        text = "Сообщение",
+                                        color = LocalAppColors.current.textMuted,
+                                        fontSize = 15.sp
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        }
+                    )
+
+                    // Attachment picker button on the RIGHT
                     val attachLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.GetContent()
                     ) { uri ->
@@ -521,55 +580,42 @@ fun GroupChatScreen(
                             viewModel.sendMediaFile(context, uri)
                         }
                     }
-                    IconButton(onClick = { attachLauncher.launch("*/*") }) {
+                    IconButton(
+                        onClick = { attachLauncher.launch("*/*") },
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.AttachFile,
                             contentDescription = "Прикрепить файл",
-                            tint = LocalAppColors.current.textMuted
+                            tint = LocalAppColors.current.textMuted,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
-                    // Sticker picker button
-                    IconButton(onClick = { showStickerPicker = true }) {
-                        Icon(
-                            imageVector = Icons.Default.SentimentSatisfiedAlt,
-                            contentDescription = "Стикеры",
-                            tint = LocalAppColors.current.textMuted
-                        )
-                    }
-
-                    OutlinedTextField(
-                        value = inputText,
-                        onValueChange = { inputText = it },
-                        placeholder = { Text("Сообщение", color = LocalAppColors.current.textMuted) },
-                        modifier = Modifier.weight(1f),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = LocalAppColors.current.inputBg,
-                            unfocusedContainerColor = LocalAppColors.current.inputBg,
-                            focusedBorderColor = LocalAppColors.current.accent,
-                            unfocusedBorderColor = LocalAppColors.current.border,
-                            focusedTextColor = LocalAppColors.current.textPrimary,
-                            unfocusedTextColor = LocalAppColors.current.textPrimary
-                        ),
-                        shape = RoundedCornerShape(24.dp),
-                        maxLines = 4
-                    )
-                    IconButton(
-                        onClick = {
-                            if (inputText.isNotBlank()) {
-                                val currentReply = activeReply
-                                activeReply = null
-                                viewModel.send(inputText, currentReply?.msgId)
-                                inputText = ""
-                            }
-                        },
-                        enabled = inputText.isNotBlank()
+                    // Send button
+                    AnimatedVisibility(
+                        visible = inputText.isNotBlank(),
+                        enter = fadeIn() + scaleIn(),
+                        exit = fadeOut() + scaleOut()
                     ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Отправить",
-                            tint = if (inputText.isNotBlank()) LocalAppColors.current.accent else LocalAppColors.current.textMuted
-                        )
+                        IconButton(
+                            onClick = {
+                                if (inputText.isNotBlank()) {
+                                    val currentReply = activeReply
+                                    activeReply = null
+                                    viewModel.send(inputText, currentReply?.msgId)
+                                    inputText = ""
+                                }
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Отправить",
+                                tint = LocalAppColors.current.accent,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }
