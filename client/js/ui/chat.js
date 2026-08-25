@@ -749,7 +749,7 @@ export async function renderChat(container, userId) {
             }
           } else {
             replyRefEl.querySelector(".reply-ref-sender").textContent = "Сообщение";
-            replyRefEl.querySelector(".reply-ref-text").textContent = "Исходное сообщение удалено или недоступно";
+            replyRefEl.querySelector(".reply-ref-text").textContent = "Сообщение удалено";
           }
         } catch (e) {
           replyRefEl.remove();

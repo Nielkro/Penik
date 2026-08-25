@@ -353,13 +353,18 @@ fun GroupChatScreen(
                         val parentMsg = msg.replyToMsgId?.let { parentId ->
                             messages.find { it.messageId == parentId }
                         }
-                        val replyText = parentMsg?.text
-                        val replySender = parentMsg?.let {
-                            val parentSenderMember = members.find { m -> m.userId == it.senderUserId }
-                            parentSenderMember?.let { m ->
-                                m.name.ifEmpty { m.nickname.ifEmpty { "#${m.userId}" } }
-                            } ?: "#${it.senderUserId}"
-                        }
+                        val replyText = if (msg.replyToMsgId != null) {
+                            parentMsg?.let { if (it.text == "[DELETED]") "Сообщение удалено" else it.text } ?: "Сообщение удалено"
+                        } else null
+
+                        val replySender = if (msg.replyToMsgId != null) {
+                            parentMsg?.let {
+                                val parentSenderMember = members.find { m -> m.userId == it.senderUserId }
+                                parentSenderMember?.let { m ->
+                                    m.name.ifEmpty { m.nickname.ifEmpty { "#${m.userId}" } }
+                                } ?: "#${it.senderUserId}"
+                            } ?: "Сообщение"
+                        } else null
 
                         MessageBubble(
                             text = msg.text,

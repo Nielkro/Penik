@@ -555,10 +555,15 @@ fun ChatRoomScreen(
                                 "server-${it.serverId}" == parentId
                             }
                         }
-                        val replyText = parentMsg?.text
-                        val replySender = parentMsg?.let {
-                            if (it.sentByMe) "Вы" else chatName
-                        }
+                        val replyText = if (message.replyToMsgId != null) {
+                            parentMsg?.let { if (it.text == "[DELETED]") "Сообщение удалено" else it.text } ?: "Сообщение удалено"
+                        } else null
+
+                        val replySender = if (message.replyToMsgId != null) {
+                            parentMsg?.let {
+                                if (it.sentByMe) "Вы" else chatName
+                            } ?: "Сообщение"
+                        } else null
 
                         MessageBubble(
                             text = message.text,

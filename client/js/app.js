@@ -746,10 +746,31 @@ async function onMsgReadGlobal(payload) {
 async function onMsgDeleteNotifyGlobal(payload) {
   if (!payload?.msg_id) return;
   try {
+    const existing = await getMessage(payload.msg_id) || await getMessageByClientId(payload.msg_id);
+    const targetIds = new Set([String(payload.msg_id)]);
+    if (existing) {
+      if (existing.msg_id) targetIds.add(String(existing.msg_id));
+      if (existing.client_msg_id) targetIds.add(String(existing.client_msg_id));
+    }
+
     await deleteMessage(payload.msg_id);
-    const escaped = CSS.escape(String(payload.msg_id));
-    const bubbles = document.querySelectorAll(`[data-msg-id="${escaped}"], [data-client-msg-id="${escaped}"]`);
-    bubbles.forEach(b => b.remove());
+
+    for (const id of targetIds) {
+      const escaped = CSS.escape(id);
+      const bubbles = document.querySelectorAll(`[data-msg-id="${escaped}"], [data-client-msg-id="${escaped}"]`);
+      bubbles.forEach(b => b.remove());
+
+      const replyRefs = document.querySelectorAll(`.msg-reply-ref[data-reply-to-id="${escaped}"]`);
+      replyRefs.forEach(ref => {
+        const senderEl = ref.querySelector(".reply-ref-sender");
+        const textEl = ref.querySelector(".reply-ref-text");
+        const thumbEl = ref.querySelector(".reply-ref-thumb");
+        if (senderEl) senderEl.textContent = "Сообщение";
+        if (textEl) textEl.textContent = "Сообщение удалено";
+        if (thumbEl) thumbEl.remove();
+      });
+    }
+
     triggerChatListUpdate();
   } catch (e) {
     console.error("[ws] Error applying delete notify:", e);

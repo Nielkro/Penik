@@ -1469,18 +1469,6 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 		} else {
 			log.Printf("[ws] Error marshalling MsgDeleteNotify: %v", err)
 		}
-		// Also send second notification frame with server numeric ID if different
-		if fmt.Sprintf("%d", msgID) != clientMsgIDVal {
-			log.Printf("[ws] Sending secondary OpMsgDeleteNotify for numeric msgID=%d to peerUserID=%d", msgID, peerUserID)
-			numPayload, _ := msgpack.Marshal(MsgDeleteNotify{
-				MsgID:             fmt.Sprintf("%d", msgID),
-				ChatID:            c.userID,
-				DeleteForEveryone: true,
-			})
-			numFrame := append([]byte{byte(OpMsgDeleteNotify)}, numPayload...)
-			c.hub.SendToUser(peerUserID, numFrame)
-			c.hub.SendToUser(c.userID, numFrame)
-		}
 	} else {
 		// Soft/Local delete logic if needed
 		if err := tx.Commit(); err != nil {
