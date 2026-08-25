@@ -207,6 +207,18 @@ export async function saveMessage(message) {
   return put(tx("messages", "readwrite"), toStore);
 }
 
+export async function updateMessageText(msgId, newText, editedAt) {
+  await openDB();
+  const existing = await getMessage(msgId);
+  if (!existing) return null;
+  existing.plaintext = newText;
+  existing.text = newText;
+  existing.edited_at = editedAt || Date.now();
+  existing.is_edited = true;
+  await saveMessage(existing);
+  return existing;
+}
+
 async function unsealMessageRecord(msg) {
   if (!msg) return msg;
   if (msg.sealed_text && isSealed(msg.sealed_text)) {
@@ -771,6 +783,18 @@ export async function getGroupMessage(groupId, messageId) {
   await openDB();
   const raw = await get(tx("group_messages"), [Number(groupId), String(messageId)]);
   return unsealMessageRecord(raw);
+}
+
+export async function updateGroupMessageText(groupId, messageId, newText, editedAt) {
+  await openDB();
+  const existing = await getGroupMessage(groupId, messageId);
+  if (!existing) return null;
+  existing.plaintext = newText;
+  existing.text = newText;
+  existing.edited_at = editedAt || Date.now();
+  existing.is_edited = true;
+  await saveGroupMessage(existing);
+  return existing;
 }
 
 export async function getGroupMessages(groupId, limit = 50) {

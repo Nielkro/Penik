@@ -115,6 +115,53 @@ sealed class WebSocketEvent {
     data class TypingNotify(val fromUserId: Long, val isTyping: Boolean) : WebSocketEvent()
     data class GroupAvatarUpdate(val groupId: Long, val ts: Long) : WebSocketEvent()
     data class MsgDeleteNotify(val msgId: String, val chatId: Long, val deleteForEveryone: Boolean) : WebSocketEvent()
+    data class MsgEditNotify(
+        val fromUserId: Long,
+        val fromDeviceId: Long,
+        val fromIdentityKey: ByteArray,
+        val chatUserId: Long,
+        val msgId: Long,
+        val clientMsgId: String,
+        val ciphertext: ByteArray,
+        val salt: ByteArray,
+        val nonce: ByteArray,
+        val editedAt: Long
+    ) : WebSocketEvent() {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+            other as MsgEditNotify
+            return fromUserId == other.fromUserId && fromDeviceId == other.fromDeviceId &&
+                fromIdentityKey.contentEquals(other.fromIdentityKey) && chatUserId == other.chatUserId &&
+                msgId == other.msgId && clientMsgId == other.clientMsgId &&
+                ciphertext.contentEquals(other.ciphertext) && salt.contentEquals(other.salt) &&
+                nonce.contentEquals(other.nonce) && editedAt == other.editedAt
+        }
+        override fun hashCode(): Int = clientMsgId.hashCode()
+    }
+    data class GroupMsgEditNotify(
+        val groupId: Long,
+        val messageId: String,
+        val senderUserId: Long,
+        val senderDeviceId: Long,
+        val keyVersion: Long,
+        val ciphertext: ByteArray,
+        val salt: ByteArray,
+        val nonce: ByteArray,
+        val editedAt: Long
+    ) : WebSocketEvent() {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+            other as GroupMsgEditNotify
+            return groupId == other.groupId && messageId == other.messageId &&
+                senderUserId == other.senderUserId && senderDeviceId == other.senderDeviceId &&
+                keyVersion == other.keyVersion && ciphertext.contentEquals(other.ciphertext) &&
+                salt.contentEquals(other.salt) && nonce.contentEquals(other.nonce) &&
+                editedAt == other.editedAt
+        }
+        override fun hashCode(): Int = messageId.hashCode()
+    }
 
     data class CallIncoming(
         val callId: String,
@@ -159,6 +206,8 @@ object Opcode {
     const val MSG_DELETE: Byte = 0x0a
     const val MSG_DELETE_NOTIFY: Byte = 0x0b
     const val USER_PROFILE_UPDATE: Byte = 0x0c
+    const val MSG_EDIT: Byte = 0x0d
+    const val MSG_EDIT_NOTIFY: Byte = 0x0e
     const val OFFLINE_BATCH: Byte = 0x05
     const val MSG_STATUS_BATCH: Byte = 0x1b
     const val USER_AVATAR_UPDATE: Byte = 0x1c
@@ -179,6 +228,8 @@ object Opcode {
     const val GROUP_MESSAGE_DELIVERED: Byte = 0x25
     const val GROUP_MESSAGE_READ: Byte = 0x26
     const val GROUP_AVATAR_UPDATE: Byte = 0x28
+    const val GROUP_MESSAGE_EDIT: Byte = 0x29
+    const val GROUP_MESSAGE_EDIT_NOTIFY: Byte = 0x2a
     const val CALL_OFFER: Byte = 0x30
     const val CALL_INCOMING: Byte = 0x31
     const val CALL_ACCEPT: Byte = 0x32
@@ -414,6 +465,7 @@ class WebSocketManager @Inject constructor(
             Opcode.MSG_DELIVERED -> handleMsgDelivered(payload)
             Opcode.MSG_READ -> handleMsgRead(payload)
             Opcode.MSG_DELETE_NOTIFY -> handleMsgDeleteNotify(payload)
+            Opcode.MSG_EDIT_NOTIFY -> handleMsgEditNotify(payload)
             Opcode.OFFLINE_BATCH -> handleOfflineBatch(payload)
             Opcode.MSG_STATUS_BATCH -> handleMsgStatusBatch(payload)
             Opcode.PING -> sendPong()
@@ -430,6 +482,7 @@ class WebSocketManager @Inject constructor(
             Opcode.GROUP_KEY_AVAILABLE -> handleGroupKeyAvailable(payload)
             Opcode.GROUP_MEMBER_CHANGED -> handleGroupMemberChanged(payload)
             Opcode.GROUP_AVATAR_UPDATE -> handleGroupAvatarUpdate(payload)
+            Opcode.GROUP_MESSAGE_EDIT_NOTIFY -> handleGroupMessageEditNotify(payload)
             Opcode.CALL_INCOMING -> handleCallIncoming(payload)
             Opcode.CALL_ACCEPTED -> handleCallAccepted(payload)
             Opcode.CALL_REJECT -> handleCallReject(payload)
@@ -731,6 +784,111 @@ class WebSocketManager @Inject constructor(
             scope.launch { _events.emit(WebSocketEvent.MsgDeleteNotify(msgId, chatId, deleteForEveryone)) }
         } catch (e: Exception) {
             Log.e("WS", "Failed to parse MsgDeleteNotify frame", e)
+        }
+    }
+
+    private fun handleMsgEditNotify(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val size = unpacker.unpackMapHeader()
+            var fromUserId = 0L
+            var fromDeviceId = 0L
+            var fromIdentityKey = ByteArray(0)
+            var chatUserId = 0L
+            var msgId = 0L
+            var clientMsgId = ""
+            var ciphertext = ByteArray(0)
+            var salt = ByteArray(0)
+            var nonce = ByteArray(0)
+            var editedAt = 0L
+
+            for (i in 0 until size) {
+                val key = unpacker.unpackString()
+                if (unpacker.nextFormat == MessageFormat.NIL) { unpacker.unpackNil(); continue }
+                when (key) {
+                    "from_user_id" -> fromUserId = unpacker.unpackLong()
+                    "from_device_id" -> fromDeviceId = unpacker.unpackLong()
+                    "from_identity_key" -> { val len = unpacker.unpackBinaryHeader(); fromIdentityKey = unpacker.readPayload(len) }
+                    "chat_user_id" -> chatUserId = unpacker.unpackLong()
+                    "msg_id" -> msgId = unpacker.unpackLong()
+                    "client_msg_id" -> clientMsgId = unpacker.unpackString()
+                    "ciphertext" -> { val len = unpacker.unpackBinaryHeader(); ciphertext = unpacker.readPayload(len) }
+                    "salt" -> { val len = unpacker.unpackBinaryHeader(); salt = unpacker.readPayload(len) }
+                    "nonce" -> { val len = unpacker.unpackBinaryHeader(); nonce = unpacker.readPayload(len) }
+                    "edited_at" -> editedAt = unpacker.unpackLong()
+                    else -> unpacker.unpackValue()
+                }
+            }
+            unpacker.close()
+            scope.launch {
+                _events.emit(
+                    WebSocketEvent.MsgEditNotify(
+                        fromUserId = fromUserId,
+                        fromDeviceId = fromDeviceId,
+                        fromIdentityKey = fromIdentityKey,
+                        chatUserId = chatUserId,
+                        msgId = msgId,
+                        clientMsgId = clientMsgId,
+                        ciphertext = ciphertext,
+                        salt = salt,
+                        nonce = nonce,
+                        editedAt = editedAt * 1000
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse MsgEditNotify frame", e)
+        }
+    }
+
+    private fun handleGroupMessageEditNotify(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val size = unpacker.unpackMapHeader()
+            var groupId = 0L
+            var messageId = ""
+            var senderUserId = 0L
+            var senderDeviceId = 0L
+            var keyVersion = 0L
+            var ciphertext = ByteArray(0)
+            var salt = ByteArray(0)
+            var nonce = ByteArray(0)
+            var editedAt = 0L
+
+            for (i in 0 until size) {
+                val key = unpacker.unpackString()
+                if (unpacker.nextFormat == MessageFormat.NIL) { unpacker.unpackNil(); continue }
+                when (key) {
+                    "group_id" -> groupId = unpacker.unpackLong()
+                    "message_id" -> messageId = unpacker.unpackString()
+                    "sender_user_id" -> senderUserId = unpacker.unpackLong()
+                    "sender_device_id" -> senderDeviceId = unpacker.unpackLong()
+                    "key_version" -> keyVersion = unpacker.unpackLong()
+                    "ciphertext" -> { val len = unpacker.unpackBinaryHeader(); ciphertext = unpacker.readPayload(len) }
+                    "salt" -> { val len = unpacker.unpackBinaryHeader(); salt = unpacker.readPayload(len) }
+                    "nonce" -> { val len = unpacker.unpackBinaryHeader(); nonce = unpacker.readPayload(len) }
+                    "edited_at" -> editedAt = unpacker.unpackLong()
+                    else -> unpacker.unpackValue()
+                }
+            }
+            unpacker.close()
+            scope.launch {
+                _events.emit(
+                    WebSocketEvent.GroupMsgEditNotify(
+                        groupId = groupId,
+                        messageId = messageId,
+                        senderUserId = senderUserId,
+                        senderDeviceId = senderDeviceId,
+                        keyVersion = keyVersion,
+                        ciphertext = ciphertext,
+                        salt = salt,
+                        nonce = nonce,
+                        editedAt = editedAt * 1000
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse GroupMsgEditNotify frame", e)
         }
     }
 
@@ -1143,6 +1301,65 @@ class WebSocketManager @Inject constructor(
         packer.addPayload(publicKey)
         packer.close()
         sendFrame(Opcode.KEY_PUBLISH, bos.toByteArray())
+    }
+
+    fun sendEncryptedEdit(toUserId: Long, clientMsgId: String, devices: List<E2EDevicePayload>, editedAt: Long = 0L) {
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        var mapSize = 3
+        if (editedAt > 0L) mapSize++
+        packer.packMapHeader(mapSize)
+        packer.packString("to_user_id")
+        packer.packLong(toUserId)
+        packer.packString("msg_id")
+        packer.packString(clientMsgId)
+        if (editedAt > 0L) {
+            packer.packString("edited_at")
+            packer.packLong(editedAt)
+        }
+        packer.packString("devices")
+        packer.packArrayHeader(devices.size)
+        for (dev in devices) {
+            packer.packMapHeader(4)
+            packer.packString("device_id")
+            packer.packLong(dev.deviceId)
+            packer.packString("ciphertext")
+            packer.packBinaryHeader(dev.ciphertext.size)
+            packer.addPayload(dev.ciphertext)
+            packer.packString("salt")
+            packer.packBinaryHeader(dev.salt.size)
+            packer.addPayload(dev.salt)
+            packer.packString("nonce")
+            packer.packBinaryHeader(dev.nonce.size)
+            packer.addPayload(dev.nonce)
+        }
+        packer.close()
+
+        val payload = bos.toByteArray()
+        val frame = ByteArray(1 + payload.size)
+        frame[0] = Opcode.MSG_EDIT
+        payload.copyInto(frame, 1)
+        webSocket?.send(frame.toByteString(0, frame.size))
+    }
+
+    fun sendGroupMessageEdit(groupId: Long, messageId: String, keyVersion: Long, ciphertext: ByteArray, salt: ByteArray, nonce: ByteArray, editedAt: Long) {
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        packer.packMapHeader(7)
+        packer.packString("group_id"); packer.packLong(groupId)
+        packer.packString("message_id"); packer.packString(messageId)
+        packer.packString("key_version"); packer.packLong(keyVersion)
+        packer.packString("ciphertext"); packer.packBinaryHeader(ciphertext.size); packer.addPayload(ciphertext)
+        packer.packString("salt"); packer.packBinaryHeader(salt.size); packer.addPayload(salt)
+        packer.packString("nonce"); packer.packBinaryHeader(nonce.size); packer.addPayload(nonce)
+        packer.packString("edited_at"); packer.packLong(editedAt)
+        packer.close()
+
+        val payload = bos.toByteArray()
+        val frame = ByteArray(1 + payload.size)
+        frame[0] = Opcode.GROUP_MESSAGE_EDIT
+        payload.copyInto(frame, 1)
+        webSocket?.send(frame.toByteString(0, frame.size))
     }
 
     fun destroy() {

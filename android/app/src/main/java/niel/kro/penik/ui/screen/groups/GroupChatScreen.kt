@@ -136,8 +136,16 @@ fun GroupChatScreen(
     }
     val searchResults by viewModel.searchResults.collectAsState()
     val error by viewModel.error.collectAsState()
+    val editingMessage by viewModel.editingMessage.collectAsState()
     val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
     var inputText by remember { mutableStateOf("") }
+
+    LaunchedEffect(editingMessage) {
+        editingMessage?.let {
+            activeReply = null
+            inputText = it.text
+        }
+    }
     var showMembersDialog by remember { mutableStateOf(false) }
     var showInviteDialog by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
@@ -365,12 +373,16 @@ fun GroupChatScreen(
                             replyToMsgId = msg.replyToMsgId,
                             replySender = replySender,
                             replyText = replyText,
+                            editedAt = msg.editedAt,
                             onReply = {
                                 activeReply = ReplyInfo(
                                     msgId = msg.messageId,
                                     text = msg.text,
                                     sender = displayName
                                 )
+                            },
+                            onEdit = {
+                                viewModel.startEditing(msg)
                             },
                             onReplyClick = { parentId ->
                                 val index = messages.indexOfFirst { it.messageId == parentId }
@@ -454,6 +466,48 @@ fun GroupChatScreen(
                         .fillMaxWidth()
                         .background(LocalAppColors.current.panel)
                 ) {
+                editingMessage?.let { editMsg ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(3.dp)
+                                .height(36.dp)
+                                .background(LocalAppColors.current.accent)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Редактирование",
+                                color = LocalAppColors.current.accent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = editMsg.text,
+                                color = LocalAppColors.current.textMuted,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(onClick = {
+                            viewModel.cancelEditing()
+                            inputText = ""
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Закрыть",
+                                tint = LocalAppColors.current.textMuted
+                            )
+                        }
+                    }
+                }
+
                 activeReply?.let { reply ->
                     val replyInfo = remember(reply.text) { parseReplyContent(reply.text) }
                     val replyThumbBitmap: ImageBitmap? = remember(replyInfo?.thumbBase64) {
@@ -601,9 +655,14 @@ fun GroupChatScreen(
                         IconButton(
                             onClick = {
                                 if (inputText.isNotBlank()) {
-                                    val currentReply = activeReply
-                                    activeReply = null
-                                    viewModel.send(inputText, currentReply?.msgId)
+                                    val currentEdit = editingMessage
+                                    if (currentEdit != null) {
+                                        viewModel.edit(currentEdit.messageId, inputText)
+                                    } else {
+                                        val currentReply = activeReply
+                                        activeReply = null
+                                        viewModel.send(inputText, currentReply?.msgId)
+                                    }
                                     inputText = ""
                                 }
                             },

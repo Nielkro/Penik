@@ -80,6 +80,9 @@ interface GroupDao {
     @Query("UPDATE group_messages SET serverId = :serverId, delivered = 1 WHERE groupId = :groupId AND messageId = :messageId")
     suspend fun acknowledgeMessage(groupId: Long, messageId: String, serverId: Long)
 
+    @Query("UPDATE group_messages SET text = :newText, editedAt = :editedAt WHERE groupId = :groupId AND messageId = :messageId")
+    suspend fun updateMessageText(groupId: Long, messageId: String, newText: String, editedAt: Long)
+
     @Query("SELECT * FROM group_messages WHERE groupId = :groupId ORDER BY createdAt DESC LIMIT 1")
     fun observeLastMessageForGroup(groupId: Long): Flow<GroupMessageEntity?>
 

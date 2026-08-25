@@ -1,6 +1,6 @@
 import {
   createGroup, syncGroups, refreshMembers, acceptInvitation, declineInvitation,
-  inviteMember, removeMember, changeMemberRole, sendGroupMessage,
+  inviteMember, removeMember, changeMemberRole, sendGroupMessage, editGroupMessage,
   getAllGroups, getGroupMessages, onGroupUpdate, backfillCurrentKey,
   renameGroup, uploadGroupAvatar, rotateAndDistribute
 } from "../groups.js";
@@ -438,7 +438,9 @@ export async function renderGroup(container, groupId) {
     const isStructuredPayload = typeof msg.plaintext === "string" && msg.plaintext.trim().startsWith("{");
     const isSingleLine = !isStructuredPayload && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 35;
 
+    const editedBadge = (msg.edited_at || msg.is_edited) ? el("span", { class: "msg-edited-badge", style: "font-size:10px;opacity:0.6;margin-right:3px;" }, "ред.") : null;
     const metaEl = el("div", { class: "msg-meta" },
+      editedBadge,
       timeEl,
       mine ? (msg.delivered ? el("span", { class: "msg-status" }, "✓") : el("span", { class: "msg-status msg-status-pending", title: "Отправляется..." }, clockIcon(12, "currentColor"))) : null,
     );
@@ -482,7 +484,9 @@ export async function renderGroup(container, groupId) {
     }, null, () => {
       const senderName = mine ? "Вы" : (nameById.get(senderId) || msg.sender_name || `#${senderId}`);
       showForwardModal(msg.plaintext || "", senderName);
-    });
+    }, (mine && !isMediaMsg && !isStickerMsg) ? () => {
+      setActiveEdit(msg);
+    } : null);
     const stick = scrollDown.isNearBottom();
     messagesEl.appendChild(bubble);
     if (stick) scrollDown.scrollToBottom();
@@ -498,10 +502,26 @@ export async function renderGroup(container, groupId) {
   for (const m of messages) appendMessage(m);
   scrollDown.scrollToBottom();
 
+  function updateDomGroupMessageText(messageId, newText, editedAt) {
+    const bubble = messagesEl.querySelector(`.msg-bubble[data-mid="${cssEscape(messageId)}"]`);
+    if (bubble) {
+      const textEl = bubble.querySelector(".msg-text");
+      if (textEl) {
+        setMsgTextContent(textEl, newText);
+      }
+      const metaEl = bubble.querySelector(".msg-meta");
+      if (metaEl && !metaEl.querySelector(".msg-edited-badge")) {
+        const badge = el("span", { class: "msg-edited-badge", style: "font-size:10px;opacity:0.6;margin-right:3px;" }, "ред.");
+        metaEl.prepend(badge);
+      }
+    }
+  }
+
   // Live updates for this group.
   const unsub = onGroupUpdate((evt) => {
     if (Number(evt.groupId) !== groupId) return;
     if (evt.type === "message" || evt.type === "ack") appendMessage(evt.message);
+    if (evt.type === "edit") updateDomGroupMessageText(evt.messageId, evt.text, evt.editedAt);
     if (evt.type === "avatar") renderHeaderAvatar();
   });
   const onLocalGroupSent = (e) => {
@@ -523,11 +543,13 @@ export async function renderGroup(container, groupId) {
   observer.observe(document.body, { childList: true, subtree: true });
 
   let activeReply = null;
+  let activeEditMessage = null;
   const replyBarContainer = el("div", { style: "display: contents;" });
   chatWrap.insertBefore(replyBarContainer, inputRow);
 
   function setActiveReply(reply) {
     activeReply = reply;
+    if (reply) activeEditMessage = null;
     replyBarContainer.innerHTML = "";
     if (reply) {
       const barChildren = [];
@@ -545,6 +567,30 @@ export async function renderGroup(container, groupId) {
         setActiveReply(null);
       });
       replyBarContainer.appendChild(bar);
+      inputEl.focus();
+    }
+  }
+
+  function setActiveEdit(msg) {
+    activeEditMessage = msg;
+    if (msg) activeReply = null;
+    replyBarContainer.innerHTML = "";
+    if (msg) {
+      const barChildren = [
+        el("div", { class: "reply-preview-content" },
+          el("span", { class: "reply-preview-sender", style: "color:var(--accent);" }, "Редактирование"),
+          el("span", { class: "reply-preview-text" }, msg.plaintext || "")
+        ),
+        el("button", { class: "reply-preview-close" }, "✕")
+      ];
+
+      const bar = el("div", { class: "reply-preview-bar" }, ...barChildren);
+      bar.querySelector(".reply-preview-close").addEventListener("click", () => {
+        setActiveEdit(null);
+        inputEl.value = "";
+      });
+      replyBarContainer.appendChild(bar);
+      inputEl.value = msg.plaintext || "";
       inputEl.focus();
     }
   }
@@ -690,6 +736,19 @@ export async function renderGroup(container, groupId) {
     const text = inputEl.value.trim();
     if (!text) return;
     inputEl.value = "";
+
+    if (activeEditMessage) {
+      const editMsg = activeEditMessage;
+      setActiveEdit(null);
+      const messageId = editMsg.message_id;
+      try {
+        await editGroupMessage(groupId, messageId, text);
+        updateDomGroupMessageText(messageId, text, Date.now());
+      } catch (e) {
+        showToast(e.message || "Не удалось изменить сообщение", "error");
+      }
+      return;
+    }
 
     const currentReply = activeReply;
     setActiveReply(null);

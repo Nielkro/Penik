@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS messages (
   recipient_device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
   prekey_id INTEGER DEFAULT NULL,
   timestamp INTEGER NOT NULL,
+  edited_at INTEGER DEFAULT NULL,
   delivered INTEGER NOT NULL DEFAULT 0,
   read INTEGER NOT NULL DEFAULT 0,
   deleted_by_sender INTEGER NOT NULL DEFAULT 0,
@@ -182,6 +183,7 @@ CREATE TABLE IF NOT EXISTS group_messages (
     encryption_salt BLOB NOT NULL,
     encryption_nonce BLOB NOT NULL,
     created_at INTEGER NOT NULL,
+    edited_at INTEGER DEFAULT NULL,
     FOREIGN KEY(group_id, key_version)
         REFERENCES group_key_versions(group_id, key_version),
     UNIQUE(group_id, sender_user_id, message_id)

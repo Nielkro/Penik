@@ -928,10 +928,10 @@ export function wireMsgTime(timeEl, ts) {
 }
 
 /**
- * Right-click / long-press on a message bubble → mini menu with "Копировать", "Ответить", "Переслать", "Удалить".
+ * Right-click / long-press on a message bubble → mini menu with "Копировать", "Ответить", "Изменить", "Переслать", "Удалить".
  * `getText` is a string or a function returning the plaintext to copy.
  */
-export function wireMsgCopy(bubble, getText, onReply, onDelete, onForward) {
+export function wireMsgCopy(bubble, getText, onReply, onDelete, onForward, onEdit) {
   const resolveText = () => {
     const t = typeof getText === "function" ? getText() : getText;
     return (t == null ? "" : String(t)).trim();
@@ -1032,7 +1032,7 @@ export function wireMsgCopy(bubble, getText, onReply, onDelete, onForward) {
     if (e.target.closest?.("a.msg-link")) return;
     e.preventDefault();
     e.stopPropagation();
-    showMsgActionMenu(e.clientX, e.clientY, doCopy, onReply, onDelete, onForward);
+    showMsgActionMenu(e.clientX, e.clientY, doCopy, onReply, onDelete, onForward, onEdit);
   });
 
   // Touch handlers for long-press & swipe-to-reply.
@@ -1072,7 +1072,7 @@ export function wireMsgCopy(bubble, getText, onReply, onDelete, onForward) {
     pressTimer = setTimeout(() => {
       pressTimer = null;
       if (!isSwiping) {
-        showMsgActionMenu(startX, startY, doCopy, onReply, onDelete, onForward);
+        showMsgActionMenu(startX, startY, doCopy, onReply, onDelete, onForward, onEdit);
       }
     }, 480);
   }, { passive: true });
@@ -1120,7 +1120,7 @@ export function wireMsgCopy(bubble, getText, onReply, onDelete, onForward) {
   bubble.addEventListener("touchcancel", () => { clearPress(); resetSwipe(); }, { passive: true });
 }
 
-function showMsgActionMenu(x, y, onCopy, onReply, onDelete, onForward) {
+function showMsgActionMenu(x, y, onCopy, onReply, onDelete, onForward, onEdit) {
   document.getElementById("msg-action-menu")?.remove();
   const menu = el("div", {
     id: "msg-action-menu",
@@ -1143,6 +1143,16 @@ function showMsgActionMenu(x, y, onCopy, onReply, onDelete, onForward) {
       onReply();
     });
     menu.appendChild(replyItem);
+  }
+
+  if (onEdit) {
+    const editItem = el("button", { type: "button", class: "msg-action-item" }, "Изменить");
+    editItem.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.remove();
+      onEdit();
+    });
+    menu.appendChild(editItem);
   }
 
   if (onForward) {

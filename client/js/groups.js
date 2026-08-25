@@ -719,6 +719,47 @@ export function registerGroupWSListeners() {
     try { await refreshMembers(groupId); } catch { /* pending invitee: not yet allowed */ }
     emit({ type: 'members', groupId });
   });
+
+  ws.on(OP.GROUP_MESSAGE_EDIT_NOTIFY, async (frame) => {
+    const groupId = Number(frame.group_id);
+    const version = Number(frame.key_version);
+    const messageId = String(frame.message_id);
+
+    try {
+      const groupKey = await ensureGroupKey(groupId, version);
+      const pt = await groupDecrypt(
+        toU8(frame.ciphertext), groupKey, toU8(frame.salt), toU8(frame.nonce),
+        groupId, version, Number(frame.sender_user_id), messageId, Number(frame.edited_at),
+      );
+      const text = new TextDecoder().decode(pt);
+      const editedAt = Number(frame.edited_at) * 1000;
+      await updateGroupMessageText(groupId, messageId, text, editedAt);
+      emit({ type: 'edit', groupId, messageId, text, editedAt });
+    } catch (e) {
+      console.warn('[groups] decrypt edit notify failed', e.message);
+    }
+  });
+}
+
+export async function editGroupMessage(groupId, messageId, newText) {
+  const group = await dbGetGroup(groupId);
+  const version = group ? Number(group.current_key_version) : await currentVersion(groupId);
+  const groupKey = await ensureGroupKey(groupId, version);
+
+  const editedAt = Math.floor(Date.now() / 1000);
+  const senderUserId = myUserId();
+  const { ciphertext, salt, nonce } = await groupEncrypt(newText, groupKey, groupId, version, senderUserId, messageId, editedAt);
+
+  await updateGroupMessageText(groupId, messageId, newText, editedAt * 1000);
+  emit({ type: 'edit', groupId, messageId, text: newText, editedAt: editedAt * 1000 });
+
+  ws.send(OP.GROUP_MESSAGE_EDIT, {
+    group_id: groupId,
+    message_id: messageId,
+    key_version: version,
+    ciphertext, salt, nonce,
+    edited_at: editedAt
+  });
 }
 
 export async function renameGroup(groupId, newName) {

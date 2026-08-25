@@ -708,7 +708,8 @@ export async function renderChat(container, userId) {
     const displayTime = ts;
     const timeEl = el("span", { class: "msg-time" });
     wireMsgTime(timeEl, displayTime);
-    const metaEl = el("div", { class: "msg-meta" }, timeEl, statusEl);
+    const editedBadge = (msg.edited_at || msg.is_edited) ? el("span", { class: "msg-edited-badge", style: "font-size:10px;opacity:0.6;margin-right:3px;" }, "ред.") : null;
+    const metaEl = el("div", { class: "msg-meta" }, editedBadge, timeEl, statusEl);
 
     const isFailed = typeof msg.plaintext === "string" &&
       (msg.plaintext.startsWith("[Сообщение не расшифровано") ||
@@ -842,7 +843,9 @@ export async function renderChat(container, userId) {
       if (isFailed) return;
       const senderName = isMine ? (me?.name || "Вы") : (contact.name || contact.nickname || "Собеседник");
       showForwardModal(msg.plaintext || "", senderName);
-    });
+    }, (isMine && !isFailed && !isMediaMsg && !isStickerMsg) ? () => {
+      setActiveEdit(msg);
+    } : null);
 
     if (isFailed) {
       const delBtn = el("button", { class: "msg-del-btn", title: "Удалить локально" }, svgIcon("M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2", 14, "var(--danger)"));
@@ -958,11 +961,13 @@ export async function renderChat(container, userId) {
   // ── Send ──────────────────────────────────────────────────────────────────
 
   let activeReply = null;
+  let activeEditMessage = null;
   const replyBarContainer = el("div", { style: "display: contents;" });
   chatWrap.insertBefore(replyBarContainer, inputRow);
 
   function setActiveReply(reply) {
     activeReply = reply;
+    if (reply) activeEditMessage = null;
     replyBarContainer.innerHTML = "";
     if (reply) {
       const barChildren = [];
@@ -982,6 +987,48 @@ export async function renderChat(container, userId) {
       replyBarContainer.appendChild(bar);
       inputEl.focus();
     }
+  }
+
+  function setActiveEdit(msg) {
+    activeEditMessage = msg;
+    if (msg) activeReply = null;
+    replyBarContainer.innerHTML = "";
+    if (msg) {
+      const barChildren = [
+        el("div", { class: "reply-preview-content" },
+          el("span", { class: "reply-preview-sender", style: "color:var(--accent);" }, "Редактирование"),
+          el("span", { class: "reply-preview-text" }, msg.plaintext || "")
+        ),
+        el("button", { class: "reply-preview-close" }, "✕")
+      ];
+
+      const bar = el("div", { class: "reply-preview-bar" }, ...barChildren);
+      bar.querySelector(".reply-preview-close").addEventListener("click", () => {
+        setActiveEdit(null);
+        inputEl.value = "";
+        inputEl.style.height = "auto";
+      });
+      replyBarContainer.appendChild(bar);
+      inputEl.value = msg.plaintext || "";
+      inputEl.focus();
+      inputEl.style.height = "auto";
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+    }
+  }
+
+  function updateDomMessageText(msgId, newText, editedAt) {
+    const bubbles = messagesEl.querySelectorAll(`.msg-bubble[data-msg-id="${msgId}"], .msg-bubble[data-client-msg-id="${msgId}"]`);
+    bubbles.forEach(bubble => {
+      const textEl = bubble.querySelector(".msg-text");
+      if (textEl) {
+        setMsgTextContent(textEl, newText);
+      }
+      const metaEl = bubble.querySelector(".msg-meta");
+      if (metaEl && !metaEl.querySelector(".msg-edited-badge")) {
+        const badge = el("span", { class: "msg-edited-badge", style: "font-size:10px;opacity:0.6;margin-right:3px;" }, "ред.");
+        metaEl.prepend(badge);
+      }
+    });
   }
 
   async function handleFileUpload(file) {
@@ -1161,6 +1208,33 @@ export async function renderChat(container, userId) {
     inputEl.value = "";
     inputEl.style.height = "auto";
     sendBtn.disabled = true;
+
+    if (activeEditMessage) {
+      const editMsg = activeEditMessage;
+      setActiveEdit(null);
+      const msgId = editMsg.client_msg_id || editMsg.msg_id;
+      const now = Date.now();
+
+      await updateMessageText(msgId, text, now);
+      updateDomMessageText(msgId, text, now);
+      triggerChatListUpdate();
+
+      try {
+        const ciphertexts = await encryptMessagePayload(text, userId, msgId, now);
+        const ws = getWS();
+        if (ws && ws.isConnected() && ciphertexts) {
+          ws.send(OP.MSG_EDIT, {
+            to_user_id: Number(userId),
+            msg_id: String(msgId),
+            devices: ciphertexts,
+            edited_at: Math.floor(now / 1000)
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to encrypt edited message:", err);
+      }
+      return;
+    }
 
     const msgId = crypto.randomUUID();
     const now = Date.now();
@@ -1359,6 +1433,9 @@ export async function renderChat(container, userId) {
           statusWrapper.innerHTML = '<span class="chk chk-1">✓</span><span class="chk chk-2">✓</span>';
         }
       }
+    },
+    (msgId, newText, editedAt) => {
+      updateDomMessageText(msgId, newText, editedAt);
     }
   );
 

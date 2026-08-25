@@ -953,6 +953,81 @@ class MessageRepository @Inject constructor(
         }
     }
 
+    suspend fun handleMsgEditNotify(event: WebSocketEvent.MsgEditNotify) {
+        val myId = tokenStorage.getUserId()
+        val sentByMe = event.fromUserId == myId
+        val myDeviceId = tokenStorage.getDeviceId()
+
+        val decryptedText = try {
+            decryptMessagePayload(
+                myDeviceId = myDeviceId,
+                fromIdentityKey = event.fromIdentityKey,
+                ciphertext = event.ciphertext,
+                salt = event.salt,
+                nonce = event.nonce,
+                senderUserId = event.fromUserId,
+                recipientUserId = if (sentByMe) event.chatUserId else myId,
+                clientMsgId = event.clientMsgId,
+                timestamp = event.editedAt
+            )
+        } catch (e: Exception) {
+            Log.e("PenikMsg", "Failed to decrypt MsgEditNotify", e)
+            return
+        }
+
+        val editedAtMs = toMs(event.editedAt)
+        messageDao.updateMessageText(
+            clientMsgId = event.clientMsgId,
+            serverId = event.msgId,
+            newText = decryptedText,
+            editedAt = editedAtMs
+        )
+        updateChatLastMessage(event.chatUserId)
+    }
+
+    suspend fun editMessage(chatUserId: Long, clientMsgId: String, newText: String) {
+        val myId = tokenStorage.getUserId()
+        val nowSec = System.currentTimeMillis() / 1000
+        val editedAtMs = nowSec * 1000
+
+        // 1. Update Room DB immediately
+        messageDao.updateMessageText(
+            clientMsgId = clientMsgId,
+            serverId = clientMsgId.toLongOrNull(),
+            newText = newText,
+            editedAt = editedAtMs
+        )
+        updateChatLastMessage(chatUserId)
+
+        // 2. Fetch peer + self devices & encrypt
+        val peerDevices = getKeyBundleCached(chatUserId)
+        val selfDevices = getKeyBundleCached(myId, isSelf = true)
+        val allDevices = (peerDevices + selfDevices).distinctBy { it.deviceId }
+
+        val myPrivateIK = tokenStorage.getPrivateKey() ?: return
+        val encryptedDevices = allDevices.mapNotNull { dev ->
+            try {
+                val peerIK = java.util.Base64.getDecoder().decode(dev.identityKey)
+                val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, peerIK)
+                val aad = e2eeCrypto.buildPairwiseAad(myId, chatUserId, clientMsgId, nowSec)
+                val enc = e2eeCrypto.encrypt(newText.toByteArray(Charsets.UTF_8), secret, aad = aad)
+                E2EDevicePayload(dev.deviceId, enc.ciphertext, enc.salt, enc.nonce)
+            } catch (e: Exception) {
+                Log.e("PenikMsg", "Failed to encrypt edit for device ${dev.deviceId}", e)
+                null
+            }
+        }
+
+        if (encryptedDevices.isNotEmpty()) {
+            webSocketManager.sendEncryptedEdit(
+                toUserId = chatUserId,
+                clientMsgId = clientMsgId,
+                devices = encryptedDevices,
+                editedAt = nowSec
+            )
+        }
+    }
+
     suspend fun deleteChatMessages(chatUserId: Long) {
         messageDao.deleteChatMessages(chatUserId)
     }
