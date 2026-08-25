@@ -1000,14 +1000,24 @@ class MessageRepository @Inject constructor(
         updateChatLastMessage(chatUserId)
 
         // 2. Fetch peer + self devices & encrypt
-        val peerDevices = getKeyBundleCached(chatUserId)
+        val myDeviceId = tokenStorage.getDeviceId()
+        var peerDevices = getKeyBundleCached(chatUserId)
+        if (peerDevices.isEmpty()) {
+            peerDevices = getKeyBundleCached(chatUserId, forceRefresh = true)
+        }
         val selfDevices = getKeyBundleCached(myId, isSelf = true)
-        val allDevices = (peerDevices + selfDevices).distinctBy { it.deviceId }
+        val allDevices = if (chatUserId == myId) {
+            peerDevices.filter { it.deviceId != myDeviceId }
+        } else {
+            (peerDevices + selfDevices).filter { it.deviceId != myDeviceId }
+        }
 
         val myPrivateIK = tokenStorage.getPrivateKey() ?: return
         val encryptedDevices = allDevices.mapNotNull { dev ->
             try {
                 val peerIK = java.util.Base64.getDecoder().decode(dev.identityKey)
+                val targetUserId = if (peerDevices.any { it.deviceId == dev.deviceId }) chatUserId else myId
+                val pinResult = identityPins.verify(targetUserId, dev.deviceId, peerIK)
                 val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, peerIK)
                 val aad = e2eeCrypto.buildPairwiseAad(myId, chatUserId, clientMsgId, nowSec)
                 val enc = e2eeCrypto.encrypt(newText.toByteArray(Charsets.UTF_8), secret, aad = aad)

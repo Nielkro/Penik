@@ -389,7 +389,7 @@ export async function renderGroup(container, groupId) {
 
     let replyRefEl = null;
     if (msg.reply_to_msg_id) {
-      replyRefEl = el("div", { class: "msg-reply-ref" },
+      replyRefEl = el("div", { class: "msg-reply-ref", "data-reply-to-id": msg.reply_to_msg_id },
         el("div", { class: "reply-ref-details" },
           el("span", { class: "reply-ref-sender" }, "Загрузка..."),
           el("span", { class: "reply-ref-text" }, "...")
@@ -473,8 +473,10 @@ export async function renderGroup(container, groupId) {
     const bubble = el("div", { class: `msg-bubble ${mine ? "msg-out" : "msg-in"}${isMediaMsg ? " msg-media-bubble" : ""}${isStickerMsg ? " sticker-message msg-sticker-bubble" : ""}`, "data-mid": key },
       ...bubbleChildren
     );
-    wireMsgCopy(bubble, () => msg.plaintext || "", () => {
-      const info = getMessagePreviewInfo(msg.plaintext || "");
+    bubble._msg = msg;
+    wireMsgCopy(bubble, () => (bubble._msg ? bubble._msg.plaintext : msg.plaintext) || "", () => {
+      const currentText = (bubble._msg ? bubble._msg.plaintext : msg.plaintext) || "";
+      const info = getMessagePreviewInfo(currentText);
       setActiveReply({
         msg_id: msg.message_id,
         text: info.text,
@@ -482,10 +484,11 @@ export async function renderGroup(container, groupId) {
         sender: mine ? "Вы" : (nameById.get(senderId) || msg.sender_name || `#${senderId}`)
       });
     }, null, () => {
+      const currentText = (bubble._msg ? bubble._msg.plaintext : msg.plaintext) || "";
       const senderName = mine ? "Вы" : (nameById.get(senderId) || msg.sender_name || `#${senderId}`);
-      showForwardModal(msg.plaintext || "", senderName);
+      showForwardModal(currentText, senderName);
     }, (mine && !isMediaMsg && !isStickerMsg) ? () => {
-      setActiveEdit(msg);
+      setActiveEdit(bubble._msg || msg);
     } : null);
     const stick = scrollDown.isNearBottom();
     messagesEl.appendChild(bubble);
@@ -503,8 +506,13 @@ export async function renderGroup(container, groupId) {
   scrollDown.scrollToBottom();
 
   function updateDomGroupMessageText(messageId, newText, editedAt) {
-    const bubble = messagesEl.querySelector(`.msg-bubble[data-mid="${cssEscape(messageId)}"]`);
+    const escaped = cssEscape(messageId);
+    const bubble = messagesEl.querySelector(`.msg-bubble[data-mid="${escaped}"]`);
     if (bubble) {
+      if (bubble._msg) {
+        bubble._msg.plaintext = newText;
+        bubble._msg.edited_at = editedAt;
+      }
       const textEl = bubble.querySelector(".msg-text");
       if (textEl) {
         setMsgTextContent(textEl, newText);
@@ -515,6 +523,15 @@ export async function renderGroup(container, groupId) {
         metaEl.prepend(badge);
       }
     }
+
+    const replyRefs = messagesEl.querySelectorAll(`.msg-reply-ref[data-reply-to-id="${escaped}"]`);
+    replyRefs.forEach(r => {
+      const rText = r.querySelector(".reply-ref-text");
+      if (rText) {
+        const info = getMessagePreviewInfo(newText);
+        rText.textContent = info.text;
+      }
+    });
   }
 
   // Live updates for this group.

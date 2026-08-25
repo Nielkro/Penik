@@ -1466,13 +1466,26 @@ func (c *Client) handleMsgEdit(ctx context.Context, msg *MsgEditEncrypted) error
 	senderUserID := c.userID
 	recipientUserID := msg.ToUserID
 
-	// Verify message exists and was sent by caller
-	var msgCount int
+	var parsedID int64
+	cleanMsgID := strings.TrimPrefix(msg.MsgID, "server-")
+	if n, err := strconv.ParseInt(cleanMsgID, 10, 64); err == nil {
+		parsedID = n
+	}
+
+	// Verify message exists and was sent by caller; resolve original client_msg_id if any
+	var origClientMsgID sql.NullString
+	var origRowID int64
 	err := c.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM messages WHERE sender_user_id=? AND (client_msg_id=? OR id=?)`,
-		senderUserID, msg.MsgID, msg.MsgID).Scan(&msgCount)
-	if err != nil || msgCount == 0 {
+		`SELECT id, client_msg_id FROM messages 
+		 WHERE sender_user_id=? AND (client_msg_id=? OR client_msg_id=? OR id=?) LIMIT 1`,
+		senderUserID, msg.MsgID, cleanMsgID, parsedID).Scan(&origRowID, &origClientMsgID)
+	if err != nil {
 		return fmt.Errorf("message not found or unauthorized to edit")
+	}
+
+	effectiveClientMsgID := msg.MsgID
+	if origClientMsgID.Valid && origClientMsgID.String != "" {
+		effectiveClientMsgID = origClientMsgID.String
 	}
 
 	var senderIKPub []byte
@@ -1512,22 +1525,24 @@ func (c *Client) handleMsgEdit(ctx context.Context, msg *MsgEditEncrypted) error
 		var rowID int64
 		err = tx.QueryRowContext(ctx,
 			`SELECT id FROM messages 
-			 WHERE sender_user_id=? AND recipient_device_id=? AND (client_msg_id=? OR id=?) LIMIT 1`,
-			senderUserID, dev.DeviceID, msg.MsgID, msg.MsgID).Scan(&rowID)
+			 WHERE sender_user_id=? AND recipient_device_id=? AND (client_msg_id=? OR client_msg_id=? OR client_msg_id=? OR id=?) LIMIT 1`,
+			senderUserID, dev.DeviceID, effectiveClientMsgID, msg.MsgID, cleanMsgID, parsedID).Scan(&rowID)
 		if err == nil {
 			_, _ = tx.ExecContext(ctx,
 				`UPDATE messages 
 				 SET ciphertext=?, encryption_salt=?, encryption_nonce=?, edited_at=? 
 				 WHERE id=?`,
 				dev.Ciphertext, dev.Salt, dev.Nonce, editedAt, rowID)
-
-			targets = append(targets, notifyTarget{
-				deviceID:   dev.DeviceID,
-				chatUserID: chatUserID,
-				msgID:      rowID,
-				payload:    dev,
-			})
+		} else {
+			rowID = origRowID
 		}
+
+		targets = append(targets, notifyTarget{
+			deviceID:   dev.DeviceID,
+			chatUserID: chatUserID,
+			msgID:      rowID,
+			payload:    dev,
+		})
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -1543,15 +1558,14 @@ func (c *Client) handleMsgEdit(ctx context.Context, msg *MsgEditEncrypted) error
 			FromIdentityKey:   senderIKPub,
 			ChatUserID:        t.chatUserID,
 			MsgID:             t.msgID,
-			ClientMsgID:       msg.MsgID,
+			ClientMsgID:       effectiveClientMsgID,
 			Ciphertext:        t.payload.Ciphertext,
 			Salt:              t.payload.Salt,
 			Nonce:             t.payload.Nonce,
 			EditedAt:          editedAt,
 		}
-		notifyBytes, err := msgpack.Marshal(notify)
-		if err == nil {
-			c.hub.SendToDeviceFrame(t.deviceID, OpMsgEditNotify, notifyBytes)
+		if frame, err := encodeFrame(OpMsgEditNotify, notify); err == nil {
+			c.hub.SendToDevice(t.deviceID, frame)
 		}
 	}
 
