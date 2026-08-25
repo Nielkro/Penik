@@ -1389,10 +1389,9 @@ export async function calculateSafetyNumber(userId1, userId2) {
   }
 
   const decode = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  return computeSafetyNumber(
-    decode(bundle1.devices[0].identity_key),
-    decode(bundle2.devices[0].identity_key)
-  );
+  const keys1 = bundle1.devices.map(d => decode(d.identity_key));
+  const keys2 = bundle2.devices.map(d => decode(d.identity_key));
+  return computeSafetyNumber(keys1, keys2);
 }
 
 export async function showSafetyExplanationModal(peerId) {

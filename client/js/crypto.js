@@ -230,12 +230,23 @@ function compareUnsigned(a, b) {
   return 0;
 }
 
-export async function computeSafetyNumber(ikPubA, ikPubB) {
-  const keys = [normalizeIdentityKey(ikPubA), normalizeIdentityKey(ikPubB)].sort(compareUnsigned);
+export async function computeSafetyNumber(identityKeysA, identityKeysB) {
+  const listA = Array.isArray(identityKeysA) ? identityKeysA : [identityKeysA];
+  const listB = Array.isArray(identityKeysB) ? identityKeysB : [identityKeysB];
 
-  const concatenated = new Uint8Array(64);
-  concatenated.set(keys[0], 0);
-  concatenated.set(keys[1], 32);
+  const allKeys = [...listA, ...listB]
+    .filter(k => k != null)
+    .map(normalizeIdentityKey)
+    .sort(compareUnsigned);
+
+  if (allKeys.length === 0) {
+    throw new Error("safety number: no identity keys provided");
+  }
+
+  const concatenated = new Uint8Array(allKeys.length * 32);
+  for (let i = 0; i < allKeys.length; i++) {
+    concatenated.set(allKeys[i], i * 32);
+  }
 
   const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", concatenated));
 

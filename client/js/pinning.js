@@ -6,7 +6,7 @@
 // without blocking message delivery or encryption.
 
 import { encodeKey } from './crypto.js';
-import { getPinnedIK, savePinnedIK } from './storage.js';
+import { getPinnedIK, savePinnedIK, saveMessage } from './storage.js';
 import { showToast } from './ui/components.js';
 
 // Track keys we've already warned about this session to avoid repeated toast spam.
@@ -39,7 +39,7 @@ export async function verifyPeerIdentityKey(userId, deviceId, ikPubBytes) {
   }
   if (pinned === presented) return 'ok';
 
-  // Key changed: update pin and notify the user with a warning toast
+  // Key changed: update pin and notify the user with a warning toast & system message in chat
   await savePinnedIK(userId, deviceId, presented);
 
   if (!_warned.has(key)) {
@@ -48,6 +48,19 @@ export async function verifyPeerIdentityKey(userId, deviceId, ikPubBytes) {
       detail: { userId: Number(userId), deviceId: Number(deviceId) },
     }));
     showToast(`Ключ безопасности пользователя (устройство №${Number(deviceId)}) изменился`, 'warning');
+
+    try {
+      const sysMsg = {
+        msg_id: `sys-keychange-${Date.now()}-${Number(userId)}-${Number(deviceId)}`,
+        chat_id: Number(userId),
+        sender_id: 0,
+        plaintext: "⚠️ Код безопасности изменился!",
+        created_at: Date.now(),
+        delivered: 1,
+        pending: 0
+      };
+      await saveMessage(sysMsg);
+    } catch (_) {}
   }
 
   return 'updated';

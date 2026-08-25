@@ -213,17 +213,18 @@ class ChatRoomViewModel @Inject constructor(
         val bundle1 = apiService.getKeyBundle(myId).body()
         val bundle2 = apiService.getKeyBundle(chatUserId).body()
 
-        val ik1 = bundle1?.devices?.firstOrNull()?.identityKey
-            ?: throw Exception("Bundle 1 not found")
-        val ik2 = bundle2?.devices?.firstOrNull()?.identityKey
-            ?: throw Exception("Bundle 2 not found")
+        val keys1 = bundle1?.devices?.mapNotNull { dev ->
+            dev.identityKey?.let { android.util.Base64.decode(it, android.util.Base64.DEFAULT) }
+        } ?: emptyList()
+        val keys2 = bundle2?.devices?.mapNotNull { dev ->
+            dev.identityKey?.let { android.util.Base64.decode(it, android.util.Base64.DEFAULT) }
+        } ?: emptyList()
 
-        // Derivation lives in SafetyNumber so the web and Android fingerprints
-        // cannot drift apart; this function only resolves the two keys.
-        return SafetyNumber.compute(
-            android.util.Base64.decode(ik1, android.util.Base64.DEFAULT),
-            android.util.Base64.decode(ik2, android.util.Base64.DEFAULT)
-        )
+        if (keys1.isEmpty() || keys2.isEmpty()) {
+            throw Exception("Ключи устройств не найдены")
+        }
+
+        return SafetyNumber.compute(keys1, keys2)
     }
 
     fun forwardMessage(rawText: String, senderName: String, target: niel.kro.penik.ui.components.ForwardTargetItem, onDone: () -> Unit) {

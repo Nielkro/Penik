@@ -1598,6 +1598,32 @@ fun MessageBubble(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
+    if (senderUserId == 0L || text.startsWith("⚠️ Код безопасности")) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp, horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0x26FF9800))
+                    .border(1.dp, Color(0x4DFF9800), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = text,
+                    color = Color(0xFFFFB74D),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        return
+    }
+
     val fwdInfo = remember(text) { parseForwardedInfo(text) }
     val fwdFileSender = remember(text) { parseForwardedFileSender(text) }
     val fwdSenderName = fwdInfo?.from ?: fwdFileSender
