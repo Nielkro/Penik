@@ -40,7 +40,7 @@ import {
   saveGroup, getGroup as dbGetGroup, getAllGroups, deleteGroupData,
   saveGroupMembers, getGroupMembers,
   saveGroupKey, getGroupKey,
-  saveGroupMessage, getGroupMessage, getGroupMessages,
+  saveGroupMessage, getGroupMessage, getGroupMessages, updateGroupMessageText,
 } from './storage.js';
 import { ws, OP } from './ws.js';
 import { loadPrivateIK } from './app.js';

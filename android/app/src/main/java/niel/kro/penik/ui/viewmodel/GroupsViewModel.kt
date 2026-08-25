@@ -17,6 +17,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import niel.kro.penik.data.local.entity.GroupMemberEntity
+import niel.kro.penik.data.local.entity.GroupMessageEntity
+import niel.kro.penik.data.local.entity.GroupEntity
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.UserSearchResult
 import niel.kro.penik.data.repository.AttachmentManager

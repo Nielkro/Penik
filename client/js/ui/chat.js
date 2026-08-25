@@ -2,7 +2,7 @@ import { apiGet, apiDelete, uploadVKAttachment } from "../api.js";
 import { encryptFileChaCha20, encodeKey, computeSafetyNumber } from "../crypto.js";
 import {
   saveMessage, getMessages, getMessage,
-  updateMessageDelivered, getContact, saveContact, getAllContacts,
+  updateMessageDelivered, updateMessageText, getContact, saveContact, getAllContacts,
   deleteChatData, deleteMessage, saveCachedMedia
 } from "../storage.js";
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload, syncMessageHistory } from "../app.js";

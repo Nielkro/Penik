@@ -22,6 +22,7 @@ import niel.kro.penik.data.network.api.HistoryBlobMessage
 import niel.kro.penik.data.network.api.HistoryBlob
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
+import niel.kro.penik.data.network.websocket.WebSocketEvent
 import niel.kro.penik.data.network.websocket.WebSocketManager
 import niel.kro.penik.data.network.api.RenameGroupRequest
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
