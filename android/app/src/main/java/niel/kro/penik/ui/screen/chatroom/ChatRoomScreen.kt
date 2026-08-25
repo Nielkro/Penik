@@ -29,6 +29,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.border
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -690,35 +699,34 @@ fun ChatRoomScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    // Attachment picker button
-                    val attachLauncher = rememberLauncherForActivityResult(
-                        contract = ActivityResultContracts.GetContent()
-                    ) { uri ->
-                        if (uri != null) {
-                            viewModel.sendMediaFile(context, uri)
-                        }
-                    }
-                    IconButton(onClick = { attachLauncher.launch("*/*") }) {
-                        Icon(
-                            imageVector = Icons.Default.AttachFile,
-                            contentDescription = "Прикрепить файл",
-                            tint = LocalAppColors.current.textMuted
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .background(
+                            color = LocalAppColors.current.inputBg,
+                            shape = RoundedCornerShape(24.dp)
                         )
-                    }
-
-                    // Sticker picker button
-                    IconButton(onClick = { showStickerPicker = true }) {
+                        .border(
+                            width = 1.dp,
+                            color = LocalAppColors.current.border.copy(alpha = 0.6f),
+                            shape = RoundedCornerShape(24.dp)
+                        )
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Sticker picker button on the LEFT
+                    IconButton(
+                        onClick = { showStickerPicker = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.SentimentSatisfiedAlt,
                             contentDescription = "Стикеры",
-                            tint = LocalAppColors.current.textMuted
+                            tint = LocalAppColors.current.textMuted,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
-                    OutlinedTextField(
+                    // Text input field
+                    BasicTextField(
                         value = inputText,
                         onValueChange = {
                             inputText = it
@@ -726,35 +734,72 @@ fun ChatRoomScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(14.dp)),
-                        placeholder = { Text("Сообщение...", color = LocalAppColors.current.textMuted) },
+                            .padding(horizontal = 6.dp, vertical = 6.dp),
+                        textStyle = TextStyle(
+                            color = LocalAppColors.current.textPrimary,
+                            fontSize = 15.sp
+                        ),
+                        cursorBrush = SolidColor(LocalAppColors.current.accent),
                         maxLines = 5,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = LocalAppColors.current.inputBg,
-                            unfocusedContainerColor = LocalAppColors.current.inputBg,
-                            focusedBorderColor = LocalAppColors.current.border,
-                            unfocusedBorderColor = LocalAppColors.current.border,
-                            focusedTextColor = LocalAppColors.current.textPrimary,
-                            unfocusedTextColor = LocalAppColors.current.textPrimary
-                        )
-                    )
-
-                    IconButton(
-                        onClick = {
-                            if (inputText.isNotBlank()) {
-                                viewModel.sendTyping(false)
-                                val currentReply = activeReply
-                                activeReply = null
-                                viewModel.sendMessage(inputText, currentReply?.msgId)
-                                inputText = ""
+                        decorationBox = { innerTextField ->
+                            Box(contentAlignment = Alignment.CenterStart) {
+                                if (inputText.isEmpty()) {
+                                    Text(
+                                        text = "Сообщение",
+                                        color = LocalAppColors.current.textMuted,
+                                        fontSize = 15.sp
+                                    )
+                                }
+                                innerTextField()
                             }
                         }
+                    )
+
+                    // Attachment picker button on the RIGHT
+                    val attachLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.GetContent()
+                    ) { uri ->
+                        if (uri != null) {
+                            viewModel.sendMediaFile(context, uri)
+                        }
+                    }
+                    IconButton(
+                        onClick = { attachLauncher.launch("*/*") },
+                        modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Отправить",
-                            tint = LocalAppColors.current.accent
+                            imageVector = Icons.Default.AttachFile,
+                            contentDescription = "Прикрепить файл",
+                            tint = LocalAppColors.current.textMuted,
+                            modifier = Modifier.size(22.dp)
                         )
+                    }
+
+                    // Send button
+                    AnimatedVisibility(
+                        visible = inputText.isNotBlank(),
+                        enter = fadeIn() + scaleIn(),
+                        exit = fadeOut() + scaleOut()
+                    ) {
+                        IconButton(
+                            onClick = {
+                                if (inputText.isNotBlank()) {
+                                    viewModel.sendTyping(false)
+                                    val currentReply = activeReply
+                                    activeReply = null
+                                    viewModel.sendMessage(inputText, currentReply?.msgId)
+                                    inputText = ""
+                                }
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Отправить",
+                                tint = LocalAppColors.current.accent,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }
