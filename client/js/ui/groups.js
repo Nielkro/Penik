@@ -10,7 +10,7 @@ import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessa
 import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
 import {
   el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence,
-  showToast, spinner, svgIcon, stickerIcon, clockIcon, showConfirmModal, showPromptModal, showFullscreenImage, showForwardModal,
+  showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon, showConfirmModal, showPromptModal, showFullscreenImage, showForwardModal,
   setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
 import { onPresenceUpdate } from "../presence.js";
@@ -281,13 +281,12 @@ export async function renderGroup(container, groupId) {
 
   const messagesEl = el("div", { class: "chat-messages", "data-group-id": groupId });
   const inputEl = el("textarea", { class: "chat-input", placeholder: "Сообщение…", rows: "1" });
-  const sendBtn = el("button", { class: "chat-send-btn" }, "➤");
+  const sendBtn = el("button", { class: "chat-send-btn", title: "Отправить" }, sendIcon(18));
   const fileInput = el("input", { type: "file", style: "display:none;" });
   const attachBtn = el("button", {
     class: "icon-btn chat-attach-btn",
-    title: "Прикрепить файл",
-    style: "background:transparent;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
-  }, "📎");
+    title: "Прикрепить файл"
+  }, paperclipIcon(20));
 
   attachBtn.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", () => {
@@ -299,8 +298,7 @@ export async function renderGroup(container, groupId) {
 
   const stickerBtn = el("button", {
     class: "icon-btn chat-sticker-btn",
-    title: "Стикеры",
-    style: "background:transparent;border:none;color:var(--text-muted);cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
+    title: "Стикеры"
   }, stickerIcon(20));
 
   const stickerPicker = createStickerPicker((sticker) => {
@@ -321,7 +319,8 @@ export async function renderGroup(container, groupId) {
   };
   document.addEventListener("click", onDocClick);
 
-  const inputRow = el("div", { class: "chat-input-row", style: "position: relative;" }, attachBtn, fileInput, stickerBtn, stickerPicker.element, inputEl, sendBtn);
+  const inputPill = el("div", { class: "chat-input-pill" }, stickerBtn, inputEl, attachBtn);
+  const inputRow = el("div", { class: "chat-input-row", style: "position: relative;" }, fileInput, stickerPicker.element, inputPill, sendBtn);
   const chatWrap = el("div", { class: "chat-wrap" }, header, messagesEl, inputRow);
   container.appendChild(chatWrap);
   const scrollDown = attachScrollDownButton(messagesEl);

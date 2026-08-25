@@ -8,7 +8,7 @@ import {
 import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload, syncMessageHistory } from "../app.js";
 import { OP } from "../ws.js";
 import {
-  avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon, stickerIcon, clockIcon,
+  avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon,
   showDeleteChatConfirmModal, showFullscreenImage, showConfirmModal, showForwardModal,
   setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
@@ -438,13 +438,12 @@ export async function renderChat(container, userId) {
 
   const messagesEl = el("div", { class: "chat-messages", "data-user-id": userId });
   const inputEl    = el("textarea", { class: "chat-input", placeholder: "Сообщение…", rows: "1" });
-  const sendBtn    = el("button", { class: "chat-send-btn" }, "➤");
+  const sendBtn    = el("button", { class: "chat-send-btn", title: "Отправить" }, sendIcon(18));
   const fileInput  = el("input", { type: "file", style: "display:none;" });
   const attachBtn  = el("button", {
     class: "icon-btn chat-attach-btn",
-    title: "Прикрепить файл",
-    style: "background:transparent;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
-  }, "📎");
+    title: "Прикрепить файл"
+  }, paperclipIcon(20));
 
   attachBtn.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", () => {
@@ -456,8 +455,7 @@ export async function renderChat(container, userId) {
 
   const stickerBtn = el("button", {
     class: "icon-btn chat-sticker-btn",
-    title: "Стикеры",
-    style: "background:transparent;border:none;color:var(--text-muted);cursor:pointer;padding:4px 8px;display:flex;align-items:center;justify-content:center;"
+    title: "Стикеры"
   }, stickerIcon(20));
 
   const stickerPicker = createStickerPicker((sticker) => {
@@ -478,7 +476,8 @@ export async function renderChat(container, userId) {
   };
   document.addEventListener("click", onDocClick);
 
-  const inputRow   = el("div", { class: "chat-input-row", style: "position: relative;" }, attachBtn, fileInput, stickerBtn, stickerPicker.element, inputEl, sendBtn);
+  const inputPill  = el("div", { class: "chat-input-pill" }, stickerBtn, inputEl, attachBtn);
+  const inputRow   = el("div", { class: "chat-input-row", style: "position: relative;" }, fileInput, stickerPicker.element, inputPill, sendBtn);
   // messagesEl is mounted first so attachScrollDownButton can wrap it in place.
   const chatWrap   = el("div", { class: "chat-wrap" }, header, messagesEl, inputRow);
   container.appendChild(chatWrap);
