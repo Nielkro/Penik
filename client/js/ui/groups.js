@@ -602,13 +602,16 @@ export async function renderGroup(container, groupId) {
       ];
 
       const bar = el("div", { class: "reply-preview-bar" }, ...barChildren);
-      bar.querySelector(".reply-preview-close").addEventListener("click", () => {
-        setActiveEdit(null);
-        inputEl.value = "";
-      });
       replyBarContainer.appendChild(bar);
       inputEl.value = msg.plaintext || "";
       inputEl.focus();
+      inputEl.style.height = "auto";
+      const newH = Math.min(inputEl.scrollHeight, 120);
+      inputEl.style.height = newH + "px";
+      inputEl.style.overflowY = inputEl.scrollHeight > 120 ? "auto" : "hidden";
+      sendBtn.disabled = !inputEl.value.trim();
+    } else {
+      sendBtn.disabled = !inputEl.value.trim();
     }
   }
 
@@ -803,6 +806,13 @@ export async function renderGroup(container, groupId) {
     }
   }
   sendBtn.addEventListener("click", doSend);
+  inputEl.addEventListener("input", () => {
+    inputEl.style.height = "auto";
+    const newH = Math.min(inputEl.scrollHeight, 120);
+    inputEl.style.height = newH + "px";
+    inputEl.style.overflowY = inputEl.scrollHeight > 120 ? "auto" : "hidden";
+    sendBtn.disabled = !inputEl.value.trim();
+  });
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); }
   });

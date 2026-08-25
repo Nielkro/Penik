@@ -1009,13 +1009,17 @@ export async function renderChat(container, userId) {
       bar.querySelector(".reply-preview-close").addEventListener("click", () => {
         setActiveEdit(null);
         inputEl.value = "";
-        inputEl.style.height = "auto";
       });
       replyBarContainer.appendChild(bar);
       inputEl.value = msg.plaintext || "";
       inputEl.focus();
       inputEl.style.height = "auto";
-      inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+      const newH = Math.min(inputEl.scrollHeight, 120);
+      inputEl.style.height = newH + "px";
+      inputEl.style.overflowY = inputEl.scrollHeight > 120 ? "auto" : "hidden";
+      sendBtn.disabled = !inputEl.value.trim();
+    } else {
+      sendBtn.disabled = !inputEl.value.trim();
     }
   }
 
@@ -1224,6 +1228,7 @@ export async function renderChat(container, userId) {
     if (!text) return;
     inputEl.value = "";
     inputEl.style.height = "auto";
+    inputEl.style.overflowY = "hidden";
     sendBtn.disabled = true;
 
     if (activeEditMessage) {
@@ -1400,7 +1405,10 @@ export async function renderChat(container, userId) {
 
   inputEl.addEventListener("input", () => {
     inputEl.style.height = "auto";
-    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+    const newH = Math.min(inputEl.scrollHeight, 120);
+    inputEl.style.height = newH + "px";
+    inputEl.style.overflowY = inputEl.scrollHeight > 120 ? "auto" : "hidden";
+    sendBtn.disabled = !inputEl.value.trim();
 
     if (!isTypingActive && userId) {
       isTypingActive = true;
