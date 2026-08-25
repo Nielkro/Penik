@@ -1627,7 +1627,12 @@ fun MessageBubble(
 
     val doCopy: () -> Unit = {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("message", parsedText)
+        val textToCopy = when {
+            !parsedText.isNullOrBlank() -> parsedText
+            attachment != null -> attachment.name.ifBlank { "Медиафайл" }
+            else -> innerText
+        }
+        val clip = ClipData.newPlainText("message", textToCopy)
         clipboard.setPrimaryClip(clip)
         Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
     }
@@ -1934,11 +1939,9 @@ fun MessageBubble(
                     val isSingleLineShort = !parsedText.contains('\n') && parsedText.length <= 35
                     if (isSingleLineShort) {
                         Row(
-                            modifier = Modifier
-                                .then(if (replySender != null) Modifier.fillMaxWidth() else Modifier)
-                                .padding(top = 1.dp),
+                            modifier = Modifier.padding(top = 1.dp),
                             verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = if (replySender != null) Arrangement.SpaceBetween else Arrangement.Start
+                            horizontalArrangement = Arrangement.Start
                         ) {
                             ClickableLinkedText(
                                 text = parsedText,

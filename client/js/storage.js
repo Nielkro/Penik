@@ -100,6 +100,7 @@ function getAll(store) {
 
 export async function getMessage(msgId) {
   await openDB();
+  if (msgId == null) return null;
   if (typeof msgId === "string" && msgId.startsWith("server-")) {
     const raw = msgId.substring(7);
     if (!isNaN(Number(raw))) {
@@ -119,13 +120,25 @@ export async function getMessage(msgId) {
   if (!res) {
     res = await getMessageByClientId(String(msgId));
   }
+  if (!res) {
+    const all = await getAll(tx("messages"));
+    const targetStr = String(msgId);
+    const targetNum = Number(msgId);
+    const found = all.find(m => 
+      String(m.msg_id) === targetStr || 
+      String(m.server_id) === targetStr || 
+      String(m.client_msg_id) === targetStr ||
+      (!isNaN(targetNum) && (m.server_id === targetNum || m.msg_id === targetNum))
+    );
+    if (found) res = found;
+  }
   return unsealMessageRecord(res);
 }
 
 export async function getMessageByClientId(clientMsgId) {
   await openDB();
   const all = await getAllMessages();
-  return all.find(m => m.client_msg_id === clientMsgId);
+  return all.find(m => m.client_msg_id === clientMsgId || String(m.msg_id) === String(clientMsgId));
 }
 
 export async function markMessageDeletedLocally(msgId) {

@@ -907,7 +907,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 .msg-single-line-row .msg-meta {
   margin-top: 0;
   flex-shrink: 0;
-  margin-left: auto;
+  margin-left: 0;
   margin-bottom: 1px;
 }
 

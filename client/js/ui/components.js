@@ -938,14 +938,78 @@ export function wireMsgCopy(bubble, getText, onReply, onDelete, onForward) {
   };
 
   const doCopy = async () => {
-    const text = resolveText();
-    if (!text) return;
+    const raw = resolveText();
+    if (!raw) return;
     try {
+      if (raw.startsWith("{")) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed.type === "file" || parsed.file) {
+            const f = parsed.file || parsed;
+            // If caption exists, copy caption
+            if (parsed.text && parsed.text.trim()) {
+              if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(parsed.text.trim());
+              }
+              showToast("Текст скопирован");
+              return;
+            }
+            // If image and we have decrypted blob or can copy image blob
+            if ((f.mime || "").startsWith("image/")) {
+              const blobUrl = decryptedBlobCache.get(f.url);
+              if (blobUrl && navigator.clipboard?.write && window.ClipboardItem) {
+                try {
+                  const res = await fetch(blobUrl);
+                  const blob = await res.blob();
+                  let itemBlob = blob;
+                  if (blob.type !== "image/png") {
+                    const img = new Image();
+                    img.src = blobUrl;
+                    await new Promise((r) => { img.onload = r; img.onerror = r; });
+                    const canvas = document.createElement("canvas");
+                    canvas.width = img.naturalWidth || img.width;
+                    canvas.height = img.naturalHeight || img.height;
+                    const ctx = canvas.getContext("2d");
+                    ctx.drawImage(img, 0, 0);
+                    itemBlob = await new Promise((r) => canvas.toBlob(r, "image/png"));
+                  }
+                  if (itemBlob) {
+                    await navigator.clipboard.write([
+                      new ClipboardItem({ [itemBlob.type]: itemBlob })
+                    ]);
+                    showToast("Изображение скопировано");
+                    return;
+                  }
+                } catch (imgCopyErr) {
+                  console.warn("Failed to copy image to clipboard as bitmap:", imgCopyErr);
+                }
+              }
+            }
+            // Fallback for file/media: copy filename or url
+            const copyContent = f.name || f.url || "";
+            if (copyContent) {
+              if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(copyContent);
+              }
+              showToast("Скопировано");
+              return;
+            }
+          }
+          if (parsed.type === "fwd" && parsed.text) {
+            if (navigator.clipboard?.writeText) {
+              await navigator.clipboard.writeText(parsed.text);
+            }
+            showToast("Скопировано");
+            return;
+          }
+        } catch (_) {}
+      }
+
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
+        await navigator.clipboard.writeText(raw);
       } else {
         const ta = document.createElement("textarea");
-        ta.value = text;
+        ta.value = raw;
         ta.style.cssText = "position:fixed;left:-9999px;top:0";
         document.body.appendChild(ta);
         ta.select();

@@ -739,7 +739,7 @@ export async function renderChat(container, userId) {
           if (parent) {
             const isParentMine = String(parent.sender_id) === String(me && (me.id || me.user_id));
             const senderName = isParentMine ? "Вы" : (contact.name || contact.nickname || "Собеседник");
-            const info = getMessagePreviewInfo(parent.plaintext || "");
+            const info = getMessagePreviewInfo(parent.plaintext || parent.text || "");
             replyRefEl.querySelector(".reply-ref-sender").textContent = senderName;
             replyRefEl.querySelector(".reply-ref-text").textContent = info.text;
             if (info.thumb) {
