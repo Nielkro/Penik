@@ -994,29 +994,64 @@ export async function decryptMessagePayload(payload) {
 
   const myId = Number(localStorage.getItem("user_id"));
   const senderUserId = Number(payload.from_user_id ?? payload.sender_user_id ?? payload.sender_id ?? pinUserId ?? 0);
-  const chatPartnerId = Number(payload.chat_user_id ?? payload.chat_id ?? (senderUserId === myId ? 0 : senderUserId));
-  const recipientUserId = Number(payload.to_user_id ?? payload.recipient_user_id ?? (senderUserId === myId ? chatPartnerId : myId));
-  const clientMsgId = payload.client_msg_id || (typeof payload.msg_id === "string" && isNaN(Number(payload.msg_id)) ? payload.msg_id : "");
+  let chatPartnerId = Number(payload.chat_user_id ?? payload.chat_id ?? (senderUserId === myId ? 0 : senderUserId));
+  let recipientUserId = Number(payload.to_user_id ?? payload.recipient_user_id ?? (senderUserId === myId ? chatPartnerId : myId));
+  let clientMsgId = payload.client_msg_id || (typeof payload.msg_id === "string" && isNaN(Number(payload.msg_id)) ? payload.msg_id : "");
+
+  let localMsg = null;
+  const lookupId = payload.client_msg_id || payload.msg_id || payload.id;
+  if (lookupId) {
+    localMsg = await getMessage(lookupId);
+  }
+  if (localMsg) {
+    if (!chatPartnerId && localMsg.chat_id) {
+      chatPartnerId = Number(localMsg.chat_id);
+    }
+    if (!clientMsgId && (localMsg.client_msg_id || localMsg.localId)) {
+      clientMsgId = localMsg.client_msg_id || localMsg.localId;
+    }
+  }
+  if (senderUserId === myId && !recipientUserId) {
+    recipientUserId = chatPartnerId;
+  }
+
   const rawTs = Number(payload.timestamp ?? payload.created_at ?? payload.ts ?? payload.edited_at ?? 0);
   const tsSec = rawTs > 1e11 ? Math.floor(rawTs / 1000) : rawTs;
 
   const secret = await deriveSharedSecret(myPrivateIK, fromIdentityKey);
 
   // Candidate AADs in order of priority (including clock drift / network transit delta ±1s to ±5s):
-  const candidateAads = [];
+  const candidateUsers = [
+    { s: senderUserId, r: recipientUserId },
+    { s: senderUserId, r: chatPartnerId },
+    { s: myId, r: chatPartnerId },
+    { s: senderUserId, r: myId }
+  ].filter(u => u.s > 0 && u.r > 0);
+
+  const candidateClientIds = [clientMsgId, localMsg?.client_msg_id, localMsg?.msg_id, ""].filter(Boolean);
+  const candidateTimestamps = [tsSec];
+  if (rawTs > 1e11) candidateTimestamps.push(rawTs);
+  if (localMsg?.created_at) {
+    const localTs = localMsg.created_at > 1e11 ? Math.floor(localMsg.created_at / 1000) : localMsg.created_at;
+    candidateTimestamps.push(localTs);
+  }
+
   const timeOffsets = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5];
-  for (const offset of timeOffsets) {
-    candidateAads.push(buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId, tsSec + offset));
-    if (chatPartnerId && chatPartnerId !== recipientUserId) {
-      candidateAads.push(buildPairwiseAAD(senderUserId, chatPartnerId, clientMsgId, tsSec + offset));
-    }
-  }
-  if (rawTs > 1e11) {
-    candidateAads.push(buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId, rawTs));
-  }
-  if (clientMsgId) {
-    for (const offset of [0, -1, 1]) {
-      candidateAads.push(buildPairwiseAAD(senderUserId, recipientUserId, "", tsSec + offset));
+  const candidateAads = [];
+  const addedSet = new Set();
+
+  for (const { s, r } of candidateUsers) {
+    for (const cId of candidateClientIds) {
+      for (const baseTs of candidateTimestamps) {
+        for (const offset of timeOffsets) {
+          const t = baseTs + offset;
+          const key = `${s}:${r}:${cId}:${t}`;
+          if (!addedSet.has(key)) {
+            addedSet.add(key);
+            candidateAads.push(buildPairwiseAAD(s, r, cId, t));
+          }
+        }
+      }
     }
   }
   candidateAads.push(new Uint8Array(0));
