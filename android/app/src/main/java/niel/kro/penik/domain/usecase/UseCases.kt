@@ -217,6 +217,12 @@ class HandleWebSocketEventUseCase @Inject constructor(
             is WebSocketEvent.MsgDeleteNotify -> {
                 messageRepository.deleteMessageByServerOrLocalId(event.msgId, event.chatId)
             }
+            is WebSocketEvent.MsgEditNotify -> {
+                messageRepository.handleMsgEditNotify(event)
+            }
+            is WebSocketEvent.GroupMsgEditNotify -> {
+                groupRepository.handleIncomingEdit(event)
+            }
             is WebSocketEvent.PresenceUpdate -> {
                 niel.kro.penik.data.repository.PresenceBus.update(event.userId, event.online, event.lastSeen)
             }
@@ -241,6 +247,24 @@ class HandleWebSocketEventUseCase @Inject constructor(
             is WebSocketEvent.CallTaken -> callManager.onTaken(event)
             else -> {}
         }
+    }
+}
+
+class EditMessageUseCase @Inject constructor(
+    private val messageRepository: MessageRepository,
+    private val chatRepository: ChatRepository
+) {
+    suspend operator fun invoke(chatUserId: Long, clientMsgId: String, newText: String, chatName: String = "") {
+        messageRepository.editMessage(chatUserId, clientMsgId, newText)
+        chatRepository.updateLastMessage(chatUserId, newText, System.currentTimeMillis(), name = chatName)
+    }
+}
+
+class EditGroupMessageUseCase @Inject constructor(
+    private val groupRepository: GroupRepository
+) {
+    suspend operator fun invoke(groupId: Long, messageId: String, newText: String) {
+        groupRepository.editMessage(groupId, messageId, newText)
     }
 }
 

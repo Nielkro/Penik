@@ -114,6 +114,16 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate fcm_token: %w", err)
 	}
 
+	if err := migrateMessageEditedAt(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate message edited_at: %w", err)
+	}
+
+	if err := migrateGroupMessageEditedAt(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate group_message edited_at: %w", err)
+	}
+
 	// Indexes are created last: they reference columns the legacy migrations above
 	// may have only just added.
 	if err := createIndexes(sqlDB); err != nil {
@@ -848,6 +858,32 @@ func migrateSessions(database *sql.DB) error {
 	for _, tok := range toMigrate {
 		hash := HashSessionToken(tok)
 		_, _ = database.Exec("UPDATE sessions SET token=? WHERE token=?", hash, tok)
+	}
+	return nil
+}
+
+func migrateMessageEditedAt(database *sql.DB) error {
+	has, err := tableHasColumn(database, "messages", "edited_at")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := database.Exec("ALTER TABLE messages ADD COLUMN edited_at INTEGER DEFAULT NULL"); err != nil {
+			return fmt.Errorf("add edited_at to messages: %w", err)
+		}
+	}
+	return nil
+}
+
+func migrateGroupMessageEditedAt(database *sql.DB) error {
+	has, err := tableHasColumn(database, "group_messages", "edited_at")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := database.Exec("ALTER TABLE group_messages ADD COLUMN edited_at INTEGER DEFAULT NULL"); err != nil {
+			return fmt.Errorf("add edited_at to group_messages: %w", err)
+		}
 	}
 	return nil
 }

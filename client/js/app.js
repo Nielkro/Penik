@@ -462,8 +462,8 @@ export async function logout() {
 let _activeChatCallback = null;
 let _chatListUpdateCallback = null;
 
-export function setActiveChatCallback(userId, fn, onAck, onStatus) {
-  _activeChatCallback = userId ? { userId, fn, onAck, onStatus } : null;
+export function setActiveChatCallback(userId, fn, onAck, onStatus, onMessageEdited) {
+  _activeChatCallback = userId ? { userId, fn, onAck, onStatus, onMessageEdited } : null;
 }
 
 export function setChatListUpdateCallback(cb) {
@@ -1157,6 +1157,23 @@ export async function flushOutbox() {
 
 
 
+async function onMsgEditNotifyGlobal(payload) {
+  if (!payload) return;
+  try {
+    const text = await decryptMessagePayload(payload);
+    const msgId = payload.client_msg_id || payload.msg_id;
+    const editedAt = payload.edited_at ? payload.edited_at * 1000 : Date.now();
+    await updateMessageText(msgId, text, editedAt);
+
+    if (_activeChatCallback && typeof _activeChatCallback.onMessageEdited === "function") {
+      _activeChatCallback.onMessageEdited(msgId, text, editedAt);
+    }
+    triggerChatListUpdate();
+  } catch (err) {
+    console.error("[ws] onMsgEditNotifyGlobal failed:", err);
+  }
+}
+
 function setupGlobalWSListeners() {
   ws.on(0x02, onMsgRecvGlobal);
   ws.on(0x16, onMsgRetryReq);
@@ -1167,6 +1184,7 @@ function setupGlobalWSListeners() {
   ws.on(0x05, onOfflineBatchGlobal);
   ws.on(0x08, onChatPurgeGlobal);
   ws.on(OP.MSG_DELETE_NOTIFY, onMsgDeleteNotifyGlobal);
+  ws.on(OP.MSG_EDIT_NOTIFY, onMsgEditNotifyGlobal);
   ws.on(OP.USER_AVATAR_UPDATE, (payload) => {
     if (payload && payload.user_id) {
       const ts = payload.ts ? payload.ts * 1000 : Date.now();

@@ -252,6 +252,20 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 		}
 		return c.handleMsgDelete(ctx, &msg)
 
+	case OpMsgEdit:
+		var msg MsgEditEncrypted
+		if err := msgpack.Unmarshal(payload, &msg); err != nil {
+			return fmt.Errorf("unmarshal MsgEditEncrypted: %w", err)
+		}
+		return c.handleMsgEdit(ctx, &msg)
+
+	case OpGroupMessageEdit:
+		var msg GroupMessageEdit
+		if err := msgpack.Unmarshal(payload, &msg); err != nil {
+			return fmt.Errorf("unmarshal GroupMessageEdit: %w", err)
+		}
+		return c.handleGroupMessageEdit(ctx, &msg)
+
 	case OpChatPurgeAck:
 		var msg ChatPurgeAck
 		if err := msgpack.Unmarshal(payload, &msg); err != nil {
@@ -1424,6 +1438,120 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 		// Soft/Local delete logic if needed
 		if err := tx.Commit(); err != nil {
 			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *Client) handleMsgEdit(ctx context.Context, msg *MsgEditEncrypted) error {
+	if msg.MsgID == "" || len(msg.Devices) == 0 || len(msg.Devices) > 50 {
+		return fmt.Errorf("invalid edit request parameters")
+	}
+	for _, dev := range msg.Devices {
+		if len(dev.Ciphertext) > 128*1024 {
+			return fmt.Errorf("ciphertext payload too large (max 128KB)")
+		}
+	}
+
+	now := time.Now().Unix()
+	editedAt := now
+	if msg.EditedAt > 0 {
+		editedAt = msg.EditedAt
+		if editedAt > 1e11 {
+			editedAt = editedAt / 1000
+		}
+	}
+
+	senderUserID := c.userID
+	recipientUserID := msg.ToUserID
+
+	// Verify message exists and was sent by caller
+	var msgCount int
+	err := c.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM messages WHERE sender_user_id=? AND (client_msg_id=? OR id=?)`,
+		senderUserID, msg.MsgID, msg.MsgID).Scan(&msgCount)
+	if err != nil || msgCount == 0 {
+		return fmt.Errorf("message not found or unauthorized to edit")
+	}
+
+	var senderIKPub []byte
+	_ = c.db.QueryRowContext(ctx, `SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, c.deviceID).Scan(&senderIKPub)
+
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	type notifyTarget struct {
+		deviceID   int64
+		chatUserID int64
+		msgID      int64
+		payload    E2EPayload
+	}
+	var targets []notifyTarget
+
+	for _, dev := range msg.Devices {
+		var ownerID int64
+		err := tx.QueryRowContext(ctx, `SELECT user_id FROM devices WHERE id=?`, dev.DeviceID).Scan(&ownerID)
+		if err != nil {
+			continue
+		}
+
+		var chatUserID int64
+		switch ownerID {
+		case senderUserID:
+			chatUserID = recipientUserID
+		case recipientUserID:
+			chatUserID = senderUserID
+		default:
+			continue
+		}
+
+		var rowID int64
+		err = tx.QueryRowContext(ctx,
+			`SELECT id FROM messages 
+			 WHERE sender_user_id=? AND recipient_device_id=? AND (client_msg_id=? OR id=?) LIMIT 1`,
+			senderUserID, dev.DeviceID, msg.MsgID, msg.MsgID).Scan(&rowID)
+		if err == nil {
+			_, _ = tx.ExecContext(ctx,
+				`UPDATE messages 
+				 SET ciphertext=?, encryption_salt=?, encryption_nonce=?, edited_at=? 
+				 WHERE id=?`,
+				dev.Ciphertext, dev.Salt, dev.Nonce, editedAt, rowID)
+
+			targets = append(targets, notifyTarget{
+				deviceID:   dev.DeviceID,
+				chatUserID: chatUserID,
+				msgID:      rowID,
+				payload:    dev,
+			})
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit edit tx: %w", err)
+	}
+
+	// Fan out edit notification to all devices
+	for _, t := range targets {
+		notify := MsgEditNotify{
+			FromUserID:        senderUserID,
+			FromDeviceID:      c.deviceID,
+			RecipientDeviceID: t.deviceID,
+			FromIdentityKey:   senderIKPub,
+			ChatUserID:        t.chatUserID,
+			MsgID:             t.msgID,
+			ClientMsgID:       msg.MsgID,
+			Ciphertext:        t.payload.Ciphertext,
+			Salt:              t.payload.Salt,
+			Nonce:             t.payload.Nonce,
+			EditedAt:          editedAt,
+		}
+		notifyBytes, err := msgpack.Marshal(notify)
+		if err == nil {
+			c.hub.SendToDeviceFrame(t.deviceID, OpMsgEditNotify, notifyBytes)
 		}
 	}
 

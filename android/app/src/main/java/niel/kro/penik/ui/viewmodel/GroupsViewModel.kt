@@ -134,6 +134,26 @@ class GroupChatViewModel @Inject constructor(
     val myRole: String
         get() = _members.value.find { it.userId == myUserId }?.role ?: "member"
 
+    private val _editingMessage = MutableStateFlow<GroupMessageEntity?>(null)
+    val editingMessage: StateFlow<GroupMessageEntity?> = _editingMessage.asStateFlow()
+
+    fun startEditing(message: GroupMessageEntity) {
+        _editingMessage.value = message
+    }
+
+    fun cancelEditing() {
+        _editingMessage.value = null
+    }
+
+    fun edit(messageId: String, newText: String) {
+        _editingMessage.value = null
+        if (newText.isBlank()) return
+        viewModelScope.launch {
+            runCatching { groupRepository.editMessage(groupId, messageId, newText.trim()) }
+                .onFailure { _error.value = "Не удалось изменить сообщение" }
+        }
+    }
+
     fun send(text: String, replyToMsgId: String? = null) {
         if (text.isBlank()) return
         viewModelScope.launch {

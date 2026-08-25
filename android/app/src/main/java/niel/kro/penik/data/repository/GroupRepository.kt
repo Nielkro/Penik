@@ -371,6 +371,35 @@ class GroupRepository @Inject constructor(
         return entity
     }
 
+    suspend fun editMessage(groupId: Long, messageId: String, newText: String) {
+        val version = currentVersion(groupId)
+        val groupKey = ensureGroupKey(groupId, version) ?: return
+        val editedAt = System.currentTimeMillis() / 1000
+        val senderUserId = myUserId()
+        val enc = groupCrypto.encryptMessage(
+            newText.toByteArray(Charsets.UTF_8), groupKey, groupId, version, senderUserId, messageId, editedAt
+        )
+
+        dao.updateMessageText(groupId, messageId, newText, editedAt * 1000)
+        ws.sendGroupMessageEdit(groupId, messageId, version, enc.ciphertext, enc.salt, enc.nonce, editedAt)
+    }
+
+    suspend fun handleIncomingEdit(event: WebSocketEvent.GroupMsgEditNotify) {
+        val groupKey = ensureGroupKey(event.groupId, event.keyVersion) ?: return
+        val editedAtSec = event.editedAt / 1000
+        val text = runCatching {
+            String(
+                groupCrypto.decryptMessage(
+                    event.ciphertext, groupKey, event.salt, event.nonce,
+                    event.groupId, event.keyVersion, event.senderUserId, event.messageId, editedAtSec
+                ),
+                Charsets.UTF_8
+            )
+        }.getOrNull() ?: return
+
+        dao.updateMessageText(event.groupId, event.messageId, text, event.editedAt)
+    }
+
     suspend fun onAck(groupId: Long, messageId: String, serverId: Long) {
         dao.acknowledgeMessage(groupId, messageId, serverId)
     }

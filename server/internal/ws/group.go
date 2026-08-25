@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/shamaton/msgpack/v2"
 	"messenger/server/internal/push"
 )
 
@@ -238,4 +239,75 @@ func (c *Client) sendGroupOfflineBatch(ctx context.Context) error {
 		c.pushFrame(OpGroupMessageRecv, m)
 	}
 	return rows.Err()
+}
+
+func (c *Client) handleGroupMessageEdit(ctx context.Context, msg *GroupMessageEdit) error {
+	if msg.MessageID == "" || len(msg.Ciphertext) == 0 || len(msg.Ciphertext) > maxGroupCiphertext ||
+		len(msg.Salt) > maxGroupSalt || len(msg.Nonce) > maxGroupNonce {
+		return fmt.Errorf("group message edit: invalid field sizes")
+	}
+
+	nowUnix := time.Now().Unix()
+	editedAt := nowUnix
+	if msg.EditedAt > 0 {
+		editedAt = msg.EditedAt
+		if editedAt > 1e11 {
+			editedAt = editedAt / 1000
+		}
+	}
+
+	// Verify caller is the author of the group message
+	var msgID int64
+	var keyVersion int64
+	err := c.db.QueryRowContext(ctx,
+		`SELECT id, key_version FROM group_messages 
+		 WHERE group_id=? AND message_id=? AND sender_user_id=?`,
+		msg.GroupID, msg.MessageID, c.userID).Scan(&msgID, &keyVersion)
+	if err != nil {
+		return fmt.Errorf("group message not found or unauthorized to edit")
+	}
+
+	_, err = c.db.ExecContext(ctx,
+		`UPDATE group_messages 
+		 SET ciphertext=?, encryption_salt=?, encryption_nonce=?, edited_at=? 
+		 WHERE id=?`,
+		msg.Ciphertext, msg.Salt, msg.Nonce, editedAt, msgID)
+	if err != nil {
+		return fmt.Errorf("update group message: %w", err)
+	}
+
+	notify := GroupMessageEditNotify{
+		GroupID:        msg.GroupID,
+		MessageID:      msg.MessageID,
+		SenderUserID:   c.userID,
+		SenderDeviceID: c.deviceID,
+		KeyVersion:     msg.KeyVersion,
+		Ciphertext:     msg.Ciphertext,
+		Salt:           msg.Salt,
+		Nonce:          msg.Nonce,
+		EditedAt:       editedAt,
+	}
+
+	notifyBytes, err := msgpack.Marshal(notify)
+	if err != nil {
+		return fmt.Errorf("marshal group edit notify: %w", err)
+	}
+
+	frame := append([]byte{byte(OpGroupMessageEditNotify)}, notifyBytes...)
+
+	// Fan out to all active members of the group
+	rows, err := c.db.QueryContext(ctx,
+		`SELECT user_id FROM group_members WHERE group_id=? AND status='active'`,
+		msg.GroupID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var memberUID int64
+			if err := rows.Scan(&memberUID); err == nil {
+				c.hub.SendToUser(memberUID, frame)
+			}
+		}
+	}
+
+	return nil
 }

@@ -1588,8 +1588,10 @@ fun MessageBubble(
     replyToMsgId: String? = null,
     replySender: String? = null,
     replyText: String? = null,
+    editedAt: Long? = null,
     onReply: (() -> Unit)? = null,
     onReplyClick: ((String) -> Unit)? = null,
+    onEdit: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onForward: (() -> Unit)? = null,
     onStickerClick: ((String) -> Unit)? = null
@@ -1751,6 +1753,15 @@ fun MessageBubble(
                         showMenu = false
                     }
                 )
+                if (onEdit != null && isSentByMe && !isFailed && attachment == null && !isSticker) {
+                    DropdownMenuItem(
+                        text = { Text("Изменить", color = LocalAppColors.current.textPrimary) },
+                        onClick = {
+                            onEdit()
+                            showMenu = false
+                        }
+                    )
+                }
                 if (onReply != null && !isFailed) {
                     DropdownMenuItem(
                         text = { Text("Ответить", color = LocalAppColors.current.textPrimary) },
@@ -2000,6 +2011,14 @@ fun MessageBubble(
                                     .align(Alignment.Bottom)
                                     .offset(y = 2.5.dp)
                             ) {
+                                if (editedAt != null && editedAt > 0L) {
+                                    Text(
+                                        text = "ред.",
+                                        fontSize = 10.sp,
+                                        color = if (isSentByMe) LocalAppColors.current.sentMessageText.copy(alpha = 0.6f) else LocalAppColors.current.textMuted.copy(alpha = 0.6f),
+                                        modifier = Modifier.padding(end = 3.dp)
+                                    )
+                                }
                                 Text(
                                     text = formatTime(timestamp),
                                     fontSize = 10.sp,
@@ -2031,6 +2050,14 @@ fun MessageBubble(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.align(Alignment.End)
                         ) {
+                            if (editedAt != null && editedAt > 0L) {
+                                Text(
+                                    text = "ред.",
+                                    fontSize = 10.sp,
+                                    color = if (isSentByMe) LocalAppColors.current.sentMessageText.copy(alpha = 0.6f) else LocalAppColors.current.textMuted.copy(alpha = 0.6f),
+                                    modifier = Modifier.padding(end = 3.dp)
+                                )
+                            }
                             Text(
                                 text = formatTime(timestamp),
                                 fontSize = 10.sp,

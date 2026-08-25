@@ -118,8 +118,16 @@ fun ChatRoomScreen(
     val safetyNumber by viewModel.safetyNumber.collectAsState()
     val showDialog by viewModel.showSafetyDialog.collectAsState()
     val showE2eeDialog by viewModel.showE2eeDialog.collectAsState()
+    val editingMessage by viewModel.editingMessage.collectAsState()
     val isSelfChat = viewModel.isSelfChat
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(editingMessage) {
+        editingMessage?.let {
+            activeReply = null
+            inputText = it.text
+        }
+    }
 
     var pendingCallVideo by remember { mutableStateOf<Boolean?>(null) }
     val callPermissionLauncher = rememberLauncherForActivityResult(
@@ -563,12 +571,16 @@ fun ChatRoomScreen(
                             replyToMsgId = message.replyToMsgId,
                             replySender = replySender,
                             replyText = replyText,
+                            editedAt = message.editedAt,
                             onReply = {
                                 activeReply = ReplyInfo(
                                     msgId = message.localId,
                                     text = message.text,
                                     sender = if (message.sentByMe) "Вы" else chatName
                                 )
+                            },
+                            onEdit = {
+                                viewModel.startEditing(message)
                             },
                             onReplyClick = { parentId ->
                                 val index = messages.indexOfFirst { it.localId == parentId || it.serverId?.toString() == parentId }
@@ -634,6 +646,48 @@ fun ChatRoomScreen(
                     .background(LocalAppColors.current.panel)
                     .imePadding()
             ) {
+                editingMessage?.let { editMsg ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(3.dp)
+                                .height(36.dp)
+                                .background(LocalAppColors.current.accent)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Редактирование",
+                                color = LocalAppColors.current.accent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = editMsg.text,
+                                color = LocalAppColors.current.textMuted,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(onClick = {
+                            viewModel.cancelEditing()
+                            inputText = ""
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Закрыть",
+                                tint = LocalAppColors.current.textMuted
+                            )
+                        }
+                    }
+                }
+
                 activeReply?.let { reply ->
                     val replyInfo = remember(reply.text) { parseReplyContent(reply.text) }
                     val replyThumbBitmap: ImageBitmap? = remember(replyInfo?.thumbBase64) {
@@ -785,9 +839,14 @@ fun ChatRoomScreen(
                             onClick = {
                                 if (inputText.isNotBlank()) {
                                     viewModel.sendTyping(false)
-                                    val currentReply = activeReply
-                                    activeReply = null
-                                    viewModel.sendMessage(inputText, currentReply?.msgId)
+                                    val currentEdit = editingMessage
+                                    if (currentEdit != null) {
+                                        viewModel.editMessage(currentEdit.localId, inputText)
+                                    } else {
+                                        val currentReply = activeReply
+                                        activeReply = null
+                                        viewModel.sendMessage(inputText, currentReply?.msgId)
+                                    }
                                     inputText = ""
                                 }
                             },

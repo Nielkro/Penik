@@ -32,16 +32,20 @@ const (
 	OpMsgDelete           Opcode = 0x0a // client→server: delete message (optionally for everyone)
 	OpMsgDeleteNotify     Opcode = 0x0b // server→client: notify peer message was deleted
 	OpUserProfileUpdate   Opcode = 0x0c // server→client: a peer renamed themselves
+	OpMsgEdit             Opcode = 0x0d // client→server: edit direct message
+	OpMsgEditNotify       Opcode = 0x0e // server→client: notify message was edited
 
-	OpGroupMessageSend      Opcode = 0x20
-	OpGroupMessageRecv      Opcode = 0x21
-	OpGroupMessageAck       Opcode = 0x22
-	OpGroupKeyAvailable     Opcode = 0x23
-	OpGroupMemberChanged    Opcode = 0x24
-	OpGroupMessageDelivered Opcode = 0x25
-	OpGroupMessageRead      Opcode = 0x26
-	OpGroupHistoryReady     Opcode = 0x27
-	OpGroupAvatarUpdate     Opcode = 0x28
+	OpGroupMessageSend        Opcode = 0x20
+	OpGroupMessageRecv        Opcode = 0x21
+	OpGroupMessageAck         Opcode = 0x22
+	OpGroupKeyAvailable       Opcode = 0x23
+	OpGroupMemberChanged      Opcode = 0x24
+	OpGroupMessageDelivered   Opcode = 0x25
+	OpGroupMessageRead        Opcode = 0x26
+	OpGroupHistoryReady       Opcode = 0x27
+	OpGroupAvatarUpdate       Opcode = 0x28
+	OpGroupMessageEdit        Opcode = 0x29 // client→server: edit group message
+	OpGroupMessageEditNotify  Opcode = 0x2a // server→client: notify group message was edited
 
 	OpCallOffer    Opcode = 0x30
 	OpCallIncoming Opcode = 0x31
@@ -161,6 +165,27 @@ type MsgRecvEncrypted struct {
 	TS                int64   `msgpack:"ts"`
 }
 
+type MsgEditEncrypted struct {
+	ToUserID   int64        `msgpack:"to_user_id"`
+	MsgID      string       `msgpack:"msg_id"` // client_msg_id
+	EditedAt   int64        `msgpack:"edited_at,omitempty"`
+	Devices    []E2EPayload `msgpack:"devices"`
+}
+
+type MsgEditNotify struct {
+	FromUserID        int64  `msgpack:"from_user_id"`
+	FromDeviceID      int64  `msgpack:"from_device_id"`
+	RecipientDeviceID int64  `msgpack:"recipient_device_id"`
+	FromIdentityKey   []byte `msgpack:"from_identity_key"`
+	ChatUserID        int64  `msgpack:"chat_user_id"`
+	MsgID             int64  `msgpack:"msg_id"`
+	ClientMsgID       string `msgpack:"client_msg_id"`
+	Ciphertext        []byte `msgpack:"ciphertext"`
+	Salt              []byte `msgpack:"salt"`
+	Nonce             []byte `msgpack:"nonce"`
+	EditedAt          int64  `msgpack:"edited_at"`
+}
+
 type OfflineBatchEncrypted struct {
 	Msgs []MsgRecvEncrypted `msgpack:"msgs"`
 }
@@ -256,6 +281,28 @@ type GroupMessageDelivered struct {
 
 type GroupMessageRead struct {
 	ID int64 `msgpack:"id"`
+}
+
+type GroupMessageEdit struct {
+	GroupID    int64  `msgpack:"group_id"`
+	MessageID  string `msgpack:"message_id"`
+	KeyVersion int64  `msgpack:"key_version"`
+	Ciphertext []byte `msgpack:"ciphertext"`
+	Salt       []byte `msgpack:"salt"`
+	Nonce      []byte `msgpack:"nonce"`
+	EditedAt   int64  `msgpack:"edited_at,omitempty"`
+}
+
+type GroupMessageEditNotify struct {
+	GroupID        int64  `msgpack:"group_id"`
+	MessageID      string `msgpack:"message_id"`
+	SenderUserID   int64  `msgpack:"sender_user_id"`
+	SenderDeviceID int64  `msgpack:"sender_device_id"`
+	KeyVersion     int64  `msgpack:"key_version"`
+	Ciphertext     []byte `msgpack:"ciphertext"`
+	Salt           []byte `msgpack:"salt"`
+	Nonce          []byte `msgpack:"nonce"`
+	EditedAt       int64  `msgpack:"edited_at"`
 }
 
 type MsgStatusItem struct {

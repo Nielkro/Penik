@@ -141,6 +141,26 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
+    private val _editingMessage = MutableStateFlow<MessageEntity?>(null)
+    val editingMessage: StateFlow<MessageEntity?> = _editingMessage
+
+    fun startEditing(message: MessageEntity) {
+        _editingMessage.value = message
+    }
+
+    fun cancelEditing() {
+        _editingMessage.value = null
+    }
+
+    fun editMessage(clientMsgId: String, newText: String) {
+        _editingMessage.value = null
+        if (newText.isBlank()) return
+        viewModelScope.launch {
+            messageRepository.editMessage(chatUserId, clientMsgId, newText.trim())
+            chatRepository.updateLastMessage(chatUserId, newText.trim(), System.currentTimeMillis(), name = chatName)
+        }
+    }
+
     fun sendMessage(text: String, replyToMsgId: String? = null) {
         if (text.isBlank()) return
         viewModelScope.launch {
