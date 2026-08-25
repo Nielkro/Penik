@@ -697,7 +697,8 @@ class MessageRepository @Inject constructor(
                             }
                         }
                         Log.d("PenikMsg", "syncHistory item: msgId=${msg.msgId}, clientMsgId=${msg.clientMsgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, existingLocalId=${existing?.localId}")
-                        if (existing == null) {
+                        val isEdited = msg.editedAt != null && (existing == null || existing.editedAt == null || (msg.editedAt * 1000 > (existing.editedAt ?: 0L)))
+                        if (existing == null || isEdited) {
                             val text = if (msg.plaintext != null) {
                                 msg.plaintext
                             } else if (msg.ciphertext != null && msg.encryptionSalt != null && msg.encryptionNonce != null) {
@@ -712,10 +713,7 @@ class MessageRepository @Inject constructor(
                                     val senderDevice = senderBundle?.devices?.find { it.deviceId == msg.senderDeviceId }
                                     val senderIK = java.util.Base64.getDecoder().decode(senderDevice?.identityKey ?: "")
                                     
-                                    if (msg.senderId == myId) {
-                                        Log.w("PenikMsg", "Attempting to decrypt own message from REST history (msgId=${msg.msgId}, clientMsgId=${msg.clientMsgId}) - ciphertext may be for external devices!")
-                                    }
-                                    
+                                    val decryptTs = msg.editedAt ?: msg.createdAt
                                     decryptMessagePayload(
                                         myDeviceId = tokenStorage.getDeviceId(),
                                         fromIdentityKey = senderIK,
@@ -725,31 +723,40 @@ class MessageRepository @Inject constructor(
                                         senderUserId = msg.senderId,
                                         recipientUserId = if (msg.senderId == myId) msg.chatUserId else myId,
                                         clientMsgId = msg.clientMsgId ?: "",
-                                        timestamp = msg.createdAt
+                                        timestamp = decryptTs
                                     )
                                 } catch (e: Exception) {
                                     Log.e("PenikMsg", "FAILED TO DECRYPT HISTORY MSG msgId=${msg.msgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, clientMsgId=${msg.clientMsgId}", e)
-                                    "[Ошибка расшифрования: ${e.message}]"
+                                    existing?.text ?: "[Ошибка расшифрования: ${e.message}]"
                                 }
                             } else {
-                                ""
+                                existing?.text ?: ""
                             }
                             
-                            newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
-                            add(MessageEntity(
-                                localId = msg.clientMsgId ?: "server-${msg.msgId}",
-                                serverId = msg.msgId,
-                                chatUserId = msg.chatUserId,
-                                senderId = msg.senderId,
-                                text = text,
-                                timestamp = msg.createdAt * 1000,
-                                sentByMe = msg.senderId == myId,
-                                delivered = msg.delivered == 1,
-                                deliveredAt = msg.deliveredAt,
-                                read = msg.read == 1,
-                                replyToMsgId = msg.replyToMsgId
-                            ))
-                        } else {
+                            val editedAtMs = msg.editedAt?.let { it * 1000 }
+                            if (existing != null) {
+                                if (editedAtMs != null) {
+                                    messageDao.updateMessageText(existing.localId, msg.msgId, text, editedAtMs)
+                                }
+                            } else {
+                                newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
+                                add(MessageEntity(
+                                    localId = msg.clientMsgId ?: "server-${msg.msgId}",
+                                    serverId = msg.msgId,
+                                    chatUserId = msg.chatUserId,
+                                    senderId = msg.senderId,
+                                    text = text,
+                                    timestamp = msg.createdAt * 1000,
+                                    sentByMe = msg.senderId == myId,
+                                    delivered = msg.delivered == 1,
+                                    deliveredAt = msg.deliveredAt,
+                                    read = msg.read == 1,
+                                    replyToMsgId = msg.replyToMsgId,
+                                    editedAt = editedAtMs
+                                ))
+                            }
+                        }
+                        if (existing != null) {
                             // Update existing message status if changed
                             if (existing.delivered != (msg.delivered == 1) || existing.read != (msg.read == 1)) {
                                 messageDao.updateStatus(

@@ -124,6 +124,16 @@ func (c *Client) Run(ctx context.Context) {
 		log.Printf("ws client %d/%d offline status batch: %v", c.userID, c.deviceID, err)
 	}
 
+	// Send offline edit updates for messages edited while this device was offline.
+	if err := c.sendOfflineEditBatch(ctx); err != nil {
+		log.Printf("ws client %d/%d offline edit batch: %v", c.userID, c.deviceID, err)
+	}
+
+	// Send offline edit updates for group messages edited while this device was offline.
+	if err := c.sendGroupOfflineEditBatch(ctx); err != nil {
+		log.Printf("ws client %d/%d group offline edit batch: %v", c.userID, c.deviceID, err)
+	}
+
 	// Update last_seen on connect.
 	_, _ = c.db.ExecContext(ctx,
 		`UPDATE devices SET last_seen=? WHERE id=?`,
@@ -980,6 +990,43 @@ func (c *Client) sendOfflineStatusBatch(ctx context.Context) error {
 	wCtx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
 	return c.conn.Write(wCtx, websocket.MessageBinary, frame)
+}
+
+func (c *Client) sendOfflineEditBatch(ctx context.Context) error {
+	threshold := time.Now().Add(-14 * 24 * time.Hour).Unix()
+	rows, err := c.db.QueryContext(ctx,
+		`SELECT m.id, m.sender_user_id, m.sender_device_id, m.recipient_device_id, dpk.x25519_pub,
+		        CASE WHEN ch.user1_id = ? THEN ch.user2_id ELSE ch.user1_id END,
+		        m.ciphertext, m.encryption_salt, m.encryption_nonce, m.edited_at, COALESCE(m.client_msg_id, '')
+		 FROM messages m
+		 JOIN chats ch ON m.chat_id = ch.id
+		 LEFT JOIN device_public_keys dpk ON m.sender_device_id = dpk.device_id
+		 WHERE (m.recipient_device_id = ? OR (m.sender_device_id = ? AND m.sender_user_id = ?))
+		   AND m.edited_at IS NOT NULL AND m.edited_at > ? AND m.purge_pending = 0
+		 ORDER BY m.edited_at ASC`,
+		c.userID, c.deviceID, c.deviceID, c.userID, threshold)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var notify MsgEditNotify
+		var senderIK []byte
+		if err := rows.Scan(
+			&notify.MsgID, &notify.FromUserID, &notify.FromDeviceID, &notify.RecipientDeviceID, &senderIK,
+			&notify.ChatUserID, &notify.Ciphertext, &notify.Salt, &notify.Nonce, &notify.EditedAt, &notify.ClientMsgID,
+		); err != nil {
+			continue
+		}
+		notify.FromIdentityKey = senderIK
+		if frame, err := encodeFrame(OpMsgEditNotify, notify); err == nil {
+			wCtx, cancel := context.WithTimeout(ctx, writeTimeout)
+			_ = c.conn.Write(wCtx, websocket.MessageBinary, frame)
+			cancel()
+		}
+	}
+	return rows.Err()
 }
 
 // sendPendingPurges pushes a ChatPurge for every chat that another user

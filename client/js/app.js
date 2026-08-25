@@ -839,8 +839,9 @@ export async function syncMessageHistory(options = {}) {
         continue;
       }
       const existing = await getMessage(item.id);
+      const isEdited = item.edited_at && (!existing || !existing.edited_at || (item.edited_at * 1000 > existing.edited_at));
       if (existing && existing.plaintext &&
-          !existing.plaintext.startsWith('[Сообщение не расшифровано')) {
+          !existing.plaintext.startsWith('[Сообщение не расшифровано') && !isEdited) {
         continue;
       }
 
@@ -852,12 +853,11 @@ export async function syncMessageHistory(options = {}) {
       } else if (item.ciphertext) {
         try {
           // History can contain a message that was already received live and
-          // decrypted.  In that case the OTPK may have been consumed already;
-          // use the locally persisted plaintext instead of trying to decrypt
-          // the ciphertext a second time after a reload.
+          // decrypted. In that case the OTPK may have been consumed already;
+          // use the locally persisted plaintext unless it was edited.
           const locallyStored = await getMessage(item.id);
           if (locallyStored && locallyStored.plaintext &&
-              !locallyStored.plaintext.startsWith('[Сообщение не расшифровано')) {
+              !locallyStored.plaintext.startsWith('[Сообщение не расшифровано') && !isEdited) {
             text = locallyStored.plaintext;
             throw { __alreadyDecrypted: true };
           }
@@ -871,12 +871,15 @@ export async function syncMessageHistory(options = {}) {
             nonce: item.encryption_nonce,
             from_identity_key: fromIdentityKey,
             sender_user_id: item.sender_id,
-            sender_device_id: item.sender_device_id
+            sender_device_id: item.sender_device_id,
+            client_msg_id: item.client_msg_id,
+            timestamp: item.timestamp,
+            edited_at: item.edited_at
           });
           text = decrypted.text;
         } catch (e) {
           if (e?.__alreadyDecrypted) continue;
-          text = `[Сообщение не расшифровано]`;
+          text = existing?.plaintext || `[Сообщение не расшифровано]`;
         }
       }
 
@@ -910,7 +913,15 @@ export async function syncMessageHistory(options = {}) {
       });
 
       const existingMsg = await getMessage(item.id);
-      if (existingMsg) continue;
+      if (existingMsg) {
+        if (item.edited_at) {
+          await updateMessageText(item.id, text, item.edited_at * 1000);
+          if (_activeChatCallback && typeof _activeChatCallback.onMessageEdited === "function") {
+            _activeChatCallback.onMessageEdited(item.id, text, item.edited_at * 1000);
+          }
+        }
+        continue;
+      }
 
       if (await isMessageDeletedLocally(item.id) || (item.client_msg_id && await isMessageDeletedLocally(item.client_msg_id))) {
         console.log("[sync] Skipping locally deleted message:", item.id);
@@ -921,7 +932,12 @@ export async function syncMessageHistory(options = {}) {
         const resolved = item.client_msg_id
           ? await updateMsgIdAndDelivered(item.client_msg_id, item.id, item.delivered)
           : await findAndResolvePendingSentMessage(peerId, item.timestamp, item.id);
-        if (resolved) continue;
+        if (resolved) {
+          if (item.edited_at) {
+            await updateMessageText(item.id, text, item.edited_at * 1000);
+          }
+          continue;
+        }
       }
 
       const storedMsg = {
@@ -933,6 +949,7 @@ export async function syncMessageHistory(options = {}) {
         delivered: 1,
         client_msg_id: item.client_msg_id,
         reply_to_msg_id: item.reply_to_msg_id || null,
+        edited_at: item.edited_at ? item.edited_at * 1000 : null,
       };
       await saveMessage(storedMsg);
     }
