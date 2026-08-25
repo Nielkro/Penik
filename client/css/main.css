@@ -990,7 +990,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   background: rgba(255, 255, 255, 0.08);
 }
 
-.chat-send-btn {
+.chat-action-btn {
   width: 42px;
   height: 42px;
   border-radius: 50%;
@@ -1006,9 +1006,20 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   transition: background var(--ease), transform var(--ease);
 }
 
-.chat-send-btn:hover { background: var(--accent-hover); }
-.chat-send-btn:active { transform: scale(0.92); }
-.chat-send-btn:disabled { opacity: 0.4; transform: none; cursor: default; }
+.chat-action-btn:hover { background: var(--accent-hover); }
+.chat-action-btn:active { transform: scale(0.92); }
+.chat-action-btn:disabled { opacity: 0.4; transform: none; cursor: default; }
+
+.chat-action-btn.chat-attach-btn {
+  background: var(--input);
+  color: var(--text-muted);
+  border: 1px solid var(--border-light);
+}
+
+.chat-action-btn.chat-attach-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
 
 /* ── Profile ── */
 .profile-screen {

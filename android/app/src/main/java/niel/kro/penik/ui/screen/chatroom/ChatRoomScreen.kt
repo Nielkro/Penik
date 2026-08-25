@@ -815,6 +815,7 @@ fun ChatRoomScreen(
                     )
 
                     // Attachment picker button on the RIGHT
+                    val showAttachPicker = remember { mutableStateOf(false) }
                     val attachLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.GetContent()
                     ) { uri ->
@@ -822,8 +823,61 @@ fun ChatRoomScreen(
                             viewModel.sendMediaFile(context, uri)
                         }
                     }
+
+                    if (showAttachPicker.value) {
+                        AlertDialog(
+                            onDismissRequest = { showAttachPicker.value = false },
+                            containerColor = LocalAppColors.current.panel,
+                            titleContentColor = LocalAppColors.current.textPrimary,
+                            title = { Text("Прикрепить вложение", fontWeight = FontWeight.SemiBold) },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    TextButton(
+                                        onClick = {
+                                            showAttachPicker.value = false
+                                            attachLauncher.launch("image/*")
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                                            Text("🖼  Фото или видео", color = LocalAppColors.current.textPrimary, fontSize = 15.sp)
+                                        }
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            showAttachPicker.value = false
+                                            attachLauncher.launch("*/*")
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                                            Text("📁  Файл или документ", color = LocalAppColors.current.textPrimary, fontSize = 15.sp)
+                                        }
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            showAttachPicker.value = false
+                                            attachLauncher.launch("audio/*")
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                                            Text("🎵  Аудиозапись", color = LocalAppColors.current.textPrimary, fontSize = 15.sp)
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {},
+                            dismissButton = {
+                                TextButton(onClick = { showAttachPicker.value = false }) {
+                                    Text("Отмена", color = LocalAppColors.current.accent)
+                                }
+                            }
+                        )
+                    }
+
                     IconButton(
-                        onClick = { attachLauncher.launch("*/*") },
+                        onClick = { showAttachPicker.value = true },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(

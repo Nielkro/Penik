@@ -438,12 +438,9 @@ export async function renderChat(container, userId) {
 
   const messagesEl = el("div", { class: "chat-messages", "data-user-id": userId });
   const inputEl    = el("textarea", { class: "chat-input", placeholder: "Сообщение…", rows: "1" });
-  const sendBtn    = el("button", { class: "chat-send-btn", title: "Отправить" }, sendIcon(18));
+  const sendBtn    = el("button", { class: "chat-action-btn chat-send-btn", title: "Отправить", style: "display:none;" }, sendIcon(18));
+  const attachBtn  = el("button", { class: "chat-action-btn chat-attach-btn", title: "Прикрепить файл" }, paperclipIcon(20));
   const fileInput  = el("input", { type: "file", style: "display:none;" });
-  const attachBtn  = el("button", {
-    class: "icon-btn chat-attach-btn",
-    title: "Прикрепить файл"
-  }, paperclipIcon(20));
 
   attachBtn.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", () => {
@@ -452,6 +449,12 @@ export async function renderChat(container, userId) {
       fileInput.value = "";
     }
   });
+
+  const updateInputButtons = () => {
+    const hasText = Boolean(inputEl.value.trim());
+    attachBtn.style.display = hasText ? "none" : "flex";
+    sendBtn.style.display = hasText ? "flex" : "none";
+  };
 
   const stickerBtn = el("button", {
     class: "icon-btn chat-sticker-btn",
@@ -476,8 +479,8 @@ export async function renderChat(container, userId) {
   };
   document.addEventListener("click", onDocClick);
 
-  const inputPill  = el("div", { class: "chat-input-pill" }, stickerBtn, inputEl, attachBtn);
-  const inputRow   = el("div", { class: "chat-input-row", style: "position: relative;" }, fileInput, stickerPicker.element, inputPill, sendBtn);
+  const inputPill  = el("div", { class: "chat-input-pill" }, stickerBtn, inputEl);
+  const inputRow   = el("div", { class: "chat-input-row", style: "position: relative;" }, fileInput, stickerPicker.element, inputPill, attachBtn, sendBtn);
   // messagesEl is mounted first so attachScrollDownButton can wrap it in place.
   const chatWrap   = el("div", { class: "chat-wrap" }, header, messagesEl, inputRow);
   container.appendChild(chatWrap);
@@ -1017,8 +1020,10 @@ export async function renderChat(container, userId) {
       inputEl.style.height = newH + "px";
       inputEl.style.overflowY = inputEl.scrollHeight > 120 ? "auto" : "hidden";
       sendBtn.disabled = !inputEl.value.trim();
+      updateInputButtons();
     } else {
       sendBtn.disabled = !inputEl.value.trim();
+      updateInputButtons();
     }
   }
 
@@ -1229,6 +1234,7 @@ export async function renderChat(container, userId) {
     inputEl.style.height = "auto";
     inputEl.style.overflowY = "hidden";
     sendBtn.disabled = true;
+    updateInputButtons();
 
     if (activeEditMessage) {
       const editMsg = activeEditMessage;
@@ -1408,6 +1414,7 @@ export async function renderChat(container, userId) {
     inputEl.style.height = newH + "px";
     inputEl.style.overflowY = inputEl.scrollHeight > 120 ? "auto" : "hidden";
     sendBtn.disabled = !inputEl.value.trim();
+    updateInputButtons();
 
     if (!isTypingActive && userId) {
       isTypingActive = true;
