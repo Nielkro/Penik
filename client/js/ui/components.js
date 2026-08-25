@@ -91,6 +91,44 @@ export function stickerIcon(size = 22, color = "currentColor") {
   return svgEl;
 }
 
+export function paperclipIcon(size = 20, color = "currentColor") {
+  return svgIcon("M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48", size, color, 1.8);
+}
+
+export function sendIcon(size = 18, color = "currentColor") {
+  return svgIcon("M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z", size, color, 2);
+}
+
+export function closeIcon(size = 16, color = "currentColor") {
+  return svgIcon("M18 6L6 18M6 6l12 12", size, color, 2);
+}
+
+export function checkIcon(size = 14, color = "currentColor") {
+  return svgIcon("M20 6L9 17l-5-5", size, color, 2);
+}
+
+export function doubleCheckIcon(size = 16, color = "currentColor") {
+  const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svgEl.setAttribute("viewBox", "0 0 24 24");
+  svgEl.setAttribute("width", String(size));
+  svgEl.setAttribute("height", String(size));
+  svgEl.setAttribute("fill", "none");
+  svgEl.setAttribute("stroke", color);
+  svgEl.setAttribute("stroke-width", "2");
+  svgEl.setAttribute("stroke-linecap", "round");
+  svgEl.setAttribute("stroke-linejoin", "round");
+  svgEl.style.display = "block";
+  svgEl.style.flexShrink = "0";
+
+  const p1 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p1.setAttribute("d", "M18 6L7 17l-5-5");
+  const p2 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p2.setAttribute("d", "M22 6l-11 11-2-2");
+  svgEl.appendChild(p1);
+  svgEl.appendChild(p2);
+  return svgEl;
+}
+
 const failedAvatars = new Set();
 
 export function avatar(user, size = 40, forceTimestamp = null) {
