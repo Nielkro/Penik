@@ -419,14 +419,45 @@ class GroupRepository @Inject constructor(
             do {
                 val page = api.getGroupHistory(groupId, 100, cursor).body() ?: return
                 for (m in page.messages) {
-                    dao.getMessage(groupId, m.messageId)?.let { if (it.serverId != 0L) return@let }
-                    handleIncoming(
-                        groupId, m.id, m.messageId, m.senderUserId, m.senderDeviceId, m.keyVersion,
-                        Base64.decode(m.ciphertext, urlB64Flags),
-                        Base64.decode(m.salt, urlB64Flags),
-                        Base64.decode(m.nonce, urlB64Flags),
-                        m.createdAt,
-                    )
+                    val existing = dao.getMessage(groupId, m.messageId)
+                    val isEdited = m.editedAt != null && (existing == null || existing.editedAt == null || (m.editedAt * 1000 > (existing.editedAt ?: 0L)))
+                    if (existing != null && !isEdited && existing.serverId != 0L) continue
+                    val groupKey = ensureGroupKey(groupId, m.keyVersion) ?: continue
+                    val ts = m.editedAt ?: m.createdAt
+                    val text = runCatching {
+                        String(
+                            groupCrypto.decryptMessage(
+                                Base64.decode(m.ciphertext, urlB64Flags), groupKey,
+                                Base64.decode(m.salt, urlB64Flags),
+                                Base64.decode(m.nonce, urlB64Flags),
+                                groupId, m.keyVersion, m.senderUserId, m.messageId, ts
+                            ),
+                            Charsets.UTF_8
+                        )
+                    }.getOrNull() ?: continue
+
+                    if (existing != null) {
+                        if (m.editedAt != null) {
+                            dao.updateMessageText(groupId, m.messageId, text, m.editedAt * 1000)
+                        }
+                    } else {
+                        dao.upsertMessage(
+                            GroupMessageEntity(
+                                groupId = groupId,
+                                messageId = m.messageId,
+                                serverId = m.id,
+                                replyToMsgId = m.replyToMsgId,
+                                senderUserId = m.senderUserId,
+                                senderDeviceId = m.senderDeviceId,
+                                keyVersion = m.keyVersion,
+                                text = text,
+                                createdAt = m.createdAt,
+                                sentByMe = m.senderUserId == myUserId(),
+                                delivered = true,
+                                editedAt = m.editedAt?.let { it * 1000 }
+                            )
+                        )
+                    }
                 }
                 cursor = page.nextCursor?.toLongOrNull()
             } while (cursor != null)

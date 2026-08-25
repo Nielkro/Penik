@@ -59,7 +59,8 @@ data class HistoryMessageResponse(
     @SerialName("encryption_salt") val encryptionSalt: String? = null,
     @SerialName("encryption_nonce") val encryptionNonce: String? = null,
     @SerialName("sender_device_id") val senderDeviceId: Long? = null,
-    @SerialName("recipient_device_id") val recipientDeviceId: Long? = null
+    @SerialName("recipient_device_id") val recipientDeviceId: Long? = null,
+    @SerialName("edited_at") val editedAt: Long? = null
 )
 
 @Serializable
@@ -240,7 +241,9 @@ data class GroupHistoryMessage(
     val ciphertext: String,
     val salt: String,
     val nonce: String,
-    @SerialName("created_at") val createdAt: Long
+    @SerialName("created_at") val createdAt: Long,
+    @SerialName("reply_to_msg_id") val replyToMsgId: String? = null,
+    @SerialName("edited_at") val editedAt: Long? = null
 )
 
 @Serializable

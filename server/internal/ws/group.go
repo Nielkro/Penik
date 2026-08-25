@@ -241,6 +241,33 @@ func (c *Client) sendGroupOfflineBatch(ctx context.Context) error {
 	return rows.Err()
 }
 
+func (c *Client) sendGroupOfflineEditBatch(ctx context.Context) error {
+	threshold := time.Now().Add(-14 * 24 * time.Hour).Unix()
+	rows, err := c.db.QueryContext(ctx,
+		`SELECT gm.group_id, gm.message_id, gm.sender_user_id, gm.sender_device_id,
+		        gm.key_version, gm.ciphertext, gm.encryption_salt, gm.encryption_nonce, gm.edited_at
+		 FROM group_messages gm
+		 JOIN group_members mem ON gm.group_id = mem.group_id AND mem.user_id = ?
+		 WHERE gm.edited_at IS NOT NULL AND gm.edited_at > ?
+		 ORDER BY gm.edited_at ASC`, c.userID, threshold)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var notify GroupMessageEditNotify
+		if err := rows.Scan(
+			&notify.GroupID, &notify.MessageID, &notify.SenderUserID, &notify.SenderDeviceID,
+			&notify.KeyVersion, &notify.Ciphertext, &notify.Salt, &notify.Nonce, &notify.EditedAt,
+		); err != nil {
+			continue
+		}
+		c.pushFrame(OpGroupMessageEditNotify, notify)
+	}
+	return rows.Err()
+}
+
 func (c *Client) handleGroupMessageEdit(ctx context.Context, msg *GroupMessageEdit) error {
 	if msg.MessageID == "" || len(msg.Ciphertext) == 0 || len(msg.Ciphertext) > maxGroupCiphertext ||
 		len(msg.Salt) > maxGroupSalt || len(msg.Nonce) > maxGroupNonce {

@@ -526,7 +526,8 @@ export async function decryptIncoming(frame) {
 
   // Dedup by (group_id, message_id).
   const existing = await getGroupMessage(groupId, messageId);
-  if (existing && existing.id) return null;
+  const isEdited = frame.edited_at && (!existing || !existing.edited_at || (Number(frame.edited_at) * 1000 > existing.edited_at));
+  if (existing && existing.id && !isEdited) return null;
 
   let groupKey;
   try {
@@ -539,9 +540,10 @@ export async function decryptIncoming(frame) {
 
   let text;
   try {
+    const ts = frame.edited_at || frame.created_at;
     const pt = await groupDecrypt(
       toU8(frame.ciphertext), groupKey, toU8(frame.salt), toU8(frame.nonce),
-      groupId, version, Number(frame.sender_user_id), messageId, Number(frame.created_at),
+      groupId, version, Number(frame.sender_user_id), messageId, Number(ts),
     );
     text = new TextDecoder().decode(pt);
   } catch (e) {
@@ -549,11 +551,21 @@ export async function decryptIncoming(frame) {
     return null;
   }
 
+  if (existing && existing.id) {
+    if (frame.edited_at) {
+      const editedAt = Number(frame.edited_at) * 1000;
+      await updateGroupMessageText(groupId, messageId, text, editedAt);
+      emit({ type: 'edit', groupId, messageId, text, editedAt });
+    }
+    return existing;
+  }
+
   const record = {
     group_id: groupId, message_id: messageId, id: Number(frame.id),
     reply_to_msg_id: frame.reply_to_msg_id || null,
     sender_user_id: Number(frame.sender_user_id), sender_device_id: Number(frame.sender_device_id),
     key_version: version, plaintext: text, created_at: Number(frame.created_at), delivered: 1,
+    edited_at: frame.edited_at ? Number(frame.edited_at) * 1000 : null,
   };
   await saveGroupMessage(record);
   ws.send(OP.GROUP_MESSAGE_DELIVERED, { id: record.id });
@@ -608,7 +620,8 @@ export async function syncHistory(groupId) {
     const page = await getGroupHistory(groupId, { limit: 100, before_id: cursor });
     for (const m of page.messages) {
       const existing = await getGroupMessage(groupId, String(m.message_id));
-      if (existing && existing.id) continue;
+      const isEdited = m.edited_at && (!existing || !existing.edited_at || (Number(m.edited_at) * 1000 > existing.edited_at));
+      if (existing && existing.id && !isEdited) continue;
       const version = Number(m.key_version);
       // Skip versions we can never decrypt so we don't hammer the envelope
       // endpoint. If the version list was unavailable, fall through and try.
@@ -626,6 +639,7 @@ export async function syncHistory(groupId) {
         sender_user_id: m.sender_user_id, sender_device_id: m.sender_device_id,
         key_version: m.key_version, ciphertext: b64uDecode(m.ciphertext),
         salt: b64uDecode(m.salt), nonce: b64uDecode(m.nonce), created_at: m.created_at,
+        edited_at: m.edited_at,
       });
     }
     cursor = page.next_cursor;
