@@ -980,7 +980,7 @@ export async function decryptMessagePayload(payload) {
   const chatPartnerId = Number(payload.chat_user_id ?? payload.chat_id ?? (senderUserId === myId ? 0 : senderUserId));
   const recipientUserId = Number(payload.to_user_id ?? payload.recipient_user_id ?? (senderUserId === myId ? chatPartnerId : myId));
   const clientMsgId = payload.client_msg_id || (typeof payload.msg_id === "string" && isNaN(Number(payload.msg_id)) ? payload.msg_id : "");
-  const rawTs = Number(payload.timestamp ?? payload.created_at ?? payload.ts ?? 0);
+  const rawTs = Number(payload.timestamp ?? payload.created_at ?? payload.ts ?? payload.edited_at ?? 0);
   const tsSec = rawTs > 1e11 ? Math.floor(rawTs / 1000) : rawTs;
 
   const secret = await deriveSharedSecret(myPrivateIK, fromIdentityKey);
@@ -1160,7 +1160,8 @@ export async function flushOutbox() {
 async function onMsgEditNotifyGlobal(payload) {
   if (!payload) return;
   try {
-    const text = await decryptMessagePayload(payload);
+    const res = await decryptMessagePayload(payload);
+    const text = (typeof res === "object" && res !== null && "text" in res) ? res.text : String(res || "");
     const msgId = payload.client_msg_id || payload.msg_id;
     const editedAt = payload.edited_at ? payload.edited_at * 1000 : Date.now();
     await updateMessageText(msgId, text, editedAt);

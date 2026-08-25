@@ -724,7 +724,7 @@ export async function renderChat(container, userId) {
 
     let replyRefEl = null;
     if (msg.reply_to_msg_id) {
-      replyRefEl = el("div", { class: "msg-reply-ref" },
+      replyRefEl = el("div", { class: "msg-reply-ref", "data-reply-to-id": msg.reply_to_msg_id },
         el("div", { class: "reply-ref-details" },
           el("span", { class: "reply-ref-sender" }, "Загрузка..."),
           el("span", { class: "reply-ref-text" }, "...")
@@ -790,13 +790,15 @@ export async function renderChat(container, userId) {
     const bubble = el("div", { class: bubbleClass },
       ...bubbleChildren
     );
+    bubble._msg = msg;
     bubble.dataset.msgId = msg.msg_id;
     if (msg.client_msg_id) {
       bubble.dataset.clientMsgId = msg.client_msg_id;
     }
-    wireMsgCopy(bubble, () => msg.plaintext || "", () => {
+    wireMsgCopy(bubble, () => (bubble._msg ? bubble._msg.plaintext : msg.plaintext) || "", () => {
       if (isFailed) return;
-      const info = getMessagePreviewInfo(msg.plaintext || "");
+      const currentText = (bubble._msg ? bubble._msg.plaintext : msg.plaintext) || "";
+      const info = getMessagePreviewInfo(currentText);
       setActiveReply({
         msg_id: msg.client_msg_id || msg.msg_id || bubble.dataset.msgId,
         text: info.text,
@@ -841,10 +843,11 @@ export async function renderChat(container, userId) {
       }
     }, () => {
       if (isFailed) return;
+      const currentText = (bubble._msg ? bubble._msg.plaintext : msg.plaintext) || "";
       const senderName = isMine ? (me?.name || "Вы") : (contact.name || contact.nickname || "Собеседник");
-      showForwardModal(msg.plaintext || "", senderName);
+      showForwardModal(currentText, senderName);
     }, (isMine && !isFailed && !isMediaMsg && !isStickerMsg) ? () => {
-      setActiveEdit(msg);
+      setActiveEdit(bubble._msg || msg);
     } : null);
 
     if (isFailed) {
@@ -1017,8 +1020,13 @@ export async function renderChat(container, userId) {
   }
 
   function updateDomMessageText(msgId, newText, editedAt) {
-    const bubbles = messagesEl.querySelectorAll(`.msg-bubble[data-msg-id="${msgId}"], .msg-bubble[data-client-msg-id="${msgId}"]`);
+    const escaped = CSS.escape(String(msgId));
+    const bubbles = messagesEl.querySelectorAll(`.msg-bubble[data-msg-id="${escaped}"], .msg-bubble[data-client-msg-id="${escaped}"]`);
     bubbles.forEach(bubble => {
+      if (bubble._msg) {
+        bubble._msg.plaintext = newText;
+        bubble._msg.edited_at = editedAt;
+      }
       const textEl = bubble.querySelector(".msg-text");
       if (textEl) {
         setMsgTextContent(textEl, newText);
@@ -1027,6 +1035,15 @@ export async function renderChat(container, userId) {
       if (metaEl && !metaEl.querySelector(".msg-edited-badge")) {
         const badge = el("span", { class: "msg-edited-badge", style: "font-size:10px;opacity:0.6;margin-right:3px;" }, "ред.");
         metaEl.prepend(badge);
+      }
+    });
+
+    const replyRefs = messagesEl.querySelectorAll(`.msg-reply-ref[data-reply-to-id="${escaped}"]`);
+    replyRefs.forEach(r => {
+      const rText = r.querySelector(".reply-ref-text");
+      if (rText) {
+        const info = getMessagePreviewInfo(newText);
+        rText.textContent = info.text;
       }
     });
   }
