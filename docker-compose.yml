@@ -21,22 +21,3 @@ services:
     volumes:
       - ./data:/app/data
 
-  caddy:
-    image: caddy:alpine
-    container_name: penik-caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./landing:/var/www/landing:ro
-      - ./client/dist:/var/www/client:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - penik-server
-
-volumes:
-  caddy_data:
-  caddy_config:
