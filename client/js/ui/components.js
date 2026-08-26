@@ -829,17 +829,6 @@ function sniffMp4VideoCodec(bytes) {
   return walk(0, bytes.byteLength, 0);
 }
 
-// An encrypted payload always starts with a 12-byte random nonce, so a body that
-// begins with HTML markup is never our file — it is a VK document page the proxy
-// could not resolve to a direct link, served with 200 OK. Without this check the
-// markup is fed to decryptFileChaCha20 and surfaces as a misleading
-// "cannot be decrypted" error.
-function looksLikeHTMLPage(bytes) {
-  if (bytes.length < 14) return false;
-  const head = new TextDecoder("latin1").decode(bytes.subarray(0, 512)).trimStart().toLowerCase();
-  return head.startsWith("<!doctype html") || head.startsWith("<html");
-}
-
 // AttachmentError marks a download failure the UI can react to specifically.
 // `code === "expired"` means VK no longer serves the file, so retrying is
 // pointless and the card should offer a plain download link instead.
@@ -870,26 +859,25 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
 
       if (!blobUrl) {
         const token = getToken();
-        const proxyUrl = `/api/v1/attachments/proxy?url=${encodeURIComponent(fileInfo.url)}`;
+        let fetchUrl = fileInfo.url;
+        if (!fetchUrl.startsWith("http://") && !fetchUrl.startsWith("https://")) {
+          fetchUrl = fetchUrl.startsWith("/") ? fetchUrl : `/${fetchUrl}`;
+        }
         /** @type {Record<string, string>} */
         const headers = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
-        const resp = await fetch(proxyUrl, { headers });
+        const resp = await fetch(fetchUrl, { headers });
         if (!resp.ok) {
           let detail = `HTTP ${resp.status}`;
           try {
             const errBody = await resp.json();
             if (errBody && errBody.error) detail = errBody.error;
           } catch (e) {/* non-JSON error body */}
-          throw new AttachmentError(detail, resp.status === 410 ? "expired" : undefined);
+          throw new AttachmentError(detail, resp.status === 404 ? "not_found" : undefined);
         }
         const encryptedBuf = await resp.arrayBuffer();
         const encryptedBytes = new Uint8Array(encryptedBuf);
-
-        if (looksLikeHTMLPage(encryptedBytes)) {
-          throw new AttachmentError("VK returned an HTML page instead of the file", "expired");
-        }
 
         const keyBytes = decodeKey(fileInfo.key);
         const decryptedBytes = await decryptFileChaCha20(encryptedBytes, keyBytes);
@@ -924,8 +912,8 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
     if (!isBackgroundFetch) {
       console.error("Failed to download or decrypt file:", err);
       showToast(
-        err && err.code === "expired"
-          ? "Файл больше недоступен на CDN — попросите отправить его заново"
+        err && err.code === "not_found"
+          ? "Файл не найден на сервере"
           : "Ошибка скачивания или расшифровки файла",
         "error"
       );

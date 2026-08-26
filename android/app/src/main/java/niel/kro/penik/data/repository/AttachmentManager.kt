@@ -12,11 +12,8 @@ import kotlinx.coroutines.withContext
 import niel.kro.penik.data.crypto.E2EECrypto
 import niel.kro.penik.data.network.api.ApiConfig
 import niel.kro.penik.data.network.api.ApiService
-import niel.kro.penik.data.network.api.VkSaveRequest
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -25,8 +22,7 @@ import java.security.MessageDigest
 
 class AttachmentManager(
     private val apiService: ApiService,
-    private val e2eeCrypto: E2EECrypto,
-    private val uploadClient: OkHttpClient
+    private val e2eeCrypto: E2EECrypto
 ) {
     suspend fun uploadAndPrepareAttachment(
         context: Context,
@@ -57,18 +53,24 @@ class AttachmentManager(
             // 1. Encrypt raw file via ChaCha20-Poly1305
             val encResult = e2eeCrypto.encryptFileChaCha20(rawBytes)
 
-            // 2. Upload the ciphertext straight to VK, bypassing our server
-            val cdnUrl = uploadDirectToVK(encResult.encryptedBytes, fileName)
+            // 2. Upload the ciphertext directly to our server
+            val body = encResult.encryptedBytes.toRequestBody("application/octet-stream".toMediaTypeOrNull())
+            val part = MultipartBody.Part.createFormData("file", fileName, body)
+            val uploadResponse = apiService.uploadAttachment(part)
+            if (!uploadResponse.isSuccessful || uploadResponse.body() == null) {
+                throw IllegalStateException("Не удалось загрузить файл на сервер (${uploadResponse.code()})")
+            }
+            val attachmentUrl = uploadResponse.body()!!.url
 
             // 3. Generate thumbnail base64
             val thumbBase64 = generateThumbnailBase64(context, uri, rawBytes, mimeType)
 
             // 4. Pre-cache unencrypted plaintext file in local attachment cache for instant render
-            cacheLocalPlaintext(context, cdnUrl, Base64.encodeToString(encResult.keyBytes, Base64.NO_WRAP), fileName, rawBytes)
+            cacheLocalPlaintext(context, attachmentUrl, Base64.encodeToString(encResult.keyBytes, Base64.NO_WRAP), fileName, rawBytes)
 
             // 5. Build JSON payload matching Web client spec
             val fileObj = JSONObject().apply {
-                put("url", cdnUrl)
+                put("url", attachmentUrl)
                 put("name", fileName)
                 put("size", fileSize)
                 put("mime", mimeType)
@@ -87,47 +89,6 @@ class AttachmentManager(
 
             payloadObj.toString()
         }
-    }
-
-    /**
-     * Client-side upload flow: the server only issues a one-shot VK upload URL
-     * and later commits the resulting token, so the encrypted bytes travel
-     * directly from the device to VK. The upload request goes through a client
-     * without our auth interceptor — the session token must not reach VK.
-     */
-    private suspend fun uploadDirectToVK(encryptedBytes: ByteArray, fileName: String): String {
-        val urlResponse = apiService.getVKUploadUrl()
-        val uploadUrl = urlResponse.body()?.uploadUrl
-        if (!urlResponse.isSuccessful || uploadUrl.isNullOrBlank()) {
-            throw IllegalStateException("Не удалось получить ссылку для загрузки (${urlResponse.code()})")
-        }
-
-        val multipart = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart(
-                "file",
-                fileName,
-                encryptedBytes.toRequestBody("application/octet-stream".toMediaTypeOrNull())
-            )
-            .build()
-
-        val fileToken = uploadClient.newCall(
-            Request.Builder().url(uploadUrl).post(multipart).build()
-        ).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                throw IllegalStateException("VK отклонил загрузку (${response.code})")
-            }
-            JSONObject(body).optString("file").takeIf { it.isNotBlank() && it != "null" }
-                ?: throw IllegalStateException("VK не вернул токен файла")
-        }
-
-        val saveResponse = apiService.saveVKAttachment(VkSaveRequest(file = fileToken, name = fileName))
-        val cdnUrl = saveResponse.body()?.url
-        if (!saveResponse.isSuccessful || cdnUrl.isNullOrBlank()) {
-            throw IllegalStateException("Не удалось сохранить файл в VK (${saveResponse.code()})")
-        }
-        return cdnUrl
     }
 
     private fun cacheLocalPlaintext(context: Context, cdnUrl: String, keyB64: String, filename: String, plaintext: ByteArray) {

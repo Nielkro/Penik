@@ -4,7 +4,7 @@ import {
   getAllGroups, getGroupMessages, onGroupUpdate, backfillCurrentKey,
   renameGroup, uploadGroupAvatar, rotateAndDistribute
 } from "../groups.js";
-import { apiGet, getUserById, uploadVKAttachment } from "../api.js";
+import { apiGet, getUserById, uploadAttachment } from "../api.js";
 import { encryptFileChaCha20, encodeKey } from "../crypto.js";
 import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessage, saveCachedMedia } from "../storage.js";
 import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
@@ -633,8 +633,8 @@ export async function renderGroup(container, groupId) {
       const { encryptedBytes, key } = await encryptFileChaCha20(fileBuffer);
       const encryptedBlob = new Blob([encryptedBytes], { type: "application/octet-stream" });
 
-      // 2. Upload to VK CDN via Go server
-      const cdnUrl = await uploadVKAttachment(encryptedBlob, file.name);
+      // 2. Upload to server
+      const cdnUrl = await uploadAttachment(encryptedBlob, file.name);
 
       // Cache original unencrypted BlobUrl locally for sender
       decryptedBlobCache.set(cdnUrl, localBlobUrl);

@@ -1,4 +1,4 @@
-import { apiGet, apiDelete, uploadVKAttachment } from "../api.js";
+import { apiGet, apiDelete, uploadAttachment } from "../api.js";
 import { encryptFileChaCha20, encodeKey, computeSafetyNumber } from "../crypto.js";
 import {
   saveMessage, getMessages, getMessage,
@@ -1071,8 +1071,8 @@ export async function renderChat(container, userId) {
       const { encryptedBytes, key } = await encryptFileChaCha20(fileBuffer);
       const encryptedBlob = new Blob([encryptedBytes], { type: "application/octet-stream" });
 
-      // 2. Upload to VK CDN via Go server
-      const cdnUrl = await uploadVKAttachment(encryptedBlob, file.name);
+      // 2. Upload to server
+      const cdnUrl = await uploadAttachment(encryptedBlob, file.name);
 
       // Cache original unencrypted BlobUrl locally for sender so no redownload is needed
       decryptedBlobCache.set(cdnUrl, localBlobUrl);

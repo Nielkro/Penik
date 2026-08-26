@@ -50,10 +50,8 @@ Penik Messenger REST API предоставляет эндпоинты для а
 | | `GET` | `/api/v1/groups/:group_id/messages/history` | Bearer Token | История сообщений группы |
 | | `POST` | `/api/v1/groups/:group_id/history-packets` | Bearer Token | Загрузка одноразового пакета истории для нового участника |
 | | `GET` | `/api/v1/groups/:group_id/history-packets` | Bearer Token | Скачивание и удаление пакета истории |
-| **Attachments** | `POST` | `/api/v1/attachments/vk-upload` | Bearer Token | Загрузка вложения в VK CDN силами сервера (веб) |
-| | `GET` | `/api/v1/attachments/vk-upload-url` | Bearer Token | Выдача одноразовой ссылки для загрузки клиентом (Android) |
-| | `POST` | `/api/v1/attachments/vk-save` | Bearer Token | Коммит клиентской загрузки, возвращает ссылку на файл |
-| | `GET` | `/api/v1/attachments/proxy` | Bearer Token | Проксирование скачивания вложения из VK |
+| **Attachments** | `POST` | `/api/v1/attachments/upload` | Bearer Token | Загрузка зашифрованного вложения на сервер |
+| | `GET` | `/api/v1/attachments/file/:id` | Bearer Token | Скачивание/стриминг вложения с поддержкой HTTP Range |
 | **Messages & Chats** | `GET` | `/api/v1/messages/history` | Bearer Token | История личных сообщений с пользователем |
 | | `GET` | `/api/v1/messages/:user_id/status` | Bearer Token | Статусы доставки/прочтения сообщений |
 | | `DELETE` | `/api/v1/chats/:peer_id` | Bearer Token | Удаление чата |
@@ -186,53 +184,30 @@ Penik Messenger REST API предоставляет эндпоинты для а
 
 ---
 
-### 4. Вложения (Attachments via VK CDN)
+### 4. Вложения (Encrypted Attachments)
 
-Есть два способа загрузки — выбор зависит от платформы.
+Все файлы предварительно шифруются на стороне клиента с помощью **ChaCha20-Poly1305**. Сервер хранит только зашифрованные бинарные блобы и не имеет доступа к ключам шифрования.
 
-#### `POST /api/v1/attachments/vk-upload` (веб)
-Сервер сам заливает файл в VK CDN и возвращает только ссылку. Браузер не может
-постить напрямую на upload-сервер VK (там нет CORS-заголовков), поэтому байты
-проходят транзитом через сервер.
-- **Form Data:** `file` — зашифрованные байты
+#### `POST /api/v1/attachments/upload`
+Загрузка зашифрованного файла на сервер.
+- **Form Data (multipart):** `file` — зашифрованные байты
 - **Response (200 OK):**
   ```json
   {
-    "url": "https://vk.com/doc..."
+    "id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+    "url": "/api/v1/attachments/file/a1b2c3d4e5f60718293a4b5c6d7e8f90"
   }
   ```
 
-#### `GET /api/v1/attachments/vk-upload-url` (Android, шаг 1)
-Сервер отдаёт одноразовый upload-эндпоинт VK; сами байты через сервер не идут.
-- **Response (200 OK):**
-  ```json
-  {
-    "upload_url": "https://pu.vk.com/c123/upload_doc?..."
-  }
-  ```
-- Далее клиент сам делает `POST multipart/form-data` (поле `file`) на
-  `upload_url`. VK отвечает JSON с непрозрачным полем `file` — это токен, который
-  бесполезен без токена бота.
-
-#### `POST /api/v1/attachments/vk-save` (Android, шаг 2)
-Сервер коммитит загрузку (`docs.save`) и возвращает прямую ссылку на CDN.
-- **Request Body (JSON):**
-  ```json
-  {
-    "file": "<token из ответа upload-сервера VK>",
-    "name": "photo.enc"
-  }
-  ```
-- **Response (200 OK):**
-  ```json
-  {
-    "url": "https://vk.com/doc..."
-  }
-  ```
-
-#### `GET /api/v1/attachments/proxy`
-Проксирование скачивания: `?url=<ссылка VK>`. Хост проверяется по allowlist,
-страница предпросмотра документа разворачивается в прямую ссылку.
+#### `GET /api/v1/attachments/file/:id`
+Скачивание зашифрованного файла с сервера.
+- **Headers:** `Authorization: Bearer <token>`, опционально `Range: bytes=0-1048575`
+- **Response:**
+  - `200 OK` (полный файл) или `206 Partial Content` (при наличии заголовка `Range`)
+  - `Content-Type: application/octet-stream`
+  - `Accept-Ranges: bytes`
+  - `ETag: "<id>"`
+  - `Cache-Control: private, max-age=31536000, immutable`
 
 ---
 

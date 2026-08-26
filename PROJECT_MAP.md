@@ -22,9 +22,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/handlers/presence.go` — Serves and broadcasts user presence states and active device information.
 - `server/internal/handlers/stickers.go` — REST handlers for sticker packs: listing installed packs, pack metadata, install/uninstall, Telegram sticker pack import, and static file serving.
 - `server/internal/stickers/models.go` — Data models for sticker packs and individual stickers.
-- `server/internal/stickers/telegram.go` — Importer for fetching metadata and downloading sticker files from Telegram Bot API.
-- `server/internal/handlers/vkupload.go` — Two attachment upload flows plus the download proxy: the web flow relays encrypted bytes through the server into VK CDN (`vk-upload`), while the native flow issues a one-shot VK upload URL (`vk-upload-url`) and later commits the client's opaque file token via `docs.save` (`vk-save`); downloads are proxied through a VK host allowlist, resolving document preview pages to their direct link.
-- `server/internal/handlers/vkticket.go` — Issues stateless HMAC-SHA256 upload tickets (`upload-ticket`) that the web client presents to the VK relay as Bearer credentials; the relay verifies the MAC locally against the shared `RELAY_TICKET_SECRET`, so the relay master token never reaches browsers and ticket checks need no round trip back to this server.
+-`server/internal/handlers/attachments.go` — Self-hosted encrypted attachment handlers: multipart upload (`POST /api/v1/attachments/upload`) and streaming file download (`GET /api/v1/attachments/file/:id`) with HTTP Range requests support.
 - `server/internal/handlers/ws.go` — Authorizes WebSocket upgrades and creates server-side client sessions for real-time event exchange.
 - `server/internal/ws/client.go` — Implements the WebSocket client read/write pump, handling direct messages, key requests, receipt events, offline batching, and presence.
 - `server/internal/ws/group.go` — Receives and routes encrypted group messages, receipts, and offline delivery across group members.
@@ -153,10 +151,10 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/data/repository/ChatRepository.kt` — Repository for the direct chat list and aggregated contact/last message data.
 - `android/app/src/main/java/niel/kro/penik/data/repository/GroupRepository.kt` — Synchronizes groups/members, stores group keys/messages, manages envelopes, rotation, and group history.
 - `android/app/src/main/java/niel/kro/penik/data/repository/StickerRepository.kt` — Manages sticker packs and individual stickers, Telegram sticker pack import, pack install/uninstall, and local caching of recent stickers.
-- `android/app/src/main/java/niel/kro/penik/data/repository/AttachmentManager.kt` — Handles file/media upload flow: reads URI bytes via ContentResolver, encrypts payload with ChaCha20-Poly1305 via E2EECrypto, uploads the ciphertext directly to VK (server-issued one-shot URL from `GET /attachments/vk-upload-url`, committed via `POST /attachments/vk-save`) through a token-free OkHttp client, generates a WebP thumbnail, caches the plaintext locally, and returns a JSON payload string matching the wire format.
+- `android/app/src/main/java/niel/kro/penik/data/repository/AttachmentManager.kt` — Handles file/media upload flow: reads URI bytes via ContentResolver, encrypts payload with ChaCha20-Poly1305 via E2EECrypto, uploads the ciphertext directly to the Penik server (`POST /api/v1/attachments/upload`), generates a WebP thumbnail, caches the plaintext locally, and returns a JSON payload string matching the wire format.
 - `android/app/src/main/java/niel/kro/penik/data/repository/PresenceBus.kt` — Shared flow of presence updates for UI observers and repositories.
 - `android/app/src/main/java/niel/kro/penik/data/repository/AvatarCacheBus.kt` — Invalidates locally cached avatars after server updates.
-- `android/app/src/main/java/niel/kro/penik/data/di/Modules.kt` — Hilt providers for the local DB, SQLCipher, Retrofit/OkHttp, API, WebSocket, crypto dependencies, and AttachmentManager; also provides the `@ExternalUploadClient` OkHttp client used for VK uploads, which deliberately carries no session token.
+- `android/app/src/main/java/niel/kro/penik/data/di/Modules.kt` — Hilt providers for the local DB, SQLCipher, Retrofit/OkHttp, API, WebSocket, crypto dependencies, and AttachmentManager.
 
 ### Shared application/domain coordination
 
@@ -186,6 +184,6 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `Docs/README.md` — Documentation sitemap and navigation index.
 - `Docs/REST_API.md` — Full REST API reference: auth, profiles, keys, pairing, groups, attachments, and rate limits.
 - `Docs/WEBSOCKET.md` — Complete WebSocket protocol reference: connection upgrade, binary framing, opcodes (0x01-0x28), and MsgPack payloads.
-- `Docs/ARCHITECTURE.md` — Deep dive into E2EE (X3DH/ChaCha20-Poly1305), epoch-based group encryption, device pairing, VK CDN attachment proxying, and multi-tier persistence.
+- `Docs/ARCHITECTURE.md` — Deep dive into E2EE (X3DH/ChaCha20-Poly1305), epoch-based group encryption, device pairing, self-hosted attachment storage, and multi-tier persistence.
 - `Docs/CALLS.md` — LiveKit 1:1 calls architecture, signaling opcodes (0x24-0x29), environment variables, fail-closed validation, and client failover algorithm.
 

@@ -152,18 +152,10 @@ interface ApiService {
     ): Response<Unit>
 
     @Multipart
-    @POST("attachments/vk-upload")
-    suspend fun uploadVKAttachment(
+    @POST("attachments/upload")
+    suspend fun uploadAttachment(
         @Part file: MultipartBody.Part
-    ): Response<VkUploadResponse>
-
-    @GET("attachments/vk-upload-url")
-    suspend fun getVKUploadUrl(): Response<VkUploadUrlResponse>
-
-    @POST("attachments/vk-save")
-    suspend fun saveVKAttachment(
-        @Body body: VkSaveRequest
-    ): Response<VkUploadResponse>
+    ): Response<UploadAttachmentResponse>
 
     @PUT("devices/me/fcm")
     suspend fun updateFcmToken(

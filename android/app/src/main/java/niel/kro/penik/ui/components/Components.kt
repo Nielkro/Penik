@@ -763,20 +763,7 @@ private suspend fun downloadAndDecryptAttachment(context: Context, attachment: F
         val cacheDir = File(context.cacheDir, "attachments").apply { mkdirs() }
         val extension = attachment.name.substringAfterLast('.', "").take(16)
         
-        val isVK = attachment.url.contains("vk.com") || 
-                   attachment.url.contains("vk.ru") || 
-                   attachment.url.contains("userapi.com") || 
-                   attachment.url.contains("vkuserphoto.ru") || 
-                   attachment.url.contains("vkuseraudio.net") || 
-                   attachment.url.contains("vkuservideo.net") || 
-                   attachment.url.contains("vkuserlive.net") || 
-                   attachment.url.contains("vk-cdn.net")
-
         val fullUrl = when {
-            isVK -> {
-                val encodedUrl = java.net.URLEncoder.encode(attachment.url, "UTF-8")
-                "${niel.kro.penik.data.network.api.ApiConfig.BASE_URL}attachments/proxy?url=$encodedUrl"
-            }
             attachment.url.startsWith("http://") || attachment.url.startsWith("https://") -> attachment.url
             attachment.url.startsWith("/") -> "${niel.kro.penik.data.network.api.ApiConfig.SCHEME}://${niel.kro.penik.data.network.api.ApiConfig.HOST}${attachment.url}"
             else -> "${niel.kro.penik.data.network.api.ApiConfig.SCHEME}://${niel.kro.penik.data.network.api.ApiConfig.HOST}/${attachment.url}"
