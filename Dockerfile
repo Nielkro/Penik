@@ -7,7 +7,7 @@ COPY client/ ./
 RUN npm run build
 
 # Stage 2: Build Go server with embedded frontend
-FROM golang:1.24-alpine AS server-builder
+FROM golang:1.26-alpine AS server-builder
 WORKDIR /app
 RUN apk add --no-cache git
 COPY server/go.mod ./server/
