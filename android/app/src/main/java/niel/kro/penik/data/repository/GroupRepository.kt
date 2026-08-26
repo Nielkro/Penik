@@ -118,9 +118,16 @@ class GroupRepository @Inject constructor(
     private suspend fun fetchDeviceKeys(userIds: List<Long>): List<DeviceKey> {
         val out = mutableListOf<DeviceKey>()
         for (uid in userIds) {
-            deviceKeyCache[uid]?.let { out.addAll(it); continue }
-            val resp = runCatching { api.getKeyBundle(uid) }.getOrNull() ?: continue
-            val devices = resp.body()?.devices ?: continue
+            val cached = deviceKeyCache[uid]
+            if (cached != null) {
+                out.addAll(cached)
+                continue
+            }
+            val myId = myUserId()
+            val resp = runCatching {
+                if (uid == myId) api.getKeyBundleSelf(uid) else api.getKeyBundle(uid)
+            }.getOrNull()
+            val devices = if (resp?.isSuccessful == true) resp.body()?.devices ?: emptyList() else emptyList()
             val keys = mutableListOf<DeviceKey>()
             for (d in devices) {
                 val ik = runCatching { Base64.decode(d.identityKey, Base64.DEFAULT) }.getOrNull() ?: continue
