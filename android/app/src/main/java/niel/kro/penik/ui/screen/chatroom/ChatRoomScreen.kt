@@ -98,6 +98,7 @@ import androidx.compose.foundation.layout.height
 import niel.kro.penik.ui.viewmodel.ChatRoomViewModel
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.ui.platform.LocalContext
@@ -816,6 +817,13 @@ fun ChatRoomScreen(
 
                     // Attachment picker button on the RIGHT
                     val showAttachPicker = remember { mutableStateOf(false) }
+                    val mediaPickerLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.PickVisualMedia()
+                    ) { uri ->
+                        if (uri != null) {
+                            viewModel.sendMediaFile(context, uri)
+                        }
+                    }
                     val attachLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.GetContent()
                     ) { uri ->
@@ -835,7 +843,9 @@ fun ChatRoomScreen(
                                     TextButton(
                                         onClick = {
                                             showAttachPicker.value = false
-                                            attachLauncher.launch("image/*")
+                                            mediaPickerLauncher.launch(
+                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                            )
                                         },
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
