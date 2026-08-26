@@ -40,6 +40,11 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: read schema: %w", err)
 	}
 
+	if err := migrateCallsTable(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate calls table: %w", err)
+	}
+
 	if _, err := sqlDB.Exec(string(schema)); err != nil {
 		sqlDB.Close()
 		return nil, fmt.Errorf("db: migrate: %w", err)
@@ -887,5 +892,82 @@ func migrateGroupMessageEditedAt(database *sql.DB) error {
 	}
 	return nil
 }
+
+func migrateCallsTable(database *sql.DB) error {
+	var tableName string
+	err := database.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='calls'").Scan(&tableName)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	hasCallerId, err := tableHasColumn(database, "calls", "caller_id")
+	if err != nil {
+		return err
+	}
+	if hasCallerId {
+		return nil
+	}
+
+	hasCallerUserId, err := tableHasColumn(database, "calls", "caller_user_id")
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	tx, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS calls_v2 (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			call_id TEXT NOT NULL UNIQUE,
+			caller_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			callee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			is_video BOOLEAN NOT NULL DEFAULT 0,
+			status TEXT NOT NULL,
+			started_at INTEGER NOT NULL,
+			answered_at INTEGER,
+			ended_at INTEGER NOT NULL,
+			duration INTEGER NOT NULL DEFAULT 0,
+			created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		);
+	`); err != nil {
+		return fmt.Errorf("create calls_v2: %w", err)
+	}
+
+	if hasCallerUserId {
+		_, _ = tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO calls_v2 (id, call_id, caller_id, callee_id, is_video, status, started_at, answered_at, ended_at, duration)
+			SELECT
+				id,
+				COALESCE(room_name, 'migrated_' || id),
+				caller_user_id,
+				callee_user_id,
+				CASE WHEN call_type = 'video' THEN 1 ELSE 0 END,
+				status,
+				started_at,
+				answered_at,
+				COALESCE(ended_at, started_at),
+				CASE WHEN ended_at IS NOT NULL AND answered_at IS NOT NULL AND ended_at >= answered_at THEN ended_at - answered_at ELSE 0 END
+			FROM calls;
+		`)
+	}
+
+	if _, err := tx.ExecContext(ctx, `DROP TABLE calls;`); err != nil {
+		return fmt.Errorf("drop legacy calls: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE calls_v2 RENAME TO calls;`); err != nil {
+		return fmt.Errorf("rename calls_v2 to calls: %w", err)
+	}
+
+	return tx.Commit()
+}
+
 
 
