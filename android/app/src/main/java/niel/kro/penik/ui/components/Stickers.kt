@@ -234,8 +234,10 @@ fun StickerMediaView(
 fun StickerMessageView(
     payload: StickerPayload,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null
 ) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val isVideo = remember(payload) {
         payload.file_name?.endsWith(".webm", ignoreCase = true) == true ||
         payload.url.endsWith(".webm", ignoreCase = true)
@@ -253,7 +255,17 @@ fun StickerMessageView(
         modifier = modifier
             .size(160.dp)
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick),
+            .androidx.compose.foundation.combinedClickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+                onLongClick = {
+                    if (onLongClick != null) {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        onLongClick()
+                    }
+                }
+            ),
         contentAlignment = Alignment.Center
     ) {
         StickerMediaView(

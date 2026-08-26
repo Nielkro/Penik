@@ -1252,9 +1252,17 @@ private fun FileAttachmentContent(
     timestamp: Long? = null,
     isSentByMe: Boolean = false,
     delivered: Boolean = false,
-    read: Boolean = false
+    read: Boolean = false,
+    onLongClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val triggerLongClick: () -> Unit = {
+        if (onLongClick != null) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onLongClick()
+        }
+    }
     val isImage = attachment.mime.startsWith("image/")
     val isVideo = attachment.mime.startsWith("video/")
     var localFile by remember(attachment.url, attachment.key) { mutableStateOf<File?>(null) }
@@ -1368,7 +1376,15 @@ private fun FileAttachmentContent(
             })
         }
     }
-    Column(modifier = if (isImage || isVideo) Modifier else Modifier.clickable(enabled = localFile != null, onClick = openFile)) {
+    Column(
+        modifier = if (isImage || isVideo) Modifier else Modifier.combinedClickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            enabled = localFile != null,
+            onClick = openFile,
+            onLongClick = triggerLongClick
+        )
+    ) {
         when {
             isVideo -> Box(
                 modifier = Modifier
@@ -1381,9 +1397,15 @@ private fun FileAttachmentContent(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable(enabled = localFile != null && !isUploading) {
-                                showVideoViewer = true
-                            },
+                            .combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                enabled = localFile != null && !isUploading,
+                                onClick = {
+                                    showVideoViewer = true
+                                },
+                                onLongClick = triggerLongClick
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         if (imageBitmap != null) {
@@ -1516,20 +1538,39 @@ private fun FileAttachmentContent(
                         contentDescription = attachment.name,
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable(enabled = !isUploading) { showImageViewer = true },
+                            .combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                enabled = !isUploading,
+                                onClick = { showImageViewer = true },
+                                onLongClick = triggerLongClick
+                            ),
                         contentScale = ContentScale.Crop
                     )
                     // File still loading: show thumb as placeholder
                     imageBitmap != null -> Image(
                         bitmap = imageBitmap,
                         contentDescription = attachment.name,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {},
+                                onLongClick = triggerLongClick
+                            ),
                         contentScale = ContentScale.Crop
                     )
                     else -> Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color(0x22FFFFFF)),
+                            .background(Color(0x22FFFFFF))
+                            .combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {},
+                                onLongClick = triggerLongClick
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         if (loadError) {
@@ -1637,7 +1678,8 @@ private fun FileAttachmentContent(
                 text = attachment.caption,
                 textColor = textColor,
                 linkColor = if (textColor == LocalAppColors.current.sentMessageText) Color(0xFF64B5F6) else Color(0xFF409CFF),
-                fontSize = 15.sp
+                fontSize = 15.sp,
+                onLongClick = triggerLongClick
             )
         }
     }
@@ -2048,7 +2090,11 @@ fun MessageBubble(
                         timestamp = timestamp,
                         isSentByMe = isSentByMe,
                         delivered = delivered,
-                        read = read
+                        read = read,
+                        onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showMenu = true
+                        }
                     )
                     if (attachment.caption.isNotBlank()) {
                         Spacer(modifier = Modifier.height(2.dp))
@@ -2083,6 +2129,10 @@ fun MessageBubble(
                                 if (sticker.pack_id.isNotBlank()) {
                                     onStickerClick?.invoke(sticker.pack_id)
                                 }
+                            },
+                            onLongClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                showMenu = true
                             },
                             modifier = Modifier.fillMaxSize()
                         )
