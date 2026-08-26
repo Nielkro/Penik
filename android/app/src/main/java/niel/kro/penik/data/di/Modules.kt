@@ -130,6 +130,8 @@ object NetworkModule {
                 val response = chain.proceed(chain.request())
                 if (response.isSuccessful) {
                     webSocketManager.notifyRestSuccess()
+                } else if (response.code == 401) {
+                    webSocketManager.notifyUnauthorized()
                 }
                 response
             }

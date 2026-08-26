@@ -2293,10 +2293,12 @@ fun ConnectionStatusBar(connectionState: ConnectionState) {
     val text = when (connectionState) {
         ConnectionState.CONNECTING -> "Устанавливается соединение..."
         ConnectionState.DISCONNECTED -> "Нет соединения"
+        ConnectionState.UNAUTHORIZED -> "Сессия завершена (401). Требуется повторный вход"
         ConnectionState.CONNECTED -> return
     }
     val color = when (connectionState) {
         ConnectionState.CONNECTING -> LocalAppColors.current.warning
+        ConnectionState.UNAUTHORIZED -> LocalAppColors.current.danger
         else -> LocalAppColors.current.danger
     }
     Box(
