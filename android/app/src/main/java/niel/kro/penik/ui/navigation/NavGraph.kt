@@ -22,6 +22,22 @@ fun NavGraph(
     navController: NavHostController,
     startupViewModel: StartupViewModel = hiltViewModel()
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        startupViewModel.unauthorizedEvents.collect {
+            startupViewModel.logout()
+            android.widget.Toast.makeText(
+                context,
+                "Сессия завершена или отозвана (401). Пожалуйста, войдите снова.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            navController.navigate(Screen.Auth.route) {
+                popUpTo(0) { inclusive = true }
+            }
+        }
+    }
+
     val startDestination = remember {
         if (startupViewModel.isLoggedIn()) Screen.Main.route
         else Screen.Auth.route

@@ -103,9 +103,12 @@ class GroupChatViewModel @Inject constructor(
     private val attachmentManager: AttachmentManager,
     val stickerRepository: niel.kro.penik.data.repository.StickerRepository,
     savedStateHandle: androidx.lifecycle.SavedStateHandle,
+    private val webSocketManager: niel.kro.penik.data.network.websocket.WebSocketManager
 ) : ViewModel() {
 
     val groupId: Long = savedStateHandle.get<Long>("groupId") ?: 0L
+
+    val connectionState = webSocketManager.connectionState
 
     val myUserId: Long = authRepository.getUserId() ?: -1L
 
