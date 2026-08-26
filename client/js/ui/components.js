@@ -895,7 +895,7 @@ function sniffMp4VideoCodec(bytes) {
 }
 
 // AttachmentError marks a download failure the UI can react to specifically.
-// `code === "expired"` means VK no longer serves the file, so retrying is
+// `code === "expired"` means the server no longer serves the file, so retrying is
 // pointless and the card should offer a plain download link instead.
 class AttachmentError extends Error {
   /**

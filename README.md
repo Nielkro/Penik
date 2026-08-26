@@ -8,7 +8,7 @@
 
 </div>
 
-Мультиплатформенный мессенджер с E2EE: Go-бэкенд, веб-клиент на ванильном JS и Android-клиент на Jetpack Compose. Мульти-девайс, личные и групповые чаты, аудио/видеозвонки через LiveKit, стикеры с импортом из Telegram, вложения через VK CDN, бинарный WebSocket-протокол на MessagePack.
+Мультиплатформенный мессенджер с E2EE: Go-бэкенд, веб-клиент на ванильном JS и Android-клиент на Jetpack Compose. Мульти-девайс, личные и групповые чаты, аудио/видеозвонки через LiveKit, стикеры с импортом из Telegram, собственное E2EE-хранилище вложений, бинарный WebSocket-протокол на MessagePack.
 
 Сервер маршрутизирует шифртекст и не имеет доступа к содержимому сообщений: ключи генерируются и остаются на устройствах, на сервер уходят только публичные ключи и запечатанные конверты.
 
@@ -27,7 +27,7 @@
 Docs/            Подробная документация: REST API, WebSocket, Architecture, Calls
 server/          Go-бэкенд: REST + WebSocket, SQLite, встроенная раздача веб-клиента
   cmd/server/    точка входа, embed собранного фронтенда
-  internal/      config, db, handlers (auth, stickers, vkupload, ws, call), middleware, ws
+  internal/      config, db, handlers (auth, stickers, attachments, ws, call), middleware, ws
 client/          Веб-клиент (Vite)
   js/            api, ws, crypto, groups, pairing, presence, call, app + ui/ (chat, stickers, call_modal)
   css/           стили
@@ -35,7 +35,6 @@ client/          Веб-клиент (Vite)
 android/         Android-клиент (Gradle, Compose)
   data/          network (api, ws), crypto, repository (stickers, attachment, auth, group), local
   ui/            screen (auth, chats, chatroom, groups, call), components (stickers, video, bubble)
-Developments/    Вспомогательные утилиты: Vkproxy, VkUpload, sqtt
 plan/            Спецификации протоколов: api_protocol, e2ee_plan, groups_plan, android_client_plan
 PROJECT_MAP.md   Индекс файлов проекта с описанием назначения каждого
 AUDIT.md         Аудит криптографии клиента
@@ -93,8 +92,7 @@ cd android
 | `MAX_AVATAR_SIZE` | `5242880` | Максимальный размер аватара, байт (5 МБ) |
 | `MAX_BODY_SIZE` | `220200960` | Лимит тела запроса (~210 МБ для вложений) |
 | `ALLOWED_ORIGINS` | — (обязательна) | Список origin через запятую. Wildcard запрещён: без явного списка сервер не стартует |
-| `UPLOAD_DIR` | `./data/upload` | Каталог для аватаров и стикеров |
-| `VK_BOT_TOKEN` | — | Токен VK для загрузки вложений в VK CDN |
+| `UPLOAD_DIR` | `./data/upload` | Каталог для аватаров, стикеров и зашифрованных вложений |
 | `RELAY_TICKET_SECRET` | — | Секрет HMAC для авторизации загрузок через relay |
 | `LIVEKIT_URL` / `LIVEKIT_FALLBACK_URL` | — | URL серверов LiveKit для 1:1 аудио/видеозвонков |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | — | API-ключи LiveKit |
@@ -200,7 +198,7 @@ npm test
 - [`Docs/REST_API.md`](Docs/REST_API.md) — Подробная спецификация REST API
 - [`Docs/WEBSOCKET.md`](Docs/WEBSOCKET.md) — Бинарный протокол WebSocket (опкоды 0x01–0x36)
 - [`Docs/CALLS.md`](Docs/CALLS.md) — Архитектура и сигнализация LiveKit звонков
-- [`Docs/ARCHITECTURE.md`](Docs/ARCHITECTURE.md) — Архитектура E2EE, группы, устройства, VK CDN и база данных
+- [`Docs/ARCHITECTURE.md`](Docs/ARCHITECTURE.md) — Архитектура E2EE, группы, устройства, защищённые вложения и база данных
 - [`PROJECT_MAP.md`](PROJECT_MAP.md) — Индекс исходников с назначением каждого файла
 - [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md) — Аудит безопасности с реестром находок
 - [`AUDIT.md`](AUDIT.md) — Аудит криптографии клиента

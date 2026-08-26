@@ -93,9 +93,8 @@ func main() {
 	// day from one address, which is enough to sweep a small user base.
 	nicknameLookupLimiter := middleware.NewIPRateLimiterN(20, 10*time.Minute)
 
-	// Each direct-upload handshake burns a VK API call pair on the shared bot
-	// token, so the client-side upload flow is capped per user. Sending media
-	// faster than this is not a normal chat pattern.
+	// Attachment upload flow is rate-limited per user to prevent storage-DoS
+	// and excessive disk usage. Sending media faster than this is not a normal chat pattern.
 	attachmentUploadLimiter := middleware.NewUserRateLimiter(60, time.Minute)
 
 	// Public routes (no auth, but rate limited).
