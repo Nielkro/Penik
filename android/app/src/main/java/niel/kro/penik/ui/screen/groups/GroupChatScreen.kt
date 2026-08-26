@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
+import androidx.compose.material.icons.filled.Settings
 import niel.kro.penik.ui.components.StickerPickerBottomSheet
 import niel.kro.penik.ui.components.StickerPackDetailDialog
 import androidx.compose.material3.AlertDialog
@@ -311,15 +312,39 @@ fun GroupChatScreen(
                         ) {
                             DropdownMenuItem(
                                 text = { Text("Настройки группы", color = LocalAppColors.current.textPrimary) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = null,
+                                        tint = LocalAppColors.current.textSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
                                 onClick = { showMenu = false; onGroupSettingsClick(groupId) }
                             )
                             DropdownMenuItem(
                                 text = { Text("Участники", color = LocalAppColors.current.textPrimary) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Group,
+                                        contentDescription = null,
+                                        tint = LocalAppColors.current.textSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
                                 onClick = { showMenu = false; showMembersDialog = true }
                             )
                             if (canManage) {
                                 DropdownMenuItem(
                                     text = { Text("Пригласить", color = LocalAppColors.current.textPrimary) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.PersonAdd,
+                                            contentDescription = null,
+                                            tint = LocalAppColors.current.textSecondary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
                                     onClick = { showMenu = false; showInviteDialog = true }
                                 )
                             }

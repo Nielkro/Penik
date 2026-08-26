@@ -46,7 +46,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Pause
@@ -1748,6 +1753,14 @@ fun MessageBubble(
             ) {
                 DropdownMenuItem(
                     text = { Text("Копировать", color = LocalAppColors.current.textPrimary) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = null,
+                            tint = LocalAppColors.current.textSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    },
                     onClick = {
                         doCopy()
                         showMenu = false
@@ -1756,6 +1769,14 @@ fun MessageBubble(
                 if (onEdit != null && isSentByMe && !isFailed && attachment == null && !isSticker) {
                     DropdownMenuItem(
                         text = { Text("Изменить", color = LocalAppColors.current.textPrimary) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = null,
+                                tint = LocalAppColors.current.textSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
                         onClick = {
                             onEdit()
                             showMenu = false
@@ -1765,6 +1786,14 @@ fun MessageBubble(
                 if (onReply != null && !isFailed) {
                     DropdownMenuItem(
                         text = { Text("Ответить", color = LocalAppColors.current.textPrimary) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Reply,
+                                contentDescription = null,
+                                tint = LocalAppColors.current.textSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
                         onClick = {
                             onReply()
                             showMenu = false
@@ -1774,6 +1803,14 @@ fun MessageBubble(
                 if (onForward != null && !isFailed) {
                     DropdownMenuItem(
                         text = { Text("Переслать", color = LocalAppColors.current.textPrimary) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = LocalAppColors.current.textSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
                         onClick = {
                             onForward()
                             showMenu = false
@@ -1783,6 +1820,14 @@ fun MessageBubble(
                 if (onDelete != null) {
                     DropdownMenuItem(
                         text = { Text("Удалить", color = Color(0xFFEF5350)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = null,
+                                tint = Color(0xFFEF5350),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
                         onClick = {
                             onDelete()
                             showMenu = false
