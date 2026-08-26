@@ -2,7 +2,7 @@
 FROM node:20-alpine AS client-builder
 WORKDIR /app/client
 COPY client/package*.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 COPY client/ ./
 RUN npm run build
 
@@ -13,10 +13,12 @@ RUN apk add --no-cache git gcc musl-dev
 COPY server/go.mod ./server/
 COPY server/go.su[m] ./server/
 WORKDIR /app/server
-RUN go mod download || true
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY server/ ./
 COPY --from=client-builder /app/client/dist ./cmd/server/dist
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o /app/bin/penik-server ./cmd/server
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o /app/bin/penik-server ./cmd/server
 
 # Stage 3: Production runtime image
 FROM alpine:3.20
