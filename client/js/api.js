@@ -1,4 +1,14 @@
-const BASE = `${window.location.protocol}//${window.location.host}/api/v1`;
+export function getApiOrigin() {
+  if (typeof window !== 'undefined' && window.__PENIK_API_ORIGIN__) {
+    return window.__PENIK_API_ORIGIN__;
+  }
+  if (typeof window !== 'undefined' && window.location.hostname.startsWith('web.')) {
+    return `${window.location.protocol}//api.${window.location.hostname.slice(4)}`;
+  }
+  return typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.host}` : '';
+}
+
+export const BASE = `${getApiOrigin()}/api/v1`;
 
 // ApiError carries the HTTP status next to the message so callers can branch on
 // it — 404 for a missing resource, 410 for an expired CDN link, 0 when the

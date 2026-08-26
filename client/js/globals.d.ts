@@ -6,4 +6,6 @@ interface Window {
   // worker asks the page for these over MessageChannel to serve range requests;
   // it never sees ciphertext or keys.
   _streamMediaCache?: Map<string, string>;
+  __PENIK_API_ORIGIN__?: string;
+  __PENIK_API_HOST__?: string;
 }

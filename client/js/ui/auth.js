@@ -1,4 +1,4 @@
-import { apiPost, apiGet, setToken, getUserById, getToken } from "../api.js";
+import { apiPost, apiGet, setToken, getUserById, getToken, BASE } from "../api.js";
 import { getPersistentDeviceName, getClientPlatform, getClientLocation, saveIdentityKey, saveIKPrivate, saveIKPublic, getIKPrivate, getIKPublic } from "../storage.js";
 import { navigate, setCurrentUser, restoreE2EEKeys, backupE2EEKeys } from "../app.js";
 import { el, showToast, spinner, avatar, showConfirmModal, showPinModal } from "./components.js";
@@ -88,7 +88,7 @@ async function uploadAvatarFile(file) {
   const formData = new FormData();
   formData.append("avatar", webpBlob, "avatar.webp");
 
-  const res = await fetch(`${window.location.protocol}//${window.location.host}/api/v1/avatar`, {
+  const res = await fetch(`${BASE}/avatar`, {
     method: "PUT",
     headers,
     body: formData

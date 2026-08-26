@@ -1,0 +1,60 @@
+# ==============================================================================
+# Caddy configuration for Penik Messenger (Production)
+# ==============================================================================
+
+# 1. Главный домен — Лендинг и загрузка APK
+penik.ru {
+    root * /opt/penik/landing
+    file_server
+
+    # Сжатие gzip и zstd для быстрой загрузки
+    encode gzip zstd
+
+    # Безопасные заголовки
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}
+
+# 2. Веб-клиент (SPA мессенджера)
+web.penik.ru {
+    root * /opt/penik/client/dist
+    file_server
+
+    encode gzip zstd
+
+    # SPA маршрутизация (отдавать index.html на несуществующие пути/хэши)
+    try_files {path} /index.html
+
+    # Кэширование статических ассетов
+    @static {
+        path /assets/* /sw.js /favicon*
+    }
+    header @static Cache-Control "public, max-age=31536000, immutable"
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}
+
+# 3. API и WebSocket бэкенд
+api.penik.ru {
+    # Проксирование REST API и WebSocket на Go-сервер
+    reverse_proxy 127.0.0.1:8143 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Максимальный размер загружаемых вложений (аудио/видео/файлы до 250MB)
+    request_body {
+        max_size 250MB
+    }
+}

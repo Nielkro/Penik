@@ -38,6 +38,8 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/middleware/security_headers.go` — Sets Content-Security-Policy and defensive response headers (nosniff, frame-deny, referrer policy) on every response.
 - `Dockerfile` — Multi-stage Docker build packaging Node.js client build and Go server into a single lightweight Alpine runtime image.
 - `docker-compose.yml` — Container orchestration for running Penik server behind Caddy reverse proxy with automated TLS.
+- `Caddyfile.production` — Production Caddy reverse proxy configuration routing `penik.ru` (landing), `web.penik.ru` (static web SPA), and `api.penik.ru` (Go backend).
+- `landing/index.html` — Standalone landing page promoting the messenger, providing web client entry and Android APK download links.
 
 ### Browser client transport
 
