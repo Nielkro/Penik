@@ -1,6 +1,6 @@
 import { apiPut, uploadAvatar } from "../api.js";
 import { navigate, getCurrentUser, setCurrentUser, logout } from "../app.js";
-import { avatar, el, showToast, spinner } from "./components.js";
+import { avatar, el, showToast, spinner, showConfirmModal } from "./components.js";
 
 export function renderProfile(container) {
   container.innerHTML = "";
@@ -196,7 +196,15 @@ export function renderProfile(container) {
     class: "btn-danger profile-logout-btn",
     style: "width:100%;padding:12px 16px;cursor:pointer;margin-top:20px;font-size:14px;border-radius:var(--r);"
   }, "Выйти");
-  logoutBtn.addEventListener("click", () => {
+  logoutBtn.addEventListener("click", async () => {
+    const confirmed = await showConfirmModal(
+      "Выйти из аккаунта?",
+      "Вы действительно хотите выйти из текущего аккаунта?",
+      "Выйти",
+      "Отмена",
+      true
+    );
+    if (!confirmed) return;
     logout();
     showToast("Вы вышли из системы", "info");
   });

@@ -1,4 +1,4 @@
-import { el, showToast, spinner, formatFullTime, avatar } from "./components.js";
+import { el, showToast, spinner, formatFullTime, avatar, showConfirmModal } from "./components.js";
 import { getTheme, setTheme } from "../theme.js";
 import {
   listDevices,
@@ -244,6 +244,15 @@ export function renderSettings(container) {
     el("span", { style: "color:var(--text-muted);font-size:18px;" }, "›")
   );
   revokeSessionsBtn.addEventListener("click", async () => {
+    const confirmed = await showConfirmModal(
+      "Отозвать все сессии?",
+      "Вы действительно хотите завершить все активные сессии на остальных устройствах? На текущем устройстве вы останетесь в аккаунте.",
+      "Отозвать",
+      "Отмена",
+      true
+    );
+    if (!confirmed) return;
+
     revokeSessionsBtn.disabled = true;
     const origLabel = revokeSessionsBtn.innerHTML;
     revokeSessionsBtn.textContent = "";
@@ -574,7 +583,15 @@ export function renderSettings(container) {
     class: "btn-danger",
     style: "width:100%;padding:14px 18px;cursor:pointer;margin-top:20px;font-size:15px;border-radius:var(--r);font-weight:500;"
   }, "Выйти из аккаунта");
-  logoutBtn.addEventListener("click", () => {
+  logoutBtn.addEventListener("click", async () => {
+    const confirmed = await showConfirmModal(
+      "Выйти из аккаунта?",
+      "Вы действительно хотите выйти из текущего аккаунта?",
+      "Выйти",
+      "Отмена",
+      true
+    );
+    if (!confirmed) return;
     logout();
     showToast("Вы вышли из системы", "info");
   });
