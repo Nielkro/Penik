@@ -24,6 +24,7 @@ import niel.kro.penik.data.repository.SecureTokenStorage
 import niel.kro.penik.domain.usecase.DeleteMessageUseCase
 import niel.kro.penik.domain.usecase.LoadMessagesUseCase
 import niel.kro.penik.domain.usecase.SendMessageUseCase
+import java.util.UUID
 import javax.inject.Inject
 
 import niel.kro.penik.data.repository.GroupRepository
