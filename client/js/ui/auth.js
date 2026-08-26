@@ -445,7 +445,7 @@ export function renderAuth(container, initialMode = "welcome") {
           step = 1;
           renderStep();
         } catch (err) {
-          showErr(err.status === 404 ? "Пользователь не найден." : (err.message || "Ошибка загрузки профиля."));
+          showErr(err.status === 404 ? `Пользователь с никнеймом @${nickname} не найден.` : (err.message || "Ошибка загрузки профиля."));
         } finally {
           nextBtn.disabled = false;
           nextBtn.textContent = "Продолжить";

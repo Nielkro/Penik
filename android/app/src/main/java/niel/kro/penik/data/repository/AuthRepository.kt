@@ -310,7 +310,11 @@ class AuthRepository @Inject constructor(
             if (response.isSuccessful) {
                 Result.success(response.body()!!)
             } else {
-                Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
+                if (response.code() == 404) {
+                    Result.failure(Exception("Пользователь с никнеймом @$nickname не найден"))
+                } else {
+                    Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
+                }
             }
         } catch (e: Exception) {
             Result.failure(Exception(mapException(e)))
@@ -333,21 +337,27 @@ class AuthRepository @Inject constructor(
     }
 
     private fun parseServerError(code: Int, body: String?): String {
-        val serverMsg = body?.let {
+        val trimmedBody = body?.trim()
+        val serverMsg = trimmedBody?.let {
             try {
                 val error = json.decodeFromString<ErrorBody>(it)
                 error.message ?: error.error
             } catch (_: Exception) {
-                null
+                if (it.isNotEmpty() && !it.startsWith("{") && !it.startsWith("<")) {
+                    it
+                } else {
+                    null
+                }
             }
         }
 
         if (!serverMsg.isNullOrBlank()) {
-            return when (serverMsg) {
-                "backup_not_found" -> "Резервная копия ключей не найдена на сервере"
-                "user not found" -> "Пользователь не найден"
-                "invalid password" -> "Неверный пароль"
-                "nickname already taken" -> "Никнейм уже занят"
+            val normalized = serverMsg.lowercase().trim()
+            return when {
+                normalized == "backup_not_found" -> "Резервная копия ключей не найдена на сервере"
+                normalized.contains("user not found") || normalized.contains("recipient user not found") -> "Пользователь с таким никнеймом не найден"
+                normalized.contains("invalid password") || normalized.contains("invalid credentials") -> "Неверный никнейм или пароль"
+                normalized.contains("nickname already taken") -> "Никнейм уже занят"
                 else -> serverMsg
             }
         }
@@ -356,8 +366,8 @@ class AuthRepository @Inject constructor(
             400 -> "Неверный запрос. Проверьте введённые данные"
             401 -> "Неверный никнейм или пароль"
             403 -> "Доступ запрещён"
-            404 -> "Запрашиваемый ресурс не найден"
-            409 -> "Пользователь уже существует"
+            404 -> "Пользователь с таким никнеймом не найден"
+            409 -> "Никнейм уже занят"
             422 -> "Некорректные данные"
             429 -> "Слишком много попыток. Подождите немного"
             in 500..599 -> "Ошибка сервера. Попробуйте позже"
