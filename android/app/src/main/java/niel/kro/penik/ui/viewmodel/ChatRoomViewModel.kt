@@ -185,10 +185,23 @@ class ChatRoomViewModel @Inject constructor(
 
     fun sendMediaFile(context: Context, uri: Uri, caption: String = "", onError: (String) -> Unit = {}) {
         viewModelScope.launch {
-            attachmentManager.uploadAndPrepareAttachment(context, uri, caption)
-                .onSuccess { jsonPayload ->
-                    // Send file JSON payload as the message text via existing WebSocket pipeline
-                    sendMessageUseCase(chatUserId, jsonPayload, chatName, null)
+            val clientMsgId = UUID.randomUUID().toString()
+            val mediaInfo = runCatching {
+                attachmentManager.prepareLocalMedia(context, uri, clientMsgId, caption)
+            }.getOrElse { err ->
+                onError(err.message ?: "Ошибка подготовки файла")
+                return@launch
+            }
+
+            // 1. Immediately insert optimistic message into chat
+            messageRepository.insertOptimisticMessage(chatUserId, clientMsgId, mediaInfo.optimisticPayload, null)
+            chatRepository.updateLastMessage(chatUserId, mediaInfo.optimisticPayload, System.currentTimeMillis(), name = chatName)
+
+            // 2. Upload and send with progress
+            attachmentManager.uploadAndEncryptAttachment(context, mediaInfo, clientMsgId, caption)
+                .onSuccess { finalJsonPayload ->
+                    messageRepository.sendMessage(chatUserId, finalJsonPayload, null, existingClientMsgId = clientMsgId)
+                    chatRepository.updateLastMessage(chatUserId, finalJsonPayload, System.currentTimeMillis(), name = chatName)
                 }
                 .onFailure { err ->
                     onError(err.message ?: "Ошибка отправки файла")

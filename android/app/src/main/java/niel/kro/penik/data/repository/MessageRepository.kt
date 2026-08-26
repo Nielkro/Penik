@@ -309,13 +309,8 @@ class MessageRepository @Inject constructor(
 
     fun observeLastMessageForChat(chatUserId: Long) = messageDao.observeLastMessageForChat(chatUserId)
 
-    suspend fun sendMessage(toUserId: Long, text: String, replyToMsgId: String? = null): String {
-        val clientMsgId = UUID.randomUUID().toString()
+    suspend fun insertOptimisticMessage(toUserId: Long, clientMsgId: String, text: String, replyToMsgId: String? = null) {
         val myId = tokenStorage.getUserId()
-        val isSelfChat = toUserId == myId
-
-        Log.d("PenikMsg", "sendMessage: clientMsgId=$clientMsgId, toUserId=$toUserId, isSelfChat=$isSelfChat, textLength=${text.length}")
-        // Match web client reply logic: use parent's clientMsgId (UUID) or serverId
         val resolvedReplyToMsgId = if (!replyToMsgId.isNullOrBlank()) {
             val parentObj = messageDao.findMessageByLocalId(replyToMsgId) 
                 ?: messageDao.findMessageByServerId(replyToMsgId.toLongOrNull() ?: -1L)
@@ -333,6 +328,37 @@ class MessageRepository @Inject constructor(
             replyToMsgId = resolvedReplyToMsgId
         )
         messageDao.insertMessage(entity)
+    }
+
+    suspend fun sendMessage(toUserId: Long, text: String, replyToMsgId: String? = null, existingClientMsgId: String? = null): String {
+        val clientMsgId = existingClientMsgId ?: UUID.randomUUID().toString()
+        val myId = tokenStorage.getUserId()
+        val isSelfChat = toUserId == myId
+
+        Log.d("PenikMsg", "sendMessage: clientMsgId=$clientMsgId, toUserId=$toUserId, isSelfChat=$isSelfChat, textLength=${text.length}")
+        // Match web client reply logic: use parent's clientMsgId (UUID) or serverId
+        val resolvedReplyToMsgId = if (!replyToMsgId.isNullOrBlank()) {
+            val parentObj = messageDao.findMessageByLocalId(replyToMsgId) 
+                ?: messageDao.findMessageByServerId(replyToMsgId.toLongOrNull() ?: -1L)
+            parentObj?.localId ?: parentObj?.serverId?.toString() ?: replyToMsgId
+        } else null
+
+        val existing = messageDao.findMessageByLocalId(clientMsgId)
+        if (existing == null) {
+            val entity = MessageEntity(
+                localId = clientMsgId,
+                chatUserId = toUserId,
+                senderId = myId,
+                text = text,
+                timestamp = System.currentTimeMillis(),
+                sentByMe = true,
+                delivered = false,
+                replyToMsgId = resolvedReplyToMsgId
+            )
+            messageDao.insertMessage(entity)
+        } else {
+            messageDao.updateMessageText(clientMsgId, null, text, 0L)
+        }
 
         val recipientBundles: List<niel.kro.penik.data.network.api.DeviceBundle> = getKeyBundleCached(toUserId, isSelf = isSelfChat)
         val senderBundles: List<niel.kro.penik.data.network.api.DeviceBundle> = if (isSelfChat) emptyList() else getKeyBundleCached(myId, isSelf = true)
