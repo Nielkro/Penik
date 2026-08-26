@@ -1437,14 +1437,6 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 			return err
 		}
 
-		// Clean up file on VK CDN if message plaintext payload contained a VK attachment
-		go func(rawBytes []byte) {
-			fileURL := extractFileURLFromPayload(rawBytes)
-			if fileURL != "" {
-				deleteVKFileByURL(fileURL, c.cfg.VKBotToken)
-			}
-		}(rawCiphertext)
-
 		// Notify active peer devices
 		peerUserID := recipientUserID
 		if c.userID == recipientUserID {
@@ -1607,25 +1599,3 @@ func (c *Client) handleMsgEdit(ctx context.Context, msg *MsgEditEncrypted) error
 	return nil
 }
 
-func extractFileURLFromPayload(raw []byte) string {
-	s := string(raw)
-	idx := strings.Index(s, "https://")
-	if idx == -1 {
-		idx = strings.Index(s, "http://")
-	}
-	if idx == -1 {
-		return ""
-	}
-	sub := s[idx:]
-	end := strings.IndexAny(sub, `" \}'`)
-	if end != -1 {
-		sub = sub[:end]
-	}
-	return sub
-}
-
-func deleteVKFileByURL(docURL string, botToken string) {
-	// Parse doc_id and owner_id from URL if present
-	// E.g. https://psv4.userapi.com/s/v1/doc/... or https://vk.com/doc<owner_id>_<doc_id>
-	// Or call VK docs.delete
-}

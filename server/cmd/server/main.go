@@ -131,18 +131,10 @@ func main() {
 		authMW(http.HandlerFunc(handlers.UpdatePassword(database))))
 	mux.Handle("PUT /api/v1/avatar",
 		authMW(http.HandlerFunc(handlers.UploadAvatar(database, cfg, hub))))
-	mux.Handle("POST /api/v1/attachments/vk-upload",
-		authMW(http.HandlerFunc(handlers.UploadVKAttachment(cfg))))
-	mux.Handle("GET /api/v1/attachments/vk-upload-url",
-		authMW(attachmentUploadLimiter.Limit(http.HandlerFunc(handlers.IssueVKUploadURL(cfg)))))
-	mux.Handle("POST /api/v1/attachments/vk-save",
-		authMW(attachmentUploadLimiter.Limit(http.HandlerFunc(handlers.SaveVKAttachment(cfg)))))
-	mux.Handle("GET /api/v1/attachments/proxy",
-		authMW(http.HandlerFunc(handlers.ProxyVKAttachment())))
-	// Stateless HMAC upload ticket for the VK relay: the browser presents it as
-	// Bearer instead of the relay master token, which never leaves the server.
-	mux.Handle("POST /api/v1/attachments/upload-ticket",
-		authMW(attachmentUploadLimiter.Limit(http.HandlerFunc(handlers.IssueVKUploadTicket(cfg)))))
+	mux.Handle("POST /api/v1/attachments/upload",
+		authMW(attachmentUploadLimiter.Limit(http.HandlerFunc(handlers.UploadAttachment(cfg)))))
+	mux.Handle("GET /api/v1/attachments/file/{id}",
+		authMW(http.HandlerFunc(handlers.GetAttachment(cfg))))
 
 	mux.Handle("POST /api/v1/keys/init",
 		authMW(http.HandlerFunc(handlers.UploadIdentityKeys(database))))
@@ -251,7 +243,7 @@ func main() {
 	// Wrap mux with global middleware (max body, CORS).
 	var handler http.Handler = mux
 	handler = middleware.MaxBodySize(cfg.MaxBodySize, map[string]int64{
-		"/api/v1/attachments/vk-upload": cfg.MaxUploadSize,
+		"/api/v1/attachments/upload": cfg.MaxUploadSize,
 	})(handler)
 	handler = middleware.CORS(cfg)(handler)
 	handler = middleware.SecurityHeaders(handler)

@@ -20,8 +20,6 @@ type Config struct {
 	LiveKitTokenTTL    time.Duration
 	AllowedOrigins     string // comma-separated list, "*" for any
 	UploadDir          string
-	VKBotToken         string
-	RelayTicketSecret  string // HMAC secret shared with the VK relay for upload tickets
 	GeoIPPath          string // Path to GeoLite2-City.mmdb / dbip-city-lite.mmdb (optional)
 	TelegramBotToken   string
 	StickersDir        string
@@ -103,8 +101,6 @@ func Load() *Config {
 		MaxUploadSize:      getEnvInt64("MAX_UPLOAD_SIZE", 210*1024*1024),   // attachment endpoint only, ~200MB payloads
 		AllowedOrigins:     getEnv("ALLOWED_ORIGINS", ""),
 		UploadDir:          getEnv("UPLOAD_DIR", "./data/upload"),
-		VKBotToken:         getEnv("VK_BOT_TOKEN", ""),
-		RelayTicketSecret:  getEnv("RELAY_TICKET_SECRET", ""),
 		GeoIPPath:          getEnv("GEOIP_PATH", "./data/GeoLite2-City.mmdb"),
 		TelegramBotToken:   getEnv("TELEGRAM_BOT_TOKEN", ""),
 		StickersDir:        getEnv("STICKERS_DIR", "./data/stickers"),

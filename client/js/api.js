@@ -170,7 +170,7 @@ export async function uploadAvatar(file) {
   return true;
 }
 
-export async function uploadVKAttachment(encryptedFileBlob, filename = 'encrypted.bin') {
+export async function uploadAttachment(encryptedFileBlob, filename = 'encrypted.bin') {
   const formData = new FormData();
   formData.append('file', encryptedFileBlob, filename);
   const token = getToken();
@@ -178,7 +178,7 @@ export async function uploadVKAttachment(encryptedFileBlob, filename = 'encrypte
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}/attachments/vk-upload`, {
+  const res = await fetch(`${BASE}/attachments/upload`, {
     method: 'POST',
     headers,
     body: formData
@@ -191,7 +191,7 @@ export async function uploadVKAttachment(encryptedFileBlob, filename = 'encrypte
       const data = JSON.parse(text);
       if (data && data.error) msg = data.error;
     } catch {}
-    throw new ApiError(msg || 'Не удалось загрузить файл на VK CDN', res.status);
+    throw new ApiError(msg || 'Не удалось загрузить файл на сервер', res.status);
   }
   window.dispatchEvent(new Event('penik:rest-success'));
   const json = await res.json();
