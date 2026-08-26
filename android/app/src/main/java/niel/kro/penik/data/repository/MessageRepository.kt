@@ -56,9 +56,7 @@ class MessageRepository @Inject constructor(
             Log.e("PenikMsg", "Failed to fetch key bundle for $userId", e)
             bundleCache[userId]?.second ?: emptyList()
         }
-        if (devices.isNotEmpty()) {
-            bundleCache[userId] = Pair(now + 2 * 60 * 1000L, devices)
-        }
+        bundleCache[userId] = Pair(now + 2 * 60 * 1000L, devices)
         return devices
     }
 
@@ -743,8 +741,15 @@ class MessageRepository @Inject constructor(
                                     val saltBytes = java.util.Base64.getDecoder().decode(msg.encryptionSalt)
                                     val nonceBytes = java.util.Base64.getDecoder().decode(msg.encryptionNonce)
                                     
-                                    val senderBundle = bundleCache.getOrPut(msg.senderId) {
-                                        apiService.getKeyBundle(msg.senderId).body()
+                                    val senderBundle = if (bundleCache.containsKey(msg.senderId)) {
+                                        bundleCache[msg.senderId]
+                                    } else {
+                                        val b = runCatching {
+                                            val resp = if (msg.senderId == myId) apiService.getKeyBundleSelf(msg.senderId) else apiService.getKeyBundle(msg.senderId)
+                                            if (resp.isSuccessful) resp.body() else null
+                                        }.getOrNull()
+                                        bundleCache[msg.senderId] = b
+                                        b
                                     }
                                     val senderDevice = senderBundle?.devices?.find { it.deviceId == msg.senderDeviceId }
                                     val senderIK = java.util.Base64.getDecoder().decode(senderDevice?.identityKey ?: "")
@@ -938,16 +943,16 @@ class MessageRepository @Inject constructor(
     }
 
     private suspend fun tryFallbackDecrypt(msg: WebSocketEvent.MsgRecvEncrypted, myId: Long): String? {
-        val bundle = runCatching { apiService.getKeyBundle(msg.fromUserId) }.getOrNull()
-            ?.takeIf { it.isSuccessful }?.body() ?: return null
+        val devices = getKeyBundleCached(msg.fromUserId, isSelf = msg.fromUserId == myId)
+        if (devices.isEmpty()) return null
 
         val myDeviceId = tokenStorage.getDeviceId()
         val recipientUserId = if (msg.fromUserId == myId) msg.chatUserId else myId
 
         val targetDevices = if (msg.fromDeviceId > 0) {
-            bundle.devices.filter { it.deviceId == msg.fromDeviceId } + bundle.devices.filter { it.deviceId != msg.fromDeviceId }
+            devices.filter { it.deviceId == msg.fromDeviceId } + devices.filter { it.deviceId != msg.fromDeviceId }
         } else {
-            bundle.devices
+            devices
         }
 
         for (device in targetDevices) {
@@ -1000,17 +1005,17 @@ class MessageRepository @Inject constructor(
 
         // The row records the sender device id but not its public key, so every
         // key in the sender's bundle is tried; only one can produce a valid tag.
-        val bundle = runCatching { apiService.getKeyBundle(body.senderId) }.getOrNull()
-            ?.takeIf { it.isSuccessful }?.body() ?: return null
-
         val myId = tokenStorage.getUserId()
+        val devices = getKeyBundleCached(body.senderId, isSelf = body.senderId == myId)
+        if (devices.isEmpty()) return null
+
         val myDeviceId = tokenStorage.getDeviceId()
         val recipientUserId = if (body.senderId == myId) body.chatUserId else myId
 
         val targetDevices = if (body.senderDeviceId != null && body.senderDeviceId > 0) {
-            bundle.devices.filter { it.deviceId == body.senderDeviceId } + bundle.devices.filter { it.deviceId != body.senderDeviceId }
+            devices.filter { it.deviceId == body.senderDeviceId } + devices.filter { it.deviceId != body.senderDeviceId }
         } else {
-            bundle.devices
+            devices
         }
 
         for (device in targetDevices) {
