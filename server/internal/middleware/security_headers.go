@@ -10,7 +10,7 @@ import "net/http"
 // contentSecurityPolicy locks down resource loading to mitigate XSS.
 //
 // 'unsafe-eval' is eliminated. 'wasm-unsafe-eval' is kept for WebAssembly (libsodium).
-// connect-src is locked down to 'self', secure wss:, https: and trusted VK CDN endpoints.
+// connect-src is locked down to 'self', secure wss: and https: endpoints.
 const contentSecurityPolicy = "default-src 'self'; " +
 	"script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; " +
 	"style-src 'self' 'unsafe-inline'; " +
