@@ -193,6 +193,7 @@ sealed class WebSocketEvent {
 
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
+    object Unauthorized : WebSocketEvent()
     object ServerShutdown : WebSocketEvent()
     object Pong : WebSocketEvent()
 }
@@ -268,7 +269,8 @@ private fun MessageUnpacker.readMsgRecvMap(): Map<String, Any?> {
 enum class ConnectionState {
     DISCONNECTED,
     CONNECTING,
-    CONNECTED
+    CONNECTED,
+    UNAUTHORIZED
 }
 
 @Singleton
@@ -333,10 +335,14 @@ class WebSocketManager @Inject constructor(
     fun notifyRestSuccess() {
         if (manualDisconnect) return
         if (connectHost.isEmpty() || connectPort == 0) return
-        if (_connectionState.value != ConnectionState.DISCONNECTED) return
+        if (_connectionState.value != ConnectionState.DISCONNECTED && _connectionState.value != ConnectionState.UNAUTHORIZED) return
         reconnectJob?.cancel()
         reconnectAttempt = 0
         doConnect()
+    }
+
+    fun notifyUnauthorized() {
+        handleUnauthorized()
     }
 
     fun disconnect() {
@@ -417,14 +423,26 @@ class WebSocketManager @Inject constructor(
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    Log.e("WS", "Failure: ${t.message}")
-                    handleDisconnect()
+                    Log.e("WS", "Failure: ${t.message}, code: ${response?.code}")
+                    val is401 = response?.code == 401 || (t.message?.contains("401") == true)
+                    if (is401) {
+                        handleUnauthorized()
+                    } else {
+                        handleDisconnect()
+                    }
                 }
             })
         } catch (e: Exception) {
             Log.e("WS", "Failed to construct WebSocket", e)
             handleDisconnect()
         }
+    }
+
+    private fun handleUnauthorized() {
+        _connectionState.value = ConnectionState.UNAUTHORIZED
+        pingJob?.cancel()
+        reconnectJob?.cancel()
+        scope.launch { _events.emit(WebSocketEvent.Unauthorized) }
     }
 
     private fun handleDisconnect() {
