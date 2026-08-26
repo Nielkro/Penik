@@ -183,7 +183,7 @@ export function renderAuth(container, initialMode = "welcome") {
 
   function renderWelcome() {
     const logoImg = el("img", {
-      src: "assets/apple-touch-icon.png",
+      src: "/assets/apple-touch-icon.png",
       style: "width: 80px; height: 80px; border-radius: 20px; margin: 0 auto 20px; display: block; object-fit: cover; box-shadow: 0 8px 24px rgba(0,0,0,0.2);"
     });
     const title = el("h1", { class: "auth-title", style: "margin-top: 0;" }, "Penik");

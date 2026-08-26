@@ -371,8 +371,13 @@ function handleRoute() {
   const { screen, userId } = parseHash();
 
   if (!getToken()) {
-    if (screen !== '#register') showAuth('login');
-    else showAuth('register');
+    if (screen === '#register') {
+      showAuth('register');
+    } else if (screen === '#login') {
+      showAuth('login');
+    } else {
+      showAuth('welcome');
+    }
     return;
   }
 
