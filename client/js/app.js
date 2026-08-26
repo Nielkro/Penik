@@ -10,6 +10,7 @@ import {
 import { ws, OP } from './ws.js';
 import { renderAuth } from './ui/auth.js';
 import { renderChatList, renderChat, avatarUpdateTimestamps } from './ui/chat.js';
+import { renderCalls } from './ui/calls.js';
 import { groupAvatarUpdateTimestamps, showToast } from './ui/components.js';
 import { renderGroup } from './ui/groups.js';
 import { renderProfile } from './ui/profile.js';
@@ -153,8 +154,10 @@ const routes = {
   '#register': () => showAuth('register'),
   '#chats':    () => showMain('chats'),
   '#groups':   () => showMain('chats'),
+  '#calls':    () => showMain('calls'),
   '#search':   () => showMain('search'),
   '#profile':  () => showMain('profile'),
+  '#settings': () => showMain('settings'),
 };
 
 function parseHash() {
@@ -211,6 +214,10 @@ function buildMainLayout() {
       <span class="nav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg></span>
       <span>Чаты</span>
     </button>
+    <button class="nav-item" data-screen="calls">
+      <span class="nav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg></span>
+      <span>Звонки</span>
+    </button>
     <button class="nav-item" data-screen="search">
       <span class="nav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
       <span>Поиск</span>
@@ -238,6 +245,10 @@ function buildMainLayout() {
   chatListScreen.className = 'screen chatlist-screen';
   chatListScreen.id = 'screen-chats';
 
+  const callsScreen = document.createElement('div');
+  callsScreen.className = 'screen chatlist-screen';
+  callsScreen.id = 'screen-calls';
+
   const chatScreen = document.createElement('div');
   chatScreen.className = 'screen chat-screen';
   chatScreen.id = 'screen-chat';
@@ -262,11 +273,11 @@ function buildMainLayout() {
   devicesScreen.className = 'screen devices-screen';
   devicesScreen.id = 'screen-devices';
 
-  screensWrap.append(chatListScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, devicesScreen);
+  screensWrap.append(chatListScreen, callsScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, devicesScreen);
   wrap.append(screensWrap, nav);
   app.appendChild(wrap);
 
-  _mainLayout = { chatListScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, devicesScreen, nav };
+  _mainLayout = { chatListScreen, callsScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, devicesScreen, nav };
   return _mainLayout;
 }
 
@@ -290,7 +301,7 @@ function showMain(screen, userId) {
   });
 
   /* Hide all screens */
-  ['chats', 'chat', 'search', 'profile', 'group', 'settings', 'devices'].forEach(s => {
+  ['chats', 'calls', 'chat', 'search', 'profile', 'group', 'settings', 'devices'].forEach(s => {
     const el = document.getElementById(`screen-${s}`);
     if (el) el.classList.remove('active');
   });
@@ -318,6 +329,10 @@ function showMain(screen, userId) {
       const chatEl = document.getElementById('screen-chat');
       if (chatEl && chatEl.innerHTML.trim()) chatEl.classList.add('active');
     }
+  } else if (screen === 'calls') {
+    layout.callsScreen.classList.add('active');
+    layout.callsScreen.innerHTML = '';
+    renderCalls(layout.callsScreen);
   } else if (screen === 'search') {
     layout.searchScreen.classList.add('active');
     layout.searchScreen.innerHTML = '';

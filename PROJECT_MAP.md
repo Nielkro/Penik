@@ -65,6 +65,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/js/app.js` — Main application controller: user state, hash navigation, screen layout, storage initialization, and REST/WebSocket/crypto coordination.
 - `client/js/ui/auth.js` — Renders login/registration screens and binds forms to the auth API.
 - `client/js/ui/chat.js` — Displays the chat list, direct messaging room, messages, delivery/read receipts, and input controls.
+- `client/js/ui/calls.js` — Dedicated call history tab in the web client, displaying call records with duration, timestamps, status, and quick redial buttons.
 - `client/js/ui/groups.js` — Displays the group list and group chat room, including messages, invitations, and member actions.
 - `client/js/ui/profile.js` — Profile screen for editing user data and uploading avatars.
 - `client/js/ui/settings.js` — Settings screen (theme switching) and a separate devices screen listing the user's own devices.
@@ -83,9 +84,10 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/PenikApplication.kt` — Hilt Application class and entry point for the global WebSocket event coordinator.
 - `android/app/src/main/java/niel/kro/penik/ui/navigation/NavGraph.kt` — Compose Navigation graph for auth, main screen, direct/group chats, group settings, and pairing scanner.
 - `android/app/src/main/java/niel/kro/penik/ui/navigation/NavRoutes.kt` — Declares typed routes and screen parameters for the Android client.
-- `android/app/src/main/java/niel/kro/penik/ui/navigation/MainScreen.kt` — Main app layout combining chat lists, groups, profile, and logout/pairing actions.
+- `android/app/src/main/java/niel/kro/penik/ui/navigation/MainScreen.kt` — Main app layout combining chat lists, calls tab, profile, and logout/pairing actions.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/auth/AuthScreen.kt` — User login and registration UI.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/chatslist/ChatsListScreen.kt` — Direct chat list UI and navigation to chat rooms.
+- `android/app/src/main/java/niel/kro/penik/ui/screen/calls/CallsListScreen.kt` — Call history screen listing all incoming, outgoing, missed, and declined calls with redial buttons.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/chatroom/ChatRoomScreen.kt` — Direct chat room UI: message history, input, sending, receipts, connection state; scroll-down FAB shown only when last message is not visible; audio/video call buttons in the top bar.
 - `android/app/src/main/java/niel/kro/penik/ui/call/CallOverlayScreen.kt` — Global call overlay: incoming call accept/decline, dialing, and active call screens with remote/local video renderers, PiP swap, and media controls.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupsListScreen.kt` — Group list UI and pending invitations.
@@ -98,6 +100,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/AuthViewModel.kt` — Manages login/registration state and actions.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ChatRoomViewModel.kt` — Subscribes the chat room to messages, handles sending, and processes statuses.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ChatsListViewModel.kt` — Loads and observes the direct chat list.
+- `android/app/src/main/java/niel/kro/penik/ui/viewmodel/CallsViewModel.kt` — Loads and observes user call history for the calls screen.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/GroupsViewModel.kt` — Manages the group list, synchronization, and group-level actions.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/GroupSettingsViewModel.kt` — Manages changes to group composition, roles, names, and keys.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ProfileViewModel.kt` — Manages profile data, avatars, passwords, key backups, and the user's device list.

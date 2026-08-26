@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
@@ -20,6 +21,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import niel.kro.penik.ui.screen.calls.CallsListScreen
 import niel.kro.penik.ui.screen.chatslist.ChatsListContent
 import niel.kro.penik.ui.screen.profile.ProfileScreen
 
@@ -56,6 +58,19 @@ fun MainScreen(
                 NavigationBarItem(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
+                    icon = { Icon(Icons.Default.Call, contentDescription = "Звонки") },
+                    label = { androidx.compose.material3.Text("Звонки") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = LocalAppColors.current.accent,
+                        selectedTextColor = LocalAppColors.current.accent,
+                        unselectedIconColor = LocalAppColors.current.textMuted,
+                        unselectedTextColor = LocalAppColors.current.textMuted,
+                        indicatorColor = LocalAppColors.current.accent.copy(alpha = 0.12f)
+                    )
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
                     icon = { Icon(Icons.Default.Person, contentDescription = "Профиль") },
                     label = { androidx.compose.material3.Text("Профиль") },
                     colors = NavigationBarItemDefaults.colors(
@@ -76,7 +91,8 @@ fun MainScreen(
         ) {
             when (selectedTab) {
                 0 -> ChatsListContent(onChatClick = onChatClick, onGroupClick = onGroupClick, onSettings = onSettings)
-                1 -> ProfileScreen(onLogout = onLogout, onPairingScanner = onPairingScanner)
+                1 -> CallsListScreen(onChatClick = onChatClick)
+                2 -> ProfileScreen(onLogout = onLogout, onPairingScanner = onPairingScanner)
             }
         }
     }
