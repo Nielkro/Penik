@@ -191,11 +191,11 @@ fun CallHistoryItemRow(
     val durationStr = if (call.duration > 0) {
         val m = call.duration / 60
         val s = call.duration % 60
-        if (m == 0L) " сек" else " мин" + (if (s > 0) "  сек" else "")
+        if (m == 0L) "$s сек" else "$m мин" + (if (s > 0) " $s сек" else "")
     } else ""
 
     val statusTitle = when (call.status) {
-        "completed" -> (if (isOutgoing) "Исходящий" else "Входящий") + (if (durationStr.isNotEmpty()) " ()" else "")
+        "completed" -> (if (isOutgoing) "Исходящий" else "Входящий") + (if (durationStr.isNotEmpty()) " ($durationStr)" else "")
         "missed" -> if (isOutgoing) "Не отвечен" else "Пропущенный"
         "declined" -> if (isOutgoing) "Отклонен" else "Отклоненный"
         "cancelled" -> if (isOutgoing) "Отмененный" else "Пропущенный"
@@ -209,7 +209,7 @@ fun CallHistoryItemRow(
         val sameDay = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(date) == SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(now)
         val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(date)
         if (sameDay) {
-            "Сегодня, "
+            "Сегодня, $timeStr"
         } else {
             SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()).format(date)
         }
@@ -260,7 +260,7 @@ fun CallHistoryItemRow(
                 Spacer(modifier = Modifier.width(4.dp))
 
                 Text(
-                    text = " · ",
+                    text = "$statusTitle · $timeFormatted",
                     fontSize = 13.sp,
                     color = if (isMissed) Color(0xFFEF5350) else LocalAppColors.current.textMuted,
                     maxLines = 1,
