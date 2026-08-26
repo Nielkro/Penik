@@ -102,6 +102,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.ui.platform.LocalContext
+import niel.kro.penik.data.local.entity.MessageEntity
 
 sealed interface ChatTimelineItem {
     val id: String
