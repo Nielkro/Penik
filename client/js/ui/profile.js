@@ -203,7 +203,7 @@ export function renderProfile(container) {
 
   const card = el("div", {
     class: "profile-card",
-    style: "display:flex;flex-direction:column;align-items:center;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:24px 20px;max-width:540px;margin:0 auto;width:100%;"
+    style: "display:flex;flex-direction:column;align-items:center;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:32px 24px;max-width:860px;margin:0 auto;width:100%;box-sizing:border-box;"
   },
     avatarContainer,
     infoSection,
@@ -211,9 +211,11 @@ export function renderProfile(container) {
     logoutBtn
   );
 
-  const wrap = el("div", { class: "profile-wrap", style: "padding:16px;max-width:540px;margin:0 auto;width:100%;" },
+  const scrollWrapper = el("div", { style: "flex:1;overflow-y:auto;overflow-x:hidden;padding:20px;box-sizing:border-box;" }, card);
+
+  const wrap = el("div", { class: "profile-wrap", style: "display:flex;flex-direction:column;height:100%;overflow:hidden;width:100%;" },
     header,
-    card
+    scrollWrapper
   );
 
   container.appendChild(wrap);
