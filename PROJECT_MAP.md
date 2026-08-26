@@ -40,6 +40,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 - `client/js/api.js` — Unified browser REST client: attaches tokens, serializes JSON, parses errors, and exports APIs for users, messages, pairing, and groups.
 - `client/js/call.js` — LiveKit Web SDK integration and call state manager supporting primary and fallback endpoints, plus multi-device ring handling (call_id matching and `CALL_TAKEN`).
+- `client/js/sounds.js` — Web Audio API synthesizer for call sounds: melodious incoming ringtone, outgoing dial tone, connect/disconnect chimes, and busy signal.
 - `client/js/pairing.js` — Decrypts and imports history transferred from Android into the browser IndexedDB stores.
 - `client/js/ws.js` — Manages the browser WebSocket connection: encodes/decodes MsgPack frames, supports opcodes, ping/pong, request queuing, and exponential backoff reconnection; `connect()` is idempotent and each socket generation is fenced so a stale socket cannot open a second parallel session.
 - `client/js/presence.js` — Publishes user presence events and provides handlers for online status updates.

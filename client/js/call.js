@@ -3,6 +3,7 @@ import { ws, OP } from './ws.js';
 import { showToast } from './ui/components.js';
 import { getContact, saveContact } from './storage.js';
 import { getUserById } from './api.js';
+import { callSounds } from './sounds.js';
 
 export class CallManager {
   constructor() {
@@ -98,6 +99,8 @@ export class CallManager {
       peerContact,
     };
 
+    callSounds.playDialing();
+
     ws.send(OP.CALL_OFFER, {
       to_user_id: toUserId,
       is_video: isVideo,
@@ -116,6 +119,7 @@ export class CallManager {
   acceptCall() {
     if (!this.currentCall || this.currentCall.state !== 'INCOMING') return;
 
+    callSounds.stopAll();
     const { callId, token, livekitUrl, livekitFallbackUrl } = this.currentCall;
     this.currentCall.state = 'CONNECTING';
     this._notifyState();
@@ -128,6 +132,7 @@ export class CallManager {
   rejectCall(reason = 'declined') {
     if (!this.currentCall) return;
 
+    callSounds.stopAll();
     ws.send(OP.CALL_REJECT, {
       call_id: this.currentCall.callId || '',
       to_user_id: this.currentCall.toUserId || this.currentCall.fromUserId,
@@ -140,6 +145,7 @@ export class CallManager {
   endCall() {
     if (!this.currentCall) return;
 
+    callSounds.playEnded();
     ws.send(OP.CALL_END, {
       call_id: this.currentCall.callId || '',
       to_user_id: this.currentCall.toUserId || this.currentCall.fromUserId,
@@ -251,6 +257,7 @@ export class CallManager {
   }
 
   cleanup() {
+    callSounds.stopAll();
     this._stopTimer();
     this._releaseTileListeners();
     clearTimeout(this._dialTimeout);
@@ -297,12 +304,14 @@ export class CallManager {
       peerContact,
     };
 
+    callSounds.playRingtone();
     this._notifyState();
   }
 
   async _handleCallAccepted(payload) {
     if (!this.currentCall || this.currentCall.state !== 'DIALING') return;
 
+    callSounds.stopAll();
     clearTimeout(this._dialTimeout);
     this.currentCall.callId = payload.call_id;
     this.currentCall.state = 'CONNECTING';
@@ -317,6 +326,7 @@ export class CallManager {
   _handleCallReject(payload) {
     if (!this._isCurrentCall(payload)) return;
 
+    callSounds.playBusy();
     let reason;
     if (payload.reason === 'busy') reason = 'Пользователь занят';
     else if (payload.reason === 'offline') reason = 'Пользователь не в сети';
@@ -327,6 +337,7 @@ export class CallManager {
 
   _handleCallEnd(payload) {
     if (!this._isCurrentCall(payload)) return;
+    callSounds.playEnded();
     showToast('Звонок завершен', 'info');
     this.cleanup();
   }
@@ -339,6 +350,7 @@ export class CallManager {
    */
   _handleCallTaken(payload) {
     if (!this._isCurrentCall(payload)) return;
+    callSounds.stopAll();
     // Only a ringing/dialing device can be superseded; a device that is already
     // in the LiveKit room is the one that answered.
     if (this.currentCall.state !== 'INCOMING' && this.currentCall.state !== 'DIALING') return;
@@ -469,6 +481,8 @@ export class CallManager {
           });
 
         await this.room.connect(url, token);
+
+        callSounds.playConnected();
 
         if (this.currentCall) {
           if (attempt > 0) {
