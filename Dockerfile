@@ -10,11 +10,12 @@ RUN npm run build
 FROM golang:1.24-alpine AS server-builder
 WORKDIR /app
 RUN apk add --no-cache git
-COPY server/go.mod server/go.sum ./server/
+COPY server/go.mod ./server/
+COPY server/go.su[m] ./server/
 WORKDIR /app/server
-RUN go mod download
+RUN go mod download || true
 COPY server/ ./
-COPY --from=client-builder /app/client/dist /app/server/cmd/server/dist
+COPY --from=client-builder /app/client/dist ./cmd/server/dist
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/bin/penik-server ./cmd/server
 
 # Stage 3: Production runtime image

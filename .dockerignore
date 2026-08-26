@@ -1,0 +1,9 @@
+.git
+.github
+android/
+client/node_modules/
+client/dist/
+server/cmd/server/dist/
+server/data/upload/
+server/data/*.db*
+server/data/*.mmdb*
