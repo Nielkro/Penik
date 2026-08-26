@@ -613,12 +613,17 @@ class MessageRepository @Inject constructor(
                             timestamp = msg.ts
                         )
                     } catch (e: Exception) {
-                        decryptSuccess = false
-                        if (isSelfChat) {
-                            // Encrypted for another device of ours — skip silently.
-                            return@forEach
+                        val fallback = tryFallbackDecrypt(msg, myId)
+                        if (fallback != null) {
+                            fallback
+                        } else {
+                            decryptSuccess = false
+                            if (isSelfChat) {
+                                // Encrypted for another device of ours — skip silently.
+                                return@forEach
+                            }
+                            "[Ошибка расшифрования сообщения: ${e.message}]"
                         }
-                        "[Ошибка расшифрования сообщения: ${e.message}]"
                     }
                     if (decryptSuccess) {
                         successMsgIds.add(msg.msgId)
@@ -649,17 +654,21 @@ class MessageRepository @Inject constructor(
                     val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
                     if (isFailed) {
                         try {
-                            val recoveredText = decryptMessagePayload(
-                                myDeviceId = tokenStorage.getDeviceId(),
-                                fromIdentityKey = msg.fromIdentityKey,
-                                ciphertext = msg.ciphertext,
-                                salt = msg.salt,
-                                nonce = msg.nonce,
-                                senderUserId = msg.fromUserId,
-                                recipientUserId = if (msg.fromUserId == myId) msg.chatUserId else myId,
-                                clientMsgId = msg.clientMsgId ?: "",
-                                timestamp = msg.ts
-                            )
+                            val recoveredText = try {
+                                decryptMessagePayload(
+                                    myDeviceId = tokenStorage.getDeviceId(),
+                                    fromIdentityKey = msg.fromIdentityKey,
+                                    ciphertext = msg.ciphertext,
+                                    salt = msg.salt,
+                                    nonce = msg.nonce,
+                                    senderUserId = msg.fromUserId,
+                                    recipientUserId = if (msg.fromUserId == myId) msg.chatUserId else myId,
+                                    clientMsgId = msg.clientMsgId ?: "",
+                                    timestamp = msg.ts
+                                )
+                            } catch (_: Exception) {
+                                tryFallbackDecrypt(msg, myId) ?: throw Exception("Fallback decryption failed")
+                            }
                             messageDao.insertMessage(existing.copy(text = recoveredText))
                             text = recoveredText
                         } catch (_: Exception) {}
@@ -875,6 +884,14 @@ class MessageRepository @Inject constructor(
                         add(e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, "", tsSec + offset))
                     }
                 }
+                if (recipientUserId != 0L && senderUserId != 0L && recipientUserId != senderUserId) {
+                    for (offset in listOf(0L, -1L, 1L)) {
+                        add(e2eeCrypto.buildPairwiseAad(recipientUserId, senderUserId, clientMsgId, tsSec + offset))
+                        if (clientMsgId.isNotEmpty()) {
+                            add(e2eeCrypto.buildPairwiseAad(recipientUserId, senderUserId, "", tsSec + offset))
+                        }
+                    }
+                }
             }
             add(null) // Fallback for legacy messages or empty AAD
         }
@@ -898,6 +915,40 @@ class MessageRepository @Inject constructor(
         )
 
         throw lastEx ?: Exception("Decryption failed")
+    }
+
+    private suspend fun tryFallbackDecrypt(msg: WebSocketEvent.MsgRecvEncrypted, myId: Long): String? {
+        val bundle = runCatching { apiService.getKeyBundle(msg.fromUserId) }.getOrNull()
+            ?.takeIf { it.isSuccessful }?.body() ?: return null
+
+        val myDeviceId = tokenStorage.getDeviceId()
+        val recipientUserId = if (msg.fromUserId == myId) msg.chatUserId else myId
+
+        val targetDevices = if (msg.fromDeviceId > 0) {
+            bundle.devices.filter { it.deviceId == msg.fromDeviceId } + bundle.devices.filter { it.deviceId != msg.fromDeviceId }
+        } else {
+            bundle.devices
+        }
+
+        for (device in targetDevices) {
+            val ik = runCatching { android.util.Base64.decode(device.identityKey, android.util.Base64.DEFAULT) }.getOrNull() ?: continue
+            identityPins.verify(msg.fromUserId, device.deviceId, ik)
+            val text = runCatching {
+                decryptMessagePayload(
+                    myDeviceId = myDeviceId,
+                    fromIdentityKey = ik,
+                    ciphertext = msg.ciphertext,
+                    salt = msg.salt,
+                    nonce = msg.nonce,
+                    senderUserId = msg.fromUserId,
+                    recipientUserId = recipientUserId,
+                    clientMsgId = msg.clientMsgId ?: "",
+                    timestamp = msg.ts
+                )
+            }.getOrNull() ?: continue
+            return text
+        }
+        return null
     }
 
     /**

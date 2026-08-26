@@ -887,7 +887,8 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 		`SELECT m.id, m.sender_user_id, m.sender_device_id, m.recipient_device_id,
 		        COALESCE(dpk.x25519_pub, ''),
 		        CASE WHEN ch.user1_id = ? THEN ch.user2_id ELSE ch.user1_id END as chat_user_id,
-		        m.ciphertext, m.encryption_salt, m.encryption_nonce, m.timestamp, m.reply_to_msg_id
+		        m.ciphertext, m.encryption_salt, m.encryption_nonce, m.timestamp, m.reply_to_msg_id,
+		        COALESCE(m.client_msg_id, '')
 		 FROM messages m
 		 JOIN chats ch ON m.chat_id = ch.id
 		 LEFT JOIN device_public_keys dpk ON m.sender_device_id = dpk.device_id
@@ -922,6 +923,7 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 		if err := rows.Scan(
 			&m.MsgID, &m.FromUserID, &m.FromDeviceID, &m.RecipientDeviceID, &senderIK,
 			&m.ChatUserID, &m.Ciphertext, &m.Salt, &m.Nonce, &m.TS, &m.ReplyToMsgID,
+			&m.ClientMsgID,
 		); err != nil {
 			continue
 		}
@@ -1381,11 +1383,8 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 		return fmt.Errorf("msg_id required")
 	}
 
-	log.Printf("[ws] handleMsgDelete requested by userID=%d for msg_id=%s, deleteForEveryone=%v", c.userID, req.MsgID, req.DeleteForEveryone)
-
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
-		log.Printf("[ws] handleMsgDelete BeginTx error: %v", err)
 		return err
 	}
 	defer tx.Rollback()
@@ -1411,18 +1410,13 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 	}
 
 	if err == sql.ErrNoRows {
-		log.Printf("[ws] handleMsgDelete: message %s NOT FOUND in DB", req.MsgID)
 		return nil
 	} else if err != nil {
-		log.Printf("[ws] handleMsgDelete: DB query error: %v", err)
 		return err
 	}
 
-	log.Printf("[ws] handleMsgDelete found msg: serverID=%d, sender=%d, recipient=%d", msgID, senderUserID, recipientUserID)
-
 	// Ensure caller is either the sender or the recipient
 	if c.userID != senderUserID && c.userID != recipientUserID {
-		log.Printf("[ws] handleMsgDelete: unauthorized attempt by user %d", c.userID)
 		return fmt.Errorf("unauthorized message deletion attempt")
 	}
 
@@ -1448,7 +1442,6 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 			clientMsgIDVal = clientMsgIdStr.String
 		}
 
-		log.Printf("[ws] Sending OpMsgDeleteNotify for msgID=%s to peerUserID=%d and userID=%d", clientMsgIDVal, peerUserID, c.userID)
 		notifyPayload, err := msgpack.Marshal(MsgDeleteNotify{
 			MsgID:             clientMsgIDVal,
 			ChatID:            c.userID,
@@ -1458,8 +1451,6 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 			frame := append([]byte{byte(OpMsgDeleteNotify)}, notifyPayload...)
 			c.hub.SendToUser(peerUserID, frame)
 			c.hub.SendToUser(c.userID, frame)
-		} else {
-			log.Printf("[ws] Error marshalling MsgDeleteNotify: %v", err)
 		}
 	} else {
 		// Soft/Local delete logic if needed
