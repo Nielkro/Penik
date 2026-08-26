@@ -1,8 +1,10 @@
 package niel.kro.penik.domain.call
 
 import android.content.Context
+import android.media.AudioManager
 import android.media.Ringtone
 import android.media.RingtoneManager
+import android.media.ToneGenerator
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -98,6 +100,7 @@ class CallManager @Inject constructor(
     private var timerJob: Job? = null
     private var ringTimeoutJob: Job? = null
     private var ringtone: Ringtone? = null
+    private var toneGenerator: ToneGenerator? = null
     private var livekitUrl: String = ""
     private var livekitFallbackUrl: String? = null
     private var token: String = ""
@@ -124,11 +127,13 @@ class CallManager @Inject constructor(
             isVideo = isVideo,
             isOutgoing = true
         )
+        startDialingTone()
         webSocketManager.sendCallOffer(peerUserId, isVideo)
         ringTimeoutJob = scope.launch {
             delay(RING_TIMEOUT_MS)
             if (ui.phase == CallPhase.DIALING) {
                 webSocketManager.sendCallReject(currentCallId, ui.peerUserId, "declined")
+                playBusyTone()
                 toast("Нет ответа")
                 cleanup()
             }
@@ -180,7 +185,7 @@ class CallManager @Inject constructor(
     fun acceptCall() {
         if (ui.phase != CallPhase.INCOMING) return
         ringTimeoutJob?.cancel()
-        stopRinger()
+        stopAllTones()
         notificationManager.cancelIncomingCallNotification()
         currentCallId = callIdOfIncoming
         _state.value = ui.copy(phase = CallPhase.CONNECTING)
@@ -210,7 +215,7 @@ class CallManager @Inject constructor(
 
     fun rejectCall() {
         if (ui.phase != CallPhase.INCOMING) return
-        stopRinger()
+        stopAllTones()
         notificationManager.cancelIncomingCallNotification()
         val callId = callIdOfIncoming
         val peerId = ui.peerUserId
@@ -240,6 +245,7 @@ class CallManager @Inject constructor(
     fun onAccepted(event: WebSocketEvent.CallAccepted) {
         if (ui.phase != CallPhase.DIALING) return
         ringTimeoutJob?.cancel()
+        stopAllTones()
         currentCallId = event.callId
         livekitUrl = event.livekitUrl
         livekitFallbackUrl = event.livekitFallbackUrl
@@ -251,6 +257,7 @@ class CallManager @Inject constructor(
     fun onReject(event: WebSocketEvent.CallReject) {
         if (ui.phase == CallPhase.IDLE) return
         if (!isCurrentCall(event.callId)) return
+        playBusyTone()
         when (event.reason) {
             "busy" -> toast("Пользователь занят")
             "offline" -> toast("Пользователь не в сети")
@@ -263,9 +270,12 @@ class CallManager @Inject constructor(
         if (ui.phase == CallPhase.IDLE) return
         if (!isCurrentCall(event.callId)) return
         if (ui.phase == CallPhase.INCOMING) {
-            stopRinger()
+            stopAllTones()
             notificationManager.cancelIncomingCallNotification()
             toast("Звонок отменен")
+        } else {
+            playEndedTone()
+            toast("Звонок завершен")
         }
         cleanup()
     }
@@ -278,7 +288,7 @@ class CallManager @Inject constructor(
     fun onTaken(event: WebSocketEvent.CallTaken) {
         if (ui.phase != CallPhase.INCOMING && ui.phase != CallPhase.DIALING) return
         if (!isCurrentCall(event.callId)) return
-        stopRinger()
+        stopAllTones()
         notificationManager.cancelIncomingCallNotification()
         toast(
             if (event.reason == "declined") "Звонок отклонен на другом устройстве"
@@ -341,8 +351,10 @@ class CallManager @Inject constructor(
 
     fun endCall() {
         when (ui.phase) {
-            CallPhase.ACTIVE, CallPhase.CONNECTING ->
+            CallPhase.ACTIVE, CallPhase.CONNECTING -> {
+                playEndedTone()
                 webSocketManager.sendCallEnd(currentCallId, ui.peerUserId)
+            }
             CallPhase.DIALING ->
                 webSocketManager.sendCallReject(currentCallId, ui.peerUserId, "declined")
             CallPhase.INCOMING -> {
@@ -494,6 +506,7 @@ class CallManager @Inject constructor(
     private suspend fun onRoomConnected() {
         val room = room ?: return
         _state.value = ui.copy(phase = CallPhase.ACTIVE)
+        playConnectedTone()
         startTimer()
         updateRemoteVideoTrack(room)
         try {
@@ -511,6 +524,55 @@ class CallManager @Inject constructor(
     }
 
     // --- Ringer / timer / misc ---
+
+    private fun startDialingTone() {
+        try {
+            toneGenerator?.release()
+            toneGenerator = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 70)
+            toneGenerator?.startTone(ToneGenerator.TONE_SUP_RINGTONE)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start dialing tone", e)
+        }
+    }
+
+    private fun playBusyTone() {
+        try {
+            stopAllTones()
+            toneGenerator = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 75)
+            toneGenerator?.startTone(ToneGenerator.TONE_SUP_BUSY, 1500)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to play busy tone", e)
+        }
+    }
+
+    private fun playConnectedTone() {
+        try {
+            stopAllTones()
+            toneGenerator = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 75)
+            toneGenerator?.startTone(ToneGenerator.TONE_PROP_ACK, 250)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to play connected tone", e)
+        }
+    }
+
+    private fun playEndedTone() {
+        try {
+            stopAllTones()
+            toneGenerator = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 75)
+            toneGenerator?.startTone(ToneGenerator.TONE_PROP_PROMPT, 300)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to play ended tone", e)
+        }
+    }
+
+    private fun stopAllTones() {
+        stopRinger()
+        try {
+            toneGenerator?.stopTone()
+            toneGenerator?.release()
+        } catch (_: Exception) {}
+        toneGenerator = null
+    }
 
     private fun startRinger() {
         try {
@@ -585,7 +647,7 @@ class CallManager @Inject constructor(
         ringTimeoutJob = null
         timerJob?.cancel()
         timerJob = null
-        stopRinger()
+        stopAllTones()
         notificationManager.cancelIncomingCallNotification()
         eventsJob?.cancel()
         eventsJob = null
