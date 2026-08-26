@@ -190,10 +190,15 @@ class AuthViewModel @Inject constructor(
                     )
                 },
                 onFailure = { e ->
-                    val msg = if (e.message?.contains("404") == true || e.message?.contains("not found") == true) {
-                        "Пользователь не найден"
+                    val rawMsg = e.message.orEmpty()
+                    val msg = if (rawMsg.contains("404") ||
+                        rawMsg.contains("not found", ignoreCase = true) ||
+                        rawMsg.contains("не найден", ignoreCase = true) ||
+                        rawMsg.contains("ресурс не найден", ignoreCase = true)
+                    ) {
+                        "Пользователь с никнеймом @$nick не найден"
                     } else {
-                        e.message ?: "Ошибка загрузки профиля"
+                        rawMsg.ifBlank { "Пользователь с никнеймом @$nick не найден" }
                     }
                     _uiState.value = _uiState.value.copy(isLoading = false, error = msg)
                 }
