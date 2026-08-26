@@ -1,236 +1,906 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Penik Messenger — Безопасное общение</title>
-  <link rel="icon" href="https://web.penik.ru/assets/favicon-32x32-Dbd5NtKC.png" />
-  <style>
-    :root {
-      --bg: #0e1621;
-      --card-bg: #17212b;
-      --card-hover: #202b36;
-      --accent: #2481cc;
-      --accent-hover: #1d72b8;
-      --text: #f5f5f5;
-      --text-muted: #7f91a4;
-      --border: #242f3d;
-    }
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background-color: var(--bg);
-      color: var(--text);
-      line-height: 1.6;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-    header {
-      padding: 24px 32px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      max-width: 1200px;
-      margin: 0 auto;
-      width: 100%;
-    }
-    .logo {
-      font-size: 24px;
-      font-weight: 800;
-      color: var(--text);
-      text-decoration: none;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .logo span {
-      color: var(--accent);
-    }
-    .nav-links a {
-      color: var(--text-muted);
-      text-decoration: none;
-      margin-left: 24px;
-      font-size: 15px;
-      font-weight: 500;
-      transition: color 0.2s;
-    }
-    .nav-links a:hover {
-      color: var(--text);
-    }
-    .hero {
-      max-width: 1000px;
-      margin: 60px auto;
-      text-align: center;
-      padding: 0 24px;
-      flex: 1;
-    }
-    .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: rgba(36, 129, 204, 0.15);
-      border: 1px solid rgba(36, 129, 204, 0.3);
-      padding: 6px 16px;
-      border-radius: 20px;
-      font-size: 13px;
-      font-weight: 600;
-      color: #64b5f6;
-      margin-bottom: 24px;
-    }
-    .hero h1 {
-      font-size: 48px;
-      font-weight: 800;
-      letter-spacing: -1px;
-      margin-bottom: 20px;
-      line-height: 1.2;
-    }
-    .hero p {
-      font-size: 18px;
-      color: var(--text-muted);
-      max-width: 680px;
-      margin: 0 auto 36px;
-    }
-    .btn-group {
-      display: flex;
-      gap: 16px;
-      justify-content: center;
-      flex-wrap: wrap;
-      margin-bottom: 60px;
-    }
-    .btn {
-      padding: 14px 28px;
-      border-radius: 12px;
-      font-size: 16px;
-      font-weight: 600;
-      text-decoration: none;
-      transition: all 0.2s ease;
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      cursor: pointer;
-    }
-    .btn-primary {
-      background: var(--accent);
-      color: #fff;
-    }
-    .btn-primary:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-    }
-    .btn-secondary {
-      background: var(--card-bg);
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
-    .btn-secondary:hover {
-      background: var(--card-hover);
-      transform: translateY(-2px);
-    }
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 24px;
-      margin-top: 40px;
-      text-align: left;
-    }
-    .feature-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      padding: 28px;
-      border-radius: 16px;
-      transition: transform 0.2s, border-color 0.2s;
-    }
-    .feature-card:hover {
-      border-color: var(--accent);
-      transform: translateY(-4px);
-    }
-    .feature-icon {
-      font-size: 32px;
-      margin-bottom: 16px;
-    }
-    .feature-card h3 {
-      font-size: 18px;
-      margin-bottom: 8px;
-      color: var(--text);
-    }
-    .feature-card p {
-      font-size: 14px;
-      color: var(--text-muted);
-      margin: 0;
-    }
-    footer {
-      border-top: 1px solid var(--border);
-      padding: 30px 24px;
-      text-align: center;
-      color: var(--text-muted);
-      font-size: 14px;
-      margin-top: auto;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Penik Messenger — свой мессенджер с E2EE-шифрованием</title>
+<meta name="description" content="Penik Messenger — безопасный мессенджер со сквозным шифрованием (E2EE). E2EE на X25519 + ChaCha20-Poly1305, зашифрованные группы, мультидевайсинг и бинарный WebSocket. Даже сервер не видит ваши сообщения.">
+<link rel="icon" href="https://web.dev.penik.ru/assets/favicon-BYBt5M59.ico">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/cyrillic-400-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/cyrillic-600-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/cyrillic-700-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/cyrillic-800-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/jetbrains-mono@latest/cyrillic-400-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/jetbrains-mono@latest/cyrillic-600-normal.css">
+<style>
+:root{
+  --bg:#06080d;
+  --bg2:#0a0e16;
+  --card:rgba(255,255,255,.035);
+  --border:rgba(255,255,255,.09);
+  --text:#e9edf4;
+  --muted:#8b94a7;
+  --acc:#34d399;
+  --acc2:#22d3ee;
+  --grad:linear-gradient(135deg,#34d399,#22d3ee);
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Inter',system-ui,sans-serif;
+  line-height:1.55;
+  overflow-x:hidden;
+}
+::selection{background:rgba(52,211,153,.35)}
+img{display:block}
+a{color:inherit;text-decoration:none}
+.container{max-width:1180px;margin:0 auto;padding:0 24px}
+section{scroll-margin-top:90px}
+
+/* ---------- NAV ---------- */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;transition:.3s;border-bottom:1px solid transparent}
+nav.scrolled{background:rgba(6,8,13,.82);backdrop-filter:blur(14px);border-bottom-color:var(--border)}
+.nav-inner{display:flex;align-items:center;gap:28px;height:70px}
+.brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:18px;letter-spacing:-.3px}
+.brand img{width:30px;height:30px;border-radius:8px}
+.brand em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.nav-links{display:flex;gap:26px;margin-left:14px}
+.nav-links a{color:var(--muted);font-size:14.5px;font-weight:600;transition:.2s}
+.nav-links a:hover{color:var(--acc)}
+.nav-cta{margin-left:auto;display:flex;gap:10px}
+.burger{display:none;margin-left:auto;background:none;border:1px solid var(--border);border-radius:10px;width:42px;height:42px;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer}
+.burger span{display:block;width:18px;height:2px;background:var(--text);border-radius:2px;transition:.3s}
+body.menu-open .burger span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+body.menu-open .burger span:nth-child(2){opacity:0}
+body.menu-open .burger span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+
+/* ---------- BUTTONS ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:11px 20px;border-radius:12px;font-weight:700;font-size:14.5px;font-family:inherit;transition:.25s;cursor:pointer;border:1px solid transparent;white-space:nowrap}
+.btn-primary{background:var(--grad);color:#04121b;box-shadow:0 8px 26px -8px rgba(52,211,153,.55)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 16px 34px -8px rgba(34,211,238,.6)}
+.btn-outline{border-color:var(--border);color:var(--text);background:rgba(255,255,255,.03)}
+.btn-outline:hover{border-color:rgba(52,211,153,.55);background:rgba(52,211,153,.07);transform:translateY(-2px)}
+.btn-disabled{background:rgba(255,255,255,.05);color:var(--muted);border-color:var(--border);cursor:not-allowed;box-shadow:none}
+.btn-disabled:hover{transform:none;box-shadow:none;background:rgba(255,255,255,.05)}
+.btn-lg{padding:15px 28px;font-size:16px;border-radius:14px}
+.btn-sm{padding:9px 16px;font-size:13.5px}
+
+/* ---------- HERO ---------- */
+.hero{position:relative;padding:160px 0 90px;overflow:hidden}
+.hero-bg{position:absolute;inset:0;pointer-events:none;background:
+  radial-gradient(640px 420px at 82% 8%,rgba(34,211,238,.13),transparent 62%),
+  radial-gradient(560px 420px at 8% 92%,rgba(52,211,153,.11),transparent 62%)}
+.hero-bg::before{content:'';position:absolute;inset:0;
+  background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px);
+  background-size:46px 46px;
+  -webkit-mask-image:radial-gradient(ellipse at 50% 0%,black 20%,transparent 75%);
+  mask-image:radial-gradient(ellipse at 50% 0%,black 20%,transparent 75%)}
+.hero-grid{position:relative;display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
+.badge{display:inline-flex;align-items:center;gap:8px;font:600 12.5px var(--mono);color:var(--acc);background:rgba(52,211,153,.09);border:1px solid rgba(52,211,153,.28);padding:8px 15px;border-radius:99px;margin-bottom:22px}
+.badge .pulse{width:7px;height:7px;border-radius:50%;background:var(--acc);animation:pulse 1.8s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(52,211,153,.6)}50%{box-shadow:0 0 0 6px rgba(52,211,153,0)}}
+h1{font-size:clamp(38px,5.4vw,62px);font-weight:800;line-height:1.06;letter-spacing:-1.5px;margin-bottom:22px}
+.grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero-text p{color:var(--muted);font-size:17.5px;max-width:520px;margin-bottom:32px}
+.hero-text p b{color:var(--text)}
+.hero-btns{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:22px}
+.hero-meta{font:500 13px var(--mono);color:var(--muted)}
+
+/* ---------- PHONE ---------- */
+.hero-demo{position:relative;display:flex;justify-content:center}
+.phone{width:292px;aspect-ratio:9/18.6;background:#0c111e;border-radius:46px;border:1px solid rgba(255,255,255,.14);padding:10px;
+  box-shadow:0 50px 90px -24px rgba(0,0,0,.75),0 0 0 7px rgba(255,255,255,.028),0 0 90px -20px rgba(34,211,238,.28);
+  animation:phoneFloat 7s ease-in-out infinite}
+@keyframes phoneFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+.phone-notch{position:absolute;top:20px;left:50%;transform:translateX(-50%);width:96px;height:22px;background:#0c111e;border-radius:12px;z-index:3}
+.screen{background:#0d0d12;border-radius:37px;height:100%;display:flex;flex-direction:column;overflow:hidden;position:relative}
+.chat-head{display:flex;align-items:center;gap:10px;padding:34px 14px 12px;border-bottom:1px solid #252535;background:#13131a}
+.chat-back{color:#eeeef5;font-size:15px;font-weight:600;margin-right:2px;cursor:pointer}
+.chat-ava{width:34px;height:34px;border-radius:50%;border:1px solid #252535}
+.chat-head b{font-size:13.5px;display:block;color:#eeeef5}
+.chat-status{font-size:10.5px;color:#7b7b9b;display:flex;align-items:center;gap:5px}
+.chat-status .dot{width:6px;height:6px;border-radius:50%;background:#4ec97a;display:inline-block}
+.chat-lock{margin-left:auto;font-size:10px;color:#4ec97a;background:rgba(78,201,122,.15);padding:4px 6px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:600}
+.chat-body{flex:1;overflow-y:auto;padding:10px 4px;scrollbar-width:none;display:flex;flex-direction:column;justify-content:flex-end}
+.chat-body::-webkit-scrollbar{display:none}
+.msg{display:flex;margin:4px 10px;animation:msgPop .32s cubic-bezier(.2,.9,.3,1.2) both}
+@keyframes msgPop{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}
+.msg.out{justify-content:flex-end}
+.bubble{max-width:82%;padding:8px 12px 6px;font-size:12.5px;line-height:1.4}
+.msg.in .bubble{background:#1a1a24;color:#eeeef5;border-radius:14px 14px 14px 2px}
+.msg.out .bubble{background:#2b2d6b;color:#c8cdff;border-radius:14px 14px 2px 14px}
+.bubble .meta{display:flex;align-items:center;justify-content:flex-end;gap:4px;font:500 9px var(--mono);color:#7b7b9b;margin-top:3px}
+.bubble .meta .ticks{color:#5b6ef5;font-weight:bold;margin-right:2px}
+.msg.enc .bubble .txt{font-family:var(--mono);color:#f472b6;letter-spacing:.4px;font-size:10.5px;word-break:break-all}
+.msg.failed .bubble{background:rgba(239,83,80,.15);color:#ef5350;border:1px solid rgba(239,83,80,.25);border-radius:14px 14px 14px 2px}
+.msg.failed .bubble .txt{color:#ef5350;font-weight:500}
+.msg.failed .bubble .meta{color:#ef5350;opacity:0.8}
+.msg.failed .bubble .failed-action{color:#5b6ef5;font-size:10px;font-weight:700;margin-top:2px;cursor:pointer;display:inline-block}
+.chat-input{display:flex;align-items:center;gap:10px;padding:11px 14px;border-top:1px solid #252535;background:#13131a}
+.chat-input span{flex:1;font-size:12px;color:#7b7b9b;background:#1e1e2a;border:1px solid #252535;border-radius:14px;padding:8px 14px}
+.chat-input b{width:34px;height:34px;border-radius:50%;background:#5b6ef5;color:#eeeef5;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer}
+.chip{position:absolute;font:600 12px var(--mono);background:rgba(10,15,26,.9);border:1px solid var(--border);backdrop-filter:blur(8px);padding:9px 14px;border-radius:12px;box-shadow:0 14px 30px -12px rgba(0,0,0,.7);animation:chipFloat 5.5s ease-in-out infinite;z-index:4}
+.chip1{top:8%;left:-8%;animation-delay:.4s;border-color:rgba(52,211,153,.4)}
+.chip2{bottom:22%;right:-12%;animation-delay:1.3s;border-color:rgba(34,211,238,.4)}
+.chip3{top:42%;right:-16%;animation-delay:2.2s;border-color:rgba(167,139,250,.4)}
+@keyframes chipFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+
+/* ---------- STATS ---------- */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:20px}
+.stat{padding:24px 18px;border-radius:18px;background:var(--card);border:1px solid var(--border);text-align:center;transition:.25s}
+.stat:hover{border-color:rgba(52,211,153,.4);transform:translateY(-3px)}
+.stat b{display:block;font-size:34px;font-weight:800;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:4px}
+.stat span{font-size:12.5px;color:var(--muted)}
+.stats-note{text-align:center;color:var(--muted);font:500 12.5px var(--mono);margin-top:14px}
+
+/* ---------- MARQUEE ---------- */
+.marquee{overflow:hidden;border-block:1px solid var(--border);background:rgba(255,255,255,.018);margin-top:80px}
+.marquee-track{display:flex;gap:44px;width:max-content;animation:mqScroll 30s linear infinite;padding:15px 0}
+.marquee-track span{font:600 13px var(--mono);color:var(--muted);letter-spacing:1.5px;white-space:nowrap}
+.marquee-track span i{font-style:normal;color:var(--acc);margin-right:44px}
+@keyframes mqScroll{to{transform:translateX(-50%)}}
+
+/* ---------- SECTIONS ---------- */
+.section{padding:100px 0}
+.sec-head{max-width:660px;margin:0 auto 54px;text-align:center}
+.tag{display:inline-block;font:600 11.5px var(--mono);letter-spacing:2.5px;text-transform:uppercase;color:var(--acc);background:rgba(52,211,153,.09);border:1px solid rgba(52,211,153,.28);padding:7px 15px;border-radius:99px;margin-bottom:18px}
+h2{font-size:clamp(28px,4vw,42px);font-weight:800;letter-spacing:-.8px;line-height:1.15;margin-bottom:14px}
+.sec-head p{color:var(--muted);font-size:16.5px}
+
+/* ---------- FEATURES ---------- */
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.feat{padding:30px 26px;border-radius:20px;background:var(--card);border:1px solid var(--border);transition:.3s;position:relative;overflow:hidden}
+.feat::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--grad);opacity:0;transition:.3s}
+.feat:hover{transform:translateY(-5px);border-color:rgba(52,211,153,.4);background:rgba(255,255,255,.05)}
+.feat:hover::before{opacity:1}
+.feat .ico{font-size:30px;margin-bottom:16px;display:inline-block}
+.feat h3{font-size:18px;font-weight:700;margin-bottom:10px;letter-spacing:-.3px}
+.feat p{color:var(--muted);font-size:14.5px;margin-bottom:16px}
+.feat-tags{display:flex;flex-wrap:wrap;gap:7px}
+.feat-tags span{font:600 11px var(--mono);color:var(--acc2);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.22);padding:4px 10px;border-radius:7px}
+
+/* ---------- SECURITY / STEPS ---------- */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.step{padding:30px 26px;border-radius:20px;background:var(--card);border:1px solid var(--border);position:relative}
+.step-num{font:700 13px var(--mono);color:var(--acc);letter-spacing:3px;display:block;margin-bottom:14px}
+.step h3{font-size:17.5px;font-weight:700;margin-bottom:10px}
+.step p{color:var(--muted);font-size:14.5px}
+.step code{font:600 12.5px var(--mono);color:var(--acc2);background:rgba(34,211,238,.08);padding:2px 7px;border-radius:6px}
+.server-panel{margin-top:44px;border-radius:18px;border:1px solid var(--border);background:#070a12;overflow:hidden;box-shadow:0 34px 70px -34px rgba(0,0,0,.85)}
+.term-head{display:flex;align-items:center;gap:8px;padding:13px 18px;border-bottom:1px solid var(--border);font:600 12.5px var(--mono);color:var(--muted);background:rgba(255,255,255,.02)}
+.tdot{width:11px;height:11px;border-radius:50%}
+.tdot.r{background:#f87171}.tdot.y{background:#fbbf24}.tdot.g{background:#34d399}
+.term-title{margin-left:8px}
+.term-body{padding:16px 18px;height:238px;overflow:hidden;font:400 12.5px/2 var(--mono)}
+.tline{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:tFade .35s both}
+@keyframes tFade{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+.tdir{color:var(--acc2)}
+.thex{color:#5b6577}
+.tok{color:var(--acc)}
+.tfail{color:#f87171}
+.term-caption{padding:13px 18px;border-top:1px solid var(--border);color:var(--muted);font-size:13.5px;text-align:center}
+.term-caption b{color:var(--acc)}
+
+/* ---------- COMPARE ---------- */
+.table-wrap{overflow-x:auto;border-radius:20px;border:1px solid var(--border);background:var(--card)}
+.cmp-table{width:100%;border-collapse:collapse;min-width:640px}
+.cmp-table th,.cmp-table td{padding:16px 18px;text-align:center;border-bottom:1px solid var(--border);font-size:14.5px}
+.cmp-table tr:last-child td{border-bottom:none}
+.cmp-table th{font-size:15px;font-weight:800;padding-top:22px}
+.cmp-table td:first-child,.cmp-table th:first-child{text-align:left;color:var(--muted);font-weight:600}
+.cmp-table th:first-child{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:1.5px}
+.cmp-table thead th:first-child{color:var(--muted)}
+.penik-col{background:rgba(52,211,153,.07);border-left:1px solid rgba(52,211,153,.25);border-right:1px solid rgba(52,211,153,.25)}
+th.penik-col{color:var(--acc)!important}
+.yes{color:var(--acc);font-weight:700}
+.no{color:#f87171;font-weight:700}
+.meh{color:#fbbf24;font-weight:600;font-size:13px}
+.cmp-note{text-align:center;color:var(--muted);font-size:13px;margin-top:16px;font-family:var(--mono)}
+
+/* ---------- DOWNLOAD ---------- */
+.dl-wrap{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:900px;margin:0 auto}
+.dl-card{padding:42px 34px;border-radius:24px;background:var(--card);border:1px solid var(--border);text-align:center;position:relative;overflow:hidden;transition:.3s}
+.dl-card:hover{transform:translateY(-5px);border-color:rgba(52,211,153,.45)}
+.dl-card::before{content:'';position:absolute;inset:0;background:radial-gradient(420px 220px at 50% -10%,rgba(52,211,153,.14),transparent 70%);pointer-events:none}
+.dl-card.web::before{background:radial-gradient(420px 220px at 50% -10%,rgba(34,211,238,.14),transparent 70%)}
+.dl-icon{font-size:46px;margin-bottom:18px}
+.dl-card h3{font-size:23px;font-weight:800;margin-bottom:8px;letter-spacing:-.4px}
+.dl-card .dl-desc{color:var(--muted);font-size:14.5px;margin-bottom:26px}
+
+/* ---------- FAQ ---------- */
+.faq-wrap{max-width:760px;margin:0 auto}
+.faq-item{border:1px solid var(--border);border-radius:16px;background:var(--card);margin-bottom:12px;overflow:hidden;transition:.25s}
+.faq-item.open{border-color:rgba(52,211,153,.4)}
+.faq-q{width:100%;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:19px 22px;background:none;border:0;color:var(--text);font:700 16px 'Inter',sans-serif;cursor:pointer;text-align:left}
+.faq-q .plus{font-size:22px;font-weight:400;color:var(--acc);transition:.3s;flex-shrink:0}
+.faq-item.open .plus{transform:rotate(45deg)}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .38s ease}
+.faq-a p{padding:0 22px 20px;color:var(--muted);font-size:15px;line-height:1.65}
+.faq-a b{color:var(--text)}
+
+/* ---------- FOOTER ---------- */
+footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--bg2)}
+.foot-grid{display:flex;justify-content:space-between;gap:36px;flex-wrap:wrap;margin-bottom:36px}
+.foot-brand{max-width:320px}
+.foot-brand .brand{margin-bottom:14px}
+.foot-brand p{color:var(--muted);font-size:14px}
+.foot-col h4{font-size:13px;text-transform:uppercase;letter-spacing:1.8px;color:var(--muted);margin-bottom:16px;font-weight:700}
+.foot-col a{display:block;color:var(--text);font-size:14.5px;margin-bottom:11px;opacity:.85;transition:.2s}
+.foot-col a:hover{color:var(--acc);opacity:1}
+.foot-bottom{border-top:1px solid var(--border);padding-top:24px;display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:13px}
+.foot-bottom code{font-family:var(--mono);color:var(--acc)}
+
+/* ---------- REVEAL ---------- */
+.reveal{opacity:0;transform:translateY(26px);transition:opacity .7s ease,transform .7s ease;transition-delay:var(--d,0s)}
+.reveal.visible{opacity:1;transform:none}
+
+/* ---------- RESPONSIVE ---------- */
+@media(max-width:1020px){
+  .hero-grid{grid-template-columns:1fr;gap:50px;text-align:center}
+  .hero-text p{margin-inline:auto}
+  .hero-btns,.hero-meta{justify-content:center}
+  .chip3{display:none}
+  .feat-grid,.steps{grid-template-columns:repeat(2,1fr)}
+  .stats{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:860px){
+  .nav-links{position:fixed;top:70px;left:0;right:0;background:rgba(6,9,14,.97);backdrop-filter:blur(14px);flex-direction:column;padding:26px;gap:20px;border-bottom:1px solid var(--border);transform:translateY(-130%);transition:.35s;z-index:90}
+  body.menu-open .nav-links{transform:none}
+  .nav-cta{display:none}
+  .burger{display:flex}
+}
+@media(max-width:640px){
+  .hero{padding-top:130px}
+  .feat-grid,.steps,.dl-wrap{grid-template-columns:1fr}
+  .chip1{left:-2%}
+  .chip2{right:-2%}
+  .section{padding:76px 0}
+  .btn-lg{width:100%}
+  .hero-btns .btn{width:100%}
+  .dl-wrap{gap:14px}
+  .dl-card{padding:28px 20px}
+  .dl-card h3{font-size:19px}
+  .faq-q{font-size:15px;padding:16px 18px}
+  .faq-a p{font-size:14px}
+  .cmp-table{min-width:520px}
+  .cmp-table th,.cmp-table td{padding:12px 10px;font-size:13px}
+  .stats{gap:10px}
+  .stat{padding:18px 12px}
+  .stat b{font-size:26px}
+  .stat span{font-size:11.5px}
+  .hero-meta{font-size:12px}
+}
+@media(max-width:380px){
+  .hero{padding-top:110px}
+  .hero-demo{transform:scale(.85);transform-origin:top center;margin-bottom:-40px}
+  h1{font-size:30px;letter-spacing:-1px}
+  .hero-text p{font-size:15px}
+  .badge{font-size:11px;padding:6px 12px}
+  .phone{width:220px;border-radius:34px;padding:8px}
+  .phone-notch{width:72px;height:18px;top:14px}
+  .screen{border-radius:28px}
+  .chat-head{padding:28px 10px 10px}
+  .chat-ava{width:28px;height:28px}
+  .chat-head b{font-size:12px}
+  .chat-lock{font-size:9px;padding:3px 5px}
+  .bubble{font-size:11.5px;padding:7px 10px 5px}
+  .container{padding:0 16px}
+  .nav-inner{height:60px}
+  .brand{font-size:16px}
+  .brand img{width:26px;height:26px}
+  .burger{width:36px;height:36px}
+  .burger span{width:16px}
+  .section{padding:60px 0}
+  .sec-head h2{font-size:24px}
+  .sec-head p{font-size:14.5px}
+  .feat{padding:22px 18px}
+  .feat h3{font-size:16px}
+  .feat p{font-size:13.5px}
+  .step{padding:22px 18px}
+  .step h3{font-size:15.5px}
+  .step p{font-size:13.5px}
+  .dl-card{padding:24px 16px}
+  .dl-icon{font-size:38px}
+  .dl-card h3{font-size:17px}
+  .dl-card .dl-desc{font-size:13.5px;margin-bottom:20px}
+  .foot-grid{flex-direction:column;gap:24px}
+  .foot-bottom{flex-direction:column;text-align:center;gap:8px}
+  .marquee-track{gap:30px}
+  .marquee-track span{font-size:12px}
+}
+.mitm-link {
+  color: var(--acc);
+  border-bottom: 1px dashed var(--acc);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.mitm-link:hover {
+  color: var(--acc2);
+  border-bottom-color: var(--acc2);
+}
+</style>
 </head>
 <body>
-  <header>
-    <a href="#" class="logo">Penik<span>.</span></a>
-    <nav class="nav-links">
-      <a href="https://web.penik.ru">Веб-версия</a>
-      <a href="/app-release.apk" download>Скачать APK</a>
-    </nav>
-  </header>
 
-  <main class="hero">
-    <div class="hero-badge">
-      🛡️ Сквозное шифрование E2EE (X25519 + ChaCha20-Poly1305)
+<!-- ================= NAV ================= -->
+<nav id="nav">
+  <div class="container nav-inner">
+    <a class="brand" href="#top">
+      <img src="https://web.dev.penik.ru/assets/favicon-BYBt5M59.ico" alt="Penik Messenger">
+      <span>Penik&nbsp;<em>Messenger</em></span>
+    </a>
+    <div class="nav-links" id="navLinks">
+      <a href="#features">Возможности</a>
+      <a href="#security">Шифрование</a>
+      <a href="#compare">Сравнение</a>
+      <a href="#download">Скачать</a>
+      <a href="#faq">FAQ</a>
     </div>
-    <h1>Быстрый, приватный и надёжный мессенджер</h1>
-    <p>
-      Penik — мессенджер с защитой персональных данных, звонками высокого качества, поддержкой стикеров и синхронизацией между устройствами.
-    </p>
-
-    <div class="btn-group">
-      <a href="https://web.penik.ru" class="btn btn-primary">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-        Открыть веб-клиент
-      </a>
-      <a href="/app-release.apk" class="btn btn-secondary" download>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-        Скачать APK для Android
-      </a>
+    <div class="nav-cta">
+      <a class="btn btn-outline btn-sm" href="https://web.dev.penik.ru" target="_blank" rel="noopener">Веб-версия</a>
+      <button class="btn btn-disabled btn-sm" disabled>Временно недоступно</button>
     </div>
+    <button class="burger" id="burger" aria-label="Меню"><span></span><span></span><span></span></button>
+  </div>
+</nav>
 
-    <div class="features-grid">
-      <div class="feature-card">
-        <div class="feature-icon">🔒</div>
-        <h3>E2EE Шифрование</h3>
-        <p>Ключи шифрования хранятся только на ваших устройствах. Ни сервер, ни посторонние не имеют доступа к содержимому ваших переписок.</p>
+<!-- ================= HERO ================= -->
+<header class="hero" id="top">
+  <div class="hero-bg"></div>
+  <div class="container hero-grid">
+    <div class="hero-text">
+      <div class="badge"><span class="pulse"></span> E2EE по умолчанию · X25519 + ChaCha20-Poly1305</div>
+      <h1>Свой мессенджер.<br><span class="grad">Свои правила.</span></h1>
+      <p><b>Penik Messenger</b> — приватный мессенджер со сквозным шифрованием. Сообщения шифруются прямо на устройстве, так что даже наш сервер не знает, о чём вы пишете. В отличие от Телеграма. И тем более МАКС.</p>
+      <div class="hero-btns">
+        <button class="btn btn-disabled btn-lg" disabled>⏳ Временно недоступно</button>
+        <a class="btn btn-outline btn-lg" href="https://web.dev.penik.ru" target="_blank" rel="noopener">Открыть веб-версию&nbsp;→</a>
       </div>
+      <div class="hero-meta">Android 8.0+ · v1.3.7 · бесплатно и без рекламы</div>
+    </div>
 
-      <div class="feature-card">
-        <div class="feature-icon">📞</div>
+    <div class="hero-demo">
+      <div class="chip chip1">🔑 X25519</div>
+      <div class="chip chip2">⚡ MessagePack</div>
+      <div class="chip chip3">📱 Мультидевайс</div>
+      <div class="phone">
+        <div class="phone-notch"></div>
+        <div class="screen">
+          <div class="chat-head">
+            <span class="chat-back">←</span>
+            <img class="chat-ava" src="https://web.dev.penik.ru/assets/favicon-BYBt5M59.ico" alt="">
+            <div>
+              <b>Кирилл</b>
+              <span class="chat-status"><i class="dot"></i> в сети</span>
+            </div>
+            <span class="chat-lock">🔒 E2EE</span>
+          </div>
+          <div class="chat-body" id="chatBody"></div>
+          <div class="chat-input"><span>Сообщение…</span><b>➤</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="stats">
+      <div class="stat reveal" style="--d:.05s"><b>E2EE</b><span>по умолчанию везде</span></div>
+      <div class="stat reveal" style="--d:.12s"><b>2</b><span>алгоритма: X25519 + ChaCha20-Poly1305</span></div>
+      <div class="stat reveal" style="--d:.19s"><b>∞</b><span>устройств на один аккаунт</span></div>
+      <div class="stat reveal" style="--d:.26s"><b>100%</b><span>сообщений зашифровано</span></div>
+    </div>
+  </div>
+</header>
+
+<!-- ================= MARQUEE ================= -->
+<div class="marquee" aria-hidden="true">
+  <div class="marquee-track" id="mqTrack">
+    <span><i>◆</i>libsodium</span><span><i>◆</i>X25519</span><span><i>◆</i>ChaCha20-Poly1305</span><span><i>◆</i>MessagePack</span><span><i>◆</i>Binary WebSocket</span><span><i>◆</i>E2EE</span><span><i>◆</i>Мультидевайсинг</span><span><i>◆</i>Свой протокол</span>
+    <span><i>◆</i>libsodium</span><span><i>◆</i>X25519</span><span><i>◆</i>ChaCha20-Poly1305</span><span><i>◆</i>MessagePack</span><span><i>◆</i>Binary WebSocket</span><span><i>◆</i>E2EE</span><span><i>◆</i>Мультидевайсинг</span><span><i>◆</i>Свой протокол</span>
+  </div>
+</div>
+
+<!-- ================= FEATURES ================= -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="sec-head reveal">
+      <span class="tag">Возможности</span>
+      <h2>Что умеет Penik</h2>
+      <p>Ничего лишнего. Только то, что должен уметь нормальный мессенджер в 2026 году — и то, чего не умеют остальные.</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat reveal" style="--d:.05s">
+        <span class="ico">🔐</span>
+        <h3>Сквозное шифрование</h3>
+        <p>E2EE на X25519 + ChaCha20-Poly1305. Сервер видит только шифртекст — даже если очень захочет. Телеграму такое и не снилось, а МАКС — тем более.</p>
+        <div class="feat-tags"><span>X25519</span><span>ChaCha20</span><span>Poly1305</span></div>
+      </div>
+      <div class="feat reveal" style="--d:.12s">
+        <span class="ico">👥</span>
+        <h3>Зашифрованные группы</h3>
+        <p>Групповые чаты тоже сквозные: ключи живут только у участников, а не где-то на сервере в тёплом местечке.</p>
+        <div class="feat-tags"><span>Group E2EE</span><span>Ключи у участников</span></div>
+      </div>
+      <div class="feat reveal" style="--d:.19s">
+        <span class="ico">🖥️</span>
+        <h3>Мультидевайсинг</h3>
+        <p>Телефон, планшет, комп на работе — заходите с любого количества устройств. Всё синхронизировано и всё зашифровано.</p>
+        <div class="feat-tags"><span>∞ устройств</span><span>Синхронизация</span></div>
+      </div>
+      <div class="feat reveal" style="--d:.05s">
+        <span class="ico">📡</span>
+        <h3>Бинарный WebSocket</h3>
+        <p>MessagePack поверх бинарных веб-сокетов: пакеты крошечные, соединение стабильное. Потянет даже на интернете как у Кирилла.</p>
+        <div class="feat-tags"><span>MessagePack</span><span>Binary WS</span></div>
+      </div>
+      <div class="feat reveal" style="--d:.12s">
+        <span class="ico">📞</span>
         <h3>Аудио и видеозвонки</h3>
-        <p>Прямые P2P и WebRTC звонки в реальном времени с низкой задержкой, переключением камеры, демонстрацией экрана и историей вызовов.</p>
+        <p>Вызовы 1:1 в высоком качестве со сквозной сигнализацией через WebSocket и поддержкой демонстрации экрана.</p>
+        <div class="feat-tags"><span>LiveKit</span><span>HD видео</span><span>Звонки</span></div>
       </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">👥</div>
-        <h3>Безопасные группы</h3>
-        <p>Групповые чаты с шифрованием эпох, ролевой моделью и плавной синхронизацией истории.</p>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">📱</div>
-        <h3>QR-сопряжение устройств</h3>
-        <p>Мгновенная привязка веб-версии к телефону и защищенный перенос локальной истории сообщений.</p>
+      <div class="feat reveal" style="--d:.19s">
+        <span class="ico">🔑</span>
+        <h3>Коды безопасности</h3>
+        <p>Каждый чат защищен уникальным кодом безопасности (safety numbers). Сравните его с собеседником, чтобы полностью исключить возможность <a href="#faq-mitm" class="mitm-link">MITM-атаки</a>.</p>
+        <div class="feat-tags"><span>safety numbers</span><span>Защита от MITM</span></div>
       </div>
     </div>
-  </main>
+  </div>
+</section>
 
-  <footer>
-    <p>© 2026 Penik Messenger. Приватность без компромиссов.</p>
-  </footer>
+<!-- ================= SECURITY ================= -->
+<section class="section" id="security" style="background:var(--bg2);border-block:1px solid var(--border)">
+  <div class="container">
+    <div class="sec-head reveal">
+      <span class="tag">Безопасность</span>
+      <h2>Как работает шифрование</h2>
+      <p>Три шага. После них сервер превращается в слепого курьера, который просто переносит байты.</p>
+    </div>
+    <div class="steps">
+      <div class="step reveal" style="--d:.05s">
+        <span class="step-num">ШАГ 01</span>
+        <h3>Обмен ключами</h3>
+        <p>Устройства договариваются по <code>X25519</code>. Общий секрет вычисляется локально и по сети не передаётся — перехватывать нечего.</p>
+      </div>
+      <div class="step reveal" style="--d:.12s">
+        <span class="step-num">ШАГ 02</span>
+        <h3>Шифрование</h3>
+        <p>Каждое сообщение шифруется <code>ChaCha20-Poly1305</code> с уникальным nonce и проверяется на подлинность. Прочитать может только получатель.</p>
+      </div>
+      <div class="step reveal" style="--d:.19s">
+        <span class="step-num">ШАГ 03</span>
+        <h3>Доставка</h3>
+        <p>Шифртекст пакуется в <code>MessagePack</code> и летит по бинарному WebSocket. Компактно, быстро и стабильно даже на очень грустном интернете.</p>
+      </div>
+    </div>
+
+    <div class="server-panel reveal">
+      <div class="term-head">
+        <span class="tdot r"></span><span class="tdot y"></span><span class="tdot g"></span>
+        <span class="term-title">penik-server — что видит сервер</span>
+      </div>
+      <div class="term-body" id="termBody"></div>
+      <div class="term-caption">Ни одного читаемого сообщения. <b>Совпадение? Не думаем.</b></div>
+    </div>
+  </div>
+</section>
+
+
+
+<!-- ================= COMPARE ================= -->
+<section class="section" id="compare">
+  <div class="container">
+    <div class="sec-head reveal">
+      <span class="tag">Честное сравнение</span>
+      <h2>Penik vs Signal vs Telegram vs МАКС</h2>
+      <p>Без обид. Просто нужные нам факты, упакованные в таблицу.</p>
+    </div>
+    <div class="table-wrap reveal">
+      <table class="cmp-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th class="penik-col">Penik</th>
+            <th>Signal</th>
+            <th>Telegram</th>
+            <th>МАКС</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>E2EE по умолчанию</td>
+            <td class="penik-col yes">✅ да, везде</td>
+            <td class="yes">✅ да, везде</td>
+            <td class="meh">⚠️ только «секретные чаты»</td>
+            <td class="no">❌ нет</td>
+          </tr>
+          <tr>
+            <td>Сервер читает переписку</td>
+            <td class="penik-col yes">❌ физически не может</td>
+            <td class="yes">❌ физически не может</td>
+            <td class="no">✅ да</td>
+            <td class="no">✅ да</td>
+          </tr>
+          <tr>
+            <td>Зашифрованные группы</td>
+            <td class="penik-col yes">✅ есть</td>
+            <td class="yes">✅ есть</td>
+            <td class="no">❌ нет</td>
+            <td class="no">❌ нет</td>
+          </tr>
+          <tr>
+            <td>Коды безопасности E2EE</td>
+            <td class="penik-col yes">✅ есть (safety numbers)</td>
+            <td class="yes">✅ есть (safety numbers)</td>
+            <td class="meh">⚠️ только в секретных чатах</td>
+            <td class="no">❌ нет</td>
+          </tr>
+          <tr>
+            <td>Сохраненки (чат с самим собой)</td>
+            <td class="penik-col yes">✅ есть, E2EE-облако</td>
+            <td class="meh">⚠️ только локальные заметки</td>
+            <td class="meh">⚠️ есть, но без E2EE</td>
+            <td class="meh">⚠️ есть, но без E2EE</td>
+          </tr>
+          <tr>
+            <td>Бинарный протокол</td>
+            <td class="penik-col yes">✅ MessagePack</td>
+            <td class="yes">✅ Protobuf</td>
+            <td class="yes">✅ MTProto</td>
+            <td class="yes">✅ MessagePack</td>
+          </tr>
+          <tr>
+            <td>Мультидевайсинг</td>
+            <td class="penik-col yes">✅ без ограничений</td>
+            <td class="meh">⚠️ нужен телефон</td>
+            <td class="yes">✅ есть</td>
+            <td class="yes">✅ есть</td>
+          </tr>
+          <tr>
+            <td>написанно шестиклассником за 2 недели</td>
+            <td class="penik-col yes">✅ почти всё</td>
+            <td class="no">❌</td>
+            <td class="no">❌</td>
+            <td class="no">❌</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cmp-note">// таблица составлена предвзято. мы не отрицаем.</p>
+  </div>
+</section>
+
+<!-- ================= DOWNLOAD ================= -->
+<section class="section" id="download" style="background:var(--bg2);border-block:1px solid var(--border)">
+  <div class="container">
+    <div class="sec-head reveal">
+      <span class="tag">Установка</span>
+      <h2>Попробуй сам</h2>
+      <p>Два способа попасть в Penik: поставить APK на Android или открыть веб-версию прямо в браузере.</p>
+    </div>
+    <div class="dl-wrap">
+      <div class="dl-card reveal" style="--d:.05s">
+        <div class="dl-icon">🤖</div>
+        <h3>Android · APK</h3>
+        <p class="dl-desc">Полноценный клиент: фоновые уведомления, шифрование на устройстве, работа на любом интернете.</p>
+        <button class="btn btn-disabled btn-lg" disabled style="width:100%">⏳ Временно недоступно</button>
+      </div>
+      <div class="dl-card web reveal" style="--d:.14s">
+        <div class="dl-icon">🌐</div>
+        <h3>Веб-версия</h3>
+        <p class="dl-desc">Ничего устанавливать не нужно. Открывается в любом браузере — и шифрует всё прямо в нём.</p>
+        <a class="btn btn-outline btn-lg" href="https://web.dev.penik.ru" target="_blank" rel="noopener">Открыть веб-версию&nbsp;→</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FAQ ================= -->
+<section class="section" id="faq">
+  <div class="container">
+    <div class="sec-head reveal">
+      <span class="tag">FAQ</span>
+      <h2>Вопросы, которые нам задают</h2>
+      <p>Отвечаем честно, как умеем.</p>
+    </div>
+    <div class="faq-wrap">
+      <div class="faq-item reveal" style="--d:.05s">
+        <button class="faq-q" type="button">Это вообще безопасно? <span class="plus">+</span></button>
+        <div class="faq-a"><p>Да. Шифрование <b>сквозное и включено по умолчанию</b> — и в личках, и в группах. Ключи хранятся только на ваших устройствах, сервер видит лишь набор байтов. Мы бы и сами хотели почитать ваши переписки, но математика против.</p></div>
+      </div>
+      <div class="faq-item reveal" style="--d:.1s">
+        <button class="faq-q" type="button">Какая библиотека отвечает за криптографию? <span class="plus">+</span></button>
+        <div class="faq-a"><p>Используется <b>libsodium</b> — всемирно признанная, проверенная и проаудированная криптографическая библиотека. Сквозное шифрование построено на стойких алгоритмах X25519 и ChaCha20-Poly1305.</p></div>
+      </div>
+      <div class="faq-item reveal" style="--d:.15s">
+        <button class="faq-q" type="button">Потянет ли мой (очень слабый) интернет? <span class="plus">+</span></button>
+        <div class="faq-a"><p>Да. Бинарный WebSocket + MessagePack означают минимальный оверхед: сообщения весят считанные байты. Протокол обкатан в боевых условиях <b>на интернете Кирилла</b> — и выжил.</p></div>
+      </div>
+      <div class="faq-item reveal" style="--d:.2s">
+        <button class="faq-q" type="button">А iOS будет? <span class="plus">+</span></button>
+        <div class="faq-a"><p>Нет, нативного приложения для iOS <b>не будет и не планируется</b>. Но вы всегда можете пользоваться <b>веб-версией</b>, которая отлично работает на iPhone через любой браузер.</p></div>
+      </div>
+      <div class="faq-item reveal" style="--d:.25s">
+        <button class="faq-q" type="button">Как работает мультидевайсинг с E2EE? <span class="plus">+</span></button>
+        <div class="faq-a"><p>Каждое ваше устройство генерирует собственные ключи. Когда вам отправляют сообщение, оно шифруется отправителем отдельно под каждое ваше устройство (а также под его собственные устройства для синхронизации). Сервер просто доставляет эти индивидуальные зашифрованные пакеты.</p></div>
+      </div>
+      <div class="faq-item reveal" style="--d:.3s">
+        <button class="faq-q" type="button">Как устроено шифрование в группах? <span class="plus">+</span></button>
+        <div class="faq-a"><p>Внутри группы генерируется общий ключ группы (group key). Этот ключ шифруется через асимметричное E2EE-шифрование с использованием публичного ключа каждого участника и передается им индивидуально. Все сообщения в группе шифруются этим ключом группы, а сервер его никогда не видит.</p></div>
+      </div>
+      <div class="faq-item reveal" style="--d:.35s">
+        <button class="faq-q" type="button">Где хранятся сообщения? <span class="plus">+</span></button>
+        <div class="faq-a"><p>Сообщения хранятся локально на ваших устройствах в зашифрованной базе данных (на Android используется <b>SQLCipher</b>). На сервере также хранится история сообщений в зашифрованном виде (ciphertext, salt, nonce). Сервер выступает «слепым» хранилищем — он передает и сохраняет зашифрованную переписку, но не имеет ключей для её расшифрования.</p></div>
+      </div>
+      <div class="faq-item reveal" style="--d:.4s">
+        <button class="faq-q" type="button">Что будет, если я потеряю устройство? <span class="plus">+</span></button>
+        <div class="faq-a"><p>Благодаря функции <b>зашифрованного бэкапа ключей (Key Backup)</b> вы сможете восстановить как свои ключи шифрования, так и историю переписки. Приватный ключ шифруется на вашем устройстве вашим паролем (passphrase) с помощью PBKDF2 + AES-GCM и загружается на сервер. При входе с нового устройства вы вводите пароль, восстанавливаете приватный ключ, после чего клиент автоматически скачивает зашифрованную историю сообщений с сервера и расшифровывает её локально.</p></div>
+      </div>
+      <div class="faq-item reveal" id="faq-mitm" style="--d:.45s">
+        <button class="faq-q" type="button">Что такое MITM-атака? <span class="plus">+</span></button>
+        <div class="faq-a"><p><b>MITM (Man-in-the-Middle, «человек посередине»)</b> — это тип атаки, при которой злоумышленник (или скомпрометированный сервер) незаметно перехватывает и подменяет канал связи между собеседниками. Он пытается выдать себя за получателя для отправителя, и за отправителя для получателя, чтобы читать сообщения, перешифровать их своими ключами и пересылать дальше. В Penik от этого защищают <b>коды безопасности (safety numbers)</b>: если ключи шифрования будут подменены посередине, коды на экранах собеседников просто не совпадут, и попытка перехвата будет сразу обнаружена.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer>
+  <div class="container">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="brand" href="#top">
+          <img src="https://web.dev.penik.ru/assets/favicon-BYBt5M59.ico" alt="Penik Messenger">
+          <span>Penik&nbsp;<em>Messenger</em></span>
+        </a>
+        <p>Свой мессенджер со своими правилами. Сервер не в курсе, о чём вы пишете, — и это не баг, а фича.</p>
+      </div>
+      <div class="foot-col">
+        <h4>Продукт</h4>
+        <a href="#download">Скачать APK</a>
+        <a href="https://web.dev.penik.ru" target="_blank" rel="noopener">Веб-версия</a>
+        <a href="#features">Возможности</a>
+      </div>
+      <div class="foot-col">
+        <h4>Технологии</h4>
+        <a href="#security">X25519 + ChaCha20-Poly1305</a>
+        <a href="#security">MessagePack / Binary WS</a>
+        <a href="#security">libsodium</a>
+      </div>
+      <div class="foot-col">
+        <h4>Разделы</h4>
+        <a href="#compare">Сравнение</a>
+        <a href="#download">Установка</a>
+        <a href="#faq">FAQ</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© Niel kro, in 2026</span>
+      <span>работает даже на интернете Кирилла · <code>e2ee_by_default = true</code></span>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ---------- NAV ---------- */
+const navEl = document.getElementById('nav');
+window.addEventListener('scroll', () => {
+  navEl.classList.toggle('scrolled', window.scrollY > 20);
+});
+const burgerBtn = document.getElementById('burger');
+burgerBtn.addEventListener('click', () => document.body.classList.toggle('menu-open'));
+document.querySelectorAll('.nav-links a').forEach(link => {
+  link.addEventListener('click', () => document.body.classList.remove('menu-open'));
+});
+
+/* ---------- REVEAL ON SCROLL ---------- */
+const revealIO = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      revealIO.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.12 });
+document.querySelectorAll('.reveal').forEach(el => revealIO.observe(el));
+
+/* ---------- CHAT DEMO (scramble -> decrypt) ---------- */
+const chatBody = document.getElementById('chatBody');
+const hexChars = '0123456789ABCDEF';
+const chatScript = [
+  { dir: 'out', text: 'Привет! Это Penik 👋' },
+  { dir: 'in',  text: 'О, свой мессенджер? А сервер не читает?' },
+  { dir: 'out', text: 'Не-а. X25519 + ChaCha20-Poly1305 🔐' },
+  { dir: 'in',  text: 'Красиво. А группы?' },
+  { dir: 'out', text: 'Тоже сквозные. И мультидевайс есть' },
+  { dir: 'in',  text: 'У меня интернет как у Кирилла, потянет?' },
+  { dir: 'out', text: 'MessagePack. Потянет даже у Кирилла 😎' },
+  { dir: 'in',  text: '🔒 Не удалось расшифровать', isFailed: true },
+  { dir: 'out', text: 'А вот и минус нашелся - иногда ключи слетают 😅' }
+];
+let chatIdx = 0;
+
+function randomCipher(len) {
+  let out = '';
+  for (let i = 0; i < len; i++) out += hexChars[(Math.random() * 16) | 0];
+  return out;
+}
+function currentTime() {
+  const now = new Date();
+  return String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+}
+function scrambleDecrypt(el, finalText, duration) {
+  const start = performance.now();
+  function frame(t) {
+    const progress = Math.min(1, (t - start) / duration);
+    const solved = Math.floor(progress * finalText.length);
+    let out = finalText.slice(0, solved);
+    for (let i = solved; i < finalText.length; i++) {
+      out += finalText[i] === ' ' ? ' ' : hexChars[(Math.random() * 16) | 0];
+    }
+    el.textContent = out;
+    if (progress < 1) requestAnimationFrame(frame);
+    else el.textContent = finalText;
+  }
+  requestAnimationFrame(frame);
+}
+function pushMessage() {
+  const item = chatScript[chatIdx % chatScript.length];
+  const msgEl = document.createElement('div');
+  msgEl.className = 'msg ' + item.dir + ' enc';
+  if (item.isFailed) {
+    msgEl.classList.add('failed');
+  }
+  
+  const metaHtml = item.dir === 'out' 
+    ? '<span class="meta"><span class="ticks">✓✓</span><span>' + currentTime() + '</span></span>' 
+    : '<span class="meta"><span>' + currentTime() + '</span></span>';
+    
+  let bubbleContent = '<span class="txt"></span>';
+  if (item.isFailed) {
+    bubbleContent += '<br><span class="failed-action">Раскрыть</span>';
+  }
+  
+  msgEl.innerHTML = '<div class="bubble">' + bubbleContent + metaHtml + '</div>';
+  chatBody.appendChild(msgEl);
+  while (chatBody.children.length > 5) chatBody.removeChild(chatBody.firstChild);
+  chatBody.scrollTop = chatBody.scrollHeight;
+
+  const txtEl = msgEl.querySelector('.txt');
+  txtEl.textContent = randomCipher(item.text.length + 4);
+  setTimeout(() => {
+    msgEl.classList.remove('enc');
+    scrambleDecrypt(txtEl, item.text, 620);
+  }, 560);
+
+  chatIdx++;
+  setTimeout(pushMessage, 2300);
+}
+setTimeout(pushMessage, 700);
+
+/* ---------- SERVER TERMINAL ---------- */
+const termBody = document.getElementById('termBody');
+function randId() { return (1000 + ((Math.random() * 9000) | 0)); }
+function uuid() { return crypto.randomUUID().slice(0, 8) + '…'; }
+function hexBytes(count) {
+  let out = [];
+  for (let i = 0; i < count; i++) out.push(((Math.random() * 256) | 0).toString(16).padStart(2, '0'));
+  return out.join(' ');
+}
+
+function addTermLine(dir, name, fields) {
+  const lineEl = document.createElement('div');
+  lineEl.className = 'tline';
+  const opColor = dir === '→' ? 'var(--acc2)' : 'var(--acc)';
+  const dirArrow = dir === '→' ? '►' : '◄';
+
+  lineEl.innerHTML =
+    `<span style="color:var(--muted)">${dirArrow}</span> ` +
+    `<span style="color:${opColor};font-weight:600">${name}</span> ` +
+    `<span style="color:var(--muted);font-size:11px">${fields}</span>`;
+
+  termBody.appendChild(lineEl);
+  while (termBody.children.length > 11) termBody.removeChild(termBody.firstChild);
+  termBody.scrollTop = termBody.scrollHeight;
+}
+
+const u = () => uuid();
+const h = () => hexBytes(16);
+
+const termScript = [
+  { delay: 0,    dir: '→', name: 'KEY_PUBLISH',     f: `x25519_pub=${h()} ik_pub=${h()}` },
+  { delay: 400,  dir: '←', name: 'KEY_BUNDLE_RESP',  f: `device=4821 ik=${h()} spk=${h()}` },
+  { delay: 300,  dir: '→', name: 'KEY_FETCH_REQ',    f: `user_id=7234 device_id=1109` },
+  { delay: 350,  dir: '←', name: 'KEY_FETCH_RESP',   f: `ik=${h()} opk_count=100` },
+  { delay: 250,  dir: '→', name: 'KEY_PUBLISH',      f: `x25519_pub=${h()}` },
+
+  { delay: 500,  dir: '→', name: 'MSG_SEND',         f: `to_user_id=7234 cipher=${h()} msg_id=${u()}` },
+  { delay: 350,  dir: '←', name: 'MSG_RECV',         f: `from=4821 cipher=${h()} msg_id=${u()}` },
+  { delay: 300,  dir: '→', name: 'MSG_DELIVERED',    f: `msg_id=${u()}` },
+  { delay: 250,  dir: '←', name: 'MSG_ACK',          f: `msg_id=${u()} id=4821` },
+  { delay: 400,  dir: '←', name: 'MSG_RECV',         f: `from=7234 cipher=${h()}` },
+  { delay: 300,  dir: '→', name: 'MSG_SEND',         f: `to_user_id=7234 cipher=${h()}` },
+  { delay: 350,  dir: '→', name: 'MSG_READ',         f: `msg_id=${u()}` },
+  { delay: 250,  dir: '←', name: 'MSG_RECV',         f: `from=7234 cipher=${h()}` },
+  { delay: 400,  dir: '→', name: 'MSG_SEND',         f: `to_user_id=7234 cipher=${h()}` },
+  { delay: 300,  dir: '←', name: 'MSG_ACK',          f: `msg_id=${u()} id=7234` },
+
+  { delay: 500,  dir: '←', name: 'GROUP_MEMBER_CHG', f: `group_id=9001 user=4821 action=invited` },
+  { delay: 400,  dir: '→', name: 'GROUP_MSG_SEND',   f: `group_id=9001 v=1 cipher=${h()}` },
+  { delay: 350,  dir: '←', name: 'GROUP_KEY_AVAIL',  f: `group_id=9001 v=1` },
+  { delay: 300,  dir: '←', name: 'GROUP_MEMBER_CHG', f: `group_id=9001 user=4821 accepted` },
+  { delay: 400,  dir: '←', name: 'GROUP_HIST_READY', f: `group_id=9001` },
+
+  { delay: 350,  dir: '→', name: 'GROUP_MSG_SEND',   f: `group_id=9001 v=1 cipher=${h()}` },
+  { delay: 300,  dir: '←', name: 'GROUP_MSG_RECV',   f: `group=9001 from=7234 cipher=${h()}` },
+  { delay: 350,  dir: '←', name: 'GROUP_MSG_ACK',    f: `group=9001 msg_id=${u()}` },
+  { delay: 250,  dir: '←', name: 'GROUP_MSG_RECV',   f: `group=9001 from=2055 cipher=${h()}` },
+  { delay: 350,  dir: '→', name: 'GROUP_MSG_SEND',   f: `group=9001 v=1 cipher=${h()}` },
+  { delay: 300,  dir: '←', name: 'GROUP_MSG_RECV',   f: `group=9001 from=4821 cipher=${h()}` },
+  { delay: 350,  dir: '→', name: 'GROUP_MSG_SEND',   f: `group=9001 v=1 cipher=${h()}` },
+  { delay: 300,  dir: '←', name: 'GROUP_KEY_AVAIL',  f: `group=9001 v=2 rotate=true` },
+];
+
+let scriptIdx = 0;
+function playTermScript() {
+  const step = termScript[scriptIdx % termScript.length];
+  addTermLine(step.dir, step.name, step.f);
+  scriptIdx++;
+  if (scriptIdx >= termScript.length) {
+    scriptIdx = 0;
+    termBody.innerHTML = '';
+    setTimeout(playTermScript, 1200);
+  } else {
+    setTimeout(playTermScript, step.delay);
+  }
+}
+playTermScript();
+
+/* ---------- FAQ ACCORDION ---------- */
+document.querySelectorAll('.faq-q').forEach(questionBtn => {
+  questionBtn.addEventListener('click', () => {
+    const itemEl = questionBtn.parentElement;
+    const wasOpen = itemEl.classList.contains('open');
+    document.querySelectorAll('.faq-item.open').forEach(openItem => {
+      openItem.classList.remove('open');
+      openItem.querySelector('.faq-a').style.maxHeight = null;
+    });
+    if (!wasOpen) {
+      itemEl.classList.add('open');
+      const answerEl = itemEl.querySelector('.faq-a');
+      answerEl.style.maxHeight = answerEl.scrollHeight + 'px';
+    }
+  });
+});
+
+function handleHashFAQ() {
+  const hash = window.location.hash;
+  if (hash) {
+    const target = document.querySelector(hash);
+    if (target && target.classList.contains('faq-item')) {
+      document.querySelectorAll('.faq-item.open').forEach(openItem => {
+        if (openItem !== target) {
+          openItem.classList.remove('open');
+          openItem.querySelector('.faq-a').style.maxHeight = null;
+        }
+      });
+      target.classList.add('open');
+      const answerEl = target.querySelector('.faq-a');
+      answerEl.style.maxHeight = answerEl.scrollHeight + 'px';
+      setTimeout(() => {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        history.replaceState(null, null, window.location.pathname + window.location.search);
+      }, 50);
+    }
+  }
+}
+window.addEventListener('hashchange', handleHashFAQ);
+window.addEventListener('load', () => setTimeout(handleHashFAQ, 300));
+
+</script>
 </body>
 </html>
