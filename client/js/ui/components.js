@@ -129,6 +129,42 @@ export function doubleCheckIcon(size = 16, color = "currentColor") {
   return svgEl;
 }
 
+export function rawSvg(innerHTML, size = 20, color = "currentColor", strokeWidth = 2, viewBox = "0 0 24 24") {
+  const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svgEl.setAttribute("viewBox", viewBox);
+  svgEl.setAttribute("width", String(size));
+  svgEl.setAttribute("height", String(size));
+  svgEl.setAttribute("fill", "none");
+  svgEl.setAttribute("stroke", color);
+  svgEl.setAttribute("stroke-width", String(strokeWidth));
+  svgEl.setAttribute("stroke-linecap", "round");
+  svgEl.setAttribute("stroke-linejoin", "round");
+  svgEl.style.display = "block";
+  svgEl.style.flexShrink = "0";
+  svgEl.innerHTML = innerHTML;
+  return svgEl;
+}
+
+export function copyIcon(size = 18, color = "currentColor") {
+  return rawSvg('<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>', size, color);
+}
+
+export function replyIcon(size = 18, color = "currentColor") {
+  return rawSvg('<polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path>', size, color);
+}
+
+export function editIcon(size = 18, color = "currentColor") {
+  return rawSvg('<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>', size, color);
+}
+
+export function forwardIcon(size = 18, color = "currentColor") {
+  return rawSvg('<polyline points="15 17 20 12 15 7"></polyline><path d="M4 18v-2a4 4 0 0 1 4-4h12"></path>', size, color);
+}
+
+export function trashIcon(size = 18, color = "currentColor") {
+  return rawSvg('<polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line>', size, color);
+}
+
 const failedAvatars = new Set();
 
 export function avatar(user, size = 40, forceTimestamp = null) {
@@ -1165,52 +1201,36 @@ function showMsgActionMenu(x, y, onCopy, onReply, onDelete, onForward, onEdit) {
     class: "msg-action-menu",
     style: `left:${x}px;top:${y}px;`,
   });
-  const copyItem = el("button", { type: "button", class: "msg-action-item" }, "Копировать");
-  copyItem.addEventListener("click", (e) => {
-    e.stopPropagation();
-    menu.remove();
-    onCopy();
-  });
-  menu.appendChild(copyItem);
 
-  if (onReply) {
-    const replyItem = el("button", { type: "button", class: "msg-action-item" }, "Ответить");
-    replyItem.addEventListener("click", (e) => {
+  const mkItem = (iconEl, label, onClick, isDanger = false) => {
+    const item = el("button", {
+      type: "button",
+      class: `msg-action-item${isDanger ? " danger" : ""}`,
+    }, iconEl, el("span", { class: "msg-action-label" }, label));
+    item.addEventListener("click", (e) => {
       e.stopPropagation();
       menu.remove();
-      onReply();
+      onClick();
     });
-    menu.appendChild(replyItem);
+    return item;
+  };
+
+  menu.appendChild(mkItem(copyIcon(18), "Копировать", onCopy));
+
+  if (onReply) {
+    menu.appendChild(mkItem(replyIcon(18), "Ответить", onReply));
   }
 
   if (onEdit) {
-    const editItem = el("button", { type: "button", class: "msg-action-item" }, "Изменить");
-    editItem.addEventListener("click", (e) => {
-      e.stopPropagation();
-      menu.remove();
-      onEdit();
-    });
-    menu.appendChild(editItem);
+    menu.appendChild(mkItem(editIcon(18), "Изменить", onEdit));
   }
 
   if (onForward) {
-    const fwdItem = el("button", { type: "button", class: "msg-action-item" }, "Переслать");
-    fwdItem.addEventListener("click", (e) => {
-      e.stopPropagation();
-      menu.remove();
-      onForward();
-    });
-    menu.appendChild(fwdItem);
+    menu.appendChild(mkItem(forwardIcon(18), "Переслать", onForward));
   }
 
   if (onDelete) {
-    const delItem = el("button", { type: "button", class: "msg-action-item", style: "color:var(--danger);" }, "Удалить");
-    delItem.addEventListener("click", (e) => {
-      e.stopPropagation();
-      menu.remove();
-      onDelete();
-    });
-    menu.appendChild(delItem);
+    menu.appendChild(mkItem(trashIcon(18, "var(--danger, #ff5252)"), "Удалить", onDelete, true));
   }
 
   document.body.appendChild(menu);
