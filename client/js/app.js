@@ -999,7 +999,7 @@ export async function decryptMessagePayload(payload) {
   const ciphertext = toUint8Array(payload.ciphertext);
   const salt = toUint8Array(payload.salt);
   const nonce = toUint8Array(payload.nonce);
-  const fromIdentityKey = toUint8Array(payload.from_identity_key);
+  let fromIdentityKey = toUint8Array(payload.from_identity_key);
 
   // TOFU pinning: verify and pin identity key; displays warning on change.
   const pinUserId = Number(payload.from_user_id ?? payload.sender_user_id);
@@ -1039,17 +1039,29 @@ export async function decryptMessagePayload(payload) {
   const rawTs = Number(payload.timestamp ?? payload.created_at ?? payload.ts ?? payload.edited_at ?? 0);
   const tsSec = rawTs > 1e11 ? Math.floor(rawTs / 1000) : rawTs;
 
-  const secret = await deriveSharedSecret(myPrivateIK, fromIdentityKey);
+  if (!fromIdentityKey.length && senderUserId) {
+    try {
+      const bundle = await getCachedKeyBundle(senderUserId, true);
+      const targetDev = bundle?.devices?.find(d => Number(d.device_id) === pinDeviceId) || bundle?.devices?.[0];
+      if (targetDev?.identity_key) {
+        fromIdentityKey = toUint8Array(targetDev.identity_key);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch fallback identity key on Web:", e);
+    }
+  }
 
   // Candidate AADs in order of priority (including clock drift / network transit delta ±1s to ±5s):
   const candidateUsers = [
     { s: senderUserId, r: recipientUserId },
     { s: senderUserId, r: chatPartnerId },
     { s: myId, r: chatPartnerId },
-    { s: senderUserId, r: myId }
+    { s: senderUserId, r: myId },
+    { s: recipientUserId, r: senderUserId },
+    { s: chatPartnerId, r: senderUserId }
   ].filter(u => u.s > 0 && u.r > 0);
 
-  const candidateClientIds = [clientMsgId, localMsg?.client_msg_id, localMsg?.msg_id, ""].filter(Boolean);
+  const candidateClientIds = [clientMsgId, localMsg?.client_msg_id, localMsg?.msg_id, ""].filter((v, i, a) => a.indexOf(v) === i);
   const candidateTimestamps = [tsSec];
   if (rawTs > 1e11) candidateTimestamps.push(rawTs);
   if (localMsg?.created_at) {
@@ -1079,12 +1091,44 @@ export async function decryptMessagePayload(payload) {
 
   let textBytes = null;
   let lastErr = null;
-  for (const aad of candidateAads) {
+
+  const tryDecryptWithIK = async (ikBytes) => {
+    if (!ikBytes || !ikBytes.length) return null;
     try {
-      textBytes = await e2eeDecrypt(ciphertext, secret, salt, nonce, "penik-pairwise-message-v1", aad);
-      break;
+      const sec = await deriveSharedSecret(myPrivateIK, ikBytes);
+      for (const aad of candidateAads) {
+        try {
+          const res = await e2eeDecrypt(ciphertext, sec, salt, nonce, "penik-pairwise-message-v1", aad);
+          if (res) return res;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
     } catch (e) {
       lastErr = e;
+    }
+    return null;
+  };
+
+  if (fromIdentityKey.length) {
+    textBytes = await tryDecryptWithIK(fromIdentityKey);
+  }
+
+  // If initial decryption failed or key was missing, try sender's key bundle
+  if (!textBytes && senderUserId) {
+    try {
+      const bundle = await getCachedKeyBundle(senderUserId, true);
+      for (const dev of (bundle?.devices || [])) {
+        if (!dev.identity_key) continue;
+        const candidateIK = toUint8Array(dev.identity_key);
+        textBytes = await tryDecryptWithIK(candidateIK);
+        if (textBytes) {
+          fromIdentityKey = candidateIK;
+          break;
+        }
+      }
+    } catch (e) {
+      console.warn("Key bundle fallback decryption attempt failed:", e);
     }
   }
 
