@@ -1,3 +1,23 @@
-your-domain.com {
-    reverse_proxy penik-server:8143
+# 1. Главный домен (Лендинг)
+penik.ru {
+    root * /var/www/landing
+    file_server
+    encode gzip zstd
 }
+
+# 2. Веб-клиент мессенджера
+web.penik.ru {
+    root * /var/www/client
+    file_server
+    encode gzip zstd
+    try_files {path} /index.html
+}
+
+# 3. API и WebSockets сервер
+api.penik.ru {
+    reverse_proxy penik-server:8143
+    request_body {
+        max_size 250MB
+    }
+}
+
