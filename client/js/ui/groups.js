@@ -511,6 +511,11 @@ export async function renderGroup(container, groupId) {
   loadEl.remove();
   for (const m of messages) appendMessage(m);
   scrollDown.scrollToBottom();
+  requestAnimationFrame(() => {
+    scrollDown.scrollToBottom();
+    setTimeout(() => scrollDown.scrollToBottom(), 50);
+    setTimeout(() => scrollDown.scrollToBottom(), 200);
+  });
 
   function updateDomGroupMessageText(messageId, newText, editedAt) {
     const escaped = cssEscape(messageId);
