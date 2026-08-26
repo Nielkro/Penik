@@ -1,5 +1,5 @@
 import { apiPut, uploadAvatar } from "../api.js";
-import { navigate, getCurrentUser, setCurrentUser, logout } from "../app.js";
+import { navigate, getCurrentUser, setCurrentUser, logout, setDevicesBackTarget } from "../app.js";
 import { avatar, el, showToast, spinner, showConfirmModal } from "./components.js";
 
 export function renderProfile(container) {
@@ -185,7 +185,10 @@ export function renderProfile(container) {
     ),
     el("span", { style: "color:var(--text-muted);" }, "›")
   );
-  devicesLinkBtn.addEventListener("click", () => navigate("#devices"));
+  devicesLinkBtn.addEventListener("click", () => {
+    setDevicesBackTarget("#profile");
+    navigate("#devices");
+  });
 
   const navSection = el("div", { style: "width:100%;margin-top:8px;border-top:1px solid var(--border);padding-top:12px;" },
     settingsLinkBtn,

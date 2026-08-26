@@ -164,6 +164,16 @@ function parseHash() {
   return { screen: hash || '#chats' };
 }
 
+let _devicesBackTarget = '#settings';
+
+export function setDevicesBackTarget(target) {
+  _devicesBackTarget = target || '#settings';
+}
+
+export function getDevicesBackTarget() {
+  return _devicesBackTarget || '#settings';
+}
+
 function navigate(hash) {
   location.hash = hash;
 }
@@ -313,10 +323,12 @@ function showMain(screen, userId) {
     layout.searchScreen.innerHTML = '';
     renderSearch(layout.searchScreen);
   } else if (screen === 'profile') {
+    _devicesBackTarget = '#profile';
     layout.profileScreen.classList.add('active');
     layout.profileScreen.innerHTML = '';
     renderProfile(layout.profileScreen);
   } else if (screen === 'settings') {
+    _devicesBackTarget = '#settings';
     layout.settingsScreen.classList.add('active');
     layout.settingsScreen.innerHTML = '';
     renderSettings(layout.settingsScreen);
@@ -900,7 +912,7 @@ export async function syncMessageHistory(options = {}) {
           text = decrypted.text;
         } catch (e) {
           if (e?.__alreadyDecrypted) continue;
-          text = existing?.plaintext || `[Сообщение не расшифровано]`;
+          text = existing?.plaintext || "";
         }
       }
 
@@ -916,14 +928,17 @@ export async function syncMessageHistory(options = {}) {
           }
         }
       }
-      if (text.startsWith('[Сообщение не расшифровано')) {
-        const clientMsgId = item.client_msg_id;
-        if (clientMsgId) {
-          const existing = await getMessageByClientId(clientMsgId);
-          if (existing?.plaintext && !existing.plaintext.startsWith('[Сообщение не расшифровано')) {
-            continue;
-          }
-        }
+
+      if (!text || text.startsWith('[Сообщение не расшифровано') || text.startsWith('[Ошибка')) {
+        // Ensure chat exists in contacts list, but do NOT save broken undecryptable messages
+        const currentContact = await getContact(peerId);
+        await saveContact({
+          ...contact,
+          user_id: peerId,
+          last_message: currentContact?.last_message || "",
+          last_ts: currentContact?.last_ts || item.timestamp * 1000
+        });
+        continue;
       }
 
       await saveContact({

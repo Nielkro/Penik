@@ -31,10 +31,16 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import niel.kro.penik.ui.viewmodel.DevicesViewModel
 
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DevicesScreen(
     onBack: () -> Unit = {},
+    onPairingScanner: () -> Unit = {},
     viewModel: DevicesViewModel = hiltViewModel()
 ) {
     val colors = LocalAppColors.current
@@ -67,6 +73,26 @@ fun DevicesScreen(
                 .padding(innerPadding)
                 .padding(16.dp)
         ) {
+            Button(
+                onClick = onPairingScanner,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.accent
+                )
+            ) {
+                Text(
+                    text = "Синхронизация истории (сканировать QR)",
+                    color = colors.textPrimary,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             when {
                 uiState.loading && uiState.devices.isEmpty() -> {
                     CircularProgressIndicator(color = colors.accent)
