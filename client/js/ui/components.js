@@ -3,6 +3,7 @@ import { getToken } from "../api.js";
 import { getCachedMedia, saveCachedMedia, getAllContacts, getAllGroups } from "../storage.js";
 import { sendGroupMessage } from "../groups.js";
 import { sendDirectMessageToUser } from "./chat.js";
+import { showStickerPackModal } from "./stickers.js";
 
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -460,7 +461,7 @@ export function renderStickerContent(container, sticker) {
 
   function openPackModal() {
     if (sticker.pack_id) {
-      import("./stickers.js").then((m) => m.showStickerPackModal(sticker.pack_id));
+      showStickerPackModal(sticker.pack_id);
     }
   }
 
