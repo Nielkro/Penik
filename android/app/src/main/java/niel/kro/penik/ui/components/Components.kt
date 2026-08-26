@@ -1397,6 +1397,27 @@ private fun FileAttachmentContent(
                     }
                 }
 
+                if (attachment.size != null && attachment.size > 0) {
+                    val sizeFormatted = formatFileSize(attachment.size)
+                    if (sizeFormatted.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(6.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.Black.copy(alpha = 0.65f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = sizeFormatted,
+                                fontSize = 10.sp,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+
                 if (timestamp != null && attachment.caption.isBlank()) {
                     Box(
                         modifier = Modifier
@@ -1458,6 +1479,27 @@ private fun FileAttachmentContent(
                             Text("Ошибка загрузки", color = LocalAppColors.current.textMuted, fontSize = 12.sp)
                         } else {
                             CircularProgressIndicator(color = LocalAppColors.current.textMuted, modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+                        }
+                    }
+                }
+
+                if (attachment.size != null && attachment.size > 0) {
+                    val sizeFormatted = formatFileSize(attachment.size)
+                    if (sizeFormatted.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(6.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.Black.copy(alpha = 0.65f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = sizeFormatted,
+                                fontSize = 10.sp,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                color = Color.White
+                            )
                         }
                     }
                 }

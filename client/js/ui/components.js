@@ -526,6 +526,54 @@ async function describeUndecodableVideo(blobUrl) {
   }
 }
 
+function createUploadOverlay(uploadMsgId, totalSize = 0) {
+  const overlay = el("div", { class: "msg-upload-overlay" });
+
+  const sizeBadge = el("div", { class: "msg-upload-badge" });
+  const sizeText = el("span", {}, `0 Б / ${formatFileSize(totalSize)}`);
+  sizeBadge.appendChild(sizeText);
+  overlay.appendChild(sizeBadge);
+
+  const circular = el("div", { class: "msg-upload-circular" });
+  const circumference = 2 * Math.PI * 21; // ~131.947
+  circular.innerHTML = `
+    <svg class="msg-upload-svg" width="52" height="52" viewBox="0 0 52 52">
+      <circle cx="26" cy="26" r="21" stroke="rgba(0,0,0,0.5)" stroke-width="4" fill="rgba(0,0,0,0.4)" />
+      <circle class="upload-progress-circle" cx="26" cy="26" r="21" stroke="#ffffff" stroke-width="4" fill="none" stroke-dasharray="${circumference}" stroke-dashoffset="${circumference}" stroke-linecap="round" style="transform: rotate(-90deg); transform-origin: 50% 50%;" />
+    </svg>
+  `;
+  const percentText = el("span", { class: "upload-percent-text" }, "0%");
+  circular.appendChild(percentText);
+  overlay.appendChild(circular);
+
+  /** @type {SVGCircleElement|null} */
+  const circle = circular.querySelector(".upload-progress-circle");
+
+  const onProgress = (e) => {
+    if (e.detail && String(e.detail.msgId) === String(uploadMsgId)) {
+      const { loaded, total } = e.detail;
+      const progress = total > 0 ? Math.min(1, Math.max(0, loaded / total)) : 0;
+      sizeText.textContent = `${formatFileSize(loaded)} / ${formatFileSize(total)}`;
+      percentText.textContent = `${Math.round(progress * 100)}%`;
+      if (circle) {
+        circle.style.strokeDashoffset = `${circumference * (1 - progress)}`;
+      }
+    }
+  };
+
+  window.addEventListener("penik:upload-progress", onProgress);
+
+  const observer = new MutationObserver(() => {
+    if (!document.body.contains(overlay)) {
+      window.removeEventListener("penik:upload-progress", onProgress);
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  return overlay;
+}
+
 function renderFileCard(container, fileMsg) {
   const f = fileMsg.file;
   const isImage = (f.mime || "").startsWith("image/");
@@ -545,12 +593,19 @@ function renderFileCard(container, fileMsg) {
     });
     imgEl.addEventListener("click", (e) => {
       e.stopPropagation();
-      downloadAndDecryptFile(f, true);
+      if (!f.upload_msg_id) {
+        downloadAndDecryptFile(f, true);
+      }
     });
     mediaWrap.appendChild(imgEl);
+
+    if (f.upload_msg_id) {
+      mediaWrap.appendChild(createUploadOverlay(f.upload_msg_id, f.size));
+    }
+
     fileCard.appendChild(mediaWrap);
 
-    if (!cachedBlobUrl) {
+    if (!cachedBlobUrl && !f.upload_msg_id) {
       downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
         if (fullBlobUrl && document.body.contains(imgEl)) {
           imgEl.src = fullBlobUrl;
@@ -571,11 +626,11 @@ function renderFileCard(container, fileMsg) {
     const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;width:100%;padding:0;position:relative;" });
     const cachedBlobUrl = decryptedBlobCache.get(f.url);
 
+    const mediaWrap = el("div", { style: "position:relative;display:inline-block;max-width:100%;border-radius:16px;overflow:hidden;" });
+
     const videoEl = el("video", {
       muted: true,
       playsinline: true,
-      // Without an explicit preload the element paints nothing until playback
-      // starts, so a card with no poster stays an empty rectangle.
       preload: "metadata",
       style: "display:block;width:100%;max-width:360px;min-height:180px;max-height:560px;border-radius:16px;background:rgba(255,255,255,0.05);cursor:pointer;object-fit:contain;"
     });
@@ -587,9 +642,13 @@ function renderFileCard(container, fileMsg) {
       if (!f.thumb && videoEl.duration) videoEl.currentTime = 0;
     });
 
-    // Appended up front so a fallback card replacing it later cannot be undone
-    // by a deferred append.
-    fileCard.appendChild(videoEl);
+    mediaWrap.appendChild(videoEl);
+
+    if (f.upload_msg_id) {
+      mediaWrap.appendChild(createUploadOverlay(f.upload_msg_id, f.size));
+    }
+
+    fileCard.appendChild(mediaWrap);
 
     // An unplayable video element has no intrinsic size, so an overlay badge
     // would collapse to a sliver — swap the whole element for a document card.
@@ -722,11 +781,13 @@ function renderFileCard(container, fileMsg) {
   // Non-image files (documents, archives, etc.) keep document card UI
   const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:8px;max-width:320px;padding:2px;" });
   const infoRow = el("div", {
-    style: "display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.06);padding:8px 12px;border-radius:8px;cursor:pointer;"
+    style: "position:relative;display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.06);padding:8px 12px;border-radius:10px;overflow:hidden;cursor:pointer;"
   });
   infoRow.addEventListener("click", (e) => {
     e.stopPropagation();
-    downloadAndDecryptFile(f, false);
+    if (!f.upload_msg_id) {
+      downloadAndDecryptFile(f, false);
+    }
   });
 
   const iconNode = el("span", { style: "font-size:24px;flex-shrink:0;" }, "📎");
@@ -736,6 +797,9 @@ function renderFileCard(container, fileMsg) {
   );
 
   infoRow.append(iconNode, metaBox);
+  if (f.upload_msg_id) {
+    infoRow.appendChild(createUploadOverlay(f.upload_msg_id, f.size));
+  }
   fileCard.appendChild(infoRow);
 
   if (fileMsg.text) {

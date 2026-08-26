@@ -1060,19 +1060,57 @@ export async function renderChat(container, userId) {
     const textCaption = inputEl.value.trim();
     inputEl.value = "";
     inputEl.style.height = "auto";
-    showToast("Загрузка и шифрование файла...", "info");
+
+    const msgId = crypto.randomUUID();
+    const now = Date.now();
+    const myId = me && (me.id || me.user_id);
+    const localBlobUrl = URL.createObjectURL(file);
+    decryptedBlobCache.set(localBlobUrl, localBlobUrl);
+
+    const currentReply = activeReply;
+    setActiveReply(null);
+
+    // 1. Optimistic instant local message with circular loader & size badge
+    const initialPayload = {
+      v: 1,
+      type: "file",
+      text: textCaption,
+      file: {
+        upload_msg_id: msgId,
+        url: localBlobUrl,
+        name: file.name,
+        size: file.size,
+        mime: file.type || "application/octet-stream",
+        key: "",
+        thumb: null
+      }
+    };
+
+    appendMessage({
+      msg_id: msgId,
+      client_msg_id: msgId,
+      sender_id: myId,
+      plaintext: JSON.stringify(initialPayload),
+      created_at: now,
+      reply_to_msg_id: currentReply ? currentReply.msg_id : null,
+      pending: 1
+    });
+    scrollDown.scrollToBottom();
 
     try {
       const fileBuffer = new Uint8Array(await file.arrayBuffer());
 
       const localBlob = new Blob([fileBuffer], { type: file.type || "application/octet-stream" });
-      const localBlobUrl = URL.createObjectURL(localBlob);
 
       const { encryptedBytes, key } = await encryptFileChaCha20(fileBuffer);
       const encryptedBlob = new Blob([encryptedBytes], { type: "application/octet-stream" });
 
-      // 2. Upload to server
-      const cdnUrl = await uploadAttachment(encryptedBlob, file.name);
+      // 2. Upload to server with progress events
+      const cdnUrl = await uploadAttachment(encryptedBlob, file.name, (loaded, total) => {
+        window.dispatchEvent(new CustomEvent("penik:upload-progress", {
+          detail: { msgId, loaded, total }
+        }));
+      });
 
       // Cache original unencrypted BlobUrl locally for sender so no redownload is needed
       decryptedBlobCache.set(cdnUrl, localBlobUrl);
@@ -1146,7 +1184,7 @@ export async function renderChat(container, userId) {
         } catch (e) {}
       }
 
-      // 4. Construct file payload
+      // 4. Construct final file payload
       const filePayload = {
         v: 1,
         type: "file",
@@ -1162,21 +1200,16 @@ export async function renderChat(container, userId) {
       };
 
       const payloadStr = JSON.stringify(filePayload);
-      const currentReply = activeReply;
-      setActiveReply(null);
 
-      const msgId = crypto.randomUUID();
-      const now = Date.now();
-      const myId = me && (me.id || me.user_id);
-      appendMessage({
-        msg_id: msgId,
-        client_msg_id: msgId,
-        sender_id: myId,
-        plaintext: payloadStr,
-        created_at: now,
-        reply_to_msg_id: currentReply ? currentReply.msg_id : null
-      });
-      scrollDown.scrollToBottom();
+      // Update the optimistic bubble in the DOM to completed state
+      const escaped = CSS.escape(String(msgId));
+      const bubble = messagesEl.querySelector(`[data-msg-id="${escaped}"], [data-client-msg-id="${escaped}"]`);
+      if (bubble) {
+        const txt = bubble.querySelector(".msg-text");
+        if (txt) {
+          setMsgTextContent(txt, payloadStr);
+        }
+      }
 
       const ws = getWS();
       if (!ws || !ws.isConnected()) throw new Error("Нет соединения");
@@ -1197,10 +1230,6 @@ export async function renderChat(container, userId) {
       await saveMessage(storedMsg);
       await saveContact({ ...contact, last_message: getMessagePreview(payloadStr), last_ts: now });
 
-      // addPendingAck stamps the entry with its enqueue time. A bare
-      // pendingAcks.set() left ts undefined, so the TTL sweep treated the entry as
-      // ancient and dropped it before the ACK arrived — the delivery tick then
-      // stayed on "sending" forever.
       addPendingAck(msgId, { tempId: msgId, userId: userId });
 
       let sent = false;
@@ -1219,8 +1248,6 @@ export async function renderChat(container, userId) {
         pendingAcks.delete(String(msgId));
         throw new Error("Не удалось отправить файл (ошибка сокета)");
       }
-
-      showToast("Файл отправлен!", "success");
     } catch (err) {
       console.error("handleFileUpload error:", err);
       showToast("Ошибка при отправке файла: " + (err.message || err), "error");
