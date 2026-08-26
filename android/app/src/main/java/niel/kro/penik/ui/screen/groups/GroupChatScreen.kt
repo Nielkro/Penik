@@ -136,9 +136,10 @@ fun GroupChatScreen(
             AppNotificationManager.clearActiveChat("group_$groupId")
         }
     }
-    val searchResults by viewModel.searchResults.collectAsState()
     val error by viewModel.error.collectAsState()
     val editingMessage by viewModel.editingMessage.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
+    val isUnauthorized = connectionState == niel.kro.penik.data.network.websocket.ConnectionState.UNAUTHORIZED
     val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
     var inputText by remember { mutableStateOf("") }
     var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
@@ -399,6 +400,7 @@ fun GroupChatScreen(
                             // Date() expects milliseconds.
                             timestamp = msg.createdAt * 1000,
                             delivered = if (isOwn) msg.delivered else false,
+                            isPending = isOwn && (msg.serverId == 0L),
                             senderName = displayName,
                             senderUserId = msg.senderUserId,
                             replyToMsgId = msg.replyToMsgId,
@@ -620,12 +622,13 @@ fun GroupChatScreen(
                     // Sticker picker button on the LEFT
                     IconButton(
                         onClick = { showStickerPicker = true },
+                        enabled = !isUnauthorized,
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.SentimentSatisfiedAlt,
                             contentDescription = "Стикеры",
-                            tint = LocalAppColors.current.textMuted,
+                            tint = if (isUnauthorized) LocalAppColors.current.textMuted.copy(alpha = 0.4f) else LocalAppColors.current.textMuted,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -633,12 +636,13 @@ fun GroupChatScreen(
                     // Text input field
                     BasicTextField(
                         value = inputText,
+                        enabled = !isUnauthorized,
                         onValueChange = { inputText = it },
                         modifier = Modifier
                             .weight(1f)
                             .padding(horizontal = 6.dp, vertical = 6.dp),
                         textStyle = TextStyle(
-                            color = LocalAppColors.current.textPrimary,
+                            color = if (isUnauthorized) LocalAppColors.current.textMuted else LocalAppColors.current.textPrimary,
                             fontSize = 15.sp
                         ),
                         cursorBrush = SolidColor(LocalAppColors.current.accent),
@@ -647,8 +651,8 @@ fun GroupChatScreen(
                             Box(contentAlignment = Alignment.CenterStart) {
                                 if (inputText.isEmpty()) {
                                     Text(
-                                        text = "Сообщение",
-                                        color = LocalAppColors.current.textMuted,
+                                        text = if (isUnauthorized) "Сессия завершена (401)" else "Сообщение",
+                                        color = if (isUnauthorized) LocalAppColors.current.danger else LocalAppColors.current.textMuted,
                                         fontSize = 15.sp
                                     )
                                 }
@@ -730,19 +734,20 @@ fun GroupChatScreen(
 
                     IconButton(
                         onClick = { showAttachPicker.value = true },
+                        enabled = !isUnauthorized,
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.AttachFile,
                             contentDescription = "Прикрепить файл",
-                            tint = LocalAppColors.current.textMuted,
+                            tint = if (isUnauthorized) LocalAppColors.current.textMuted.copy(alpha = 0.4f) else LocalAppColors.current.textMuted,
                             modifier = Modifier.size(22.dp)
                         )
                     }
 
                     // Send button
                     AnimatedVisibility(
-                        visible = inputText.isNotBlank(),
+                        visible = inputText.isNotBlank() && !isUnauthorized,
                         enter = fadeIn() + scaleIn(),
                         exit = fadeOut() + scaleOut()
                     ) {

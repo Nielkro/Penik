@@ -120,6 +120,8 @@ fun ChatRoomScreen(
     val showDialog by viewModel.showSafetyDialog.collectAsState()
     val showE2eeDialog by viewModel.showE2eeDialog.collectAsState()
     val editingMessage by viewModel.editingMessage.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
+    val isUnauthorized = connectionState == niel.kro.penik.data.network.websocket.ConnectionState.UNAUTHORIZED
     val isSelfChat = viewModel.isSelfChat
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
     var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
@@ -573,6 +575,7 @@ fun ChatRoomScreen(
                             delivered = message.delivered,
                             deliveredAt = message.deliveredAt,
                             read = message.read,
+                            isPending = message.sentByMe && (message.serverId == null || message.serverId == 0L),
                             isSelfChat = isSelfChat,
                             replyToMsgId = message.replyToMsgId,
                             replySender = replySender,
@@ -775,12 +778,13 @@ fun ChatRoomScreen(
                     // Sticker picker button on the LEFT
                     IconButton(
                         onClick = { showStickerPicker = true },
+                        enabled = !isUnauthorized,
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.SentimentSatisfiedAlt,
                             contentDescription = "Стикеры",
-                            tint = LocalAppColors.current.textMuted,
+                            tint = if (isUnauthorized) LocalAppColors.current.textMuted.copy(alpha = 0.4f) else LocalAppColors.current.textMuted,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -788,6 +792,7 @@ fun ChatRoomScreen(
                     // Text input field
                     BasicTextField(
                         value = inputText,
+                        enabled = !isUnauthorized,
                         onValueChange = {
                             inputText = it
                             viewModel.sendTyping(it.isNotBlank())
@@ -796,7 +801,7 @@ fun ChatRoomScreen(
                             .weight(1f)
                             .padding(horizontal = 6.dp, vertical = 6.dp),
                         textStyle = TextStyle(
-                            color = LocalAppColors.current.textPrimary,
+                            color = if (isUnauthorized) LocalAppColors.current.textMuted else LocalAppColors.current.textPrimary,
                             fontSize = 15.sp
                         ),
                         cursorBrush = SolidColor(LocalAppColors.current.accent),
@@ -805,8 +810,8 @@ fun ChatRoomScreen(
                             Box(contentAlignment = Alignment.CenterStart) {
                                 if (inputText.isEmpty()) {
                                     Text(
-                                        text = "Сообщение",
-                                        color = LocalAppColors.current.textMuted,
+                                        text = if (isUnauthorized) "Сессия завершена (401)" else "Сообщение",
+                                        color = if (isUnauthorized) LocalAppColors.current.danger else LocalAppColors.current.textMuted,
                                         fontSize = 15.sp
                                     )
                                 }
@@ -888,19 +893,20 @@ fun ChatRoomScreen(
 
                     IconButton(
                         onClick = { showAttachPicker.value = true },
+                        enabled = !isUnauthorized,
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.AttachFile,
                             contentDescription = "Прикрепить файл",
-                            tint = LocalAppColors.current.textMuted,
+                            tint = if (isUnauthorized) LocalAppColors.current.textMuted.copy(alpha = 0.4f) else LocalAppColors.current.textMuted,
                             modifier = Modifier.size(22.dp)
                         )
                     }
 
                     // Send button
                     AnimatedVisibility(
-                        visible = inputText.isNotBlank(),
+                        visible = inputText.isNotBlank() && !isUnauthorized,
                         enter = fadeIn() + scaleIn(),
                         exit = fadeOut() + scaleOut()
                     ) {

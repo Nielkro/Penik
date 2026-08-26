@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
@@ -1253,6 +1254,7 @@ private fun FileAttachmentContent(
     isSentByMe: Boolean = false,
     delivered: Boolean = false,
     read: Boolean = false,
+    isPending: Boolean = false,
     onLongClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -1517,6 +1519,7 @@ private fun FileAttachmentContent(
                                 MessageTicks(
                                     delivered = delivered,
                                     read = read,
+                                    isPending = isPending,
                                     color = if (read) LocalAppColors.current.accent else Color.White.copy(alpha = 0.8f)
                                 )
                             }
@@ -1650,6 +1653,7 @@ private fun FileAttachmentContent(
                                 MessageTicks(
                                     delivered = delivered,
                                     read = read,
+                                    isPending = isPending,
                                     color = if (read) LocalAppColors.current.accent else Color.White.copy(alpha = 0.8f)
                                 )
                             }
@@ -1702,8 +1706,18 @@ fun MessageTicks(
     delivered: Boolean,
     read: Boolean,
     color: Color,
+    isPending: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    if (isPending) {
+        Icon(
+            imageVector = Icons.Default.Schedule,
+            contentDescription = "Отправляется...",
+            tint = color.copy(alpha = 0.85f),
+            modifier = modifier.size(11.dp)
+        )
+        return
+    }
     val isDouble = delivered || read
     if (isDouble) {
         Box(
@@ -1743,6 +1757,7 @@ fun MessageBubble(
     delivered: Boolean,
     deliveredAt: Long? = null,
     read: Boolean = false,
+    isPending: Boolean = false,
     senderName: String? = null,
     senderUserId: Long? = null,
     isSelfChat: Boolean = false,
@@ -2091,6 +2106,7 @@ fun MessageBubble(
                         isSentByMe = isSentByMe,
                         delivered = delivered,
                         read = read,
+                        isPending = isPending,
                         onLongClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             showMenu = true
@@ -2113,6 +2129,7 @@ fun MessageBubble(
                                 MessageTicks(
                                     delivered = delivered,
                                     read = read,
+                                    isPending = isPending,
                                     color = if (read) LocalAppColors.current.accent else LocalAppColors.current.textMuted
                                 )
                             }
@@ -2153,6 +2170,7 @@ fun MessageBubble(
                                 MessageTicks(
                                     delivered = delivered,
                                     read = read,
+                                    isPending = isPending,
                                     color = if (read) LocalAppColors.current.accent else Color.White.copy(alpha = 0.8f)
                                 )
                             }
@@ -2238,6 +2256,7 @@ fun MessageBubble(
                                     MessageTicks(
                                         delivered = delivered,
                                         read = read,
+                                        isPending = isPending,
                                         color = if (read) LocalAppColors.current.accent else LocalAppColors.current.textMuted
                                     )
                                 }
@@ -2277,6 +2296,7 @@ fun MessageBubble(
                                 MessageTicks(
                                     delivered = delivered,
                                     read = read,
+                                    isPending = isPending,
                                     color = if (read) LocalAppColors.current.accent else LocalAppColors.current.textMuted
                                 )
                             }

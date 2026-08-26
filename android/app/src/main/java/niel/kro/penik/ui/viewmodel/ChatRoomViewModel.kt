@@ -47,11 +47,14 @@ class ChatRoomViewModel @Inject constructor(
     val messageRepository: MessageRepository,
     val chatRepository: ChatRepository,
     val groupRepository: GroupRepository,
-    val stickerRepository: niel.kro.penik.data.repository.StickerRepository
+    val stickerRepository: niel.kro.penik.data.repository.StickerRepository,
+    private val webSocketManager: niel.kro.penik.data.network.websocket.WebSocketManager
 ) : ViewModel() {
 
     private val chatUserId: Long = savedStateHandle.get<Long>("chatUserId") ?: 0L
     private val chatName: String = savedStateHandle.get<String>("chatName") ?: ""
+
+    val connectionState = webSocketManager.connectionState
 
     val isSelfChat: Boolean = chatUserId == tokenStorage.getUserId()
 
