@@ -14,7 +14,9 @@ import {
   navigate,
   logout,
   backupE2EEKeys,
-  restoreE2EEKeys
+  restoreE2EEKeys,
+  getDevicesBackTarget,
+  setDevicesBackTarget
 } from "../app.js";
 import {
   deriveSharedSecret,
@@ -420,153 +422,28 @@ export function renderSettings(container) {
     el("span", { style: "color:var(--text);" }, "Мои устройства"),
     el("span", { style: "color:var(--text-muted);" }, "›")
   );
-  devicesBtn.addEventListener("click", () => navigate("#devices"));
+  devicesBtn.addEventListener("click", () => {
+    setDevicesBackTarget("#settings");
+    navigate("#devices");
+  });
 
   const pairingBtn = el("button", {
     class: "btn-secondary",
     style: "width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;font-size:14px;"
   },
-    el("span", { style: "color:var(--text);" }, "Подключить устройство (QR)"),
+    el("span", { style: "color:var(--text);" }, "Передать историю на устройство (QR)"),
     el("span", { style: "color:var(--text-muted);" }, "›")
   );
-  pairingBtn.addEventListener("click", async () => {
-    pairingBtn.disabled = true;
-    try {
-      const kp = await generateKeyPair();
-      const keyText = encodeB64Url(kp.publicKey);
-      const session = await createPairingSession({ ephemeral_public_key: keyText });
-      const payload = `penik-pair-v1:${session.session_id}:${session.token}:${session.ephemeral_public_key}`;
-      const canvas = document.createElement("canvas");
-      await QRCode.toCanvas(canvas, payload, { width: 280, margin: 2 });
-      const modal = el("div", { style: "position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;" });
-      const close = () => modal.remove();
-      modal.addEventListener("click", event => { if (event.target === modal) close(); });
-      modal.appendChild(el("div", { style: "width:min(360px,100%);background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.45);" },
-        el("h3", { style: "margin:0 0 10px;color:var(--text);" }, "Подключение устройства"),
-        el("p", { style: "margin:0 0 16px;color:var(--text-muted);font-size:13px;line-height:1.4;" }, "Отсканируйте этот QR-код телефоном. Код действует 5 минут."),
-        canvas,
-        el("p", { style: "margin:14px 0;color:var(--text-muted);font-size:11px;word-break:break-all;" }, `Сессия: ${session.session_id}`),
-        el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;", onclick: close }, "Закрыть")
-      ));
-      document.body.appendChild(modal);
-      const state = await new Promise((resolve, reject) => {
-        let finished = false;
-        const finish = value => { if (finished) return; finished = true; clearTimeout(timer); clearInterval(poller); unsubscribe(); resolve(value); };
-        const timer = setTimeout(() => { if (!finished) { finished = true; clearInterval(poller); unsubscribe(); reject(new Error("Телефон не подтвердил подключение")); } }, 5 * 60 * 1000);
-        const unsubscribe = ws.on(OP.PAIRING_CLAIMED, event => {
-          if (event.session_id === session.session_id) finish(event);
-        });
-        const poller = setInterval(async () => {
-          try {
-            const current = await getPairingSession(session.session_id);
-            if (current.claimed && current.public_key) finish(current);
-          } catch (_) {}
-        }, 1000);
-      });
-      if (state.public_key) {
-        const secret = await deriveSharedSecret(kp.privateKey, decodeB64Url(state.public_key));
-        const messages = await getAllMessages();
-        const contacts = await getAllContacts();
-        const groups = await getAllGroups();
-        const groupMembers = await getAllGroupMembers();
-        const rawGroupKeys = await getAllGroupKeysPlain();
-        const groupKeys = rawGroupKeys.map(k => ({
-          ...k,
-          key: encodeB64Url(k.key)
-        }));
-        const groupMessages = await getAllGroupMessages();
-
-        const blob = await encryptPairingHistory({
-          messages,
-          contacts,
-          groups,
-          group_members: groupMembers,
-          group_keys: groupKeys,
-          group_messages: groupMessages
-        }, secret);
-        const messageIds = (messages || [])
-          .map(m => Number(m.msg_id))
-          .filter(id => !isNaN(id) && id > 0);
-
-        await uploadPairingHistory(session.session_id, {
-          encrypted_history: encodeB64Url(pack(blob)),
-          message_ids: messageIds
-        });
-        showToast("История передана устройству", "success");
-      }
-    } catch (err) {
-      showToast(err.message || "Не удалось создать сессию", "error");
-    } finally {
-      pairingBtn.disabled = false;
-    }
-  });
+  pairingBtn.addEventListener("click", () => startSendHistoryPairing(pairingBtn));
 
   const receiveHistoryBtn = el("button", {
     class: "btn-secondary",
     style: "width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;font-size:14px;"
   },
-    el("span", { style: "color:var(--text);" }, "Получить историю с телефона"),
+    el("span", { style: "color:var(--text);" }, "Запросить историю с устройства (QR)"),
     el("span", { style: "color:var(--text-muted);" }, "›")
   );
-  receiveHistoryBtn.addEventListener("click", async () => {
-    receiveHistoryBtn.disabled = true;
-    try {
-      const kp = await generateKeyPair();
-      const session = await createPairingSession({
-        ephemeral_public_key: encodeB64Url(kp.publicKey),
-        transfer_direction: "phone_to_web"
-      });
-      const payload = `penik-pair-v1:${session.session_id}:${session.token}:${session.ephemeral_public_key}`;
-      const canvas = document.createElement("canvas");
-      await QRCode.toCanvas(canvas, payload, { width: 280, margin: 2 });
-      const modal = el("div", { style: "position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;" });
-      const close = () => modal.remove();
-      modal.appendChild(el("div", { style: "width:min(360px,100%);background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.45);" },
-        el("h3", { style: "margin:0 0 10px;color:var(--text);" }, "Получение истории"),
-        el("p", { style: "margin:0 0 16px;color:var(--text-muted);font-size:13px;line-height:1.4;" }, "Отсканируйте QR-код телефоном. После подтверждения история будет передана сюда."),
-        canvas,
-        el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;", onclick: close }, "Закрыть")
-      ));
-      document.body.appendChild(modal);
-
-      await new Promise((resolve, reject) => {
-        let finished = false;
-        const finish = value => { if (finished) return; finished = true; clearTimeout(timer); clearInterval(poller); unsubscribe(); resolve(value); };
-        const unsubscribe = ws.on(OP.PAIRING_CLAIMED, event => {
-          if (event.session_id === session.session_id) finish(event);
-        });
-        const poller = setInterval(async () => {
-          try {
-            const current = await getPairingSession(session.session_id);
-            if (current.claimed && current.public_key) finish(current);
-          } catch (_) {}
-        }, 1000);
-        const timer = setTimeout(() => {
-          if (finished) return;
-          finished = true;
-          clearInterval(poller);
-          unsubscribe();
-          reject(new Error("Телефон не подтвердил передачу"));
-        }, 5 * 60 * 1000);
-      });
-
-      let state = await getPairingSession(session.session_id);
-      const deadline = Date.now() + 5 * 60 * 1000;
-      while (!state.encrypted_history && Date.now() < deadline) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        state = await getPairingSession(session.session_id);
-      }
-      if (!state.encrypted_history) throw new Error("Телефон не передал историю");
-      const secret = await deriveSharedSecret(kp.privateKey, decodeB64Url(state.public_key));
-      await importPairingHistory(state.encrypted_history, secret);
-      close();
-      showToast("История получена с телефона", "success");
-    } catch (err) {
-      showToast(err.message || "Не удалось получить историю", "error");
-    } finally {
-      receiveHistoryBtn.disabled = false;
-    }
-  });
+  receiveHistoryBtn.addEventListener("click", () => startReceiveHistoryPairing(receiveHistoryBtn));
 
   const devicesBox = el("div", {
     style: "background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:4px;display:flex;flex-direction:column;gap:4px;"
@@ -615,16 +492,184 @@ export function renderSettings(container) {
   container.appendChild(wrap);
 }
 
-// renderDevices renders the dedicated devices screen listing the user's devices.
+export async function startSendHistoryPairing(btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const kp = await generateKeyPair();
+    const keyText = encodeB64Url(kp.publicKey);
+    const session = await createPairingSession({ ephemeral_public_key: keyText });
+    const payload = `penik-pair-v1:${session.session_id}:${session.token}:${session.ephemeral_public_key}`;
+    const canvas = document.createElement("canvas");
+    await QRCode.toCanvas(canvas, payload, { width: 280, margin: 2 });
+    const modal = el("div", { style: "position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;" });
+    const close = () => modal.remove();
+    modal.addEventListener("click", event => { if (event.target === modal) close(); });
+    modal.appendChild(el("div", { style: "width:min(360px,100%);background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.45);" },
+      el("h3", { style: "margin:0 0 10px;color:var(--text);" }, "Передать историю"),
+      el("p", { style: "margin:0 0 16px;color:var(--text-muted);font-size:13px;line-height:1.4;" }, "Отсканируйте этот QR-код вторым устройством (телефоном или планшетом) для передачи истории."),
+      canvas,
+      el("p", { style: "margin:14px 0;color:var(--text-muted);font-size:11px;word-break:break-all;" }, `Сессия: ${session.session_id}`),
+      el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;", onclick: close }, "Закрыть")
+    ));
+    document.body.appendChild(modal);
+    const state = await new Promise((resolve, reject) => {
+      let finished = false;
+      const finish = value => { if (finished) return; finished = true; clearTimeout(timer); clearInterval(poller); unsubscribe(); resolve(value); };
+      const timer = setTimeout(() => { if (!finished) { finished = true; clearInterval(poller); unsubscribe(); reject(new Error("Второе устройство не подтвердило подключение")); } }, 5 * 60 * 1000);
+      const unsubscribe = ws.on(OP.PAIRING_CLAIMED, event => {
+        if (event.session_id === session.session_id) finish(event);
+      });
+      const poller = setInterval(async () => {
+        try {
+          const current = await getPairingSession(session.session_id);
+          if (current.claimed && current.public_key) finish(current);
+        } catch (_) {}
+      }, 1000);
+    });
+    if (state.public_key) {
+      const secret = await deriveSharedSecret(kp.privateKey, decodeB64Url(state.public_key));
+      const messages = await getAllMessages();
+      const contacts = await getAllContacts();
+      const groups = await getAllGroups();
+      const groupMembers = await getAllGroupMembers();
+      const rawGroupKeys = await getAllGroupKeysPlain();
+      const groupKeys = rawGroupKeys.map(k => ({
+        ...k,
+        key: encodeB64Url(k.key)
+      }));
+      const groupMessages = await getAllGroupMessages();
+
+      const blob = await encryptPairingHistory({
+        messages,
+        contacts,
+        groups,
+        group_members: groupMembers,
+        group_keys: groupKeys,
+        group_messages: groupMessages
+      }, secret);
+      const messageIds = (messages || [])
+        .map(m => Number(m.msg_id))
+        .filter(id => !isNaN(id) && id > 0);
+
+      await uploadPairingHistory(session.session_id, {
+        encrypted_history: encodeB64Url(pack(blob)),
+        message_ids: messageIds
+      });
+      close();
+      showToast("История успешно передана на устройство!", "success");
+    }
+  } catch (err) {
+    showToast(err.message || "Не удалось создать сессию передачи", "error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+export async function startReceiveHistoryPairing(btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const kp = await generateKeyPair();
+    const session = await createPairingSession({
+      ephemeral_public_key: encodeB64Url(kp.publicKey),
+      transfer_direction: "phone_to_web"
+    });
+    const payload = `penik-pair-v1:${session.session_id}:${session.token}:${session.ephemeral_public_key}`;
+    const canvas = document.createElement("canvas");
+    await QRCode.toCanvas(canvas, payload, { width: 280, margin: 2 });
+    const modal = el("div", { style: "position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;" });
+    const close = () => modal.remove();
+    modal.appendChild(el("div", { style: "width:min(360px,100%);background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.45);" },
+      el("h3", { style: "margin:0 0 10px;color:var(--text);" }, "Запросить историю"),
+      el("p", { style: "margin:0 0 16px;color:var(--text-muted);font-size:13px;line-height:1.4;" }, "Отсканируйте QR-код телефоном со всей историей. После сканирования история переписок будет передана и сохранена здесь."),
+      canvas,
+      el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;", onclick: close }, "Закрыть")
+    ));
+    document.body.appendChild(modal);
+
+    await new Promise((resolve, reject) => {
+      let finished = false;
+      const finish = value => { if (finished) return; finished = true; clearTimeout(timer); clearInterval(poller); unsubscribe(); resolve(value); };
+      const unsubscribe = ws.on(OP.PAIRING_CLAIMED, event => {
+        if (event.session_id === session.session_id) finish(event);
+      });
+      const poller = setInterval(async () => {
+        try {
+          const current = await getPairingSession(session.session_id);
+          if (current.claimed && current.public_key) finish(current);
+        } catch (_) {}
+      }, 1000);
+      const timer = setTimeout(() => {
+        if (finished) return;
+        finished = true;
+        clearInterval(poller);
+        unsubscribe();
+        reject(new Error("Второе устройство не подтвердило передачу"));
+      }, 5 * 60 * 1000);
+    });
+
+    let state = await getPairingSession(session.session_id);
+    const deadline = Date.now() + 5 * 60 * 1000;
+    while (!state.encrypted_history && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      state = await getPairingSession(session.session_id);
+    }
+    if (!state.encrypted_history) throw new Error("Устройство не передало историю");
+    const secret = await deriveSharedSecret(kp.privateKey, decodeB64Url(state.public_key));
+    await importPairingHistory(state.encrypted_history, secret);
+    close();
+    showToast("История переписок успешно получена и импортирована!", "success");
+  } catch (err) {
+    showToast(err.message || "Не удалось получить историю", "error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// renderDevices renders the dedicated devices screen listing the user's devices and history transfer actions.
 export function renderDevices(container) {
   const backBtn = el("button", { class: "icon-btn", style: "cursor:pointer;", title: "Назад" }, "←");
-  backBtn.addEventListener("click", () => navigate("#settings"));
+  backBtn.addEventListener("click", () => navigate(getDevicesBackTarget()));
 
   const header = el("div", { class: "profile-header", style: "display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--panel);border-bottom:1px solid var(--border);" },
     backBtn,
     el("h2", { class: "profile-title", style: "margin:0;font-size:18px;font-weight:700;" }, "Мои устройства")
   );
 
+  // History sync action buttons
+  const sendBtn = el("button", {
+    class: "btn-secondary",
+    style: "width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer;font-size:14px;border-radius:var(--r);"
+  },
+    el("div", { style: "display:flex;flex-direction:column;gap:2px;text-align:left;" },
+      el("span", { style: "color:var(--text);font-weight:500;" }, "📤  Передать историю на другое устройство"),
+      el("span", { style: "color:var(--text-muted);font-size:12px;" }, "Создать QR-код для безопасной передачи истории на новое устройство")
+    ),
+    el("span", { style: "color:var(--text-muted);" }, "›")
+  );
+  sendBtn.addEventListener("click", () => startSendHistoryPairing(sendBtn));
+
+  const receiveBtn = el("button", {
+    class: "btn-secondary",
+    style: "width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer;font-size:14px;border-radius:var(--r);"
+  },
+    el("div", { style: "display:flex;flex-direction:column;gap:2px;text-align:left;" },
+      el("span", { style: "color:var(--text);font-weight:500;" }, "📥  Запросить историю с другого устройства"),
+      el("span", { style: "color:var(--text-muted);font-size:12px;" }, "Показать QR-код для импорта истории со смартфона или другого клиента")
+    ),
+    el("span", { style: "color:var(--text-muted);" }, "›")
+  );
+  receiveBtn.addEventListener("click", () => startReceiveHistoryPairing(receiveBtn));
+
+  const syncBox = el("div", {
+    style: "background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:6px;display:flex;flex-direction:column;gap:6px;"
+  },
+    sendBtn,
+    receiveBtn
+  );
+
+  const syncSection = createSection("Синхронизация и обмен историей", syncBox);
+
+  // Devices list
   const list = el("div", { style: "display:flex;flex-direction:column;gap:10px;" }, spinner());
 
   function render(devices) {
@@ -660,7 +705,12 @@ export function renderDevices(container) {
       list.appendChild(el("div", { style: "color:var(--danger);font-size:13px;padding:12px;" }, "Не удалось загрузить устройства"));
     });
 
-  const content = el("div", { style: "padding:20px;max-width:860px;margin:0 auto;width:100%;box-sizing:border-box;" }, list);
+  const devicesListSection = createSection("Подключенные устройства", list);
+
+  const content = el("div", { style: "display:flex;flex-direction:column;gap:12px;padding:20px;max-width:860px;margin:0 auto;width:100%;box-sizing:border-box;" },
+    syncSection,
+    devicesListSection
+  );
   const scrollWrapper = el("div", { style: "flex:1;overflow-y:auto;overflow-x:hidden;" }, content);
 
   const wrap = el("div", { class: "settings-wrap", style: "display:flex;flex-direction:column;height:100%;overflow:hidden;width:100%;" },

@@ -734,6 +734,7 @@ class MessageRepository @Inject constructor(
                         Log.d("PenikMsg", "syncHistory item: msgId=${msg.msgId}, clientMsgId=${msg.clientMsgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, existingLocalId=${existing?.localId}")
                         val isEdited = msg.editedAt != null && (existing == null || existing.editedAt == null || (msg.editedAt * 1000 > (existing.editedAt ?: 0L)))
                         if (existing == null || isEdited) {
+                            var isDecryptFailed = false
                             val text = if (msg.plaintext != null) {
                                 msg.plaintext
                             } else if (msg.ciphertext != null && msg.encryptionSalt != null && msg.encryptionNonce != null) {
@@ -762,7 +763,8 @@ class MessageRepository @Inject constructor(
                                     )
                                 } catch (e: Exception) {
                                     Log.e("PenikMsg", "FAILED TO DECRYPT HISTORY MSG msgId=${msg.msgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, clientMsgId=${msg.clientMsgId}", e)
-                                    existing?.text ?: "[Ошибка расшифрования: ${e.message}]"
+                                    isDecryptFailed = true
+                                    existing?.text ?: ""
                                 }
                             } else {
                                 existing?.text ?: ""
@@ -770,10 +772,10 @@ class MessageRepository @Inject constructor(
                             
                             val editedAtMs = msg.editedAt?.let { it * 1000 }
                             if (existing != null) {
-                                if (editedAtMs != null) {
+                                if (editedAtMs != null && !isDecryptFailed && text.isNotBlank()) {
                                     messageDao.updateMessageText(existing.localId, msg.msgId, text, editedAtMs)
                                 }
-                            } else {
+                            } else if (!isDecryptFailed && text.isNotBlank()) {
                                 newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
                                 add(MessageEntity(
                                     localId = msg.clientMsgId ?: "server-${msg.msgId}",
@@ -803,7 +805,7 @@ class MessageRepository @Inject constructor(
                             }
                             val text = existing.text
                             val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
-                            if (!isFailed) {
+                            if (!isFailed && text.isNotBlank()) {
                                 newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
                             }
                         }
@@ -825,20 +827,38 @@ class MessageRepository @Inject constructor(
                         }
                     }
 
-                newMessages.groupBy { it.chatUserId }.forEach { (chatUserId, chatMessages) ->
-                    val latest = chatMessages.maxBy { it.createdAt }
+                // Ensure all contacts exist in chat list
+                val allChatUserIds = messages.map { it.chatUserId }.distinct()
+                for (peerId in allChatUserIds) {
                     val profile = try {
-                        apiService.getUserProfile(chatUserId).body()
+                        apiService.getUserProfile(peerId).body()
                     } catch (_: Exception) {
                         null
                     }
-                    chatRepository.updateLastMessage(
-                        userId = chatUserId,
-                        text = latest.text,
-                        timestamp = latest.createdAt,
+                    chatRepository.upsertContact(
+                        userId = peerId,
+                        nickname = profile?.nickname.orEmpty(),
                         name = profile?.name.orEmpty(),
-                        nickname = profile?.nickname.orEmpty()
+                        avatarUrl = null
                     )
+                }
+
+                newMessages.groupBy { it.chatUserId }.forEach { (chatUserId, chatMessages) ->
+                    val latest = chatMessages.maxByOrNull { it.createdAt }
+                    if (latest != null && !latest.text.startsWith("[Ошибка") && !latest.text.startsWith("[Сообщение не расшифровано")) {
+                        val profile = try {
+                            apiService.getUserProfile(chatUserId).body()
+                        } catch (_: Exception) {
+                            null
+                        }
+                        chatRepository.updateLastMessage(
+                            userId = chatUserId,
+                            text = latest.text,
+                            timestamp = latest.createdAt,
+                            name = profile?.name.orEmpty(),
+                            nickname = profile?.nickname.orEmpty()
+                        )
+                    }
                 }
 
                 // Recalculate unread counts strictly from actual unread incoming messages in DB

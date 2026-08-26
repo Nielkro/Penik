@@ -83,7 +83,10 @@ fun NavGraph(
         }
 
         composable(Screen.Devices.route) {
-            DevicesScreen(onBack = { navController.popBackStack() })
+            DevicesScreen(
+                onBack = { navController.popBackStack() },
+                onPairingScanner = { navController.navigate(Screen.PairingScanner.route) }
+            )
         }
 
         composable(Screen.PairingScanner.route) {
