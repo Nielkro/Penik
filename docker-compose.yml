@@ -13,9 +13,9 @@ services:
       - DB_PATH=/app/data/messenger.db
       - UPLOAD_DIR=/app/data/upload
       - STICKERS_DIR=/app/data/stickers
-      - ALLOWED_ORIGINS=https://your-domain.com
-      - LIVEKIT_URL=wss://your-livekit-domain.com
-      - LIVEKIT_FALLBACK_URL=wss://your-livekit-fallback.com
+      - ALLOWED_ORIGINS=https://web.penik.ru,https://penik.ru
+      - LIVEKIT_URL=wss://livekit.penik.ru
+      - LIVEKIT_FALLBACK_URL=wss://livekit.penik.ru
       - LIVEKIT_API_KEY=your_livekit_api_key
       - LIVEKIT_API_SECRET=your_livekit_api_secret
     volumes:
@@ -30,6 +30,8 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./landing:/var/www/landing:ro
+      - ./client/dist:/var/www/client:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
