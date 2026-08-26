@@ -112,7 +112,7 @@ fun AuthScreen(
             Surface(
                 onClick = { showServerMenu = true },
                 shape = RoundedCornerShape(20.dp),
-                color = LocalAppColors.current.cardBackground,
+                color = LocalAppColors.current.panelSecondary,
                 border = BorderStroke(1.dp, if (isDev) LocalAppColors.current.accent else LocalAppColors.current.border),
                 modifier = Modifier.height(34.dp)
             ) {
@@ -144,7 +144,7 @@ fun AuthScreen(
             DropdownMenu(
                 expanded = showServerMenu,
                 onDismissRequest = { showServerMenu = false },
-                modifier = Modifier.background(LocalAppColors.current.panelBackground)
+                modifier = Modifier.background(LocalAppColors.current.panel)
             ) {
                 DropdownMenuItem(
                     text = {
@@ -253,7 +253,7 @@ fun AuthScreen(
                         Text("Отмена", color = LocalAppColors.current.textMuted)
                     }
                 },
-                containerColor = LocalAppColors.current.cardBackground
+                containerColor = LocalAppColors.current.panel
             )
         }
 
