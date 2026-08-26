@@ -116,7 +116,18 @@ object NetworkModule {
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .addInterceptor { chain ->
-                val request = chain.request().newBuilder()
+                val orig = chain.request()
+                val host = niel.kro.penik.data.network.api.ApiConfig.HOST
+                val port = niel.kro.penik.data.network.api.ApiConfig.PORT
+                val scheme = niel.kro.penik.data.network.api.ApiConfig.SCHEME
+
+                val newUrl = orig.url.newBuilder()
+                    .scheme(scheme)
+                    .host(host)
+                    .port(port)
+                    .build()
+
+                val request = orig.newBuilder().url(newUrl)
                 val token = tokenStorage.getToken()
                 if (token != null) {
                     request.header("Authorization", "Bearer $token")
