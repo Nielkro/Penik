@@ -1,9 +1,16 @@
-import { Room, RoomEvent, VideoPresets } from 'livekit-client';
 import { ws, OP } from './ws.js';
 import { showToast } from './ui/components.js';
 import { getContact, saveContact } from './storage.js';
 import { getUserById } from './api.js';
 import { callSounds } from './sounds.js';
+
+let _livekitModule = null;
+async function getLiveKit() {
+  if (!_livekitModule) {
+    _livekitModule = await import('livekit-client');
+  }
+  return _livekitModule;
+}
 
 export class CallManager {
   constructor() {
@@ -370,6 +377,8 @@ export class CallManager {
       token = fallbackUrl;
       fallbackUrl = null;
     }
+
+    const { Room, RoomEvent, VideoPresets } = await getLiveKit();
 
     const urlsToTry = [primaryUrl];
     if (fallbackUrl && fallbackUrl !== primaryUrl) {
