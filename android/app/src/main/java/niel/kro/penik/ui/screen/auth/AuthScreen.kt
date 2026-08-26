@@ -3,6 +3,7 @@ package niel.kro.penik.ui.screen.auth
 import niel.kro.penik.ui.theme.LocalAppColors
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -84,31 +85,37 @@ fun AuthScreen(
         }
     }
 
+    // Intercept system back gestures to navigate back through auth steps
+    BackHandler(enabled = state.mode != AuthMode.WELCOME) {
+        viewModel.goBack()
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(LocalAppColors.current.background)
             .padding(24.dp)
     ) {
-        // Server Selector (top right)
-        var showServerMenu by remember { mutableStateOf(false) }
-        var currentHost by remember { mutableStateOf(niel.kro.penik.data.network.api.ApiConfig.HOST) }
-        var showCustomDialog by remember { mutableStateOf(false) }
-        var customHostInput by remember { mutableStateOf(niel.kro.penik.data.network.api.ApiConfig.HOST) }
-        var customPortInput by remember { mutableStateOf(niel.kro.penik.data.network.api.ApiConfig.PORT.toString()) }
+        // Server Selector (top right, visible ONLY on WELCOME screen)
+        if (state.mode == AuthMode.WELCOME) {
+            var showServerMenu by remember { mutableStateOf(false) }
+            var currentHost by remember { mutableStateOf(niel.kro.penik.data.network.api.ApiConfig.HOST) }
+            var showCustomDialog by remember { mutableStateOf(false) }
+            var customHostInput by remember { mutableStateOf(niel.kro.penik.data.network.api.ApiConfig.HOST) }
+            var customPortInput by remember { mutableStateOf(niel.kro.penik.data.network.api.ApiConfig.PORT.toString()) }
 
-        val isDev = niel.kro.penik.data.network.api.ApiConfig.isDev()
-        val serverLabel = when {
-            isDev -> "Dev"
-            niel.kro.penik.data.network.api.ApiConfig.isProd() -> "Обычный"
-            else -> "Свой"
-        }
+            val isDev = niel.kro.penik.data.network.api.ApiConfig.isDev()
+            val serverLabel = when {
+                isDev -> "Dev"
+                niel.kro.penik.data.network.api.ApiConfig.isProd() -> "Обычный"
+                else -> "Свой"
+            }
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 4.dp)
-        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 4.dp)
+            ) {
             Surface(
                 onClick = { showServerMenu = true },
                 shape = RoundedCornerShape(20.dp),
@@ -255,6 +262,7 @@ fun AuthScreen(
                 },
                 containerColor = LocalAppColors.current.panel
             )
+        }
         }
 
         // Back button (top left)
