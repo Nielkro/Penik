@@ -63,11 +63,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import android.widget.Toast
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import niel.kro.penik.data.repository.UploadProgress
+import niel.kro.penik.data.repository.UploadProgressBus
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.Image
 import androidx.compose.ui.layout.ContentScale
@@ -686,7 +689,7 @@ private fun parseFileAttachment(text: String): FileAttachment? = runCatching {
     val url = file["url"]?.jsonPrimitive?.content.orEmpty()
     val key = file["key"]?.jsonPrimitive?.content.orEmpty()
     val uploadMsgId = file["upload_msg_id"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
-    val uploading = file["uploading"]?.jsonPrimitive?.booleanOrNull ?: (uploadMsgId != null)
+    val uploading = file["uploading"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: (uploadMsgId != null)
 
     if (url.isBlank() && uploadMsgId == null) return null
 
