@@ -1,5 +1,5 @@
 import { decodeKey, decryptFileChaCha20 } from "../crypto.js";
-import { getToken } from "../api.js";
+import { getToken, BASE, getApiOrigin } from "../api.js";
 import { getCachedMedia, saveCachedMedia, getAllContacts, getAllGroups } from "../storage.js";
 import { sendGroupMessage } from "../groups.js";
 import { sendDirectMessageToUser } from "./chat.js";
@@ -190,13 +190,14 @@ export function avatar(user, size = 40, forceTimestamp = null) {
   const wrap = el("div", { class: "avatar", style: `width:${size}px;height:${size}px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0;` });
 
   const userId = user && (user.user_id || user.id);
-  let avatarUrl = (user && user.avatar_url) || (userId ? `/api/v1/avatar/${userId}` : null);
+  const origin = getApiOrigin();
+  let avatarUrl = (user && user.avatar_url) || (userId ? `${origin}/api/v1/avatar/${userId}` : null);
   if (avatarUrl && forceTimestamp) {
     avatarUrl += (avatarUrl.includes("?") ? "&t=" : "?t=") + forceTimestamp;
-    failedAvatars.delete(`/api/v1/avatar/${userId}`);
+    failedAvatars.delete(`${origin}/api/v1/avatar/${userId}`);
   }
 
-  const cacheKey = `/api/v1/avatar/${userId}`;
+  const cacheKey = `${origin}/api/v1/avatar/${userId}`;
   if (avatarUrl && !failedAvatars.has(cacheKey)) {
     const img = el("img", {
       src: avatarUrl,
@@ -236,7 +237,8 @@ export function groupAvatar(group, size = 40, forceTimestamp = null) {
 
   const groupId = group && group.id;
   const ts = forceTimestamp || (groupId ? groupAvatarUpdateTimestamps.get(String(groupId)) : null);
-  let avatarUrl = groupId ? `/api/v1/groups/${groupId}/avatar` : null;
+  const origin = getApiOrigin();
+  let avatarUrl = groupId ? `${origin}/api/v1/groups/${groupId}/avatar` : null;
   if (avatarUrl && ts) {
     avatarUrl += `?t=${ts}`;
   }

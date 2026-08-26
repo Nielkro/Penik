@@ -7,7 +7,8 @@ import {
   apiGet,
   createPairingSession,
   getPairingSession,
-  uploadPairingHistory
+  uploadPairingHistory,
+  getApiOrigin
 } from "../api.js";
 import {
   getCurrentUser,
@@ -78,7 +79,8 @@ export function renderSettings(container) {
   const userId = user.user_id || user.id || "";
   const currentAvatarUser = { ...user };
   if (!currentAvatarUser.avatar_url && userId) {
-    currentAvatarUser.avatar_url = `/api/v1/avatar/${userId}?t=${Date.now()}`;
+    const origin = getApiOrigin();
+    currentAvatarUser.avatar_url = `${origin}/api/v1/avatar/${userId}?t=${Date.now()}`;
   }
 
   // --- Header with Back Button ---

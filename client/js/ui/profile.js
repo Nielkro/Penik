@@ -1,4 +1,4 @@
-import { apiPut, uploadAvatar } from "../api.js";
+import { apiPut, uploadAvatar, getApiOrigin } from "../api.js";
 import { navigate, getCurrentUser, setCurrentUser, logout, setDevicesBackTarget } from "../app.js";
 import { avatar, el, showToast, spinner, showConfirmModal } from "./components.js";
 
@@ -17,6 +17,7 @@ export function renderProfile(container) {
   );
 
   const userId = user.user_id || user.id || "";
+  const origin = getApiOrigin();
 
   const avatarContainer = el("div", {
     style: "position:relative;cursor:pointer;display:inline-block;border-radius:50%;overflow:hidden;margin-bottom:16px;box-shadow:0 8px 24px rgba(0,0,0,0.3);",
@@ -25,7 +26,7 @@ export function renderProfile(container) {
 
   const currentAvatarUser = { ...user };
   if (!currentAvatarUser.avatar_url && userId) {
-    currentAvatarUser.avatar_url = `/api/v1/avatar/${userId}?t=${Date.now()}`;
+    currentAvatarUser.avatar_url = `${origin}/api/v1/avatar/${userId}?t=${Date.now()}`;
   }
 
   const avatarEl = avatar(currentAvatarUser, 110);
@@ -65,7 +66,7 @@ export function renderProfile(container) {
 
     try {
       await uploadAvatar(file);
-      const newAvatarUrl = `/api/v1/avatar/${userId}?t=${Date.now()}`;
+      const newAvatarUrl = `${origin}/api/v1/avatar/${userId}?t=${Date.now()}`;
       const updatedUser = { ...user, avatar_url: newAvatarUrl };
       setCurrentUser(updatedUser);
 

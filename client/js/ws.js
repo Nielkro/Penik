@@ -1,5 +1,5 @@
 import { encode, decode } from '@msgpack/msgpack';
-import { getToken } from './api.js';
+import { getToken, getApiOrigin } from './api.js';
 
 /* ── Opcodes ── */
 export const OP = {
@@ -54,8 +54,14 @@ export const OP = {
   CALL_LOG:      0x37,
 };
 
-const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const WS_URL = `${wsProtocol}//${window.location.host}/api/v1/ws`;
+export function getWsUrl() {
+  const origin = getApiOrigin();
+  const url = new URL(origin, window.location.href);
+  const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${url.host}/api/v1/ws`;
+}
+
+const WS_URL = getWsUrl();
 const PING_INTERVAL = 25_000;
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 15000, 30000];
 const MAX_FRAME_SIZE = 10 * 1024 * 1024; // 10MB limit
