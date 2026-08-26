@@ -5,6 +5,7 @@ import niel.kro.penik.ui.theme.LocalAppColors
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,11 +28,14 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -86,6 +90,173 @@ fun AuthScreen(
             .background(LocalAppColors.current.background)
             .padding(24.dp)
     ) {
+        // Server Selector (top right)
+        var showServerMenu by remember { mutableStateOf(false) }
+        var currentHost by remember { mutableStateOf(niel.kro.penik.data.network.api.ApiConfig.HOST) }
+        var showCustomDialog by remember { mutableStateOf(false) }
+        var customHostInput by remember { mutableStateOf(niel.kro.penik.data.network.api.ApiConfig.HOST) }
+        var customPortInput by remember { mutableStateOf(niel.kro.penik.data.network.api.ApiConfig.PORT.toString()) }
+
+        val isDev = niel.kro.penik.data.network.api.ApiConfig.isDev()
+        val serverLabel = when {
+            isDev -> "Dev"
+            niel.kro.penik.data.network.api.ApiConfig.isProd() -> "Обычный"
+            else -> "Свой"
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 4.dp)
+        ) {
+            Surface(
+                onClick = { showServerMenu = true },
+                shape = RoundedCornerShape(20.dp),
+                color = LocalAppColors.current.cardBackground,
+                border = BorderStroke(1.dp, if (isDev) LocalAppColors.current.accent else LocalAppColors.current.border),
+                modifier = Modifier.height(34.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(if (isDev) Color(0xFFFFA726) else Color(0xFF66BB6A))
+                    )
+                    Text(
+                        text = serverLabel,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = LocalAppColors.current.textPrimary
+                    )
+                    Text(
+                        text = "▾",
+                        fontSize = 10.sp,
+                        color = LocalAppColors.current.textMuted
+                    )
+                }
+            }
+
+            DropdownMenu(
+                expanded = showServerMenu,
+                onDismissRequest = { showServerMenu = false },
+                modifier = Modifier.background(LocalAppColors.current.panelBackground)
+            ) {
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text("Обычный сервер", fontWeight = FontWeight.SemiBold, color = LocalAppColors.current.textPrimary)
+                            Text("api.penik.ru", fontSize = 11.sp, color = LocalAppColors.current.textMuted)
+                        }
+                    },
+                    leadingIcon = {
+                        Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Color(0xFF66BB6A)))
+                    },
+                    onClick = {
+                        niel.kro.penik.data.network.api.ApiConfig.setServer(isDev = false)
+                        currentHost = niel.kro.penik.data.network.api.ApiConfig.HOST
+                        showServerMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text("Dev сервер", fontWeight = FontWeight.SemiBold, color = LocalAppColors.current.textPrimary)
+                            Text("web.dev.penik.ru", fontSize = 11.sp, color = LocalAppColors.current.textMuted)
+                        }
+                    },
+                    leadingIcon = {
+                        Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFFFA726)))
+                    },
+                    onClick = {
+                        niel.kro.penik.data.network.api.ApiConfig.setServer(isDev = true)
+                        currentHost = niel.kro.penik.data.network.api.ApiConfig.HOST
+                        showServerMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text("Свой сервер...", fontWeight = FontWeight.SemiBold, color = LocalAppColors.current.textPrimary)
+                            Text("Указать свой IP / домен", fontSize = 11.sp, color = LocalAppColors.current.textMuted)
+                        }
+                    },
+                    leadingIcon = {
+                        Text("⚙️", fontSize = 12.sp)
+                    },
+                    onClick = {
+                        showServerMenu = false
+                        customHostInput = niel.kro.penik.data.network.api.ApiConfig.HOST
+                        customPortInput = niel.kro.penik.data.network.api.ApiConfig.PORT.toString()
+                        showCustomDialog = true
+                    }
+                )
+            }
+        }
+
+        if (showCustomDialog) {
+            AlertDialog(
+                onDismissRequest = { showCustomDialog = false },
+                title = { Text("Настройка сервера", color = LocalAppColors.current.textPrimary) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            value = customHostInput,
+                            onValueChange = { customHostInput = it },
+                            label = { Text("Хост или IP") },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = LocalAppColors.current.accent,
+                                unfocusedBorderColor = LocalAppColors.current.border,
+                                focusedTextColor = LocalAppColors.current.textPrimary,
+                                unfocusedTextColor = LocalAppColors.current.textPrimary
+                            )
+                        )
+                        OutlinedTextField(
+                            value = customPortInput,
+                            onValueChange = { customPortInput = it },
+                            label = { Text("Порт (по умолчанию 443)") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = LocalAppColors.current.accent,
+                                unfocusedBorderColor = LocalAppColors.current.border,
+                                focusedTextColor = LocalAppColors.current.textPrimary,
+                                unfocusedTextColor = LocalAppColors.current.textPrimary
+                            )
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val host = customHostInput.trim()
+                            val port = customPortInput.toIntOrNull() ?: 443
+                            val scheme = if (port == 443) "https" else if (port == 80) "http" else "http"
+                            if (host.isNotBlank()) {
+                                niel.kro.penik.data.network.api.ApiConfig.setCustom(host, port, scheme)
+                                currentHost = niel.kro.penik.data.network.api.ApiConfig.HOST
+                            }
+                            showCustomDialog = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.accent)
+                    ) {
+                        Text("Сохранить")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCustomDialog = false }) {
+                        Text("Отмена", color = LocalAppColors.current.textMuted)
+                    }
+                },
+                containerColor = LocalAppColors.current.cardBackground
+            )
+        }
+
         // Back button (top left)
         if (state.mode != AuthMode.WELCOME) {
             IconButton(
