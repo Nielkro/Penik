@@ -181,10 +181,21 @@ class GroupChatViewModel @Inject constructor(
 
     fun sendMediaFile(context: Context, uri: Uri, caption: String = "", onError: (String) -> Unit = {}) {
         viewModelScope.launch {
-            attachmentManager.uploadAndPrepareAttachment(context, uri, caption)
-                .onSuccess { jsonPayload ->
-                    // Send encrypted file JSON payload through group WebSocket pipeline
-                    val id = runCatching { groupRepository.sendMessage(groupId, jsonPayload, null) }.getOrNull()
+            val clientMsgId = java.util.UUID.randomUUID().toString()
+            val mediaInfo = runCatching {
+                attachmentManager.prepareLocalMedia(context, uri, clientMsgId, caption)
+            }.getOrElse { err ->
+                onError(err.message ?: "Ошибка подготовки файла")
+                return@launch
+            }
+
+            // 1. Immediately insert optimistic message into group
+            groupRepository.insertOptimisticMessage(groupId, clientMsgId, mediaInfo.optimisticPayload, null)
+
+            // 2. Upload and send with progress
+            attachmentManager.uploadAndEncryptAttachment(context, mediaInfo, clientMsgId, caption)
+                .onSuccess { finalJsonPayload ->
+                    val id = runCatching { groupRepository.sendMessage(groupId, finalJsonPayload, null, existingMessageId = clientMsgId) }.getOrNull()
                     if (id == null) onError("Не удалось отправить файл")
                 }
                 .onFailure { err ->

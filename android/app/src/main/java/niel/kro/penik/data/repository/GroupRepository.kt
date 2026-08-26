@@ -301,12 +301,27 @@ class GroupRepository @Inject constructor(
 
     /* ── Messaging ── */
 
-    suspend fun sendMessage(groupId: Long, text: String, replyToMsgId: String? = null): String? {
+    suspend fun insertOptimisticMessage(groupId: Long, messageId: String, text: String, replyToMsgId: String? = null) {
+        val createdAt = System.currentTimeMillis() / 1000
+        val senderUserId = myUserId()
+        val version = currentVersion(groupId)
+        dao.upsertMessage(
+            GroupMessageEntity(
+                groupId = groupId, messageId = messageId, serverId = 0,
+                senderUserId = senderUserId, senderDeviceId = myDeviceId(),
+                keyVersion = version, text = text, createdAt = createdAt,
+                sentByMe = true, delivered = false,
+                replyToMsgId = replyToMsgId
+            )
+        )
+    }
+
+    suspend fun sendMessage(groupId: Long, text: String, replyToMsgId: String? = null, existingMessageId: String? = null): String? {
         // Always query the server for the latest key version to avoid mismatch if offline during rotation.
         val version = currentVersion(groupId)
         val groupKey = ensureGroupKey(groupId, version) ?: return null
 
-        val messageId = UUID.randomUUID().toString()
+        val messageId = existingMessageId ?: UUID.randomUUID().toString()
         // created_at is bound into the AAD and must match what the server persists
         // and relays. Server and web work in Unix seconds — sending milliseconds
         // here made the recipient's AAD mismatch and decryption fail.

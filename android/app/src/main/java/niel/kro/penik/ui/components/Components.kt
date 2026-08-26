@@ -674,15 +674,22 @@ private data class FileAttachment(
     val mime: String,
     val key: String,
     val thumb: String?,
-    val caption: String
+    val caption: String,
+    val uploadMsgId: String? = null,
+    val uploading: Boolean = false
 )
 
 private fun parseFileAttachment(text: String): FileAttachment? = runCatching {
     val root = Json.parseToJsonElement(text).jsonObject
     if (root["type"]?.jsonPrimitive?.content != "file") return null
     val file = root["file"]?.jsonObject ?: return null
-    val url = file["url"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: return null
-    val key = file["key"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: return null
+    val url = file["url"]?.jsonPrimitive?.content.orEmpty()
+    val key = file["key"]?.jsonPrimitive?.content.orEmpty()
+    val uploadMsgId = file["upload_msg_id"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+    val uploading = file["uploading"]?.jsonPrimitive?.booleanOrNull ?: (uploadMsgId != null)
+
+    if (url.isBlank() && uploadMsgId == null) return null
+
     FileAttachment(
         url = url,
         name = file["name"]?.jsonPrimitive?.content.orEmpty().ifBlank { "Файл" },
@@ -690,7 +697,9 @@ private fun parseFileAttachment(text: String): FileAttachment? = runCatching {
         mime = file["mime"]?.jsonPrimitive?.content.orEmpty(),
         key = key,
         thumb = file["thumb"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() },
-        caption = root["text"]?.jsonPrimitive?.content.orEmpty()
+        caption = root["text"]?.jsonPrimitive?.content.orEmpty(),
+        uploadMsgId = uploadMsgId,
+        uploading = uploading
     )
 }.getOrNull()
 
@@ -762,6 +771,15 @@ private suspend fun downloadAndDecryptAttachment(context: Context, attachment: F
     withContext(Dispatchers.IO) {
         val cacheDir = File(context.cacheDir, "attachments").apply { mkdirs() }
         val extension = attachment.name.substringAfterLast('.', "").take(16)
+
+        if (!attachment.uploadMsgId.isNullOrBlank()) {
+            val localCandidate = File(cacheDir, "${attachment.uploadMsgId}${if (extension.isBlank()) "" else ".$extension"}")
+            if (localCandidate.isFile && localCandidate.length() > 0) return@withContext localCandidate
+        }
+
+        if (attachment.key.isBlank()) {
+            throw IllegalStateException("Attachment encryption key is not set")
+        }
         
         val fullUrl = when {
             attachment.url.startsWith("http://") || attachment.url.startsWith("https://") -> attachment.url
@@ -1314,6 +1332,10 @@ private fun FileAttachmentContent(
             ?: (16f / 9f)
     }
 
+    val uploadProgressMap by niel.kro.penik.data.repository.UploadProgressBus.progress.collectAsState()
+    val uploadProgress = attachment.uploadMsgId?.let { uploadProgressMap[it] }
+    val isUploading = attachment.uploading || uploadProgress != null
+
     val openFile: () -> Unit = {
         localFile?.let { file ->
             val contentUri = FileProvider.getUriForFile(
@@ -1340,7 +1362,7 @@ private fun FileAttachmentContent(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable(enabled = localFile != null) {
+                            .clickable(enabled = localFile != null && !isUploading) {
                                 showVideoViewer = true
                             },
                         contentAlignment = Alignment.Center
@@ -1374,8 +1396,20 @@ private fun FileAttachmentContent(
                                 .background(Color.Black.copy(alpha = 0.6f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (localFile == null && !loadError) {
-                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                            if (isUploading || (localFile == null && !loadError)) {
+                                val progress = if (uploadProgress != null && uploadProgress.total > 0) {
+                                    (uploadProgress.loaded.toFloat() / uploadProgress.total.toFloat()).coerceIn(0f, 1f)
+                                } else null
+                                if (progress != null) {
+                                    CircularProgressIndicator(
+                                        progress = { progress },
+                                        color = Color.White,
+                                        modifier = Modifier.size(28.dp),
+                                        strokeWidth = 3.dp
+                                    )
+                                } else {
+                                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                }
                             } else {
                                 Icon(
                                     imageVector = Icons.Default.PlayArrow,
@@ -1397,9 +1431,13 @@ private fun FileAttachmentContent(
                     }
                 }
 
-                if (attachment.size != null && attachment.size > 0) {
-                    val sizeFormatted = formatFileSize(attachment.size)
-                    if (sizeFormatted.isNotBlank()) {
+                if (isUploading) {
+                    val badgeText = if (uploadProgress != null && uploadProgress.total > 0) {
+                        "${formatFileSize(uploadProgress.loaded)} / ${formatFileSize(uploadProgress.total)}"
+                    } else {
+                        formatFileSize(attachment.size)
+                    }
+                    if (badgeText.isNotBlank()) {
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
@@ -1409,7 +1447,7 @@ private fun FileAttachmentContent(
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = sizeFormatted,
+                                text = badgeText,
                                 fontSize = 10.sp,
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                                 color = Color.White
@@ -1459,7 +1497,7 @@ private fun FileAttachmentContent(
                         contentDescription = attachment.name,
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable { showImageViewer = true },
+                            .clickable(enabled = !isUploading) { showImageViewer = true },
                         contentScale = ContentScale.Fit
                     )
                     // File still loading: show thumb as placeholder
@@ -1483,9 +1521,13 @@ private fun FileAttachmentContent(
                     }
                 }
 
-                if (attachment.size != null && attachment.size > 0) {
-                    val sizeFormatted = formatFileSize(attachment.size)
-                    if (sizeFormatted.isNotBlank()) {
+                if (isUploading) {
+                    val badgeText = if (uploadProgress != null && uploadProgress.total > 0) {
+                        "${formatFileSize(uploadProgress.loaded)} / ${formatFileSize(uploadProgress.total)}"
+                    } else {
+                        formatFileSize(attachment.size)
+                    }
+                    if (badgeText.isNotBlank()) {
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
@@ -1495,11 +1537,35 @@ private fun FileAttachmentContent(
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = sizeFormatted,
+                                text = badgeText,
                                 fontSize = 10.sp,
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                                 color = Color.White
                             )
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.55f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val progress = if (uploadProgress != null && uploadProgress.total > 0) {
+                            (uploadProgress.loaded.toFloat() / uploadProgress.total.toFloat()).coerceIn(0f, 1f)
+                        } else null
+
+                        if (progress != null) {
+                            CircularProgressIndicator(
+                                progress = { progress },
+                                color = Color.White,
+                                modifier = Modifier.size(28.dp),
+                                strokeWidth = 3.dp
+                            )
+                        } else {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
                         }
                     }
                 }
