@@ -4,16 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Penik Messenger — свой мессенджер с E2EE-шифрованием</title>
-<meta name="description" content="Penik Messenger — мессенджер, написанный почти с нуля. E2EE на X25519 + ChaCha20-Poly1305, зашифрованные группы, мультидевайсинг и бинарный WebSocket. Даже сервер не видит ваши сообщения.">
+<meta name="description" content="Penik Messenger — безопасный мессенджер со сквозным шифрованием (E2EE). E2EE на X25519 + ChaCha20-Poly1305, зашифрованные группы, мультидевайсинг и бинарный WebSocket. Даже сервер не видит ваши сообщения.">
 <link rel="icon" href="https://web.dev.penik.ru/assets/favicon-BYBt5M59.ico">
-<script>
-    !function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="Ji Yi init fn mn Hr pn bn cn capture calculateEventProperties Sn register register_once register_for_session unregister unregister_for_session Tn getFeatureFlag getFeatureFlagPayload getFeatureFlagResult getAllFeatureFlags isFeatureEnabled reloadFeatureFlags updateFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys renderSurvey displaySurvey cancelPendingSurvey canRenderSurvey canRenderSurveyAsync Mn identify setPersonProperties unsetPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset shutdown setIdentity clearIdentity get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException addExceptionStep captureLog startExceptionAutocapture stopExceptionAutocapture loadToolbar get_property getSessionProperty Cn xn createPersonProfile setInternalOrTestUser In hn Pn opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing get_explicit_consent_status is_capturing clear_opt_in_out_capturing debug Ur Rt getPageViewId captureTraceFeedback captureTraceMetric an".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
-    posthog.init('phc_qzytiuQV97iz86u9h6rbew3bg22UKc9FaEa5c8EGuwGN', {
-        api_host: 'https://eu.i.posthog.com',
-        defaults: '2026-05-30',
-        person_profiles: 'identified_only', // or 'always' to create profiles for anonymous users as well
-    })
-</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/cyrillic-400-normal.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/cyrillic-600-normal.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/cyrillic-700-normal.css">
@@ -362,7 +354,7 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
     <div class="hero-text">
       <div class="badge"><span class="pulse"></span> E2EE по умолчанию · X25519 + ChaCha20-Poly1305</div>
       <h1>Свой мессенджер.<br><span class="grad">Свои правила.</span></h1>
-      <p><b>Penik Messenger</b> написан почти с нуля — без готовых решений. Сообщения шифруются прямо на устройстве, так что даже наш сервер не знает, о чём вы пишете. В отличие от Телеграма. И тем более МАКС.</p>
+      <p><b>Penik Messenger</b> — приватный мессенджер со сквозным шифрованием. Сообщения шифруются прямо на устройстве, так что даже наш сервер не знает, о чём вы пишете. В отличие от Телеграма. И тем более МАКС.</p>
       <div class="hero-btns">
         <button class="btn btn-disabled btn-lg" disabled>⏳ Временно недоступно</button>
         <a class="btn btn-outline btn-lg" href="https://web.dev.penik.ru" target="_blank" rel="noopener">Открыть веб-версию&nbsp;→</a>
@@ -395,12 +387,11 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
 
   <div class="container">
     <div class="stats">
-      <div class="stat reveal" style="--d:.05s"><b>0</b><span>готовых решений*</span></div>
+      <div class="stat reveal" style="--d:.05s"><b>E2EE</b><span>по умолчанию везде</span></div>
       <div class="stat reveal" style="--d:.12s"><b>2</b><span>алгоритма: X25519 + ChaCha20-Poly1305</span></div>
       <div class="stat reveal" style="--d:.19s"><b>∞</b><span>устройств на один аккаунт</span></div>
       <div class="stat reveal" style="--d:.26s"><b>100%</b><span>сообщений зашифровано</span></div>
     </div>
-    <p class="stats-note">* кроме libsodium — криптографию на коленке не пишут даже гении</p>
   </div>
 </header>
 
@@ -446,10 +437,10 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
         <div class="feat-tags"><span>MessagePack</span><span>Binary WS</span></div>
       </div>
       <div class="feat reveal" style="--d:.12s">
-        <span class="ico">🛠️</span>
-        <h3>Всё своё</h3>
-        <p>Свой протокол, свой клиент, свой сервер. Почти не используем готовые решения — потому что можем. И потому что так надёжнее.</p>
-        <div class="feat-tags"><span>Свой протокол</span><span>0 копипасты</span></div>
+        <span class="ico">📞</span>
+        <h3>Аудио и видеозвонки</h3>
+        <p>Вызовы 1:1 в высоком качестве со сквозной сигнализацией через WebSocket и поддержкой демонстрации экрана.</p>
+        <div class="feat-tags"><span>LiveKit</span><span>HD видео</span><span>Звонки</span></div>
       </div>
       <div class="feat reveal" style="--d:.19s">
         <span class="ico">🔑</span>
@@ -622,8 +613,8 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
         <div class="faq-a"><p>Да. Шифрование <b>сквозное и включено по умолчанию</b> — и в личках, и в группах. Ключи хранятся только на ваших устройствах, сервер видит лишь набор байтов. Мы бы и сами хотели почитать ваши переписки, но математика против.</p></div>
       </div>
       <div class="faq-item reveal" style="--d:.1s">
-        <button class="faq-q" type="button">Вы против готовых решений, но используете libsodium? <span class="plus">+</span></button>
-        <div class="faq-a"><p>Писать криптографию своими руками — это преступление против человечества. <b>libsodium</b> — проверенная и проаудированная библиотека от людей, которые понимают, что делают. Всё остальное — протокол, клиент, сервер — написано нами с нуля.</p></div>
+        <button class="faq-q" type="button">Какая библиотека отвечает за криптографию? <span class="plus">+</span></button>
+        <div class="faq-a"><p>Используется <b>libsodium</b> — всемирно признанная, проверенная и проаудированная криптографическая библиотека. Сквозное шифрование построено на стойких алгоритмах X25519 и ChaCha20-Poly1305.</p></div>
       </div>
       <div class="faq-item reveal" style="--d:.15s">
         <button class="faq-q" type="button">Потянет ли мой (очень слабый) интернет? <span class="plus">+</span></button>
