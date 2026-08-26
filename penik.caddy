@@ -1,16 +1,13 @@
 # ==============================================================================
-# Caddy configuration for Penik Messenger (Production)
+# Penik Messenger — Caddy site config (/etc/caddy/sites-enabled/penik.caddy)
 # ==============================================================================
 
 # 1. Главный домен — Лендинг и загрузка APK
 penik.ru {
     root * /opt/penik/landing
     file_server
-
-    # Сжатие gzip и zstd для быстрой загрузки
     encode gzip zstd
 
-    # Безопасные заголовки
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
@@ -19,17 +16,16 @@ penik.ru {
     }
 }
 
-# 2. Веб-клиент (SPA мессенджера)
+# 2. Веб-клиент мессенджера (SPA)
 web.penik.ru {
     root * /opt/penik/client/dist
     file_server
-
     encode gzip zstd
 
-    # SPA маршрутизация (отдавать index.html на несуществующие пути/хэши)
+    # SPA fallback на index.html
     try_files {path} /index.html
 
-    # Кэширование статических ассетов
+    # Кэширование статических файлов
     @static {
         path /assets/* /sw.js /favicon*
     }
@@ -43,9 +39,8 @@ web.penik.ru {
     }
 }
 
-# 3. API и WebSocket бэкенд
+# 3. Бэкенд API и WebSockets (проксирование в docker-контейнер на 127.0.0.1:8143)
 api.penik.ru {
-    # Проксирование REST API и WebSocket на Go-сервер
     reverse_proxy 127.0.0.1:8143 {
         header_up Host {host}
         header_up X-Real-IP {remote_host}
@@ -53,7 +48,7 @@ api.penik.ru {
         header_up X-Forwarded-Proto {scheme}
     }
 
-    # Максимальный размер загружаемых вложений (аудио/видео/файлы до 250MB)
+    # Максимальный размер вложений (250MB)
     request_body {
         max_size 250MB
     }
