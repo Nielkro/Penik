@@ -4,7 +4,6 @@
 .kotlin/
 *.kotlin/
 android/.kotlin/
-server/go.sum
 server/data/*.db
 server/data/*.db-shm
 server/data/*.db-wal
