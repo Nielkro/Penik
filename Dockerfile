@@ -9,14 +9,14 @@ RUN npm run build
 # Stage 2: Build Go server with embedded frontend
 FROM golang:1.26-alpine AS server-builder
 WORKDIR /app
-RUN apk add --no-cache git
+RUN apk add --no-cache git gcc musl-dev
 COPY server/go.mod ./server/
 COPY server/go.su[m] ./server/
 WORKDIR /app/server
 RUN go mod download || true
 COPY server/ ./
 COPY --from=client-builder /app/client/dist ./cmd/server/dist
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/bin/penik-server ./cmd/server
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o /app/bin/penik-server ./cmd/server
 
 # Stage 3: Production runtime image
 FROM alpine:3.20
