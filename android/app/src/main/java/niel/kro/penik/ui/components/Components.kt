@@ -1757,7 +1757,7 @@ fun MessageBubble(
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = null,
-                            tint = LocalAppColors.current.textSecondary,
+                            tint = LocalAppColors.current.textMuted,
                             modifier = Modifier.size(20.dp)
                         )
                     },
@@ -1773,7 +1773,7 @@ fun MessageBubble(
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = null,
-                                tint = LocalAppColors.current.textSecondary,
+                                tint = LocalAppColors.current.textMuted,
                                 modifier = Modifier.size(20.dp)
                             )
                         },
@@ -1790,7 +1790,7 @@ fun MessageBubble(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Reply,
                                 contentDescription = null,
-                                tint = LocalAppColors.current.textSecondary,
+                                tint = LocalAppColors.current.textMuted,
                                 modifier = Modifier.size(20.dp)
                             )
                         },
@@ -1807,7 +1807,7 @@ fun MessageBubble(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                                 contentDescription = null,
-                                tint = LocalAppColors.current.textSecondary,
+                                tint = LocalAppColors.current.textMuted,
                                 modifier = Modifier.size(20.dp)
                             )
                         },

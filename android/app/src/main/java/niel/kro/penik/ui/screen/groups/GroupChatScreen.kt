@@ -316,7 +316,7 @@ fun GroupChatScreen(
                                     Icon(
                                         imageVector = Icons.Default.Settings,
                                         contentDescription = null,
-                                        tint = LocalAppColors.current.textSecondary,
+                                        tint = LocalAppColors.current.textMuted,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 },
@@ -328,7 +328,7 @@ fun GroupChatScreen(
                                     Icon(
                                         imageVector = Icons.Default.Group,
                                         contentDescription = null,
-                                        tint = LocalAppColors.current.textSecondary,
+                                        tint = LocalAppColors.current.textMuted,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 },
@@ -341,7 +341,7 @@ fun GroupChatScreen(
                                         Icon(
                                             imageVector = Icons.Default.PersonAdd,
                                             contentDescription = null,
-                                            tint = LocalAppColors.current.textSecondary,
+                                            tint = LocalAppColors.current.textMuted,
                                             modifier = Modifier.size(20.dp)
                                         )
                                     },
