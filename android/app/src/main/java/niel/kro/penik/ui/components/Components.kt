@@ -1323,15 +1323,31 @@ private fun FileAttachmentContent(
                 val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(localFile!!.absolutePath, opts)
                 if (opts.outWidth > 0 && opts.outHeight > 0) {
-                    (opts.outWidth.toFloat() / opts.outHeight.toFloat()).coerceIn(0.6f, 2.0f)
+                    (opts.outWidth.toFloat() / opts.outHeight.toFloat()).coerceIn(0.35f, 2.5f)
                 } else null
             }.getOrNull()
         } else null
     }
 
-    val aspectRatio = remember(imageBitmap, localFileAspectRatio) {
-        localFileAspectRatio
-            ?: imageBitmap?.let { (it.width.toFloat() / it.height.coerceAtLeast(1).toFloat()).coerceIn(0.6f, 2.0f) }
+    val videoAspectRatio = remember(localFile) {
+        if (localFile != null && isVideo) {
+            runCatching {
+                val retriever = android.media.MediaMetadataRetriever()
+                retriever.setDataSource(localFile!!.absolutePath)
+                val w = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toFloatOrNull() ?: 0f
+                val h = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toFloatOrNull() ?: 0f
+                val rotation = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+                retriever.release()
+                val (realW, realH) = if (rotation == 90 || rotation == 270) Pair(h, w) else Pair(w, h)
+                if (realW > 0 && realH > 0) (realW / realH).coerceIn(0.35f, 2.5f) else null
+            }.getOrNull()
+        } else null
+    }
+
+    val aspectRatio = remember(imageBitmap, localFileAspectRatio, videoAspectRatio) {
+        videoAspectRatio
+            ?: localFileAspectRatio
+            ?: imageBitmap?.let { (it.width.toFloat() / it.height.coerceAtLeast(1).toFloat()).coerceIn(0.35f, 2.5f) }
             ?: (16f / 9f)
     }
 
@@ -1359,7 +1375,7 @@ private fun FileAttachmentContent(
                     .fillMaxWidth()
                     .aspectRatio(aspectRatio)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black)
+                    .background(Color(0x22000000))
             ) {
                 if (imageBitmap != null || thumbUri != null || localFile != null) {
                     Box(
@@ -1411,7 +1427,7 @@ private fun FileAttachmentContent(
                                         strokeWidth = 3.dp
                                     )
                                 } else {
-                                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
                                 }
                             } else {
                                 Icon(
@@ -1491,7 +1507,7 @@ private fun FileAttachmentContent(
                     .fillMaxWidth()
                     .aspectRatio(aspectRatio)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black)
+                    .background(Color(0x15FFFFFF))
             ) {
                 when {
                     // Full file downloaded: render at full resolution via AsyncImage
@@ -1501,14 +1517,14 @@ private fun FileAttachmentContent(
                         modifier = Modifier
                             .fillMaxSize()
                             .clickable(enabled = !isUploading) { showImageViewer = true },
-                        contentScale = ContentScale.Fit
+                        contentScale = ContentScale.Crop
                     )
                     // File still loading: show thumb as placeholder
                     imageBitmap != null -> Image(
                         bitmap = imageBitmap,
                         contentDescription = attachment.name,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
+                        contentScale = ContentScale.Crop
                     )
                     else -> Box(
                         modifier = Modifier

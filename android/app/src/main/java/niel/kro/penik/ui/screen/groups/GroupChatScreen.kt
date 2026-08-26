@@ -112,6 +112,7 @@ import niel.kro.penik.ui.notification.AppNotificationManager
 import niel.kro.penik.ui.viewmodel.GroupChatViewModel
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.filled.AttachFile
 
@@ -658,6 +659,13 @@ fun GroupChatScreen(
 
                     // Attachment picker button on the RIGHT
                     val showAttachPicker = remember { mutableStateOf(false) }
+                    val mediaPickerLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.PickVisualMedia()
+                    ) { uri ->
+                        if (uri != null) {
+                            viewModel.sendMediaFile(context, uri)
+                        }
+                    }
                     val attachLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.GetContent()
                     ) { uri ->
@@ -677,7 +685,9 @@ fun GroupChatScreen(
                                     TextButton(
                                         onClick = {
                                             showAttachPicker.value = false
-                                            attachLauncher.launch("image/*")
+                                            mediaPickerLauncher.launch(
+                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                            )
                                         },
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
