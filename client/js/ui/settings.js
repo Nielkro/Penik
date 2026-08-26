@@ -59,6 +59,13 @@ const pack = ({ ciphertext, salt, nonce }) =>
     nonce: encodeB64Url(nonce)
   }));
 
+const createSection = (titleText, ...children) => {
+  return el("div", { style: "display:flex;flex-direction:column;gap:8px;margin-top:16px;" },
+    el("span", { style: "font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.5px;padding-left:4px;" }, titleText),
+    ...children
+  );
+};
+
 export function renderSettings(container) {
   container.innerHTML = "";
 
@@ -94,14 +101,6 @@ export function renderSettings(container) {
     title: "Редактировать профиль",
     onclick: () => navigate("#profile")
   }, userAvatarEl, profileInfo, editProfileArrow);
-
-  // --- Section Helper ---
-  const createSection = (titleText, ...children) => {
-    return el("div", { style: "display:flex;flex-direction:column;gap:8px;margin-top:16px;" },
-      el("span", { style: "font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.5px;padding-left:4px;" }, titleText),
-      ...children
-    );
-  };
 
   // --- 1. Appearance Section ---
   const currentTheme = getTheme();
