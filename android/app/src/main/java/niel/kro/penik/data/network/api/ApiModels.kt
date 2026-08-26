@@ -352,3 +352,34 @@ data class StickerItemResponse(
 data class ImportTelegramStickersRequest(
     val url: String
 )
+
+@Serializable
+data class CallLogItemResponse(
+    val id: Long = 0,
+    @SerialName("call_id") val callId: String,
+    @SerialName("caller_id") val callerId: Long,
+    @SerialName("callee_id") val calleeId: Long,
+    @SerialName("is_video") val isVideo: Boolean = false,
+    val status: String, // "completed", "missed", "declined", "cancelled", "busy"
+    @SerialName("started_at") val startedAt: Long,
+    @SerialName("answered_at") val answeredAt: Long? = null,
+    @SerialName("ended_at") val endedAt: Long,
+    val duration: Long = 0,
+    @SerialName("peer_id") val peerId: Long = 0,
+    @SerialName("peer_name") val peerName: String = "",
+    @SerialName("peer_nickname") val peerNickname: String = "",
+    @SerialName("is_outgoing") val isOutgoing: Boolean = false
+)
+
+@Serializable
+data class CallLogEvent(
+    @SerialName("call_id") val callId: String,
+    @SerialName("caller_id") val callerId: Long,
+    @SerialName("callee_id") val calleeId: Long,
+    @SerialName("is_video") val isVideo: Boolean = false,
+    val status: String,
+    @SerialName("started_at") val startedAt: Long,
+    @SerialName("answered_at") val answeredAt: Long = 0,
+    @SerialName("ended_at") val endedAt: Long,
+    val duration: Long = 0
+)

@@ -54,6 +54,7 @@ const (
 	OpCallReject   Opcode = 0x34
 	OpCallEnd      Opcode = 0x35
 	OpCallTaken    Opcode = 0x36
+	OpCallLog      Opcode = 0x37
 )
 
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]
@@ -399,5 +400,18 @@ type CallTaken struct {
 	// Reason is "accepted" when another device joined the call and "declined"
 	// when it rejected while at least one device is still ringing.
 	Reason string `msgpack:"reason"`
+}
+
+// CallLogEvent is sent server→client when a call completes or ends.
+type CallLogEvent struct {
+	CallID     string `msgpack:"call_id" json:"call_id"`
+	CallerID   int64  `msgpack:"caller_id" json:"caller_id"`
+	CalleeID   int64  `msgpack:"callee_id" json:"callee_id"`
+	IsVideo    bool   `msgpack:"is_video" json:"is_video"`
+	Status     string `msgpack:"status" json:"status"` // "completed", "missed", "declined", "cancelled", "busy"
+	StartedAt  int64  `msgpack:"started_at" json:"started_at"`
+	AnsweredAt int64  `msgpack:"answered_at" json:"answered_at"`
+	EndedAt    int64  `msgpack:"ended_at" json:"ended_at"`
+	Duration   int64  `msgpack:"duration" json:"duration"`
 }
 

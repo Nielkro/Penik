@@ -1,4 +1,4 @@
-import { apiGet, apiDelete, uploadAttachment } from "../api.js";
+import { apiGet, apiDelete, uploadAttachment, listPeerCalls } from "../api.js";
 import { encryptFileChaCha20, encodeKey, computeSafetyNumber } from "../crypto.js";
 import {
   saveMessage, getMessages, getMessage,
@@ -593,8 +593,18 @@ export async function renderChat(container, userId) {
   const loadEl = el("div", { class: "chat-loading" }, spinner());
   messagesEl.appendChild(loadEl);
   let messages = [];
-  try { messages = await getMessages(userId, 50); } catch { messages = []; }
-  messages = messages.filter(m => m.plaintext !== "[DELETED]");
+  let calls = [];
+  try {
+    const [msgs, peerCalls] = await Promise.all([
+      getMessages(userId, 50).catch(() => []),
+      listPeerCalls(userId, 50).catch(() => [])
+    ]);
+    messages = (msgs || []).filter(m => m.plaintext !== "[DELETED]");
+    calls = peerCalls || [];
+  } catch {
+    messages = [];
+    calls = [];
+  }
   loadEl.remove();
 
   // Tracks the day label of the last message rendered at the bottom so a date
@@ -605,6 +615,103 @@ export async function renderChat(container, userId) {
     return el("div", { class: "msg-date-divider" },
       el("span", {}, formatDate(ts))
     );
+  }
+
+  function formatCallDuration(seconds) {
+    if (!seconds || seconds <= 0) return "";
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    if (m === 0) return `${s} сек`;
+    return `${m} мин ${s > 0 ? `${s} сек` : ""}`;
+  }
+
+  function getCallLogInfo(call, myUserId) {
+    const isOutgoing = Number(call.caller_id) === Number(myUserId);
+    const isVideo = Boolean(call.is_video);
+    const videoIcon = isVideo ? "📹" : "📞";
+    const durationStr = formatCallDuration(call.duration);
+
+    let title = "";
+    let isMissed = false;
+
+    switch (call.status) {
+      case "completed":
+        title = isOutgoing ? "Исходящий вызов" : "Входящий вызов";
+        if (durationStr) title += ` (${durationStr})`;
+        break;
+      case "missed":
+        title = isOutgoing ? "Не отвечен" : "Пропущенный вызов";
+        isMissed = !isOutgoing;
+        break;
+      case "declined":
+        title = isOutgoing ? "Вызов отклонен" : "Отклоненный вызов";
+        isMissed = isOutgoing;
+        break;
+      case "cancelled":
+        title = isOutgoing ? "Отмененный вызов" : "Пропущенный вызов";
+        isMissed = !isOutgoing;
+        break;
+      case "busy":
+        title = isOutgoing ? "Абонент занят" : "Пропущенный вызов (занято)";
+        break;
+      default:
+        title = isOutgoing ? "Исходящий вызов" : "Входящий вызов";
+    }
+
+    return { title, isOutgoing, isMissed, isVideo, icon: videoIcon, duration: call.duration, ts: (call.started_at || 0) * 1000 };
+  }
+
+  function makeCallBubble(call, myUserId, onCallback) {
+    const info = getCallLogInfo(call, myUserId);
+    const iconEl = el("span", { style: "font-size: 16px; margin-right: 6px;" }, info.icon);
+    const titleEl = el("span", {
+      style: `font-size: 13px; font-weight: 500; color: ${info.isMissed ? "var(--danger, #ff4d4f)" : "var(--text)"};`
+    }, info.title);
+    const timeEl = el("span", {
+      style: "font-size: 11px; color: var(--text-muted); margin-left: 8px;"
+    }, formatTime(info.ts));
+
+    const callbackBtn = el("button", {
+      class: "btn-ghost",
+      style: "padding: 3px 8px; font-size: 12px; border-radius: 8px; cursor: pointer; color: var(--accent); margin-left: 8px; border: 1px solid var(--border); background: transparent;",
+      title: "Перезвонить"
+    }, "Перезвонить");
+    callbackBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (typeof onCallback === "function") onCallback(info.isVideo);
+    });
+
+    const bubble = el("div", {
+      class: "msg-bubble msg-system msg-call-log",
+      style: "display: inline-flex; align-items: center; justify-content: center; padding: 6px 14px; margin: 6px auto; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; max-width: 85%;"
+    }, iconEl, titleEl, timeEl, callbackBtn);
+
+    bubble.dataset.callId = call.call_id;
+    bubble.dataset.ts = info.ts;
+    return bubble;
+  }
+
+  function appendCallLog(call, prepend = false) {
+    if (!call || !call.call_id) return;
+    const existing = messagesEl.querySelector(`[data-call-id="${CSS.escape(String(call.call_id))}"]`);
+    if (existing) return;
+
+    const ts = (call.started_at || 0) * 1000;
+    const bubble = makeCallBubble(call, myId, (isVideo) => {
+      callManager.startCall(Number(userId), isVideo);
+    });
+
+    if (prepend) {
+      messagesEl.prepend(bubble);
+    } else {
+      const day = formatDate(ts);
+      if (day && day !== lastRenderedDay) {
+        messagesEl.appendChild(makeDateDivider(ts));
+        lastRenderedDay = day;
+      }
+      messagesEl.appendChild(bubble);
+    }
+    scrollDown.update();
   }
 
   // Locate a bubble by any id the reply might reference (server id or the
@@ -886,7 +993,19 @@ export async function renderChat(container, userId) {
     }
   }
 
-  messages.forEach(m => appendMessage(m));
+  const allTimelineItems = [
+    ...messages.map(m => ({ type: "message", data: m, ts: m.created_at || m.timestamp || 0 })),
+    ...calls.map(c => ({ type: "call", data: c, ts: (c.started_at || 0) * 1000 }))
+  ].sort((a, b) => a.ts - b.ts);
+
+  allTimelineItems.forEach(item => {
+    if (item.type === "message") {
+      appendMessage(item.data);
+    } else {
+      appendCallLog(item.data);
+    }
+  });
+
   requestAnimationFrame(() => {
     scrollDown.scrollToBottom();
     setTimeout(() => scrollDown.scrollToBottom(), 100);
@@ -1497,11 +1616,21 @@ export async function renderChat(container, userId) {
     }
   );
 
+  const socket = getWS();
+  const unsubCallLog = socket?.on(OP.CALL_LOG, (log) => {
+    if (!log) return;
+    if (String(log.caller_id) === String(userId) || String(log.callee_id) === String(userId)) {
+      appendCallLog(log);
+      scrollDown.scrollToBottom();
+    }
+  });
+
   // Cleanup
   const obs = new MutationObserver(() => {
     if (!container.isConnected) {
       document.removeEventListener("click", onDocClick);
       setActiveChatCallback(null);
+      if (unsubCallLog) unsubCallLog();
       obs.disconnect();
     }
   });

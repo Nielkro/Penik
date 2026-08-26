@@ -190,6 +190,7 @@ sealed class WebSocketEvent {
      * call, so this device must stop ringing without ending the call.
      */
     data class CallTaken(val callId: String, val reason: String) : WebSocketEvent()
+    data class CallLog(val event: niel.kro.penik.data.network.api.CallLogEvent) : WebSocketEvent()
 
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
@@ -238,6 +239,7 @@ object Opcode {
     const val CALL_REJECT: Byte = 0x34
     const val CALL_END: Byte = 0x35
     const val CALL_TAKEN: Byte = 0x36
+    const val CALL_LOG: Byte = 0x37
 }
 
 private fun MessageUnpacker.readMsgRecvMap(): Map<String, Any?> {
@@ -506,6 +508,44 @@ class WebSocketManager @Inject constructor(
             Opcode.CALL_REJECT -> handleCallReject(payload)
             Opcode.CALL_END -> handleCallEnd(payload)
             Opcode.CALL_TAKEN -> handleCallTaken(payload)
+            Opcode.CALL_LOG -> handleCallLog(payload)
+        }
+    }
+
+    private fun handleCallLog(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val callId = map["call_id"]?.toString().orEmpty()
+            val callerId = (map["caller_id"] as? Number)?.toLong() ?: 0L
+            val calleeId = (map["callee_id"] as? Number)?.toLong() ?: 0L
+            val isVideo = map["is_video"] as? Boolean ?: false
+            val status = map["status"]?.toString().orEmpty()
+            val startedAt = (map["started_at"] as? Number)?.toLong() ?: 0L
+            val answeredAt = (map["answered_at"] as? Number)?.toLong() ?: 0L
+            val endedAt = (map["ended_at"] as? Number)?.toLong() ?: 0L
+            val duration = (map["duration"] as? Number)?.toLong() ?: 0L
+
+            scope.launch {
+                _events.emit(
+                    WebSocketEvent.CallLog(
+                        niel.kro.penik.data.network.api.CallLogEvent(
+                            callId = callId,
+                            callerId = callerId,
+                            calleeId = calleeId,
+                            isVideo = isVideo,
+                            status = status,
+                            startedAt = startedAt,
+                            answeredAt = answeredAt,
+                            endedAt = endedAt,
+                            duration = duration
+                        )
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse CallLog frame", e)
         }
     }
 

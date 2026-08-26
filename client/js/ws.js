@@ -51,6 +51,7 @@ export const OP = {
   CALL_REJECT:   0x34,
   CALL_END:      0x35,
   CALL_TAKEN:    0x36,
+  CALL_LOG:      0x37,
 };
 
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

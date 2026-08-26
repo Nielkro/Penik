@@ -250,6 +250,16 @@ export async function getMessageHistory(userId, before, limit = 40) {
   return get(path);
 }
 
+/* ── Call History ── */
+
+export async function listCalls(limit = 50, offset = 0) {
+  return get(`/calls?limit=${limit}&offset=${offset}`);
+}
+
+export async function listPeerCalls(userId, limit = 50) {
+  return get(`/calls/peer/${userId}?limit=${limit}`);
+}
+
 export function createPairingSession(body) { return post('/pairing/sessions', body); }
 export function getPairingSession(id) { return request('GET', `/pairing/sessions/${id}`); }
 export function uploadPairingHistory(id, body) { return request('PUT', `/pairing/sessions/${id}/history`, body); }

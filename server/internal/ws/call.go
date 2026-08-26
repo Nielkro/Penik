@@ -19,7 +19,7 @@ import (
 const ringTimeout = 60 * time.Second
 
 type activeCall struct {
-	CallID string
+	CallID         string
 	// Calls belong to a device, not just an account: a user with several
 	// connected devices must not lose an in-progress call because an idle
 	// device dropped its socket. CalleeDeviceID stays 0 until the callee
@@ -37,6 +37,59 @@ type activeCall struct {
 	IsVideo        bool
 	Accepted       bool
 	StartedAt      time.Time
+	AnsweredAt     *time.Time
+	DB             *sql.DB
+}
+
+// recordCallHistory logs the call outcome to the SQLite database and broadcasts
+// a CallLogEvent to both participants.
+func recordCallHistory(hub *Hub, ac *activeCall, status string) {
+	if ac == nil || ac.DB == nil {
+		return
+	}
+	now := time.Now()
+	startedAt := ac.StartedAt.Unix()
+	endedAt := now.Unix()
+	var answeredAt sql.NullInt64
+	var duration int64 = 0
+	if ac.AnsweredAt != nil {
+		answeredAt = sql.NullInt64{Int64: ac.AnsweredAt.Unix(), Valid: true}
+		duration = endedAt - ac.AnsweredAt.Unix()
+		if duration < 0 {
+			duration = 0
+		}
+	}
+
+	_, err := ac.DB.Exec(`
+		INSERT INTO calls (call_id, caller_id, callee_id, is_video, status, started_at, answered_at, ended_at, duration)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(call_id) DO UPDATE SET
+			status=excluded.status,
+			answered_at=excluded.answered_at,
+			ended_at=excluded.ended_at,
+			duration=excluded.duration
+	`, ac.CallID, ac.CallerID, ac.CalleeID, ac.IsVideo, status, startedAt, answeredAt, endedAt, duration)
+	if err != nil {
+		log.Printf("[ws] recordCallHistory error: %v", err)
+	}
+
+	if hub != nil {
+		payload, err := msgpack.Marshal(CallLogEvent{
+			CallID:     ac.CallID,
+			CallerID:   ac.CallerID,
+			CalleeID:   ac.CalleeID,
+			IsVideo:    ac.IsVideo,
+			Status:     status,
+			StartedAt:  startedAt,
+			AnsweredAt: answeredAt.Int64,
+			EndedAt:    endedAt,
+			Duration:   duration,
+		})
+		if err == nil {
+			hub.SendToUser(ac.CallerID, append([]byte{byte(OpCallLog)}, payload...))
+			hub.SendToUser(ac.CalleeID, append([]byte{byte(OpCallLog)}, payload...))
+		}
+	}
 }
 
 // involves reports whether userID is one of the two participants. Call IDs are
@@ -266,6 +319,7 @@ func (c *Client) handleCallOffer(payload []byte) error {
 		RoomName:       roomName,
 		IsVideo:        offer.IsVideo,
 		StartedAt:      time.Now(),
+		DB:             c.db.DB,
 	}
 	for _, devID := range calleeDevices {
 		ac.RingingDevices[devID] = true
@@ -365,7 +419,9 @@ func (c *Client) handleCallAccept(payload []byte) error {
 		c.hub.SendToDeviceFrame(c.deviceID, OpCallTaken, takenPayload)
 		return nil
 	}
+	now := time.Now()
 	ac.Accepted = true
+	ac.AnsweredAt = &now
 	ac.CalleeDeviceID = c.deviceID
 	// Every other device of the callee stops ringing; the answering device now
 	// solely owns the callee side of the call.
@@ -441,10 +497,16 @@ func (c *Client) handleCallReject(payload []byte) error {
 		return nil
 	}
 
+	status := "declined"
+	if c.userID == ac.CallerID {
+		status = "cancelled"
+	}
 	dropCall(ac)
 	callID := ac.CallID
 	otherUserID := ac.peerOf(c.userID)
 	callsMu.Unlock()
+
+	recordCallHistory(c.hub, ac, status)
 
 	rejectPayload, _ := msgpack.Marshal(CallReject{
 		CallID:   callID,
@@ -483,10 +545,21 @@ func (c *Client) handleCallEnd(payload []byte) error {
 		return nil
 	}
 
+	status := "completed"
+	if !ac.Accepted {
+		if c.userID == ac.CallerID {
+			status = "cancelled"
+		} else {
+			status = "declined"
+		}
+	}
+
 	dropCall(ac)
 	callID := ac.CallID
 	otherUserID := ac.peerOf(c.userID)
 	callsMu.Unlock()
+
+	recordCallHistory(c.hub, ac, status)
 
 	endPayload, _ := msgpack.Marshal(CallEnd{
 		CallID:   callID,
@@ -548,9 +621,20 @@ func CleanupDeviceCalls(hub *Hub, userID, deviceID int64) {
 		return
 	}
 
+	status := "completed"
+	if !ac.Accepted {
+		if userID == ac.CallerID {
+			status = "cancelled"
+		} else {
+			status = "missed"
+		}
+	}
+
 	dropCall(ac)
 	peerID, endedCallID := ac.peerOf(userID), ac.CallID
 	callsMu.Unlock()
+
+	recordCallHistory(hub, ac, status)
 
 	if hub == nil {
 		return
@@ -574,6 +658,8 @@ func expireUnansweredCall(hub *Hub, callID string) {
 		}
 		dropCall(ac)
 		callsMu.Unlock()
+
+		recordCallHistory(hub, ac, "missed")
 
 		for _, userID := range []int64{ac.CallerID, ac.CalleeID} {
 			payload, _ := msgpack.Marshal(CallEnd{
