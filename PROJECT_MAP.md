@@ -36,6 +36,8 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/middleware/rate_limit.go` — Provides IP- and user-based rate limiting for public and sensitive operations.
 - `server/internal/middleware/limit.go` — Limits the maximum HTTP request body size.
 - `server/internal/middleware/security_headers.go` — Sets Content-Security-Policy and defensive response headers (nosniff, frame-deny, referrer policy) on every response.
+- `Dockerfile` — Multi-stage Docker build packaging Node.js client build and Go server into a single lightweight Alpine runtime image.
+- `docker-compose.yml` — Container orchestration for running Penik server behind Caddy reverse proxy with automated TLS.
 
 ### Browser client transport
 
