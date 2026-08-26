@@ -365,6 +365,11 @@ export async function renderGroup(container, groupId) {
     if (seen.has(key)) {
       const existing = messagesEl.querySelector(`[data-mid="${cssEscape(key)}"]`);
       if (existing) {
+        existing._msg = msg;
+        const txt = existing.querySelector(".msg-text");
+        if (txt && msg.plaintext) {
+          setMsgTextContent(txt, msg.plaintext);
+        }
         const st = existing.querySelector(".msg-status");
         if (st) st.textContent = msg.delivered ? "✓" : "…";
       }
@@ -622,19 +627,55 @@ export async function renderGroup(container, groupId) {
   async function handleGroupFileUpload(file) {
     const textCaption = inputEl.value.trim();
     inputEl.value = "";
-    showToast("Загрузка и шифрование файла...", "info");
+
+    const tempMsgId = "tmp_" + crypto.randomUUID();
+    const createdAt = Date.now();
+    const localBlobUrl = URL.createObjectURL(file);
+    decryptedBlobCache.set(localBlobUrl, localBlobUrl);
+
+    const currentReply = activeReply;
+    setActiveReply(null);
+
+    // 1. Optimistic instant local message with circular loader & size badge
+    const initialPayload = {
+      v: 1,
+      type: "file",
+      text: textCaption,
+      file: {
+        upload_msg_id: tempMsgId,
+        url: localBlobUrl,
+        name: file.name,
+        size: file.size,
+        mime: file.type || "application/octet-stream",
+        key: "",
+        thumb: null
+      }
+    };
+
+    appendMessage({
+      message_id: tempMsgId,
+      sender_user_id: myId,
+      plaintext: JSON.stringify(initialPayload),
+      created_at: createdAt,
+      delivered: 0,
+      reply_to_msg_id: currentReply ? currentReply.msg_id : null
+    });
+    scrollDown.scrollToBottom();
 
     try {
       const fileBuffer = new Uint8Array(await file.arrayBuffer());
 
       const localBlob = new Blob([fileBuffer], { type: file.type || "application/octet-stream" });
-      const localBlobUrl = URL.createObjectURL(localBlob);
 
       const { encryptedBytes, key } = await encryptFileChaCha20(fileBuffer);
       const encryptedBlob = new Blob([encryptedBytes], { type: "application/octet-stream" });
 
-      // 2. Upload to server
-      const cdnUrl = await uploadAttachment(encryptedBlob, file.name);
+      // 2. Upload to server with progress events
+      const cdnUrl = await uploadAttachment(encryptedBlob, file.name, (loaded, total) => {
+        window.dispatchEvent(new CustomEvent("penik:upload-progress", {
+          detail: { msgId: tempMsgId, loaded, total }
+        }));
+      });
 
       // Cache original unencrypted BlobUrl locally for sender
       decryptedBlobCache.set(cdnUrl, localBlobUrl);
@@ -723,7 +764,7 @@ export async function renderGroup(container, groupId) {
         } catch (e) {}
       }
 
-      // 4. Construct file payload
+      // 4. Construct final file payload
       const filePayload = {
         v: 1,
         type: "file",
@@ -739,17 +780,22 @@ export async function renderGroup(container, groupId) {
       };
 
       const payloadStr = JSON.stringify(filePayload);
-      const currentReply = activeReply;
-      setActiveReply(null);
 
-      const createdAt = Date.now();
+      // Update the optimistic bubble in the DOM to completed state
+      const bubble = messagesEl.querySelector(`[data-mid="${cssEscape(tempMsgId)}"]`);
+      if (bubble) {
+        const txt = bubble.querySelector(".msg-text");
+        if (txt) {
+          setMsgTextContent(txt, payloadStr);
+        }
+      }
+
       const messageId = await sendGroupMessage(groupId, payloadStr, currentReply ? currentReply.msg_id : null);
-      appendMessage({
-        message_id: messageId, sender_user_id: myId,
-        plaintext: payloadStr, created_at: createdAt, delivered: 0,
-        reply_to_msg_id: currentReply ? currentReply.msg_id : null
-      });
-      showToast("Файл отправлен!", "success");
+      if (bubble && messageId) {
+        bubble.dataset.mid = String(messageId);
+        seen.delete(tempMsgId);
+        seen.add(messageId);
+      }
     } catch (e) {
       console.error("handleGroupFileUpload error:", e);
       showToast(e.message || "Не удалось отправить файл", "error");

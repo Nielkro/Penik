@@ -170,32 +170,61 @@ export async function uploadAvatar(file) {
   return true;
 }
 
-export async function uploadAttachment(encryptedFileBlob, filename = 'encrypted.bin') {
+/**
+ * @param {Blob} encryptedFileBlob
+ * @param {string} [filename]
+ * @param {((loaded: number, total: number) => void)|null} [onProgress]
+ * @returns {Promise<string>}
+ */
+export async function uploadAttachment(encryptedFileBlob, filename = 'encrypted.bin', onProgress = null) {
   const formData = new FormData();
   formData.append('file', encryptedFileBlob, filename);
   const token = getToken();
-  /** @type {Record<string, string>} */
-  const headers = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}/attachments/upload`, {
-    method: 'POST',
-    headers,
-    body: formData
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${BASE}/attachments/upload`, true);
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          onProgress(e.loaded, e.total);
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        window.dispatchEvent(new Event('penik:rest-success'));
+        try {
+          const json = JSON.parse(xhr.responseText);
+          resolve(json.url);
+        } catch (err) {
+          reject(new ApiError('Некорректный ответ сервера', xhr.status));
+        }
+      } else {
+        let msg = xhr.responseText;
+        try {
+          const data = JSON.parse(xhr.responseText);
+          if (data && data.error) msg = data.error;
+        } catch {}
+        reject(new ApiError(msg || 'Не удалось загрузить файл на сервер', xhr.status));
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new ApiError('Ошибка сети при загрузке файла', 0));
+    };
+
+    xhr.onabort = () => {
+      reject(new ApiError('Загрузка файла отменена', 0));
+    };
+
+    xhr.send(formData);
   });
-
-  if (!res.ok) {
-    const text = await res.text();
-    let msg = text;
-    try {
-      const data = JSON.parse(text);
-      if (data && data.error) msg = data.error;
-    } catch {}
-    throw new ApiError(msg || 'Не удалось загрузить файл на сервер', res.status);
-  }
-  window.dispatchEvent(new Event('penik:rest-success'));
-  const json = await res.json();
-  return json.url;
 }
 
 export async function searchUsers(query) {
