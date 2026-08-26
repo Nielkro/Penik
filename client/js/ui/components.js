@@ -1455,7 +1455,9 @@ export function attachScrollDownButton(messagesEl) {
   }, "↓");
   wrap.appendChild(btn);
 
-  const THRESH = 120;
+  const THRESH = 150;
+  let wasNearBottom = true;
+
   const isNearBottom = () => {
     const dist = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight;
     return dist <= THRESH;
@@ -1469,16 +1471,53 @@ export function attachScrollDownButton(messagesEl) {
     } else {
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
+    wasNearBottom = true;
     btn.hidden = true;
   };
 
-  messagesEl.addEventListener("scroll", update, { passive: true });
+  const onScroll = () => {
+    wasNearBottom = isNearBottom();
+    update();
+  };
+
+  messagesEl.addEventListener("scroll", onScroll, { passive: true });
   btn.addEventListener("click", () => scrollToBottom(true));
-  // New content may change scrollHeight without a scroll event.
+
+  // Automatically maintain bottom position when images, videos, stickers load or resize
+  const onMediaLoaded = () => {
+    if (wasNearBottom) {
+      scrollToBottom();
+    } else {
+      update();
+    }
+  };
+
+  messagesEl.addEventListener("load", onMediaLoaded, true);
+  messagesEl.addEventListener("loadeddata", onMediaLoaded, true);
+  messagesEl.addEventListener("loadedmetadata", onMediaLoaded, true);
+
   if (typeof ResizeObserver !== "undefined") {
-    const ro = new ResizeObserver(update);
+    const ro = new ResizeObserver(() => {
+      if (wasNearBottom) {
+        scrollToBottom();
+      } else {
+        update();
+      }
+    });
     ro.observe(messagesEl);
   }
+
+  if (typeof MutationObserver !== "undefined") {
+    const mo = new MutationObserver(() => {
+      if (wasNearBottom) {
+        scrollToBottom();
+      } else {
+        update();
+      }
+    });
+    mo.observe(messagesEl, { childList: true, subtree: true });
+  }
+
   update();
   return { isNearBottom, scrollToBottom, update };
 }
