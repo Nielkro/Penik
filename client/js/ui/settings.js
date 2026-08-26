@@ -72,51 +72,62 @@ export function renderSettings(container) {
     currentAvatarUser.avatar_url = `/api/v1/avatar/${userId}?t=${Date.now()}`;
   }
 
-  const header = el("div", { class: "search-header", style: "display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;" },
-    el("h2", { class: "search-title" }, "Настройки")
+  // --- Header with Back Button ---
+  const header = el("div", { class: "profile-header", style: "display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;" },
+    el("button", { class: "icon-btn", onclick: () => navigate("#chats"), title: "Назад" }, "←"),
+    el("h2", { class: "profile-title", style: "margin:0;font-size:18px;font-weight:700;" }, "Настройки")
   );
 
   // --- Profile Card Header ---
-  const userAvatarEl = avatar(currentAvatarUser, 52);
-  const profileInfo = el("div", { style: "display:flex;flex-direction:column;flex:1;overflow:hidden;margin-left:12px;" },
-    el("span", { style: "font-size:16px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" }, user.name || "Пользователь"),
-    el("span", { style: "font-size:13px;color:var(--text-muted);" }, `@${user.username || user.nickname || ""}`),
-    el("span", { style: "font-size:11px;color:var(--text-muted);opacity:0.75;" }, `ID: ${userId}`)
+  const userAvatarEl = avatar(currentAvatarUser, 56);
+  const profileInfo = el("div", { style: "display:flex;flex-direction:column;flex:1;overflow:hidden;margin-left:14px;" },
+    el("span", { style: "font-size:17px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" }, user.name || "Пользователь"),
+    el("span", { style: "font-size:13px;color:var(--text-muted);margin-top:2px;" }, `@${user.username || user.nickname || ""}`),
+    el("span", { style: "font-size:12px;color:var(--text-muted);opacity:0.8;margin-top:2px;" }, `ID: ${userId}`)
   );
-  const editProfileArrow = el("span", { style: "color:var(--text-muted);font-size:16px;" }, "›");
+  const editProfileArrow = el("span", { style: "color:var(--text-muted);font-size:18px;padding-right:4px;" }, "›");
 
   const profileCard = el("div", {
-    style: "display:flex;align-items:center;padding:14px 16px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;transition:background 0.15s ease;",
+    style: "display:flex;align-items:center;padding:16px 18px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;transition:background 0.15s ease;",
     title: "Редактировать профиль",
     onclick: () => navigate("#profile")
   }, userAvatarEl, profileInfo, editProfileArrow);
 
   // --- Section Helper ---
   const createSection = (titleText, ...children) => {
-    return el("div", { style: "display:flex;flex-direction:column;gap:8px;margin-top:12px;" },
+    return el("div", { style: "display:flex;flex-direction:column;gap:8px;margin-top:16px;" },
       el("span", { style: "font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.5px;padding-left:4px;" }, titleText),
       ...children
     );
   };
 
   // --- 1. Appearance Section ---
-  const themeLabel = el("span", { style: "font-size:14px;color:var(--text);" }, "Тёмная тема");
+  const currentTheme = getTheme();
+  const themeSub = el("span", { style: "font-size:12px;color:var(--text-muted);" }, currentTheme === "light" ? "Светлая" : "Тёмная");
+  const themeTextCol = el("div", { style: "display:flex;flex-direction:column;gap:2px;" },
+    el("span", { style: "font-size:15px;color:var(--text);font-weight:500;" }, "Тема"),
+    themeSub
+  );
+
   const themeToggle = el("button", {
     class: "btn-secondary",
-    style: "min-width:85px;cursor:pointer;padding:6px 12px;font-size:13px;"
-  }, getTheme() === "light" ? "Светлая" : "Тёмная");
+    style: "min-width:110px;cursor:pointer;padding:8px 14px;font-size:13px;"
+  }, currentTheme === "light" ? "🌙 Тёмная" : "☀️ Светлая");
 
-  function syncThemeLabel() {
-    themeToggle.textContent = getTheme() === "light" ? "Светлая" : "Тёмная";
+  function syncThemeState() {
+    const isLight = getTheme() === "light";
+    themeSub.textContent = isLight ? "Светлая" : "Тёмная";
+    themeToggle.textContent = isLight ? "🌙 Тёмная" : "☀️ Светлая";
   }
+
   themeToggle.addEventListener("click", () => {
     setTheme(getTheme() === "light" ? "dark" : "light");
-    syncThemeLabel();
+    syncThemeState();
   });
 
   const themeRow = el("div", {
-    style: "display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);"
-  }, themeLabel, themeToggle);
+    style: "display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);"
+  }, themeTextCol, themeToggle);
 
   const appearanceSection = createSection("Оформление", themeRow);
 
@@ -224,10 +235,13 @@ export function renderSettings(container) {
 
   const revokeSessionsBtn = el("button", {
     class: "btn-secondary",
-    style: "width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;font-size:14px;"
+    style: "width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 18px;cursor:pointer;"
   },
-    el("span", { style: "color:var(--text);" }, "Отозвать все сессии"),
-    el("span", { style: "color:var(--text-muted);font-size:12px;" }, "кроме текущей")
+    el("div", { style: "display:flex;flex-direction:column;align-items:flex-start;gap:2px;" },
+      el("span", { style: "color:var(--text);font-size:15px;font-weight:500;" }, "Отозвать все сессии"),
+      el("span", { style: "color:var(--text-muted);font-size:12px;" }, "Кроме текущей сессии")
+    ),
+    el("span", { style: "color:var(--text-muted);font-size:18px;" }, "›")
   );
   revokeSessionsBtn.addEventListener("click", async () => {
     revokeSessionsBtn.disabled = true;
@@ -558,15 +572,14 @@ export function renderSettings(container) {
   // --- 5. Logout Section ---
   const logoutBtn = el("button", {
     class: "btn-danger",
-    style: "width:100%;padding:12px 16px;cursor:pointer;margin-top:16px;font-size:14px;border-radius:var(--r);"
+    style: "width:100%;padding:14px 18px;cursor:pointer;margin-top:20px;font-size:15px;border-radius:var(--r);font-weight:500;"
   }, "Выйти из аккаунта");
   logoutBtn.addEventListener("click", () => {
     logout();
     showToast("Вы вышли из системы", "info");
   });
 
-  const wrap = el("div", { class: "search-wrap", style: "display:flex;flex-direction:column;gap:8px;padding:16px;max-width:540px;margin:0 auto;width:100%;" },
-    header,
+  const content = el("div", { style: "display:flex;flex-direction:column;gap:10px;padding:20px;max-width:860px;margin:0 auto;width:100%;box-sizing:border-box;" },
     profileCard,
     appearanceSection,
     securitySection,
@@ -574,43 +587,51 @@ export function renderSettings(container) {
     devicesSection,
     logoutBtn
   );
+
+  const scrollWrapper = el("div", { style: "flex:1;overflow-y:auto;overflow-x:hidden;" }, content);
+
+  const wrap = el("div", { class: "settings-wrap", style: "display:flex;flex-direction:column;height:100%;overflow:hidden;width:100%;" },
+    header,
+    scrollWrapper
+  );
+
   container.appendChild(wrap);
 }
 
 // renderDevices renders the dedicated devices screen listing the user's devices.
 export function renderDevices(container) {
-  const backBtn = el("button", { class: "btn-ghost", style: "cursor:pointer;" }, "‹ Назад");
+  const backBtn = el("button", { class: "icon-btn", style: "cursor:pointer;", title: "Назад" }, "←");
   backBtn.addEventListener("click", () => navigate("#settings"));
 
-  const header = el("div", { class: "search-header", style: "display:flex;align-items:center;gap:8px;" },
+  const header = el("div", { class: "profile-header", style: "display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--panel);border-bottom:1px solid var(--border);" },
     backBtn,
-    el("h2", { class: "search-title" }, "Мои устройства")
+    el("h2", { class: "profile-title", style: "margin:0;font-size:18px;font-weight:700;" }, "Мои устройства")
   );
 
-  const list = el("div", { style: "display:flex;flex-direction:column;" }, spinner());
+  const list = el("div", { style: "display:flex;flex-direction:column;gap:10px;" }, spinner());
 
   function render(devices) {
     list.innerHTML = "";
     if (!devices || devices.length === 0) {
-      list.appendChild(el("div", { style: "color:var(--text-muted);font-size:13px;padding:8px;" }, "Нет устройств"));
+      list.appendChild(el("div", { style: "color:var(--text-muted);font-size:14px;padding:16px;text-align:center;" }, "Нет подключенных устройств"));
       return;
     }
     for (const d of devices) {
-      const title = el("div", { style: "font-size:15px;color:var(--text);font-weight:500;" },
+      const title = el("div", { style: "font-size:15px;color:var(--text);font-weight:600;" },
         d.platform || d.device_name || "Устройство",
-        d.is_current ? el("span", { style: "margin-left:8px;font-size:11px;color:var(--success);" }, "· это устройство") : ""
+        d.is_current ? el("span", { style: "margin-left:8px;font-size:12px;color:var(--success);font-weight:normal;" }, "· это устройство") : ""
       );
-      const locationLine = el("div", { style: "font-size:12px;color:var(--text-muted);margin-top:2px;" },
+      const locationLine = el("div", { style: "font-size:13px;color:var(--text-muted);margin-top:4px;" },
         d.location ? `📍 ${d.location}` : "📍 Местоположение неизвестно"
       );
-      const meta = el("div", { style: "font-size:12px;color:var(--text-muted);margin-top:2px;" },
+      const meta = el("div", { style: "font-size:12px;color:var(--text-muted);margin-top:4px;" },
         `Активно: ${formatFullTime(d.last_seen * 1000)}`,
         d.has_session
           ? el("span", { style: "margin-left:8px;color:var(--success);" }, "в сети")
           : el("span", { style: "margin-left:8px;color:var(--text-muted);" }, "нет активной сессии")
       );
       list.appendChild(el("div", {
-        style: "padding:12px 16px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;"
+        style: "padding:14px 18px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);"
       }, title, locationLine, meta));
     }
   }
@@ -619,9 +640,15 @@ export function renderDevices(container) {
     .then(render)
     .catch(() => {
       list.innerHTML = "";
-      list.appendChild(el("div", { style: "color:var(--danger);font-size:13px;padding:8px;" }, "Не удалось загрузить устройства"));
+      list.appendChild(el("div", { style: "color:var(--danger);font-size:13px;padding:12px;" }, "Не удалось загрузить устройства"));
     });
 
-  const wrap = el("div", { class: "search-wrap", style: "padding:16px;max-width:540px;margin:0 auto;width:100%;" }, header, list);
+  const content = el("div", { style: "padding:20px;max-width:860px;margin:0 auto;width:100%;box-sizing:border-box;" }, list);
+  const scrollWrapper = el("div", { style: "flex:1;overflow-y:auto;overflow-x:hidden;" }, content);
+
+  const wrap = el("div", { class: "settings-wrap", style: "display:flex;flex-direction:column;height:100%;overflow:hidden;width:100%;" },
+    header,
+    scrollWrapper
+  );
   container.appendChild(wrap);
 }
