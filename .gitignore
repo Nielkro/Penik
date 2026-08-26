@@ -34,3 +34,6 @@ serviceAccountKey*.json
 server/data/*.mmdb
 server/data/*.gz
 server/data/*.tar.gz
+server/cmd/server/server
+server/server
+penik-server
