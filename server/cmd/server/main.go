@@ -135,6 +135,11 @@ func main() {
 	mux.Handle("GET /api/v1/attachments/file/{id}",
 		authMW(http.HandlerFunc(handlers.GetAttachment(cfg))))
 
+	mux.Handle("GET /api/v1/calls",
+		authMW(http.HandlerFunc(handlers.ListCalls(database))))
+	mux.Handle("GET /api/v1/calls/peer/{user_id}",
+		authMW(http.HandlerFunc(handlers.ListPeerCalls(database))))
+
 	mux.Handle("POST /api/v1/keys/init",
 		authMW(http.HandlerFunc(handlers.UploadIdentityKeys(database))))
 	mux.Handle("GET /api/v1/keys/bundle/{user_id}",

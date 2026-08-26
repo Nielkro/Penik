@@ -20,6 +20,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/handlers/pairing.go` — Creates, presents, and manages pairing sessions for linking new devices and transferring history.
 - `server/internal/handlers/keys.go` — REST handlers for publishing identity/key material, retrieving key bundles, and key backups.
 - `server/internal/handlers/presence.go` — Serves and broadcasts user presence states and active device information.
+- `server/internal/handlers/calls.go` — REST handlers for listing user call history (`GET /api/v1/calls`) and peer-to-peer call logs (`GET /api/v1/calls/peer/:user_id`).
 - `server/internal/handlers/stickers.go` — REST handlers for sticker packs: listing installed packs, pack metadata, install/uninstall, Telegram sticker pack import, and static file serving.
 - `server/internal/stickers/models.go` — Data models for sticker packs and individual stickers.
 -`server/internal/handlers/attachments.go` — Self-hosted encrypted attachment handlers: multipart upload (`POST /api/v1/attachments/upload`) and streaming file download (`GET /api/v1/attachments/file/:id`) with HTTP Range requests support.

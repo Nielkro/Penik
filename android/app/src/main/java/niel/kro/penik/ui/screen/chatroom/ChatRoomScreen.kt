@@ -103,6 +103,97 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.ui.platform.LocalContext
 
+sealed interface ChatTimelineItem {
+    val id: String
+    val timestamp: Long
+
+    data class Message(val msg: MessageEntity) : ChatTimelineItem {
+        override val id: String get() = msg.localId
+        override val timestamp: Long get() = msg.timestamp
+    }
+
+    data class Call(val call: niel.kro.penik.data.network.api.CallLogItemResponse) : ChatTimelineItem {
+        override val id: String get() = call.callId
+        override val timestamp: Long get() = call.startedAt * 1000L
+    }
+}
+
+@Composable
+fun CallLogCard(
+    call: niel.kro.penik.data.network.api.CallLogItemResponse,
+    onCallback: (Boolean) -> Unit
+) {
+    val isOutgoing = call.isOutgoing
+    val isMissed = when (call.status) {
+        "missed" -> !isOutgoing
+        "declined" -> isOutgoing
+        "cancelled" -> !isOutgoing
+        else -> false
+    }
+
+    val durationStr = if (call.duration > 0) {
+        val m = call.duration / 60
+        val s = call.duration % 60
+        if (m == 0L) "$s сек" else "$m мин" + (if (s > 0) " $s сек" else "")
+    } else ""
+
+    val title = when (call.status) {
+        "completed" -> (if (isOutgoing) "Исходящий вызов" else "Входящий вызов") + (if (durationStr.isNotEmpty()) " ($durationStr)" else "")
+        "missed" -> if (isOutgoing) "Не отвечен" else "Пропущенный вызов"
+        "declined" -> if (isOutgoing) "Вызов отклонен" else "Отклоненный вызов"
+        "cancelled" -> if (isOutgoing) "Отмененный вызов" else "Пропущенный вызов"
+        "busy" -> if (isOutgoing) "Абонент занят" else "Пропущенный вызов (занято)"
+        else -> if (isOutgoing) "Исходящий вызов" else "Входящий вызов"
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .background(LocalAppColors.current.panelSecondary)
+                .border(1.dp, LocalAppColors.current.border, RoundedCornerShape(16.dp))
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+        ) {
+            Icon(
+                imageVector = if (call.isVideo) Icons.Default.Videocam else Icons.Default.Call,
+                contentDescription = null,
+                tint = if (isMissed) Color(0xFFEF5350) else LocalAppColors.current.accent,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (isMissed) Color(0xFFEF5350) else LocalAppColors.current.textPrimary
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(call.startedAt * 1000L)),
+                fontSize = 11.sp,
+                color = LocalAppColors.current.textMuted
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "Перезвонить",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = LocalAppColors.current.accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onCallback(call.isVideo) }
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatRoomScreen(
@@ -113,6 +204,15 @@ fun ChatRoomScreen(
 ) {
     val context = LocalContext.current
     val messages by viewModel.messages.collectAsState()
+    val peerCalls by viewModel.peerCalls.collectAsState()
+
+    val timelineItems = remember(messages, peerCalls) {
+        val items = mutableListOf<ChatTimelineItem>()
+        messages.forEach { items.add(ChatTimelineItem.Message(it)) }
+        peerCalls.forEach { items.add(ChatTimelineItem.Call(it)) }
+        items.sortBy { it.timestamp }
+        items
+    }
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -184,35 +284,35 @@ fun ChatRoomScreen(
     var previousSize by remember { mutableStateOf(0) }
     var isInitialScrollDone by remember(chatUserId) { mutableStateOf(false) }
 
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
+    LaunchedEffect(timelineItems.size) {
+        if (timelineItems.isNotEmpty()) {
             if (!isInitialScrollDone || previousSize == 0) {
-                listState.scrollToItem(messages.lastIndex, scrollOffset = 10000)
+                listState.scrollToItem(timelineItems.lastIndex, scrollOffset = 10000)
                 kotlinx.coroutines.delay(60)
-                listState.scrollToItem(messages.lastIndex, scrollOffset = 10000)
+                listState.scrollToItem(timelineItems.lastIndex, scrollOffset = 10000)
                 isInitialScrollDone = true
-            } else if (messages.size > previousSize) {
+            } else if (timelineItems.size > previousSize) {
                 val layoutInfo = listState.layoutInfo
                 val totalItems = layoutInfo.totalItemsCount
                 val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
                 val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 5)
                 if (isNearBottom) {
-                    listState.animateScrollToItem(messages.lastIndex, scrollOffset = 10000)
+                    listState.animateScrollToItem(timelineItems.lastIndex, scrollOffset = 10000)
                 }
             }
-            previousSize = messages.size
+            previousSize = timelineItems.size
         }
     }
 
     val imeBottomPadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
     LaunchedEffect(imeBottomPadding) {
-        if (messages.isNotEmpty()) {
+        if (timelineItems.isNotEmpty()) {
             val layoutInfo = listState.layoutInfo
             val totalItems = layoutInfo.totalItemsCount
             val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
             val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 3)
             if (isNearBottom) {
-                listState.scrollToItem(messages.lastIndex, scrollOffset = 10000)
+                listState.scrollToItem(timelineItems.lastIndex, scrollOffset = 10000)
             }
         }
     }
@@ -550,73 +650,84 @@ fun ChatRoomScreen(
                         .padding(horizontal = 4.dp),
                     verticalArrangement = Arrangement.Bottom
                 ) {
-                    items(messages, key = { it.localId }) { message ->
-                        val parentMsg = message.replyToMsgId?.let { parentId ->
-                            messages.find { 
-                                it.localId == parentId || 
-                                it.serverId?.toString() == parentId ||
-                                "server-${it.serverId}" == parentId
-                            }
-                        }
-                        val replyText = if (message.replyToMsgId != null) {
-                            parentMsg?.let { if (it.text == "[DELETED]") "Сообщение удалено" else it.text } ?: "Сообщение удалено"
-                        } else null
-
-                        val replySender = if (message.replyToMsgId != null) {
-                            parentMsg?.let {
-                                if (it.sentByMe) "Вы" else chatName
-                            } ?: "Сообщение"
-                        } else null
-
-                        MessageBubble(
-                            text = message.text,
-                            timestamp = message.timestamp,
-                            isSentByMe = message.sentByMe,
-                            delivered = message.delivered,
-                            deliveredAt = message.deliveredAt,
-                            read = message.read,
-                            isPending = message.sentByMe && (message.serverId == null || message.serverId == 0L),
-                            isSelfChat = isSelfChat,
-                            replyToMsgId = message.replyToMsgId,
-                            replySender = replySender,
-                            replyText = replyText,
-                            editedAt = message.editedAt,
-                            onReply = {
-                                activeReply = ReplyInfo(
-                                    msgId = message.localId,
-                                    text = message.text,
-                                    sender = if (message.sentByMe) "Вы" else chatName
+                    items(timelineItems, key = { it.id }) { item ->
+                        when (item) {
+                            is ChatTimelineItem.Call -> {
+                                CallLogCard(
+                                    call = item.call,
+                                    onCallback = { isVideo -> startCallWithPermissions(isVideo) }
                                 )
-                            },
-                            onEdit = {
-                                viewModel.startEditing(message)
-                            },
-                            onReplyClick = { parentId ->
-                                val index = messages.indexOfFirst { it.localId == parentId || it.serverId?.toString() == parentId }
-                                if (index >= 0) {
-                                    coroutineScope.launch {
-                                        listState.animateScrollToItem(index)
+                            }
+                            is ChatTimelineItem.Message -> {
+                                val message = item.msg
+                                val parentMsg = message.replyToMsgId?.let { parentId ->
+                                    messages.find { 
+                                        it.localId == parentId || 
+                                        it.serverId?.toString() == parentId ||
+                                        "server-${it.serverId}" == parentId
                                     }
                                 }
-                            },
-                            onDelete = {
-                                val isUndecrypted = message.text.startsWith("[Сообщение не расшифровано") || message.text.startsWith("[Ошибка расшифрован")
-                                if (isUndecrypted) {
-                                    viewModel.deleteMessage(message.localId, deleteForEveryone = false)
-                                } else {
-                                    deleteForEveryoneChecked = false
-                                    canDeleteForEveryone = true
-                                    messageToDeleteLocalId = message.localId
-                                }
-                            },
-                            onForward = {
-                                messageToForwardText = message.text
-                                messageToForwardSender = if (message.sentByMe) "Вы" else chatName
-                            },
-                            onStickerClick = { packId ->
-                                selectedStickerPackId = packId
+                                val replyText = if (message.replyToMsgId != null) {
+                                    parentMsg?.let { if (it.text == "[DELETED]") "Сообщение удалено" else it.text } ?: "Сообщение удалено"
+                                } else null
+
+                                val replySender = if (message.replyToMsgId != null) {
+                                    parentMsg?.let {
+                                        if (it.sentByMe) "Вы" else chatName
+                                    } ?: "Сообщение"
+                                } else null
+
+                                MessageBubble(
+                                    text = message.text,
+                                    timestamp = message.timestamp,
+                                    isSentByMe = message.sentByMe,
+                                    delivered = message.delivered,
+                                    deliveredAt = message.deliveredAt,
+                                    read = message.read,
+                                    isPending = message.sentByMe && (message.serverId == null || message.serverId == 0L),
+                                    isSelfChat = isSelfChat,
+                                    replyToMsgId = message.replyToMsgId,
+                                    replySender = replySender,
+                                    replyText = replyText,
+                                    editedAt = message.editedAt,
+                                    onReply = {
+                                        activeReply = ReplyInfo(
+                                            msgId = message.localId,
+                                            text = message.text,
+                                            sender = if (message.sentByMe) "Вы" else chatName
+                                        )
+                                    },
+                                    onEdit = {
+                                        viewModel.startEditing(message)
+                                    },
+                                    onReplyClick = { parentId ->
+                                        val index = timelineItems.indexOfFirst { it.id == parentId }
+                                        if (index >= 0) {
+                                            coroutineScope.launch {
+                                                listState.animateScrollToItem(index)
+                                            }
+                                        }
+                                    },
+                                    onDelete = {
+                                        val isUndecrypted = message.text.startsWith("[Сообщение не расшифровано") || message.text.startsWith("[Ошибка расшифрован")
+                                        if (isUndecrypted) {
+                                            viewModel.deleteMessage(message.localId, deleteForEveryone = false)
+                                        } else {
+                                            deleteForEveryoneChecked = false
+                                            canDeleteForEveryone = true
+                                            messageToDeleteLocalId = message.localId
+                                        }
+                                    },
+                                    onForward = {
+                                        messageToForwardText = message.text
+                                        messageToForwardSender = if (message.sentByMe) "Вы" else chatName
+                                    },
+                                    onStickerClick = { packId ->
+                                        selectedStickerPackId = packId
+                                    }
+                                )
                             }
-                        )
+                        }
                     }
                 }
 

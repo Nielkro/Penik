@@ -85,8 +85,50 @@ class ChatRoomViewModel @Inject constructor(
     private val _isPeerTyping = MutableStateFlow(false)
     val isPeerTyping: StateFlow<Boolean> = _isPeerTyping
 
+    private val _peerCalls = MutableStateFlow<List<niel.kro.penik.data.network.api.CallLogItemResponse>>(emptyList())
+    val peerCalls: StateFlow<List<niel.kro.penik.data.network.api.CallLogItemResponse>> = _peerCalls
+
+    private fun loadPeerCalls() {
+        if (isSelfChat || chatUserId <= 0) return
+        viewModelScope.launch {
+            try {
+                val resp = apiService.listPeerCalls(chatUserId)
+                if (resp.isSuccessful) {
+                    _peerCalls.value = resp.body() ?: emptyList()
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     init {
         loadSafetyNumber()
+        loadPeerCalls()
+        viewModelScope.launch {
+            webSocketManager.events.collect { event ->
+                if (event is niel.kro.penik.data.network.websocket.WebSocketEvent.CallLog) {
+                    val log = event.event
+                    if (log.callerId == chatUserId || log.calleeId == chatUserId) {
+                        val current = _peerCalls.value
+                        if (current.none { it.callId == log.callId }) {
+                            _peerCalls.value = current + niel.kro.penik.data.network.api.CallLogItemResponse(
+                                callId = log.callId,
+                                callerId = log.callerId,
+                                calleeId = log.calleeId,
+                                isVideo = log.isVideo,
+                                status = log.status,
+                                startedAt = log.startedAt,
+                                answeredAt = if (log.answeredAt > 0) log.answeredAt else null,
+                                endedAt = log.endedAt,
+                                duration = log.duration,
+                                peerId = chatUserId,
+                                isOutgoing = log.callerId == tokenStorage.getUserId()
+                            )
+                        }
+                    }
+                }
+            }
+        }
         viewModelScope.launch {
             messages.collect { list ->
                 clearUnread()

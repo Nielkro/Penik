@@ -58,6 +58,18 @@ interface ApiService {
     @GET("keys/bundle/{userId}")
     suspend fun getKeyBundleSelf(@Path("userId") userId: Long): Response<KeyBundleResponse>
 
+    @GET("calls")
+    suspend fun listCalls(
+        @Query("limit") limit: Int = 50,
+        @Query("offset") offset: Int = 0
+    ): Response<List<CallLogItemResponse>>
+
+    @GET("calls/peer/{userId}")
+    suspend fun listPeerCalls(
+        @Path("userId") userId: Long,
+        @Query("limit") limit: Int = 50
+    ): Response<List<CallLogItemResponse>>
+
     @POST("pairing/sessions/claim")
     suspend fun claimPairingSession(@Body body: PairingClaimRequest): Response<PairingClaimResponse>
     @GET("pairing/sessions/{id}") suspend fun getPairingSession(@Path("id") id: String): Response<PairingStateResponse>

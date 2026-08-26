@@ -255,3 +255,20 @@ CREATE TABLE IF NOT EXISTS user_sticker_packs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_sticker_packs ON user_sticker_packs(user_id, sort_order);
+
+CREATE TABLE IF NOT EXISTS calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    call_id TEXT NOT NULL UNIQUE,
+    caller_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    callee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    is_video BOOLEAN NOT NULL DEFAULT 0,
+    status TEXT NOT NULL, -- 'completed', 'missed', 'declined', 'cancelled', 'busy'
+    started_at INTEGER NOT NULL,
+    answered_at INTEGER,
+    ended_at INTEGER NOT NULL,
+    duration INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_calls_participants ON calls(caller_id, callee_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_calls_call_id ON calls(call_id);
