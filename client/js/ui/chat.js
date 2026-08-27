@@ -5,7 +5,7 @@ import {
   updateMessageDelivered, updateMessageText, getContact, saveContact, getAllContacts,
   deleteChatData, deleteMessage, saveCachedMedia
 } from "../storage.js";
-import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload, syncMessageHistory } from "../app.js";
+import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload, syncMessageHistory, prefetchKeyBundle } from "../app.js";
 import { OP } from "../ws.js";
 import {
   avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon,
@@ -315,6 +315,10 @@ export async function renderChat(container, userId) {
   const me = getCurrentUser();
   const myId = me && (me.id || me.user_id);
   const isSelfChat = Number(userId) === Number(myId);
+
+  if (userId) {
+    prefetchKeyBundle(userId);
+  }
 
   // Placeholder contact so the shell can mount synchronously. On a fresh boot
   // the WS onConnect handler concurrently runs history/group sync, which
@@ -1561,6 +1565,7 @@ export async function renderChat(container, userId) {
     inputEl.style.overflowY = inputEl.scrollHeight > 120 ? "auto" : "hidden";
     sendBtn.disabled = !inputEl.value.trim();
     updateInputButtons();
+    if (userId) prefetchKeyBundle(userId);
 
     if (!isTypingActive && userId) {
       isTypingActive = true;

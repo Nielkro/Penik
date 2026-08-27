@@ -1188,6 +1188,8 @@ export async function decryptMessagePayload(payload) {
 }
 
 const bundleMemoryCache = new Map(); // userId -> { bundle, expiresAt }
+const bundleInflight = new Map(); // userId -> Promise<bundle>
+
 export async function getCachedKeyBundle(userId, forceRefresh = false) {
   const key = String(userId);
   const now = Date.now();
@@ -1197,9 +1199,29 @@ export async function getCachedKeyBundle(userId, forceRefresh = false) {
       return cached.bundle;
     }
   }
-  const bundle = await apiGet(`/keys/bundle/${userId}`);
-  bundleMemoryCache.set(key, { bundle, expiresAt: now + 2 * 60 * 1000 });
-  return bundle;
+  if (!forceRefresh && bundleInflight.has(key)) {
+    return bundleInflight.get(key);
+  }
+  const promise = (async () => {
+    try {
+      const bundle = await apiGet(`/keys/bundle/${userId}`);
+      bundleMemoryCache.set(key, { bundle, expiresAt: Date.now() + 10 * 60 * 1000 });
+      return bundle;
+    } finally {
+      bundleInflight.delete(key);
+    }
+  })();
+  bundleInflight.set(key, promise);
+  return promise;
+}
+
+export function prefetchKeyBundle(userId) {
+  if (!userId) return;
+  const myId = Number(localStorage.getItem("user_id"));
+  getCachedKeyBundle(userId).catch(() => {});
+  if (myId && myId !== Number(userId)) {
+    getCachedKeyBundle(myId).catch(() => {});
+  }
 }
 
 export async function encryptMessagePayload(text, recipientUserId, clientMsgId = "", timestamp = 0) {
