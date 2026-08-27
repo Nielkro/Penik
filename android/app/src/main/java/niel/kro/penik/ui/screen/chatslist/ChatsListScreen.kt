@@ -57,6 +57,7 @@ fun ChatsListContent(
     viewModel: ChatsListViewModel = hiltViewModel()
 ) {
     val feed by viewModel.feed.collectAsState()
+    val isInitialLoading by viewModel.isInitialLoading.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val selfChatLastMessage by viewModel.selfChatLastMessage.collectAsState()
@@ -261,18 +262,20 @@ fun ChatsListContent(
                     HorizontalDivider(color = LocalAppColors.current.border, modifier = Modifier.padding(horizontal = 16.dp))
                 }
                 if (filteredFeed.isEmpty()) {
-                    item(key = "empty_placeholder") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 48.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Нет переписок",
-                                color = LocalAppColors.current.textMuted,
-                                fontSize = 16.sp
-                            )
+                    if (!isInitialLoading) {
+                        item(key = "empty_placeholder") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 48.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Нет переписок",
+                                    color = LocalAppColors.current.textMuted,
+                                    fontSize = 16.sp
+                                )
+                            }
                         }
                     }
                 } else {
