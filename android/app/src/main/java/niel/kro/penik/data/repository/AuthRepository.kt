@@ -88,7 +88,7 @@ class AuthRepository @Inject constructor(
             if (response.isSuccessful) {
                 val body = response.body()!!
                 val prevUserId = tokenStorage.getUserId()
-                if (prevUserId != null && prevUserId != body.userId) {
+                if (prevUserId > 0L && prevUserId != body.userId) {
                     try { database.clearAllTables() } catch (_: Exception) {}
                 }
                 tokenStorage.saveAuth(body.token, body.userId, body.deviceId)
@@ -135,7 +135,7 @@ class AuthRepository @Inject constructor(
             if (response.isSuccessful) {
                 val body = response.body()!!
                 val prevUserId = tokenStorage.getUserId()
-                if (prevUserId != null && prevUserId != body.userId) {
+                if (prevUserId > 0L && prevUserId != body.userId) {
                     try { database.clearAllTables() } catch (_: Exception) {}
                 }
                 tokenStorage.saveAuth(body.token, body.userId, body.deviceId)
