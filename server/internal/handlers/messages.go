@@ -90,12 +90,11 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 			 WHERE m.purge_pending = 0
 			   AND m.id NOT IN (SELECT message_id FROM device_history_exclusions WHERE device_id = ?)
 			   AND (
-             (m.sender_user_id = ? AND m.sender_device_id = ? AND m.deleted_by_sender = 0
-              AND (m.sender_user_id != m.recipient_user_id OR m.recipient_device_id = ?))
-             OR
-             (m.recipient_user_id = ? AND m.recipient_device_id = ? AND m.deleted_by_recipient = 0)
+			     (m.sender_user_id = ? AND m.deleted_by_sender = 0)
+			     OR
+			     (m.recipient_user_id = ? AND m.deleted_by_recipient = 0)
 			   )`
-		args := []any{userID, deviceID, userID, deviceID, deviceID, userID, deviceID}
+		args := []any{userID, deviceID, userID, userID}
 
 		if beforeID > 0 {
 			query += " AND m.id < ?"
@@ -125,6 +124,8 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 		}
 		defer rows.Close()
 
+		seenClientMsg := make(map[string]bool)
+		seenServerID := make(map[int64]bool)
 		list := make([]historyMessageResponse, 0)
 		for rows.Next() {
 			var m historyMessageResponse
@@ -150,6 +151,17 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				&m.EditedAt,
 			); err != nil {
 				continue
+			}
+			if m.ClientMsgID != nil && *m.ClientMsgID != "" {
+				if seenClientMsg[*m.ClientMsgID] {
+					continue
+				}
+				seenClientMsg[*m.ClientMsgID] = true
+			} else {
+				if seenServerID[m.ID] {
+					continue
+				}
+				seenServerID[m.ID] = true
 			}
 			list = append(list, m)
 		}
