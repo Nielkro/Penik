@@ -111,6 +111,15 @@ class SecureTokenStorage @Inject constructor(
     }
 
     fun clear() {
-        prefs.edit().clear().apply()
+        prefs.edit()
+            .remove(KEY_TOKEN)
+            .remove(KEY_USER_ID)
+            .remove(KEY_DEVICE_ID)
+            .remove(KEY_NAME)
+            .remove(KEY_NICKNAME)
+            .remove(KEY_IDENTITY_PRIVATE_KEY)
+            .remove(KEY_IDENTITY_PUBLIC_KEY)
+            .remove("fcm_token_uploaded")
+            .apply()
     }
 }
