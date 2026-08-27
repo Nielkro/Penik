@@ -10,7 +10,8 @@ import javax.inject.Singleton
 @Singleton
 class ChatRepository @Inject constructor(
     private val chatDao: ChatDao,
-    private val messageDao: MessageDao
+    private val messageDao: MessageDao,
+    private val apiService: dagger.Lazy<niel.kro.penik.data.network.api.ApiService>
 ) {
 
     fun getAllChats(): Flow<List<ChatEntity>> = chatDao.getAllChats()
@@ -30,8 +31,15 @@ class ChatRepository @Inject constructor(
 
     suspend fun updateLastMessage(userId: Long, text: String, timestamp: Long, name: String = "", nickname: String = "") {
         val existing = chatDao.getChat(userId)
-        val newName = name.takeIf { it.isNotBlank() } ?: existing?.name.orEmpty()
-        val newNickname = nickname.takeIf { it.isNotBlank() } ?: existing?.nickname.orEmpty()
+        var newName = name.takeIf { it.isNotBlank() } ?: existing?.name.orEmpty()
+        var newNickname = nickname.takeIf { it.isNotBlank() } ?: existing?.nickname.orEmpty()
+        if (newName.isBlank() && newNickname.isBlank()) {
+            val profile = try { apiService.get().getUserProfile(userId).body() } catch (_: Exception) { null }
+            if (profile != null) {
+                newName = profile.name.ifBlank { profile.nickname }
+                newNickname = profile.nickname
+            }
+        }
         val existingTs = existing?.lastMessageTimestamp ?: 0L
         val (finalText, finalTs) = if (existing != null && existingTs > timestamp && !existing.lastMessage.isNullOrBlank()) {
             Pair(existing.lastMessage, existingTs)
