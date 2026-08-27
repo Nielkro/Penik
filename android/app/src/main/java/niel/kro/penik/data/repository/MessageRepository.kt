@@ -798,25 +798,26 @@ class MessageRepository @Inject constructor(
                                 } catch (e: Exception) {
                                     Log.e("PenikMsg", "FAILED TO DECRYPT HISTORY MSG msgId=${msg.msgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, clientMsgId=${msg.clientMsgId}", e)
                                     isDecryptFailed = true
-                                    existing?.text ?: ""
+                                    existing?.text?.takeIf { it.isNotBlank() } ?: "[Сообщение не расшифровано]"
                                 }
                             } else {
-                                existing?.text ?: ""
+                                existing?.text?.takeIf { it.isNotBlank() } ?: "[Сообщение не расшифровано]"
                             }
                             
+                            val finalText = if (text.isBlank()) "[Сообщение не расшифровано]" else text
                             val editedAtMs = msg.editedAt?.let { it * 1000 }
                             if (existing != null) {
-                                if (editedAtMs != null && !isDecryptFailed && text.isNotBlank()) {
-                                    messageDao.updateMessageText(existing.localId, msg.msgId, text, editedAtMs)
+                                if (editedAtMs != null && !isDecryptFailed && finalText.isNotBlank()) {
+                                    messageDao.updateMessageText(existing.localId, msg.msgId, finalText, editedAtMs)
                                 }
-                            } else if (!isDecryptFailed && text.isNotBlank()) {
-                                newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
+                            } else {
+                                newMessages.add(HistoryMsgDecrypted(msg.chatUserId, finalText, msg.senderId, msg.createdAt * 1000))
                                 add(MessageEntity(
                                     localId = msg.clientMsgId ?: "server-${msg.msgId}",
                                     serverId = msg.msgId,
                                     chatUserId = msg.chatUserId,
                                     senderId = msg.senderId,
-                                    text = text,
+                                    text = finalText,
                                     timestamp = msg.createdAt * 1000,
                                     sentByMe = msg.senderId == myId,
                                     delivered = msg.delivered == 1,
@@ -837,11 +838,8 @@ class MessageRepository @Inject constructor(
                                     deliveredAt = msg.deliveredAt ?: System.currentTimeMillis()
                                 )
                             }
-                            val text = existing.text
-                            val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
-                            if (!isFailed && text.isNotBlank()) {
-                                newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
-                            }
+                            val text = existing.text.takeIf { it.isNotBlank() } ?: "[Сообщение не расшифровано]"
+                            newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
                         }
                     }
                 }
