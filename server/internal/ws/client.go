@@ -163,7 +163,9 @@ func (c *Client) readPump(ctx context.Context, errCh chan<- error) {
 	}()
 
 	for {
-		msgType, data, err := c.conn.Read(ctx)
+		rCtx, rCancel := context.WithTimeout(ctx, readTimeout)
+		msgType, data, err := c.conn.Read(rCtx)
+		rCancel()
 		if err != nil {
 			errCh <- err
 			return

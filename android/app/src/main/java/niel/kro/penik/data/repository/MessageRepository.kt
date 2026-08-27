@@ -867,10 +867,28 @@ class MessageRepository @Inject constructor(
                 }
 
                 // Recalculate unread counts strictly from actual unread incoming messages in DB
+                // and guarantee every chat with existing messages has a row in the chats table
                 val allEntities = messageDao.getAllMessages()
                 allEntities.groupBy { it.chatUserId }.forEach { (chatUserId, msgs) ->
                     val unreadCount = msgs.count { !it.sentByMe && !it.read && it.text != "[DELETED]" }
                     chatRepository.updateUnreadCount(chatUserId, unreadCount)
+
+                    val existingChat = chatRepository.getChat(chatUserId)
+                    val latestMsg = msgs.filter { it.text != "[DELETED]" }.maxByOrNull { it.timestamp }
+                    if (latestMsg != null && (existingChat == null || existingChat.lastMessage == null)) {
+                        val profile = try {
+                            apiService.getUserProfile(chatUserId).body()
+                        } catch (_: Exception) { null }
+                        val name = profile?.name?.ifBlank { profile.nickname } ?: existingChat?.name.orEmpty()
+                        val nickname = profile?.nickname ?: existingChat?.nickname.orEmpty()
+                        chatRepository.updateLastMessage(
+                            userId = chatUserId,
+                            text = latestMsg.text,
+                            timestamp = latestMsg.timestamp,
+                            name = name,
+                            nickname = nickname
+                        )
+                    }
                 }
             }
         } catch (e: Exception) {
