@@ -167,10 +167,6 @@ class ChatsListViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             syncHistoryUseCase()
-            // Remove any ghost self-chat entry created by the pre-fix bug.
-            authRepository.getUserId()?.let { myId ->
-                chatRepository.deleteChat(myId)
-            }
         }
         reconnectIfNeeded()
     }
