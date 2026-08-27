@@ -632,10 +632,38 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 		})
 	}
 
+	deliveredDevices := make(map[int64]bool)
 	for _, deliv := range deliveries {
 		frame, err := encodeFrame(OpMsgRecv, deliv.msgRecv)
 		if err == nil {
 			c.hub.SendToDevice(deliv.deviceID, frame)
+			deliveredDevices[deliv.deviceID] = true
+		}
+	}
+
+	// Deliver to any other active online device of recipient
+	if len(deliveries) > 0 {
+		var recipientDelivery *pendingDelivery
+		for i := range deliveries {
+			if deliveries[i].msgRecv.RecipientDeviceID != c.deviceID && deliveries[i].msgRecv.FromUserID != recipientUserID {
+				recipientDelivery = &deliveries[i]
+				break
+			}
+		}
+		if recipientDelivery != nil {
+			frame, err := encodeFrame(OpMsgRecv, recipientDelivery.msgRecv)
+			if err == nil {
+				c.hub.mu.RLock()
+				for devID, client := range c.hub.clients {
+					if client.userID == recipientUserID && !deliveredDevices[devID] {
+						select {
+						case client.send <- frame:
+						default:
+						}
+					}
+				}
+				c.hub.mu.RUnlock()
+			}
 		}
 	}
 
