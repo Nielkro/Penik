@@ -98,13 +98,23 @@ export function createStickerPicker(onSelect) {
         title: pack.title
       });
 
+      const coverExt = pack.cover_sticker_id && !pack.cover_sticker_id.includes('.')
+        ? `.${pack.is_video ? 'webm' : (pack.is_animated ? 'tgs' : 'webp')}`
+        : '';
       const coverUrl = pack.cover_sticker_id
-        ? getFullApiUrl(`/api/v1/stickers/file/${pack.id}/${pack.cover_sticker_id}.${pack.is_video ? 'webm' : (pack.is_animated ? 'tgs' : 'webp')}`)
+        ? getFullApiUrl(`/api/v1/stickers/file/${pack.id}/${pack.cover_sticker_id}${coverExt}`)
         : "";
 
-      if (coverUrl && !pack.is_video && !pack.is_animated) {
-        const img = el("img", { src: coverUrl, class: "sticker-tab-icon", loading: "lazy" });
-        tabBtn.appendChild(img);
+      if (coverUrl) {
+        if (pack.is_video) {
+          const vid = el("video", { src: coverUrl, class: "sticker-tab-icon", autoplay: true, loop: true, muted: true, playsinline: true });
+          tabBtn.appendChild(vid);
+        } else if (!pack.is_animated) {
+          const img = el("img", { src: coverUrl, class: "sticker-tab-icon", loading: "lazy" });
+          tabBtn.appendChild(img);
+        } else {
+          tabBtn.textContent = pack.title.slice(0, 2);
+        }
       } else {
         tabBtn.textContent = pack.title.slice(0, 2);
       }
