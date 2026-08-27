@@ -30,33 +30,25 @@ class ChatRepository @Inject constructor(
 
     suspend fun updateLastMessage(userId: Long, text: String, timestamp: Long, name: String = "", nickname: String = "") {
         val existing = chatDao.getChat(userId)
-        if (existing == null) {
-            chatDao.insertChat(ChatEntity(
+        val newName = name.takeIf { it.isNotBlank() } ?: existing?.name.orEmpty()
+        val newNickname = nickname.takeIf { it.isNotBlank() } ?: existing?.nickname.orEmpty()
+        val existingTs = existing?.lastMessageTimestamp ?: 0L
+        val (finalText, finalTs) = if (existing != null && existingTs > timestamp && !existing.lastMessage.isNullOrBlank()) {
+            Pair(existing.lastMessage, existingTs)
+        } else {
+            Pair(text, timestamp)
+        }
+        chatDao.insertChat(
+            ChatEntity(
                 userId = userId,
-                nickname = nickname,
-                name = name,
-                lastMessage = text,
-                lastMessageTimestamp = timestamp
-            ))
-            return
-        }
-        if (timestamp >= (existing.lastMessageTimestamp ?: 0L)) {
-            chatDao.updateLastMessage(userId, text, timestamp)
-        }
-        // Callers pass the freshly fetched profile alongside the message, but this
-        // branch used to drop it: a contact kept whatever display name it had at
-        // first contact, so a rename never showed up on Android at all. Blank
-        // values still mean "caller has nothing newer", so they never overwrite.
-        val freshName = name.takeIf { it.isNotBlank() && it != existing.name }
-        val freshNickname = nickname.takeIf { it.isNotBlank() && it != existing.nickname }
-        if (freshName != null || freshNickname != null) {
-            chatDao.insertChat(
-                existing.copy(
-                    name = freshName ?: existing.name,
-                    nickname = freshNickname ?: existing.nickname
-                )
+                nickname = newNickname,
+                name = newName,
+                avatarUrl = existing?.avatarUrl,
+                lastMessage = finalText,
+                lastMessageTimestamp = finalTs,
+                unreadCount = existing?.unreadCount ?: 0
             )
-        }
+        )
     }
 
     /** Applies a display-name change pushed over the WebSocket (opcode 0x0c). */
@@ -84,28 +76,19 @@ class ChatRepository @Inject constructor(
     suspend fun upsertContact(userId: Long, nickname: String, name: String, avatarUrl: String?) {
         val existing = chatDao.getChat(userId)
         val lastMsg = messageDao.getLastMessageForChat(userId)
-        if (existing == null) {
-            chatDao.insertChat(
-                ChatEntity(
-                    userId = userId,
-                    nickname = nickname,
-                    name = name,
-                    avatarUrl = avatarUrl,
-                    lastMessage = lastMsg?.text,
-                    lastMessageTimestamp = lastMsg?.timestamp
-                )
+        val finalLastMessage = existing?.lastMessage?.takeIf { it.isNotBlank() } ?: lastMsg?.text
+        val finalTimestamp = existing?.lastMessageTimestamp?.takeIf { it > 0 } ?: lastMsg?.timestamp
+        chatDao.insertChat(
+            ChatEntity(
+                userId = userId,
+                nickname = nickname.takeIf { it.isNotBlank() } ?: existing?.nickname.orEmpty(),
+                name = name.takeIf { it.isNotBlank() } ?: existing?.name.orEmpty(),
+                avatarUrl = avatarUrl ?: existing?.avatarUrl,
+                lastMessage = finalLastMessage,
+                lastMessageTimestamp = finalTimestamp,
+                unreadCount = existing?.unreadCount ?: 0
             )
-        } else {
-            chatDao.insertChat(
-                existing.copy(
-                    nickname = if (nickname.isNotBlank()) nickname else existing.nickname,
-                    name = if (name.isNotBlank()) name else existing.name,
-                    avatarUrl = avatarUrl ?: existing.avatarUrl,
-                    lastMessage = existing.lastMessage ?: lastMsg?.text,
-                    lastMessageTimestamp = existing.lastMessageTimestamp ?: lastMsg?.timestamp
-                )
-            )
-        }
+        )
     }
 
     suspend fun deleteChat(userId: Long) {
