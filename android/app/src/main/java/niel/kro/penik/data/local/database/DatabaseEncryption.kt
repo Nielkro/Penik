@@ -20,6 +20,6 @@ object DatabaseEncryption {
     private const val TAG = "DatabaseEncryption"
 
     fun migratePlaintextIfNeeded(context: Context, databaseName: String, passphrase: ByteArray) {
-        // No-op. Room and SupportOpenHelperFactory manage encrypted database access directly.
+        System.loadLibrary("sqlcipher")
     }
 }
