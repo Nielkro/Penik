@@ -73,6 +73,7 @@ class ChatsListViewModel @Inject constructor(
     val feed: StateFlow<List<FeedItem>> = combine(
         loadChatsUseCase().map { list ->
             val myId = authRepository.getUserId() ?: 0L
+            android.util.Log.d("PenikFeed", "loadChatsUseCase emitted ${list.size} chats from DB: ${list.map { "id=${it.userId}, name=${it.name}, lastMsg=${it.lastMessage}" }}")
             // Exclude any ghost self-chat entry that may have been created before this fix.
             list.filter { it.userId != myId }
                 .map {
@@ -137,7 +138,9 @@ class ChatsListViewModel @Inject constructor(
             combine(flows) { it.toList() }
         }
     ) { chatsList, groupsList ->
-        (chatsList + groupsList).sortedByDescending { it.lastMessageTimestamp ?: 0L }
+        val sorted = (chatsList + groupsList).sortedByDescending { it.lastMessageTimestamp ?: 0L }
+        android.util.Log.d("PenikFeed", "Combined feed emitted ${sorted.size} items: ${sorted.map { "${it.id}:${it.name}:${it.lastMessage}" }}")
+        sorted
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val connectionState = webSocketManager.connectionState

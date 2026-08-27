@@ -131,6 +131,7 @@ class ChatRoomViewModel @Inject constructor(
         }
         viewModelScope.launch {
             messages.collect { list ->
+                android.util.Log.d("PenikChatRoom", "ChatRoom(chatUserId=$chatUserId) emitted ${list.size} messages: ${list.map { "id=${it.localId}, sId=${it.serverId}, txt='${it.text}'" }}")
                 clearUnread()
                 val unreadIncoming = list.filter { !it.sentByMe && !it.read && it.serverId != null }
                 if (unreadIncoming.isNotEmpty()) {

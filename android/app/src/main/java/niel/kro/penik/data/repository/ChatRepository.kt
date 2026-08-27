@@ -38,17 +38,17 @@ class ChatRepository @Inject constructor(
         } else {
             Pair(text, timestamp)
         }
-        chatDao.insertChat(
-            ChatEntity(
-                userId = userId,
-                nickname = newNickname,
-                name = newName,
-                avatarUrl = existing?.avatarUrl,
-                lastMessage = finalText,
-                lastMessageTimestamp = finalTs,
-                unreadCount = existing?.unreadCount ?: 0
-            )
+        val entity = ChatEntity(
+            userId = userId,
+            nickname = newNickname,
+            name = newName,
+            avatarUrl = existing?.avatarUrl,
+            lastMessage = finalText,
+            lastMessageTimestamp = finalTs,
+            unreadCount = existing?.unreadCount ?: 0
         )
+        android.util.Log.d("PenikChatRepo", "updateLastMessage -> saving chat: userId=$userId, name=$newName, lastMsg='$finalText', ts=$finalTs, unread=${entity.unreadCount}")
+        chatDao.insertChat(entity)
     }
 
     /** Applies a display-name change pushed over the WebSocket (opcode 0x0c). */
@@ -56,18 +56,22 @@ class ChatRepository @Inject constructor(
         if (name.isBlank()) return
         val existing = chatDao.getChat(userId) ?: return
         if (existing.name == name) return
+        android.util.Log.d("PenikChatRepo", "updateContactName: userId=$userId, oldName=${existing.name}, newName=$name")
         chatDao.insertChat(existing.copy(name = name))
     }
 
     suspend fun incrementUnread(userId: Long) {
+        android.util.Log.d("PenikChatRepo", "incrementUnread: userId=$userId")
         chatDao.incrementUnread(userId)
     }
 
     suspend fun updateUnreadCount(userId: Long, unreadCount: Int) {
+        android.util.Log.d("PenikChatRepo", "updateUnreadCount: userId=$userId, unread=$unreadCount")
         chatDao.updateUnreadCount(userId, unreadCount)
     }
 
     suspend fun clearUnread(userId: Long) {
+        android.util.Log.d("PenikChatRepo", "clearUnread: userId=$userId")
         chatDao.clearUnread(userId)
     }
 
@@ -78,20 +82,21 @@ class ChatRepository @Inject constructor(
         val lastMsg = messageDao.getLastMessageForChat(userId)
         val finalLastMessage = existing?.lastMessage?.takeIf { it.isNotBlank() } ?: lastMsg?.text
         val finalTimestamp = existing?.lastMessageTimestamp?.takeIf { it > 0 } ?: lastMsg?.timestamp
-        chatDao.insertChat(
-            ChatEntity(
-                userId = userId,
-                nickname = nickname.takeIf { it.isNotBlank() } ?: existing?.nickname.orEmpty(),
-                name = name.takeIf { it.isNotBlank() } ?: existing?.name.orEmpty(),
-                avatarUrl = avatarUrl ?: existing?.avatarUrl,
-                lastMessage = finalLastMessage,
-                lastMessageTimestamp = finalTimestamp,
-                unreadCount = existing?.unreadCount ?: 0
-            )
+        val entity = ChatEntity(
+            userId = userId,
+            nickname = nickname.takeIf { it.isNotBlank() } ?: existing?.nickname.orEmpty(),
+            name = name.takeIf { it.isNotBlank() } ?: existing?.name.orEmpty(),
+            avatarUrl = avatarUrl ?: existing?.avatarUrl,
+            lastMessage = finalLastMessage,
+            lastMessageTimestamp = finalTimestamp,
+            unreadCount = existing?.unreadCount ?: 0
         )
+        android.util.Log.d("PenikChatRepo", "upsertContact -> saving chat: userId=$userId, name=${entity.name}, lastMsg='${entity.lastMessage}', ts=${entity.lastMessageTimestamp}")
+        chatDao.insertChat(entity)
     }
 
     suspend fun deleteChat(userId: Long) {
+        android.util.Log.w("PenikChatRepo", "DELETE CHAT CALLED FOR userId=$userId", Throwable())
         chatDao.deleteChat(userId)
     }
 }
