@@ -111,6 +111,17 @@ export function createStickerPicker(onSelect) {
           tabBtn.appendChild(vid);
         } else if (!pack.is_animated) {
           const img = el("img", { src: coverUrl, class: "sticker-tab-icon", loading: "lazy" });
+          img.onerror = () => {
+            const vid = el("video", {
+              src: coverUrl.replace(/\.[a-zA-Z0-9]+$/, '.webm'),
+              class: "sticker-tab-icon",
+              autoplay: true,
+              loop: true,
+              muted: true,
+              playsinline: true
+            });
+            img.replaceWith(vid);
+          };
           tabBtn.appendChild(img);
         } else {
           tabBtn.textContent = pack.title.slice(0, 2);
@@ -224,6 +235,17 @@ export function createStickerPicker(onSelect) {
         loading: "lazy",
         alt: s.emoji || "стикер"
       });
+      img.onerror = () => {
+        const vid = el("video", {
+          src: url.replace(/\.[a-zA-Z0-9]+$/, '.webm'),
+          autoplay: true,
+          loop: true,
+          muted: true,
+          playsinline: true,
+          class: "sticker-img"
+        });
+        img.replaceWith(vid);
+      };
       item.appendChild(img);
     }
 

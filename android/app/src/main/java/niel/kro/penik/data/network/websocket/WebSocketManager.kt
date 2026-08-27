@@ -468,7 +468,7 @@ class WebSocketManager @Inject constructor(
         pingJob?.cancel()
         pingJob = scope.launch {
             while (true) {
-                delay(25_000)
+                delay(5_000)
                 sendPing()
             }
         }

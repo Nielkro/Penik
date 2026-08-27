@@ -62,10 +62,10 @@ export function getWsUrl() {
 }
 
 const WS_URL = getWsUrl();
-const PING_INTERVAL = 25_000;
+const PING_INTERVAL = 5_000;
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 15000, 30000];
 const MAX_FRAME_SIZE = 10 * 1024 * 1024; // 10MB limit
-const PONG_TIMEOUT = 10_000;
+const PONG_TIMEOUT = 5_000;
 
 class WSManager {
   constructor() {

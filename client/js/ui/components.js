@@ -446,6 +446,24 @@ export function renderStickerContent(container, sticker) {
     img.className = "msg-sticker-media";
     img.loading = "lazy";
     img.alt = sticker.emoji || "стикер";
+    img.onerror = () => {
+      const vid = document.createElement("video");
+      vid.src = url.replace(/\.[a-zA-Z0-9]+$/, '.webm');
+      vid.autoplay = true;
+      vid.loop = true;
+      vid.muted = true;
+      vid.defaultMuted = true;
+      vid.playsInline = true;
+      vid.setAttribute("autoplay", "");
+      vid.setAttribute("loop", "");
+      vid.setAttribute("muted", "");
+      vid.setAttribute("playsinline", "");
+      vid.className = "msg-sticker-media";
+      vid.addEventListener("canplay", () => {
+        vid.play().catch(() => {});
+      });
+      img.replaceWith(vid);
+    };
     wrapper.appendChild(img);
   }
 

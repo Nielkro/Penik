@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	writeTimeout = 10 * time.Second
-	readTimeout  = 70 * time.Second // slightly longer than ping interval
-	pingInterval = 30 * time.Second
+	writeTimeout = 5 * time.Second
+	readTimeout  = 15 * time.Second // disconnects within 15 seconds if client dies
+	pingInterval = 5 * time.Second
 
 	msgSendRate         = 50.0
 	msgSendBurst        = 100.0
