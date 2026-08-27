@@ -164,6 +164,10 @@ class ChatsListViewModel @Inject constructor(
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    val isInitialLoading: StateFlow<Boolean> = loadChatsUseCase()
+        .map { false }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     init {
         viewModelScope.launch {
             syncHistoryUseCase()
@@ -182,7 +186,8 @@ class ChatsListViewModel @Inject constructor(
             try {
                 val response = apiService.searchUsers(query)
                 if (response.isSuccessful) {
-                    _searchResults.value = response.body() ?: emptyList()
+                    val myId = authRepository.getUserId() ?: 0L
+                    _searchResults.value = (response.body() ?: emptyList()).filter { it.id != myId }
                 }
             } catch (_: Exception) {}
         }

@@ -138,11 +138,15 @@ object NetworkModule {
                 level = httpLogLevel(BuildConfig.DEBUG)
             })
             .addInterceptor { chain ->
-                val response = chain.proceed(chain.request())
+                val request = chain.request()
+                val response = chain.proceed(request)
                 if (response.isSuccessful) {
                     webSocketManager.notifyRestSuccess()
-                } else if (response.code == 401) {
-                    webSocketManager.notifyUnauthorized()
+                } else if (response.code == 401 && request.header("Authorization") != null) {
+                    val path = request.url.encodedPath
+                    if (!path.contains("/auth/login") && !path.contains("/auth/register")) {
+                        webSocketManager.notifyUnauthorized()
+                    }
                 }
                 response
             }

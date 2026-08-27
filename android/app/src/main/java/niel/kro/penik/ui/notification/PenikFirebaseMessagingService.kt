@@ -47,7 +47,7 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
         super.onNewToken(token)
         runBlocking {
             tokenStorage.saveFcmToken(token)
-            if (tokenStorage.getLastUploadedFcmToken() != token) {
+            if (tokenStorage.isLoggedIn() && tokenStorage.getLastUploadedFcmToken() != token) {
                 runCatching {
                     val resp = apiService.updateFcmToken(FcmTokenRequestBody(token))
                     if (resp.isSuccessful) {

@@ -297,7 +297,10 @@ class GroupChatViewModel @Inject constructor(
             delay(300)
             try {
                 val response = apiService.searchUsers(query)
-                if (response.isSuccessful) _searchResults.value = response.body() ?: emptyList()
+                if (response.isSuccessful) {
+                    val myId = authRepository.getUserId()
+                    _searchResults.value = (response.body() ?: emptyList()).filter { it.id != myId }
+                }
             } catch (_: Exception) {}
         }
     }
