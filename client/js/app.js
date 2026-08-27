@@ -509,16 +509,6 @@ export function triggerChatListUpdate() {
 }
 
 async function onMsgRecvGlobal(payload) {
-  const currentDeviceId = Number(localStorage.getItem("device_id"));
-  if (payload.recipient_device_id != null &&
-      Number(payload.recipient_device_id) !== currentDeviceId) {
-    console.warn("Ignoring message addressed to another device", {
-      msgId: payload.msg_id,
-      recipientDeviceId: payload.recipient_device_id,
-      currentDeviceId
-    });
-    return;
-  }
   const fromUserId = Number(payload.from_user_id);
 
   const myId = localStorage.getItem("user_id");
@@ -645,6 +635,9 @@ async function onMsgRecvGlobal(payload) {
 
   if (_activeChatCallback && String(_activeChatCallback.userId) === String(chatPartnerId)) {
     _activeChatCallback.fn(inMsg);
+    if (ws && payload.msg_id && !isMine) {
+      ws.send(0x18, { msg_id: Number(payload.msg_id) });
+    }
   }
 
   if (_chatListUpdateCallback) {
