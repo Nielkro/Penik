@@ -1,5 +1,5 @@
 import { decodeKey, decryptFileChaCha20 } from "../crypto.js";
-import { getToken, BASE, getApiOrigin } from "../api.js";
+import { getToken, BASE, getApiOrigin, getFullApiUrl } from "../api.js";
 import { getCachedMedia, saveCachedMedia, getAllContacts, getAllGroups } from "../storage.js";
 import { sendGroupMessage } from "../groups.js";
 import { sendDirectMessageToUser } from "./chat.js";
@@ -414,7 +414,7 @@ export function renderStickerContent(container, sticker) {
     (sticker.file_name && sticker.file_name.endsWith(".webm")) ||
     (sticker.url && sticker.url.endsWith(".webm"))
   );
-  const url = sticker.url || `/api/v1/stickers/file/${sticker.pack_id}/${sticker.file_name || (sticker.id + (isVideo ? '.webm' : '.webp'))}`;
+  const url = getFullApiUrl(sticker.url || `/api/v1/stickers/file/${sticker.pack_id}/${sticker.file_name || (sticker.id + (isVideo ? '.webm' : '.webp'))}`);
 
   if (isVideo) {
     const video = document.createElement("video");

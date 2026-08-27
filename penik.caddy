@@ -18,12 +18,23 @@ penik.ru {
 
 # 2. Веб-клиент мессенджера (SPA)
 web.penik.ru {
-    root * /opt/penik/client/dist
-    file_server
-    encode gzip zstd
+    # Проксирование API и WebSockets на бэкенд прямо с web.penik.ru
+    handle /api/* {
+        reverse_proxy 127.0.0.1:8143 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
 
-    # SPA fallback на index.html
-    try_files {path} /index.html
+    # Статика веб-клиента и SPA роутинг
+    handle {
+        root * /opt/penik/client/dist
+        try_files {path} /index.html
+        file_server
+        encode gzip zstd
+    }
 
     # Кэширование статических файлов
     @static {
