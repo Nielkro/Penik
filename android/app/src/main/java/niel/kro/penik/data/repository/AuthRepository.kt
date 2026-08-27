@@ -18,6 +18,11 @@ import java.net.UnknownHostException
 import javax.inject.Inject
 import javax.inject.Singleton
 
+import niel.kro.penik.data.local.database.PenikDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
 @Serializable
 private data class ErrorBody(val message: String? = null, val error: String? = null)
 
@@ -25,8 +30,9 @@ private data class ErrorBody(val message: String? = null, val error: String? = n
 class AuthRepository @Inject constructor(
     private val apiService: ApiService,
     private val tokenStorage: SecureTokenStorage,
-             private val e2eeCrypto: E2EECrypto,
+    private val e2eeCrypto: E2EECrypto,
     private val identityPins: niel.kro.penik.data.crypto.IdentityPinStore,
+    private val database: PenikDatabase,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -81,6 +87,10 @@ class AuthRepository @Inject constructor(
             )
             if (response.isSuccessful) {
                 val body = response.body()!!
+                val prevUserId = tokenStorage.getUserId()
+                if (prevUserId != null && prevUserId != body.userId) {
+                    try { database.clearAllTables() } catch (_: Exception) {}
+                }
                 tokenStorage.saveAuth(body.token, body.userId, body.deviceId)
                 fetchAndSaveUserProfile(body.userId)
                 
@@ -124,6 +134,10 @@ class AuthRepository @Inject constructor(
             )
             if (response.isSuccessful) {
                 val body = response.body()!!
+                val prevUserId = tokenStorage.getUserId()
+                if (prevUserId != null && prevUserId != body.userId) {
+                    try { database.clearAllTables() } catch (_: Exception) {}
+                }
                 tokenStorage.saveAuth(body.token, body.userId, body.deviceId)
                 tokenStorage.saveUserProfile(name, nickname)
 
@@ -197,6 +211,11 @@ class AuthRepository @Inject constructor(
         // Pins are trust in peers as seen by *this* identity; keeping them past a
         // logout would warn about a "changed" key on every fresh login.
         identityPins.clear()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                database.clearAllTables()
+            } catch (_: Exception) {}
+        }
     }
 
     suspend fun uploadKeyBackup(passphrase: String): Result<Unit> {
