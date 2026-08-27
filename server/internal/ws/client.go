@@ -502,6 +502,9 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 		return fmt.Errorf("lookup chat: %w", err)
 	}
 
+	// Any past purge tombstone is superseded by new chat activity
+	_, _ = tx.ExecContext(ctx, `DELETE FROM messages WHERE chat_id = ? AND purge_pending = 1`, chatID)
+
 	var senderIKPub []byte
 	err = tx.QueryRowContext(ctx, `SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, c.deviceID).Scan(&senderIKPub)
 	if err != nil && err != sql.ErrNoRows {

@@ -165,9 +165,11 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 }
             }
             is WebSocketEvent.ChatPurge -> {
+                android.util.Log.d("UseCases", "Received ChatPurge for peerId=${event.peerId}, wiping and acknowledging")
                 messageRepository.deleteChatMessages(event.peerId)
                 chatRepository.deleteChat(event.peerId)
                 appNotificationManager.cancelChatNotification(event.peerId)
+                webSocketManager.sendChatPurgeAck(event.peerId)
             }
             is WebSocketEvent.MsgStatusBatch -> {
                 messageRepository.handleMsgStatusBatch(event)
