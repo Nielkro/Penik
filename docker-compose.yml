@@ -13,7 +13,7 @@ services:
       - DB_PATH=/app/data/messenger.db
       - UPLOAD_DIR=/app/data/upload
       - STICKERS_DIR=/app/data/stickers
-      - ALLOWED_ORIGINS=https://web.penik.ru,https://penik.ru
+      - ALLOWED_ORIGINS=https://web.penik.ru,https://penik.ru,https://api.penik.ru
       - LIVEKIT_URL=wss://livekit.penik.ru
       - LIVEKIT_FALLBACK_URL=wss://livekit.penik.ru
       - LIVEKIT_API_KEY=your_livekit_api_key

@@ -15,16 +15,27 @@ import (
 // WebSocketHandler handles WS /api/v1/ws
 // Auth is validated by the middleware before this handler runs.
 func WebSocketHandler(hub *ws.Hub, database *db.DB, cfg *config.Config) http.HandlerFunc {
-	// Build origin pattern list for WebSocket upgrade check. ALLOWED_ORIGINS is
-	// validated at startup, so the list is never empty in practice; there is no
-	// wildcard branch, because InsecureSkipVerify here would let any page on the
-	// internet open an authenticated socket.
+	// Build origin pattern list for WebSocket upgrade check. nhooyr.io/websocket
+	// matches OriginPatterns against hostname[:port] (e.g. "web.penik.ru", "*.penik.ru"),
+	// not full URLs with schemes.
 	var originPatterns []string
 	for _, o := range strings.Split(cfg.AllowedOrigins, ",") {
-		if s := strings.TrimSpace(o); s != "" && s != "*" {
+		s := strings.TrimSpace(o)
+		if s == "" || s == "*" {
+			continue
+		}
+		// Strip scheme and trailing slashes if present
+		s = strings.TrimPrefix(s, "https://")
+		s = strings.TrimPrefix(s, "http://")
+		s = strings.TrimRight(s, "/")
+		if s != "" {
 			originPatterns = append(originPatterns, s)
+			if !strings.HasPrefix(s, "*.") {
+				originPatterns = append(originPatterns, "*."+s)
+			}
 		}
 	}
+	originPatterns = append(originPatterns, "localhost*", "127.0.0.1*")
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
