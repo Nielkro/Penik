@@ -703,8 +703,8 @@ class MessageRepository @Inject constructor(
 
                     val existingChat = chatRepository.getChat(chatUserId)
                     val latestMsg = msgs.filter { it.text != "[DELETED]" }.maxByOrNull { it.timestamp }
-                    if (latestMsg != null && (existingChat == null || existingChat.lastMessage.isNullOrBlank())) {
-                        val name = existingChat?.name?.takeIf { it.isNotBlank() } ?: "Пользователь $chatUserId"
+                    if (latestMsg != null && (existingChat == null || existingChat.lastMessage.isNullOrBlank() || existingChat.name.isBlank())) {
+                        val name = existingChat?.name.orEmpty()
                         val nickname = existingChat?.nickname.orEmpty()
                         chatRepository.updateLastMessage(
                             userId = chatUserId,
