@@ -1097,7 +1097,10 @@ export async function decryptMessagePayload(payload) {
     candidateTimestamps.push(localTs);
   }
 
-  const timeOffsets = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5];
+  const timeOffsets = [0];
+  for (let i = 1; i <= 60; i++) {
+    timeOffsets.push(-i, i);
+  }
   const candidateAads = [];
   const addedSet = new Set();
 

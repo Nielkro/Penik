@@ -944,7 +944,13 @@ class MessageRepository @Inject constructor(
 
         val candidates = buildList {
             if (senderUserId != 0L || recipientUserId != 0L) {
-                val offsets = listOf(0L, -1L, 1L, -2L, 2L, -3L, 3L, -4L, 4L, -5L, 5L)
+                val offsets = buildList {
+                    add(0L)
+                    for (i in 1..60) {
+                        add(-i.toLong())
+                        add(i.toLong())
+                    }
+                }
                 for (offset in offsets) {
                     add(e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, clientMsgId, tsSec + offset))
                 }
