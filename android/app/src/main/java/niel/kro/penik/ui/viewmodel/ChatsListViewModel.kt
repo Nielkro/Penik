@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 
 sealed interface FeedItem {
     val id: Long
@@ -117,6 +118,17 @@ class ChatsListViewModel @Inject constructor(
                                 lastMessageTimestamp = lastMsg.createdAt * 1000,
                                 unreadCount = 0,
                                 status = group.status
+                            )
+                        }.onStart {
+                            emit(
+                                FeedItem.GroupItem(
+                                    id = group.id,
+                                    name = group.name,
+                                    lastMessage = lastMsg.text,
+                                    lastMessageTimestamp = lastMsg.createdAt * 1000,
+                                    unreadCount = 0,
+                                    status = group.status
+                                )
                             )
                         }
                     }

@@ -2,13 +2,15 @@ package niel.kro.penik.data.repository
 
 import kotlinx.coroutines.flow.Flow
 import niel.kro.penik.data.local.dao.ChatDao
+import niel.kro.penik.data.local.dao.MessageDao
 import niel.kro.penik.data.local.entity.ChatEntity
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class ChatRepository @Inject constructor(
-    private val chatDao: ChatDao
+    private val chatDao: ChatDao,
+    private val messageDao: MessageDao
 ) {
 
     fun getAllChats(): Flow<List<ChatEntity>> = chatDao.getAllChats()
@@ -81,10 +83,28 @@ class ChatRepository @Inject constructor(
 
     suspend fun upsertContact(userId: Long, nickname: String, name: String, avatarUrl: String?) {
         val existing = chatDao.getChat(userId)
+        val lastMsg = messageDao.getLastMessageForChat(userId)
         if (existing == null) {
-            chatDao.insertChat(ChatEntity(userId = userId, nickname = nickname, name = name, avatarUrl = avatarUrl))
+            chatDao.insertChat(
+                ChatEntity(
+                    userId = userId,
+                    nickname = nickname,
+                    name = name,
+                    avatarUrl = avatarUrl,
+                    lastMessage = lastMsg?.text,
+                    lastMessageTimestamp = lastMsg?.timestamp
+                )
+            )
         } else {
-            chatDao.insertChat(existing.copy(nickname = nickname, name = name, avatarUrl = avatarUrl ?: existing.avatarUrl))
+            chatDao.insertChat(
+                existing.copy(
+                    nickname = if (nickname.isNotBlank()) nickname else existing.nickname,
+                    name = if (name.isNotBlank()) name else existing.name,
+                    avatarUrl = avatarUrl ?: existing.avatarUrl,
+                    lastMessage = existing.lastMessage ?: lastMsg?.text,
+                    lastMessageTimestamp = existing.lastMessageTimestamp ?: lastMsg?.timestamp
+                )
+            )
         }
     }
 

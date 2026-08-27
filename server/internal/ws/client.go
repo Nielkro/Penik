@@ -757,7 +757,7 @@ func (c *Client) handleMsgRead(ctx context.Context, msg *MsgRead) error {
 	if err := c.db.QueryRowContext(ctx, `SELECT sender_user_id, client_msg_id FROM messages WHERE id=? AND recipient_user_id=?`, msg.MsgID, c.userID).Scan(&senderUserID, &clientMsgID); err != nil {
 		return nil
 	}
-	res, err := c.db.ExecContext(ctx, `UPDATE messages SET read=1 WHERE id=? AND recipient_user_id=? AND delivered=1`, msg.MsgID, c.userID)
+	res, err := c.db.ExecContext(ctx, `UPDATE messages SET read=1, delivered=1 WHERE id=? AND recipient_user_id=?`, msg.MsgID, c.userID)
 	if err != nil {
 		return err
 	}

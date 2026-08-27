@@ -245,33 +245,37 @@ fun ChatsListContent(
                 }
             }
         } else {
-            if (filteredFeed.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Нет переписок",
-                        color = LocalAppColors.current.textMuted,
-                        fontSize = 16.sp
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                item(key = "self_chat") {
+                    SearchUserItem(
+                        name = SELF_CHAT_NAME,
+                        userId = viewModel.selfChatEntry?.id ?: 0L,
+                        nickname = "",
+                        lastMessage = selfChatLastMessage?.text,
+                        timestamp = selfChatLastMessage?.timestamp,
+                        onClick = {
+                            val myId = viewModel.selfChatEntry?.id ?: return@SearchUserItem
+                            onChatClick(myId, SELF_CHAT_NAME)
+                        }
                     )
+                    HorizontalDivider(color = LocalAppColors.current.border, modifier = Modifier.padding(horizontal = 16.dp))
                 }
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    item(key = "self_chat") {
-                        SearchUserItem(
-                            name = SELF_CHAT_NAME,
-                            userId = viewModel.selfChatEntry?.id ?: 0L,
-                            nickname = "",
-                            lastMessage = selfChatLastMessage?.text,
-                            timestamp = selfChatLastMessage?.timestamp,
-                            onClick = {
-                                val myId = viewModel.selfChatEntry?.id ?: return@SearchUserItem
-                                onChatClick(myId, SELF_CHAT_NAME)
-                            }
-                        )
-                        HorizontalDivider(color = LocalAppColors.current.border, modifier = Modifier.padding(horizontal = 16.dp))
+                if (filteredFeed.isEmpty()) {
+                    item(key = "empty_placeholder") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Нет переписок",
+                                color = LocalAppColors.current.textMuted,
+                                fontSize = 16.sp
+                            )
+                        }
                     }
+                } else {
                     items(filteredFeed, key = { "${if (it is FeedItem.ChatItem) "chat" else "group"}-${it.id}" }) { item ->
                         ChatListItem(
                             name = item.name,
