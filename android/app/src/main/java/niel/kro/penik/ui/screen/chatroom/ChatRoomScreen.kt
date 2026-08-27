@@ -288,9 +288,7 @@ fun ChatRoomScreen(
     LaunchedEffect(timelineItems.size) {
         if (timelineItems.isNotEmpty()) {
             if (!isInitialScrollDone || previousSize == 0) {
-                listState.scrollToItem(timelineItems.lastIndex, scrollOffset = 10000)
-                kotlinx.coroutines.delay(60)
-                listState.scrollToItem(timelineItems.lastIndex, scrollOffset = 10000)
+                listState.scrollToItem(timelineItems.lastIndex)
                 isInitialScrollDone = true
             } else if (timelineItems.size > previousSize) {
                 val layoutInfo = listState.layoutInfo
@@ -298,7 +296,7 @@ fun ChatRoomScreen(
                 val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
                 val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 5)
                 if (isNearBottom) {
-                    listState.animateScrollToItem(timelineItems.lastIndex, scrollOffset = 10000)
+                    listState.animateScrollToItem(timelineItems.lastIndex)
                 }
             }
             previousSize = timelineItems.size
@@ -313,7 +311,7 @@ fun ChatRoomScreen(
             val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
             val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 3)
             if (isNearBottom) {
-                listState.scrollToItem(timelineItems.lastIndex, scrollOffset = 10000)
+                listState.scrollToItem(timelineItems.lastIndex)
             }
         }
     }
@@ -743,7 +741,7 @@ fun ChatRoomScreen(
                     FloatingActionButton(
                         onClick = {
                             coroutineScope.launch {
-                                listState.animateScrollToItem(messages.lastIndex, scrollOffset = 10000)
+                                listState.animateScrollToItem(timelineItems.lastIndex)
                             }
                         },
                         containerColor = LocalAppColors.current.panel,

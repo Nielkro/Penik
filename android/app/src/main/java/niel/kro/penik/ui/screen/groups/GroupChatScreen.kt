@@ -226,9 +226,7 @@ fun GroupChatScreen(
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             if (!isInitialScrollDone || previousSize == 0) {
-                listState.scrollToItem(messages.lastIndex, scrollOffset = 10000)
-                kotlinx.coroutines.delay(60)
-                listState.scrollToItem(messages.lastIndex, scrollOffset = 10000)
+                listState.scrollToItem(messages.lastIndex)
                 isInitialScrollDone = true
             } else if (messages.size > previousSize) {
                 val layoutInfo = listState.layoutInfo
@@ -236,7 +234,7 @@ fun GroupChatScreen(
                 val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
                 val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 5)
                 if (isNearBottom) {
-                    listState.animateScrollToItem(messages.lastIndex, scrollOffset = 10000)
+                    listState.animateScrollToItem(messages.lastIndex)
                 }
             }
             previousSize = messages.size
@@ -251,7 +249,7 @@ fun GroupChatScreen(
             val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
             val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 3)
             if (isNearBottom) {
-                listState.scrollToItem(messages.lastIndex, scrollOffset = 10000)
+                listState.scrollToItem(messages.lastIndex)
             }
         }
     }
@@ -447,7 +445,7 @@ fun GroupChatScreen(
                     FloatingActionButton(
                         onClick = {
                             coroutineScope.launch {
-                                listState.animateScrollToItem(messages.lastIndex, scrollOffset = 10000)
+                                listState.animateScrollToItem(messages.lastIndex)
                             }
                         },
                         containerColor = LocalAppColors.current.panel,
