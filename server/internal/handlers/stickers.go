@@ -223,7 +223,26 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 
 		filePath := filepath.Join(cfg.StickersDir, packID, fileName)
 		info, err := os.Stat(filePath)
-		if os.IsNotExist(err) || info.IsDir() {
+		if os.IsNotExist(err) || (err == nil && info.IsDir()) {
+			// If not found with exact fileName, try common alternative extensions
+			// (e.g. client requested .webp but on disk it is .webm, .tgs, or .png)
+			base := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+			found := false
+			for _, altExt := range []string{".webm", ".webp", ".png", ".tgs", ".json", ""} {
+				altPath := filepath.Join(cfg.StickersDir, packID, base+altExt)
+				if altInfo, altErr := os.Stat(altPath); altErr == nil && !altInfo.IsDir() {
+					filePath = altPath
+					info = altInfo
+					fileName = base + altExt
+					found = true
+					break
+				}
+			}
+			if !found {
+				http.Error(w, "sticker not found", http.StatusNotFound)
+				return
+			}
+		} else if err != nil {
 			http.Error(w, "sticker not found", http.StatusNotFound)
 			return
 		}
