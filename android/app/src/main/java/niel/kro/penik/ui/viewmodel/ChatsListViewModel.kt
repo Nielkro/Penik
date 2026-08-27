@@ -74,7 +74,10 @@ class ChatsListViewModel @Inject constructor(
             val myId = authRepository.getUserId() ?: 0L
             // Exclude any ghost self-chat entry that may have been created before this fix.
             list.filter { it.userId != myId }
-                .map { FeedItem.ChatItem(it.userId, it.name, it.nickname, it.lastMessage, it.lastMessageTimestamp, it.unreadCount) }
+                .map {
+                    val displayName = it.name.ifBlank { it.nickname.ifBlank { "Пользователь ${it.userId}" } }
+                    FeedItem.ChatItem(it.userId, displayName, it.nickname, it.lastMessage, it.lastMessageTimestamp, it.unreadCount)
+                }
         },
         groupRepository.observeGroups().flatMapLatest { groups ->
             if (groups.isEmpty()) return@flatMapLatest flowOf(emptyList<FeedItem.GroupItem>())

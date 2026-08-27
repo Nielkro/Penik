@@ -1560,19 +1560,18 @@ export function formatDate(ts) {
   return d.toLocaleDateString([], { year: "numeric", month: "long", day: "numeric" });
 }
 
-// Presence: "в сети" / "был(а) в сети <when>". `presence` is the
-// {online, last_seen} shape returned by GET /users/:id and group members.
 export function formatPresence(presence) {
   if (!presence) return "";
   if (presence.online) return "в сети";
   const ts = presence.last_seen;
-  if (!ts) return "";
-  const d = new Date(ts * 1000);
-  if (isNaN(d.getTime()) || ts <= 0) return "";
+  if (!ts || ts <= 0) return "был(а) в сети только что";
+  const d = new Date(typeof ts === 'number' && ts > 1e12 ? ts : ts * 1000);
+  if (isNaN(d.getTime())) return "был(а) в сети только что";
 
   const now = new Date();
-  // Within the last minute — show "just now" instead of a clock time.
-  if (now.getTime() - d.getTime() < 60_000) return "был(а) в сети только что";
+  // Within the last minute (or clock skew) — show "just now"
+  const diff = now.getTime() - d.getTime();
+  if (diff < 60_000) return "был(а) в сети только что";
 
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today.getTime() - 86400000);

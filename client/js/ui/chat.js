@@ -1413,6 +1413,15 @@ export async function renderChat(container, userId) {
       return;
     }
 
+    if (isTypingActive && userId) {
+      isTypingActive = false;
+      if (sendTypingTimer) clearTimeout(sendTypingTimer);
+      const socket = getWS();
+      if (socket?.isConnected()) {
+        socket.send(OP.TYPING, { to_user_id: Number(userId), is_typing: false });
+      }
+    }
+
     const msgId = crypto.randomUUID();
     const now = Date.now();
     const myId = me && (me.id || me.user_id);

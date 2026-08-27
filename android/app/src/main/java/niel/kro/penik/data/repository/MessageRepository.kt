@@ -693,7 +693,36 @@ class MessageRepository @Inject constructor(
         return decryptedList
     }
 
+    suspend fun reconcileLocalChats() {
+        try {
+            val allEntities = messageDao.getAllMessages()
+            if (allEntities.isNotEmpty()) {
+                allEntities.groupBy { it.chatUserId }.forEach { (chatUserId, msgs) ->
+                    val unreadCount = msgs.count { !it.sentByMe && !it.read && it.text != "[DELETED]" }
+                    chatRepository.updateUnreadCount(chatUserId, unreadCount)
+
+                    val existingChat = chatRepository.getChat(chatUserId)
+                    val latestMsg = msgs.filter { it.text != "[DELETED]" }.maxByOrNull { it.timestamp }
+                    if (latestMsg != null && (existingChat == null || existingChat.lastMessage.isNullOrBlank())) {
+                        val name = existingChat?.name?.takeIf { it.isNotBlank() } ?: "Пользователь $chatUserId"
+                        val nickname = existingChat?.nickname.orEmpty()
+                        chatRepository.updateLastMessage(
+                            userId = chatUserId,
+                            text = latestMsg.text,
+                            timestamp = latestMsg.timestamp,
+                            name = name,
+                            nickname = nickname
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("MessageRepository", "Failed to reconcile local chats", e)
+        }
+    }
+
     suspend fun syncHistory(chatUserId: Long? = null, beforeId: Long? = null, limit: Int = 500) {
+        reconcileLocalChats()
         try {
             val maxServerId = if (chatUserId == null && beforeId == null) {
                 messageDao.getAllMessages().mapNotNull { it.serverId }.maxOrNull()

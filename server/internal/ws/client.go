@@ -1124,20 +1124,20 @@ func (c *Client) broadcastPresenceFrame(ctx context.Context, online bool, lastSe
 	c.hub.BroadcastPresence(deviceIDs, payload)
 }
 
-// peerDevices finds all devices belonging to users who share a mutual 1:1 chat or a
+// peerDevices finds all devices belonging to users who share a 1:1 chat or a
 // group with c.userID, so they can be notified of this user's presence changes.
 func (c *Client) peerDevices(ctx context.Context) []int64 {
 	query := `
 		SELECT DISTINCT d.id FROM devices d WHERE d.user_id IN (
 			SELECT sender_user_id FROM messages WHERE recipient_user_id = ?
-			INTERSECT
+			UNION
 			SELECT recipient_user_id FROM messages WHERE sender_user_id = ?
 			UNION
 			SELECT user_id FROM group_members WHERE group_id IN (
 				SELECT group_id FROM group_members WHERE user_id = ?
 			)
-		)`
-	rows, err := c.db.QueryContext(ctx, query, c.userID, c.userID, c.userID)
+		) AND d.user_id != ?`
+	rows, err := c.db.QueryContext(ctx, query, c.userID, c.userID, c.userID, c.userID)
 	if err != nil {
 		return nil
 	}

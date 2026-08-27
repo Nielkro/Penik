@@ -19,8 +19,7 @@ func (d *DB) UsersShareChat(ctx context.Context, a, b int64) (bool, error) {
 	var related bool
 	err := d.QueryRowContext(ctx, `
 		SELECT (
-			EXISTS(SELECT 1 FROM messages WHERE sender_user_id=?1 AND recipient_user_id=?2)
-			AND EXISTS(SELECT 1 FROM messages WHERE sender_user_id=?2 AND recipient_user_id=?1)
+			EXISTS(SELECT 1 FROM messages WHERE (sender_user_id=?1 AND recipient_user_id=?2) OR (sender_user_id=?2 AND recipient_user_id=?1))
 		) OR EXISTS(
 			SELECT 1 FROM group_members gm1
 			  JOIN group_members gm2 ON gm2.group_id = gm1.group_id
