@@ -1,4 +1,4 @@
-import { getMyStickers, getStickerPack, installStickerPack, uninstallStickerPack, importTelegramStickerPack } from "../api.js";
+import { getMyStickers, getStickerPack, installStickerPack, uninstallStickerPack, importTelegramStickerPack, getFullApiUrl } from "../api.js";
 import { el, showToast, spinner, svgIcon } from "./components.js";
 
 const RECENT_KEY = "penik_recent_stickers";
@@ -99,7 +99,7 @@ export function createStickerPicker(onSelect) {
       });
 
       const coverUrl = pack.cover_sticker_id
-        ? `/api/v1/stickers/file/${pack.id}/${pack.cover_sticker_id}.${pack.is_video ? 'webm' : (pack.is_animated ? 'tgs' : 'webp')}`
+        ? getFullApiUrl(`/api/v1/stickers/file/${pack.id}/${pack.cover_sticker_id}.${pack.is_video ? 'webm' : (pack.is_animated ? 'tgs' : 'webp')}`)
         : "";
 
       if (coverUrl && !pack.is_video && !pack.is_animated) {
@@ -193,7 +193,7 @@ export function createStickerPicker(onSelect) {
   function createStickerItem(s, pack) {
     const isVideo = Boolean(pack?.is_video || s.file_name?.endsWith('.webm'));
     const isTgs = Boolean(pack?.is_animated || s.file_name?.endsWith('.tgs'));
-    const url = s.url || `/api/v1/stickers/file/${s.pack_id}/${s.file_name || (s.id + (isVideo ? '.webm' : (isTgs ? '.tgs' : '.webp')))}`;
+    const url = getFullApiUrl(s.url || `/api/v1/stickers/file/${s.pack_id}/${s.file_name || (s.id + (isVideo ? '.webm' : (isTgs ? '.tgs' : '.webp')))}`);
 
     const item = el("button", { class: "sticker-grid-item", title: s.emoji || "" });
 
@@ -303,7 +303,7 @@ export async function showStickerPackModal(packId, onUpdate) {
 
     for (const s of (pack.stickers || [])) {
       const isVideo = Boolean(pack.is_video || s.file_name?.endsWith('.webm'));
-      const url = s.url || `/api/v1/stickers/file/${pack.id}/${s.file_name}`;
+      const url = getFullApiUrl(s.url || `/api/v1/stickers/file/${pack.id}/${s.file_name}`);
       const item = el("div", { class: "sticker-grid-item preview-only" });
 
       if (isVideo) {

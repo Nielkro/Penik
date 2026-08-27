@@ -10,6 +10,18 @@ export function getApiOrigin() {
 
 export const BASE = `${getApiOrigin()}/api/v1`;
 
+export function getFullApiUrl(urlOrPath) {
+  if (!urlOrPath) return '';
+  if (urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://') || urlOrPath.startsWith('blob:') || urlOrPath.startsWith('data:')) {
+    return urlOrPath;
+  }
+  const origin = getApiOrigin();
+  if (urlOrPath.startsWith('/')) {
+    return `${origin}${urlOrPath}`;
+  }
+  return `${origin}/${urlOrPath}`;
+}
+
 // ApiError carries the HTTP status next to the message so callers can branch on
 // it — 404 for a missing resource, 410 for an expired CDN link, 0 when the
 // request never reached the server.
