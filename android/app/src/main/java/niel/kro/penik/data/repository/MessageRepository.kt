@@ -904,11 +904,11 @@ class MessageRepository @Inject constructor(
 
                     val existingChat = chatRepository.getChat(chatUserId)
                     val latestMsg = msgs.filter { it.text != "[DELETED]" }.maxByOrNull { it.timestamp }
-                    if (latestMsg != null && (existingChat == null || existingChat.lastMessage == null)) {
+                    if (latestMsg != null) {
                         val profile = try {
                             apiService.getUserProfile(chatUserId).body()
                         } catch (_: Exception) { null }
-                        val name = profile?.name?.ifBlank { profile.nickname } ?: existingChat?.name.orEmpty()
+                        val name = profile?.name?.ifBlank { profile.nickname } ?: existingChat?.name?.takeIf { it.isNotBlank() } ?: "Пользователь $chatUserId"
                         val nickname = profile?.nickname ?: existingChat?.nickname.orEmpty()
                         chatRepository.updateLastMessage(
                             userId = chatUserId,
