@@ -390,6 +390,7 @@ export class CallManager {
       const url = urlsToTry[attempt];
       try {
         this.room = new Room({
+          disconnectOnPageLeave: false,
           adaptiveStream: {
             pixelDensity: 2,
           },
@@ -476,15 +477,18 @@ export class CallManager {
               this._notifyMediaState();
             }
           })
-          .on(RoomEvent.Disconnected, () => {
-            // A failed initial connect also emits Disconnected before the
-            // connect() promise rejects; only an ACTIVE room dropping is a real
-            // call end. CONNECTING failures are handled by the failover loop.
+          .on(RoomEvent.Disconnected, (reason) => {
+            // Do not treat a background tab freeze/pagehide as a hangup.
+            // With disconnectOnPageLeave=false LiveKit no longer disconnects on
+            // freeze/pagehide, but a transient network glitch still fires this
+            // event - that should not send CALL_END to the peer. The server
+            // will end the call via WS CleanupDeviceCalls only after the Penik
+            // WS actually drops, and the user can explicitly hang up via endCall().
             if (this.currentCall && this.currentCall.state === 'ACTIVE') {
-              ws.send(OP.CALL_END, {
-                call_id: this.currentCall.callId || '',
-                to_user_id: this.currentCall.toUserId || this.currentCall.fromUserId,
-              });
+              console.warn('[call] LiveKit room disconnected:', reason);
+              // Keep peer in call; just tear down local media. If the user
+              // really closed the tab, the Penik WS close will trigger the
+              // server-side CallEnd for the peer.
               this.cleanup();
             }
           });
