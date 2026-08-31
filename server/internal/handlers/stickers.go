@@ -245,7 +245,10 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 
 		filePath := filepath.Join(packDir, fileName)
 		info, err := os.Stat(filePath)
-		if os.IsNotExist(err) || (err == nil && info.IsDir()) {
+		if os.IsNotExist(err) || (err == nil && (info.IsDir() || info.Size() == 0)) {
+			if err == nil && info.Size() == 0 {
+				_ = os.Remove(filePath)
+			}
 			base := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 			reqExt := strings.ToLower(filepath.Ext(fileName))
 
@@ -447,17 +450,31 @@ func transcodeOnDemand(srcPath, dstPath, format string) bool {
 
 	var cmd *exec.Cmd
 	if format == "webp" {
-		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "format=yuva420p", "-c:v", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", tmpPath)
-		if err := cmd.Run(); err != nil {
-			// Fallback without explicit pix_fmt filter if format filter fails
-			cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", tmpPath)
-			if err2 := cmd.Run(); err2 != nil {
-				return false
+		// Stage 1: Try animated webp with rgba conversion (preserves alpha channel 100%)
+		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "format=rgba", "-c:v", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", tmpPath)
+		if err := cmd.Run(); err != nil || !validNonEmptyFile(tmpPath) {
+			_ = os.Remove(tmpPath)
+			// Stage 2: Try animated webp with yuva420p
+			cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "format=yuva420p", "-c:v", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", tmpPath)
+			if err2 := cmd.Run(); err2 != nil || !validNonEmptyFile(tmpPath) {
+				_ = os.Remove(tmpPath)
+				// Stage 3: Default libwebp
+				cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libwebp", "-lossless", "0", "-q:v", "75", "-loop", "0", "-an", tmpPath)
+				if err3 := cmd.Run(); err3 != nil || !validNonEmptyFile(tmpPath) {
+					_ = os.Remove(tmpPath)
+					// Stage 4: Single frame snapshot as guaranteed webp fallback
+					cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vframes", "1", "-c:v", "libwebp", "-q:v", "75", tmpPath)
+					if err4 := cmd.Run(); err4 != nil || !validNonEmptyFile(tmpPath) {
+						_ = os.Remove(tmpPath)
+						return false
+					}
+				}
 			}
 		}
 	} else if format == "mp4" {
 		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", tmpPath)
-		if err := cmd.Run(); err != nil {
+		if err := cmd.Run(); err != nil || !validNonEmptyFile(tmpPath) {
+			_ = os.Remove(tmpPath)
 			return false
 		}
 	} else {
@@ -470,6 +487,11 @@ func transcodeOnDemand(srcPath, dstPath, format string) bool {
 		}
 	}
 	return false
+}
+
+func validNonEmptyFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir() && info.Size() > 0
 }
 
 func strconvQuote(s string) string {
