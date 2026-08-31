@@ -330,8 +330,17 @@ func ImportTelegramPack(botToken string, stickersDir string, rawPackName string,
 			}
 		}
 
-		// If this is a video or animated sticker, try to fetch its static webp thumbnail too
-		if ext == ".webm" || ext == ".tgs" {
+		// If this is a video sticker, transcode to animated webp (universal compatibility & transparency) and mp4
+		if ext == ".webm" {
+			targetWebpPath := filepath.Join(packDir, fmt.Sprintf("%s.webp", s.FileUniqueID))
+			targetMp4Path := filepath.Join(packDir, fmt.Sprintf("%s.mp4", s.FileUniqueID))
+			if _, statErr := os.Stat(targetWebpPath); os.IsNotExist(statErr) {
+				_ = exec.Command("ffmpeg", "-y", "-i", targetPath, "-vcodec", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", "-vsync", "0", targetWebpPath).Run()
+			}
+			if _, statErr := os.Stat(targetMp4Path); os.IsNotExist(statErr) {
+				_ = exec.Command("ffmpeg", "-y", "-i", targetPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", targetMp4Path).Run()
+			}
+		} else if ext == ".tgs" {
 			targetThumbPath := filepath.Join(packDir, fmt.Sprintf("%s.webp", s.FileUniqueID))
 			if _, statErr := os.Stat(targetThumbPath); os.IsNotExist(statErr) {
 				thumbObj := s.Thumbnail
@@ -342,10 +351,6 @@ func ImportTelegramPack(botToken string, stickersDir string, rawPackName string,
 					if thumbInfo, err := fetchTelegramFileWithRetry(client, botToken, thumbObj.FileID); err == nil && thumbInfo != nil && thumbInfo.FilePath != "" {
 						_ = downloadTelegramFileWithRetry(client, botToken, thumbInfo.FilePath, targetThumbPath)
 					}
-				}
-				// Fallback to ffmpeg single-frame extraction if webp still missing
-				if _, statErr := os.Stat(targetThumbPath); os.IsNotExist(statErr) && ext == ".webm" {
-					_ = exec.Command("ffmpeg", "-y", "-i", targetPath, "-vframes", "1", "-c:v", "libwebp", "-quality", "75", targetThumbPath).Run()
 				}
 			}
 		}
