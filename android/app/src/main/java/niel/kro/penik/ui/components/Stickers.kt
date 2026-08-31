@@ -97,8 +97,9 @@ private val stickerHttpClient by lazy {
 }
 
 @Composable
-fun rememberCachedStickerFile(url: String): File? {
+fun rememberCachedStickerFile(rawUrl: String): File? {
     val context = LocalContext.current
+    val url = remember(rawUrl) { ApiConfig.getFullStickerUrl(rawUrl) }
     var cachedFile by remember(url) {
         val cacheDir = File(context.cacheDir, "stickers")
         val ext = if (url.contains(".webm", ignoreCase = true)) ".webm" else ".webp"
@@ -192,9 +193,10 @@ fun StickerMediaView(
     modifier: Modifier = Modifier,
     contentDescription: String = "Стикер"
 ) {
-    if (isVideo) {
+    val fullUrl = remember(url) { ApiConfig.getFullStickerUrl(url) }
+    if (isVideo && fullUrl.endsWith(".webm", ignoreCase = true)) {
         val context = LocalContext.current
-        val cachedFile = rememberCachedStickerFile(url)
+        val cachedFile = rememberCachedStickerFile(fullUrl)
 
         if (cachedFile != null && cachedFile.exists()) {
             var hasPlayerError by remember(cachedFile.absolutePath) { mutableStateOf(false) }
@@ -206,7 +208,7 @@ fun StickerMediaView(
                     volume = 0f
                     addListener(object : Player.Listener {
                         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                            Log.w("StickerMedia", "ExoPlayer failed for $url: ${error.message}")
+                            Log.w("StickerMedia", "ExoPlayer failed for $fullUrl: ${error.message}")
                             hasPlayerError = true
                         }
                     })
@@ -244,7 +246,7 @@ fun StickerMediaView(
             }
         } else {
             AsyncImage(
-                model = url,
+                model = fullUrl,
                 contentDescription = contentDescription,
                 modifier = modifier,
                 contentScale = ContentScale.Fit
@@ -252,7 +254,7 @@ fun StickerMediaView(
         }
     } else {
         AsyncImage(
-            model = url,
+            model = fullUrl,
             contentDescription = contentDescription,
             modifier = modifier,
             contentScale = ContentScale.Fit
