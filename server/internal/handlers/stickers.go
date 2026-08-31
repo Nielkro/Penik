@@ -1,14 +1,17 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"messenger/server/internal/config"
@@ -228,26 +231,28 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 			base := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 			reqExt := strings.ToLower(filepath.Ext(fileName))
 
-			// If requested webp or mp4 but only webm is on disk, transcode on-demand with ffmpeg
+			// If requested webp or mp4 but only webm is on disk, transcode safely with concurrency limits
 			webmCandidate := filepath.Join(cfg.StickersDir, packID, base+".webm")
 			if _, webmErr := os.Stat(webmCandidate); webmErr == nil {
 				if reqExt == ".webp" {
 					outWebp := filepath.Join(cfg.StickersDir, packID, base+".webp")
-					_ = exec.Command("ffmpeg", "-y", "-i", webmCandidate, "-vcodec", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", "-vsync", "0", outWebp).Run()
-					if webpInfo, webpErr := os.Stat(outWebp); webpErr == nil && !webpInfo.IsDir() && webpInfo.Size() > 0 {
-						filePath = outWebp
-						info = webpInfo
-						fileName = base + ".webp"
-						err = nil
+					if transcodeOnDemand(webmCandidate, outWebp, "webp") {
+						if webpInfo, webpErr := os.Stat(outWebp); webpErr == nil && !webpInfo.IsDir() && webpInfo.Size() > 0 {
+							filePath = outWebp
+							info = webpInfo
+							fileName = base + ".webp"
+							err = nil
+						}
 					}
 				} else if reqExt == ".mp4" {
 					outMp4 := filepath.Join(cfg.StickersDir, packID, base+".mp4")
-					_ = exec.Command("ffmpeg", "-y", "-i", webmCandidate, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", outMp4).Run()
-					if mp4Info, mp4Err := os.Stat(outMp4); mp4Err == nil && !mp4Info.IsDir() && mp4Info.Size() > 0 {
-						filePath = outMp4
-						info = mp4Info
-						fileName = base + ".mp4"
-						err = nil
+					if transcodeOnDemand(webmCandidate, outMp4, "mp4") {
+						if mp4Info, mp4Err := os.Stat(outMp4); mp4Err == nil && !mp4Info.IsDir() && mp4Info.Size() > 0 {
+							filePath = outMp4
+							info = mp4Info
+							fileName = base + ".mp4"
+							err = nil
+						}
 					}
 				}
 			}
@@ -339,6 +344,68 @@ func detectStickerContentType(filePath, fileName string) string {
 	default:
 		return "application/octet-stream"
 	}
+}
+
+var (
+	transcodeSem     = make(chan struct{}, 2)
+	transcodeMu      sync.Mutex
+	activeTranscodes = make(map[string]chan struct{})
+)
+
+func transcodeOnDemand(srcPath, dstPath, format string) bool {
+	transcodeMu.Lock()
+	if ch, active := activeTranscodes[dstPath]; active {
+		transcodeMu.Unlock()
+		<-ch // Wait for ongoing transcode
+		if info, err := os.Stat(dstPath); err == nil && !info.IsDir() && info.Size() > 0 {
+			return true
+		}
+		return false
+	}
+	done := make(chan struct{})
+	activeTranscodes[dstPath] = done
+	transcodeMu.Unlock()
+
+	defer func() {
+		transcodeMu.Lock()
+		delete(activeTranscodes, dstPath)
+		close(done)
+		transcodeMu.Unlock()
+	}()
+
+	// Acquire semaphore slot (max 2 concurrent ffmpeg processes server-wide)
+	select {
+	case transcodeSem <- struct{}{}:
+		defer func() { <-transcodeSem }()
+	case <-time.After(3 * time.Second):
+		return false
+	}
+
+	tmpPath := dstPath + fmt.Sprintf(".tmp_%d", time.Now().UnixNano())
+	defer os.Remove(tmpPath)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	var cmd *exec.Cmd
+	if format == "webp" {
+		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vcodec", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", "-vsync", "0", tmpPath)
+	} else if format == "mp4" {
+		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", tmpPath)
+	} else {
+		return false
+	}
+
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+
+	if info, err := os.Stat(tmpPath); err == nil && info.Size() > 0 {
+		if err := os.Rename(tmpPath, dstPath); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func strconvQuote(s string) string {
