@@ -28,8 +28,8 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/ws/client.go` — Implements the WebSocket client read/write pump, handling direct messages, key requests, receipt events, offline batching, and presence.
 - `server/internal/ws/group.go` — Receives and routes encrypted group messages, receipts, and offline delivery across group members.
 - `server/internal/ws/hub.go` — Manages the registry of connected devices, broadcasting pre-encoded frames, presence, and shutdown events; also answers which devices a user has connected and whether a device was taken over by a newer connection.
-- `server/internal/ws/call.go` — Manages LiveKit 1:1 call signaling, per-device ring state (an incoming call rings every device of the callee and only the device that answered owns the call), and JWT access token generation.
-- `server/internal/ws/protocol.go` — Defines binary opcodes and MsgPack structures for direct/group messages, keys, pairing, presence, statuses, and call signaling (0x30-0x36).
+- `server/internal/ws/call.go` — Manages LiveKit 1:1 call signaling, per-device ring state (an incoming call rings every device of the callee and only the device that answered owns the call), a reconnect grace period that keeps an accepted call alive across a network switch and replays its state to the returning device, and JWT access token generation.
+- `server/internal/ws/protocol.go` — Defines binary opcodes and MsgPack structures for direct/group messages, keys, pairing, presence, statuses, and call signaling (0x30-0x39, including call state replay and peer link state).
 - `server/internal/push/fcm.go` — Handles JWT credentials signing and FCM HTTP v1 background push notifications delivery.
 - `server/internal/middleware/auth.go` — Extracts bearer/WebSocket tokens, validates sessions in the DB, and injects user/device IDs into the request context.
 - `server/internal/middleware/cors.go` — Configures CORS, origin checks, and CSRF protection for HTTP requests.
@@ -44,7 +44,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ### Browser client transport
 
 - `client/js/api.js` — Unified browser REST client: attaches tokens, serializes JSON, parses errors, and exports APIs for users, messages, pairing, and groups.
-- `client/js/call.js` — LiveKit Web SDK integration and call state manager supporting primary and fallback endpoints, plus multi-device ring handling (call_id matching and `CALL_TAKEN`).
+- `client/js/call.js` — LiveKit Web SDK integration and call state manager supporting primary and fallback endpoints, multi-device ring handling (call_id matching and `CALL_TAKEN`), and reconnect recovery: full track resync after `RoomEvent.Reconnected`, camera restore retry, and media flags derived from actual publications.
 - `client/js/sounds.js` — Web Audio API synthesizer for call sounds: melodious incoming ringtone, outgoing dial tone, connect/disconnect chimes, and busy signal.
 - `client/js/pairing.js` — Decrypts and imports history transferred from Android into the browser IndexedDB stores.
 - `client/js/ws.js` — Manages the browser WebSocket connection: encodes/decodes MsgPack frames, supports opcodes, ping/pong, request queuing, and exponential backoff reconnection; `connect()` is idempotent and each socket generation is fenced so a stale socket cannot open a second parallel session.
@@ -55,8 +55,8 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiConfig.kt` — Central network configuration object holding server host, port, scheme, base URL, and avatar URL generators.
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiService.kt` — Retrofit contract for the Android client's REST API covering auth, profiles, messages, pairing, groups, keys, and avatars.
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiModels.kt` — Kotlin data models for Retrofit API requests and responses.
-- `android/app/src/main/java/niel/kro/penik/data/network/websocket/WebSocketManager.kt` — Maintains the OkHttp WebSocket connection, binary MsgPack protocol, reconnects, ping/pong, and flow of typed events, including call signaling frames (0x30-0x36).
-- `android/app/src/main/java/niel/kro/penik/domain/call/CallManager.kt` — Singleton 1:1 call state machine (idle/dialing/incoming/connecting/active): LiveKit room connect with primary/fallback failover, mic/camera toggles, ringtone and vibration, ring timeout, call timer, call_id matching with `CALL_TAKEN` handling for calls answered on another device, and cleanup on all exit paths.
+- `android/app/src/main/java/niel/kro/penik/data/network/websocket/WebSocketManager.kt` — Maintains the OkHttp WebSocket connection, binary MsgPack protocol, reconnects, ping/pong, and flow of typed events, including call signaling frames (0x30-0x39).
+- `android/app/src/main/java/niel/kro/penik/domain/call/CallManager.kt` — Singleton 1:1 call state machine (idle/dialing/incoming/connecting/active): LiveKit room connect with primary/fallback failover, mic/camera toggles, ringtone and vibration, ring timeout, call timer resumed from the server answer time, call_id matching with `CALL_TAKEN` handling for calls answered on another device, track resync and camera restore after a LiveKit reconnect, and cleanup on all exit paths.
 - `android/app/src/main/java/niel/kro/penik/data/repository/SecureTokenStorage.kt` — Stores tokens, user/device IDs, and cryptographic keys in secure local storage.
 
 ## UI
@@ -76,7 +76,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/js/theme.js` — Dark/light theme state, persistence in localStorage, and application to the document root.
 - `client/js/ui/search.js` — User search screen and initiator for direct chats.
 - `client/js/ui/stickers.js` — Sticker picker popup, recent stickers persistence, sticker pack viewer modal, and Telegram sticker pack import dialog.
-- `client/js/ui/call_modal.js` — Renders the active/incoming/dialing call overlay modal, participant placeholders, video/screenshare layout swapping, and in-call media control buttons.
+- `client/js/ui/call_modal.js` — Renders the active/incoming/dialing call overlay modal, participant placeholders, video/screenshare layout swapping, in-call media control buttons, and a reconnect/peer-link status badge.
 - `client/js/ui/components.js` — Shared UI components: avatars, time formatting, hover tooltip for full timestamp, message copy menu, scroll-down button, toasts, and modals.
 - `client/js/globals.d.ts` — Ambient type declarations for globals the app attaches to `window`; type-checking only, emits no JavaScript.
 
@@ -93,7 +93,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/screen/chatslist/ChatsListScreen.kt` — Direct chat list UI and navigation to chat rooms.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/calls/CallsListScreen.kt` — Call history screen listing all incoming, outgoing, missed, and declined calls with redial buttons.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/chatroom/ChatRoomScreen.kt` — Direct chat room UI: message history, input, sending, receipts, connection state; scroll-down FAB shown only when last message is not visible; audio/video call buttons in the top bar.
-- `android/app/src/main/java/niel/kro/penik/ui/call/CallOverlayScreen.kt` — Global call overlay: incoming call accept/decline, dialing, and active call screens with remote/local video renderers, PiP swap, and media controls.
+- `android/app/src/main/java/niel/kro/penik/ui/call/CallOverlayScreen.kt` — Global call overlay: incoming call accept/decline, dialing, and active call screens with remote/local video renderers, PiP swap, media controls, and a reconnect/peer-link status line.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupsListScreen.kt` — Group list UI and pending invitations.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupChatScreen.kt` — Group chat room UI with messages and group actions; scroll-down FAB shown only when last message is not visible.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupSettingsScreen.kt` — Group settings screen: member list, roles, invitations, and key rotation.

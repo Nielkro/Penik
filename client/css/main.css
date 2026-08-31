@@ -1872,6 +1872,18 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   border-radius: 12px;
 }
 
+/* Shown while the media session or the peer's signaling link is recovering,
+   so a network switch does not read as a frozen call. */
+.call-link-status {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--warning, #f0a020);
+  background: rgba(240, 160, 32, 0.15);
+  padding: 2px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
 /* Voice wave animation in placeholder */
 .call-voice-wave-container {
   display: flex;

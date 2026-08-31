@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"messenger/server/internal/db"
 )
@@ -55,9 +56,14 @@ func TestMsgSendRejectsForeignDevice(t *testing.T) {
 }
 
 // A second device of the callee dropping its socket must not end a call that is
-// already running on the device that answered.
+// already running on the device that answered. The device that is actually in the
+// call only ends it after the reconnect grace period expires.
 func TestCleanupDeviceCallsKeepsCallOnOtherDevice(t *testing.T) {
 	hub := NewHub()
+	restoreGrace := reconnectGrace
+	reconnectGrace = 30 * time.Millisecond
+	defer func() { reconnectGrace = restoreGrace }()
+
 	callsMu.Lock()
 	activeCalls = map[string]*activeCall{}
 	userCalls = map[int64]string{}
@@ -79,14 +85,62 @@ func TestCleanupDeviceCallsKeepsCallOnOtherDevice(t *testing.T) {
 		t.Fatal("call must survive an unrelated device disconnect")
 	}
 
-	// The device actually in the call goes away.
+	// The device actually in the call goes away: held open for the grace window.
 	CleanupDeviceCalls(hub, 2, 20)
+	callsMu.RLock()
+	_, stillUp = activeCalls["c-1"]
+	callsMu.RUnlock()
+	if !stillUp {
+		t.Fatal("call must survive the reconnect grace window")
+	}
+
+	time.Sleep(120 * time.Millisecond)
 	callsMu.RLock()
 	_, stillUp = activeCalls["c-1"]
 	_, callerBusy := userCalls[1]
 	callsMu.RUnlock()
 	if stillUp || callerBusy {
-		t.Fatal("call must be released when the participating device drops")
+		t.Fatal("call must be released once the grace window expires")
+	}
+}
+
+// A device that comes back inside the grace window keeps its call: this is the
+// Wi-Fi to mobile handover case, where the signaling socket dies for a second
+// while the media session is fine.
+func TestResumeDeviceCallsCancelsGraceDrop(t *testing.T) {
+	hub := NewHub()
+	restoreGrace := reconnectGrace
+	reconnectGrace = 80 * time.Millisecond
+	defer func() { reconnectGrace = restoreGrace }()
+
+	callsMu.Lock()
+	activeCalls = map[string]*activeCall{}
+	userCalls = map[int64]string{}
+	answered := time.Now().Add(-30 * time.Second)
+	ac := &activeCall{
+		CallID: "c-3", CallerID: 1, CallerDeviceID: 10,
+		CalleeID: 2, CalleeDeviceID: 20, Accepted: true,
+		AnsweredAt: &answered,
+	}
+	activeCalls[ac.CallID] = ac
+	userCalls[1] = ac.CallID
+	userCalls[2] = ac.CallID
+	callsMu.Unlock()
+
+	CleanupDeviceCalls(hub, 2, 20)
+
+	var replayed []byte
+	ResumeDeviceCalls(hub, 2, 20, func(frame []byte) { replayed = frame })
+	if len(replayed) == 0 || Opcode(replayed[0]) != OpCallState {
+		t.Fatalf("reconnecting device must receive OpCallState, got %v", replayed)
+	}
+
+	time.Sleep(160 * time.Millisecond)
+	callsMu.RLock()
+	_, stillUp := activeCalls["c-3"]
+	callsMu.RUnlock()
+	if !stillUp {
+		t.Fatal("a device that reconnected in time must keep its call")
 	}
 }
 

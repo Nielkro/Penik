@@ -57,7 +57,11 @@ data class CallUiState(
     val micMuted: Boolean = false,
     val cameraOff: Boolean = false,
     val hasRemoteVideo: Boolean = false,
-    val elapsed: String = ""
+    val elapsed: String = "",
+    // True while LiveKit is re-establishing the session after a network change.
+    val isReconnecting: Boolean = false,
+    // False while the peer's signaling link is inside the server grace window.
+    val peerOnline: Boolean = true
 )
 
 private const val TAG = "CallManager"
@@ -298,6 +302,37 @@ class CallManager @Inject constructor(
     }
 
     /**
+     * The server replays the call this device still owns right after the
+     * signaling socket comes back. A Wi-Fi to mobile handover kills the socket
+     * for a few seconds while the media session survives, so all this has to do
+     * is re-sync the call id and keep the timer continuous.
+     */
+    fun onCallState(event: WebSocketEvent.CallState) {
+        if (event.callId.isEmpty()) return
+        if (ui.phase == CallPhase.IDLE) {
+            // Nothing left locally to rejoin (process death, room released), so
+            // release the call instead of leaving the peer talking to nobody.
+            if (event.accepted) {
+                webSocketManager.sendCallEnd(event.callId, event.peerUserId)
+            }
+            return
+        }
+        currentCallId = event.callId
+        if (event.answeredAt > 0L) {
+            resumeTimer(event.answeredAt * 1000L)
+        }
+    }
+
+    /** The peer's signaling link dropped or came back mid-call. */
+    fun onPeerLinkState(event: WebSocketEvent.CallPeerState) {
+        if (ui.phase != CallPhase.ACTIVE && ui.phase != CallPhase.CONNECTING) return
+        if (!isCurrentCall(event.callId)) return
+        if (ui.peerOnline == event.online) return
+        _state.value = ui.copy(peerOnline = event.online)
+        toast(if (event.online) "Собеседник снова в сети" else "Собеседник теряет связь…")
+    }
+
+    /**
      * The server rings every device of the callee, so a frame must be matched
      * against the call this device is actually in before it is allowed to change
      * any state.
@@ -326,8 +361,8 @@ class CallManager @Inject constructor(
 
     fun toggleCamera() {
         val room = room ?: return
-        val next = !ui.cameraOff
-        if (next && ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA)
+        val turningOff = !ui.cameraOff
+        if (!turningOff && ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA)
             != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             toast("Нет разрешения на камеру")
@@ -335,17 +370,14 @@ class CallManager @Inject constructor(
         }
         scope.launch {
             try {
-                room.localParticipant.setCameraEnabled(!next)
-                _state.value = ui.copy(cameraOff = next)
-                if (next) {
-                    _localVideoTrack.value = null
-                } else {
-                    publishLocalVideoTrack()
-                }
+                room.localParticipant.setCameraEnabled(!turningOff)
             } catch (e: Exception) {
                 Log.e(TAG, "toggleCamera failed", e)
                 toast("Не удалось переключить камеру")
             }
+            // Always re-derive from the publication: on failure the flag must
+            // show what is really being sent, not what was requested.
+            publishLocalVideoTrack()
         }
     }
 
@@ -451,6 +483,22 @@ class CallManager @Inject constructor(
                         updateRemoteVideoTrack(room)
                     }
                 }
+                is RoomEvent.Reconnecting -> {
+                    // Media is re-negotiating after a network change. The call is
+                    // still alive server-side, so only surface the state.
+                    _state.value = ui.copy(isReconnecting = true)
+                }
+                is RoomEvent.Reconnected -> {
+                    // A full reconnect unpublishes and republishes every local
+                    // track under a new SID, and the per-track events for what
+                    // already existed are not replayed. Rebuild from the room
+                    // instead of waiting for notifications that never arrive.
+                    val wantCamera = !ui.cameraOff
+                    _state.value = ui.copy(isReconnecting = false)
+                    updateRemoteVideoTrack(room)
+                    publishLocalVideoTrack()
+                    scope.launch { restoreCameraIfNeeded(wantCamera) }
+                }
                 is RoomEvent.Disconnected -> {
                     // A failed initial connect also emits Disconnected before
                     // connect() throws; the failover loop owns CONNECTING.
@@ -497,15 +545,50 @@ class CallManager @Inject constructor(
         _state.value = ui.copy(hasRemoteVideo = primaryTrack != null)
     }
 
+    /**
+     * Mirrors the local camera publication into the exposed track and the UI
+     * flag.
+     *
+     * cameraOff used to be a plain toggle flag, so after a reconnect that failed
+     * to republish the camera the button still claimed it was on while no track
+     * existed at all.
+     */
     private fun publishLocalVideoTrack() {
         val room = room ?: return
         val pub = room.localParticipant.getTrackPublication(Track.Source.CAMERA)
-        _localVideoTrack.value = pub?.track as? VideoTrack
+        val track = pub?.track as? VideoTrack
+        val live = track != null && pub?.muted != true
+        _localVideoTrack.value = if (live) track else null
+        if (ui.phase == CallPhase.ACTIVE) {
+            _state.value = ui.copy(cameraOff = !live)
+        }
+    }
+
+    /**
+     * Re-enables the camera if it was meant to be on but no track survived the
+     * reconnect. LiveKit's republish silently swallows a failed capture restart,
+     * so without this retry the camera stays gone for the rest of the call.
+     */
+    private suspend fun restoreCameraIfNeeded(wantCamera: Boolean) {
+        if (!wantCamera) return
+        val room = room ?: return
+        val pub = room.localParticipant.getTrackPublication(Track.Source.CAMERA)
+        if (pub?.track != null && pub.muted != true) return
+        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) return
+        try {
+            room.localParticipant.setCameraEnabled(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to restore camera after reconnect", e)
+            toast("Не удалось восстановить камеру")
+        }
+        publishLocalVideoTrack()
     }
 
     private suspend fun onRoomConnected() {
         val room = room ?: return
-        _state.value = ui.copy(phase = CallPhase.ACTIVE)
+        _state.value = ui.copy(phase = CallPhase.ACTIVE, isReconnecting = false)
         playConnectedTone()
         startTimer()
         updateRemoteVideoTrack(room)
@@ -513,14 +596,13 @@ class CallManager @Inject constructor(
             room.localParticipant.setMicrophoneEnabled(true)
             if (ui.isVideo) {
                 room.localParticipant.setCameraEnabled(true)
-                _state.value = ui.copy(cameraOff = false)
-                publishLocalVideoTrack()
-            } else {
-                _state.value = ui.copy(cameraOff = true)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to publish local tracks", e)
         }
+        // Derives cameraOff from the actual publication, so a failed camera
+        // start cannot leave the button claiming the camera is live.
+        publishLocalVideoTrack()
     }
 
     // --- Ringer / timer / misc ---
@@ -614,11 +696,23 @@ class CallManager @Inject constructor(
     }
 
     private fun startTimer() {
+        startTimerFrom(System.currentTimeMillis())
+    }
+
+    /**
+     * Continues the call timer from the server-provided answer time so a
+     * reconnect mid-call does not restart the duration from 00:00.
+     */
+    private fun resumeTimer(startMs: Long) {
+        if (startMs <= 0L) return
+        startTimerFrom(startMs)
+    }
+
+    private fun startTimerFrom(startMs: Long) {
         timerJob?.cancel()
-        val startMs = System.currentTimeMillis()
         timerJob = scope.launch {
             while (true) {
-                val secs = ((System.currentTimeMillis() - startMs) / 1000).toInt()
+                val secs = ((System.currentTimeMillis() - startMs) / 1000).toInt().coerceAtLeast(0)
                 _state.value = ui.copy(elapsed = "%02d:%02d".format(secs / 60, secs % 60))
                 delay(1000)
             }

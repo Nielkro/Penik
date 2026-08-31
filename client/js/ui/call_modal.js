@@ -193,6 +193,7 @@ function renderCallModal(callState, mediaState) {
           <div class="call-header-info">
             <span class="call-peer-title">${esc(peerDisplayName)}</span>
             <span class="call-duration-badge" id="call-duration-timer">00:00</span>
+            <span class="call-link-status hidden" id="call-link-status"></span>
           </div>
         </div>
         <div id="remote-video-container" class="remote-video-container ${!hasRemoteVideo ? 'hidden-stream' : ''}"></div>
@@ -236,8 +237,26 @@ function renderCallModal(callState, mediaState) {
     document.getElementById('btn-call-settings').addEventListener('click', () => openSettingsModal());
     document.getElementById('btn-end-active-call').addEventListener('click', () => callManager.endCall());
 
+    updateLinkStatus(mediaState);
     setupControlsAutoHide(hasRemoteVideo);
   }
+}
+
+/**
+ * Surfaces a reconnect in progress. A network switch takes the media session
+ * down for a few seconds while the call stays alive server-side, and without
+ * this the call just looks frozen.
+ * @param {{isReconnecting?: boolean, peerOnline?: boolean}} mediaState
+ */
+function updateLinkStatus(mediaState) {
+  const statusEl = document.getElementById('call-link-status');
+  if (!statusEl) return;
+  let text = '';
+  if (mediaState.isReconnecting) text = 'Восстановление соединения…';
+  else if (mediaState.peerOnline === false) text = 'Собеседник теряет связь…';
+
+  statusEl.textContent = text;
+  statusEl.classList.toggle('hidden', text === '');
 }
 
 async function openSettingsModal() {
@@ -364,6 +383,8 @@ function updateMediaControlsUI(mediaState) {
     }
     setupControlsAutoHide(hasRemoteVideo);
   }
+
+  updateLinkStatus(mediaState);
 }
 
 

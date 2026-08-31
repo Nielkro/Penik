@@ -20,6 +20,12 @@ export class CallManager {
     this.isVideoOff = false;
     this.isScreenShareOn = false;
     this.hasRemoteVideo = false;
+    // Set while LiveKit is re-establishing the session, so the UI can say so
+    // instead of showing a frozen picture.
+    this.isReconnecting = false;
+    // False while the peer's signaling socket is inside the server-side grace
+    // window (typically a network switch on their end).
+    this.peerOnline = true;
 
     this.callStartTime = null;
     this.timerInterval = null;
@@ -57,6 +63,8 @@ export class CallManager {
     ws.on(OP.CALL_REJECT, (payload) => this._handleCallReject(payload));
     ws.on(OP.CALL_END, (payload) => this._handleCallEnd(payload));
     ws.on(OP.CALL_TAKEN, (payload) => this._handleCallTaken(payload));
+    ws.on(OP.CALL_STATE, (payload) => this._handleCallState(payload));
+    ws.on(OP.CALL_PEER_STATE, (payload) => this._handleCallPeerState(payload));
   }
 
   /**
@@ -170,15 +178,22 @@ export class CallManager {
 
   async toggleCamera() {
     if (!this.room) return;
-    this.isVideoOff = !this.isVideoOff;
-    await this.room.localParticipant.setCameraEnabled(!this.isVideoOff);
-    if (this.isVideoOff) {
+    const next = !this.isVideoOff;
+    try {
+      await this.room.localParticipant.setCameraEnabled(!next);
+    } catch (e) {
+      console.warn('Failed to toggle camera:', e);
+      showToast('Не удалось переключить камеру', 'error');
+      // Fall through to the resync: the flag must reflect the real publication
+      // state, not the state we hoped for.
+    }
+    if (next) {
       const container = document.getElementById('local-video-container');
       if (container && !this.isScreenShareOn) {
         container.innerHTML = '';
       }
     }
-    this._notifyMediaState();
+    this._syncLocalVideoState();
   }
 
   async toggleScreenShare() {
@@ -245,6 +260,22 @@ export class CallManager {
   _startTimer() {
     this._stopTimer();
     this.callStartTime = Date.now();
+    this._runTimer();
+  }
+
+  /**
+   * Continues the call timer from a server-provided answer time, so a reconnect
+   * mid-call does not restart the duration from 00:00.
+   * @param {number} startedAtMs
+   */
+  _resumeTimer(startedAtMs) {
+    if (!startedAtMs) return;
+    this._stopTimer();
+    this.callStartTime = startedAtMs;
+    this._runTimer();
+  }
+
+  _runTimer() {
     this.timerInterval = setInterval(() => {
       if (this.callStartTime && typeof this.onTimerTick === 'function') {
         const elapsedSec = Math.floor((Date.now() - this.callStartTime) / 1000);
@@ -283,6 +314,8 @@ export class CallManager {
     this.isVideoOff = false;
     this.isScreenShareOn = false;
     this.hasRemoteVideo = false;
+    this.isReconnecting = false;
+    this.peerOnline = true;
     this.activeSpeakers.clear();
     this._notifyState();
   }
@@ -370,6 +403,47 @@ export class CallManager {
     // Local teardown only: the server already knows this device is out, and
     // sending a reject here would hang up on the device that answered.
     this.cleanup();
+  }
+
+  /**
+   * Sent right after the signaling socket reconnects while this device still
+   * owns a side of a live call. The server held the call open through the
+   * network switch, so all this does is re-sync the call id and timer — the
+   * LiveKit room reconnects on its own.
+   * @param {{call_id?: string, peer_user_id?: number, is_video?: boolean, accepted?: boolean, answered_at?: number}} payload
+   */
+  async _handleCallState(payload) {
+    if (!payload || !payload.call_id) return;
+    if (this.currentCall) {
+      // Adopt the id if this device was dialing and lost the accept frame.
+      this.currentCall.callId = payload.call_id;
+      if (payload.answered_at) {
+        this._resumeTimer(payload.answered_at * 1000);
+      }
+      return;
+    }
+    if (!payload.accepted) return;
+    // The socket came back but the tab lost its call state entirely (reload).
+    // Without a LiveKit token there is nothing to rejoin, so release the call
+    // server-side rather than leaving the peer talking to nobody.
+    ws.send(OP.CALL_END, {
+      call_id: payload.call_id,
+      to_user_id: payload.peer_user_id || 0,
+    });
+  }
+
+  /**
+   * The peer's signaling link dropped (or came back) while the call is held open
+   * by the server grace period.
+   * @param {{call_id?: string, online?: boolean}} payload
+   */
+  _handleCallPeerState(payload) {
+    if (!this._isCurrentCall(payload)) return;
+    const online = !!(payload && payload.online);
+    if (this.peerOnline === online) return;
+    this.peerOnline = online;
+    showToast(online ? 'Собеседник снова в сети' : 'Собеседник теряет связь…', 'info');
+    this._notifyMediaState();
   }
 
   async _connectLiveKit(primaryUrl, fallbackUrl, token) {
@@ -468,14 +542,33 @@ export class CallManager {
             if (publication.track) {
               publication.track.detach();
             }
+            // A full LiveKit reconnect republishes every local track under a new
+            // SID. Without removing the old tile the dead one keeps its
+            // primary-tile class and _updateTileLayout leaves a black rectangle
+            // as the main view while the live track is demoted to PiP.
+            this._removeTilesForPublication(publication);
             if (publication.source === 'screen_share') {
               this.isScreenShareOn = false;
               if (this.isVideoOff) {
                 const container = document.getElementById('local-video-container');
                 if (container) container.innerHTML = '';
               }
-              this._notifyMediaState();
             }
+            this._notifyMediaState();
+          })
+          .on(RoomEvent.Reconnecting, () => {
+            // Media is re-negotiating; keep the call up and say so.
+            this.isReconnecting = true;
+            this._notifyMediaState();
+          })
+          .on(RoomEvent.Reconnected, () => {
+            this.isReconnecting = false;
+            const wantCamera = !this.isVideoOff;
+            // Events for tracks that were (re)published while the socket was
+            // down are not replayed, so rebuild the whole video state from the
+            // room instead of waiting for notifications that will never come.
+            this._resyncTracks();
+            this._restoreCameraIfNeeded(wantCamera);
           })
           .on(RoomEvent.Disconnected, (reason) => {
             // Do not treat a background tab freeze/pagehide as a hangup.
@@ -511,6 +604,9 @@ export class CallManager {
         if (this.currentCall && this.currentCall.isVideo) {
           await this.room.localParticipant.setCameraEnabled(true);
         }
+        // Tracks the peer published before this modal existed produced tiles
+        // that had nowhere to go, so rebuild once the DOM is in place.
+        this._resyncTracks();
         return;
       } catch (err) {
         console.warn(`Failed to connect to LiveKit URL ${url}:`, err);
@@ -768,26 +864,116 @@ export class CallManager {
     this._notifyMediaState();
   }
 
+  /**
+   * Removes every tile belonging to a publication. Tiles are keyed by track SID,
+   * which changes on republish, so the SID is taken from the publication itself
+   * (its track may already be detached by the time this runs).
+   * @param {{trackSid?: string, track?: {sid?: string}}} publication
+   */
+  _removeTilesForPublication(publication) {
+    const sid = (publication && (publication.trackSid || (publication.track && publication.track.sid))) || null;
+    if (!sid) return;
+    document.querySelectorAll(`[data-track-sid="${sid}"]`).forEach((el) => el.remove());
+  }
+
+  /**
+   * Rebuilds the whole video surface from the current room state.
+   *
+   * A LiveKit full reconnect unpublishes and republishes every local track with
+   * a new SID and re-subscribes the remote ones, but the per-track events that
+   * normally build the tiles are not replayed for what already existed. Without
+   * this the local preview and the peer's picture stay black until the user
+   * toggles the camera by hand.
+   *
+   * Only video is rebuilt: audio elements live outside these containers and are
+   * re-attached by TrackSubscribed, so touching them here would just duplicate
+   * the peer's audio.
+   */
+  _resyncTracks() {
+    if (!this.room) return;
+
+    for (const id of ['local-video-container', 'remote-video-container']) {
+      const container = document.getElementById(id);
+      if (!container) continue;
+      // Detach through the SDK rather than wiping innerHTML, otherwise the track
+      // keeps a reference to an orphaned element and goes on rendering into it.
+      container.querySelectorAll('video').forEach((el) => el.remove());
+      container.innerHTML = '';
+    }
+
+    for (const pub of this.room.localParticipant.trackPublications.values()) {
+      if (pub.track && pub.track.kind === 'video' && !pub.isMuted) {
+        this._attachLocalTrack(pub.track);
+      }
+    }
+
+    for (const participant of this.room.remoteParticipants.values()) {
+      for (const pub of participant.trackPublications.values()) {
+        if (!pub.track || pub.track.kind !== 'video' || pub.isMuted) continue;
+        this._attachRemoteTrack(pub.track, participant);
+      }
+    }
+
+    this._syncLocalVideoState();
+    this._checkRemoteTracks();
+  }
+
+  /**
+   * Aligns isVideoOff / isScreenShareOn with what is actually published.
+   *
+   * These used to be plain toggle flags, so after a reconnect that failed to
+   * republish the camera the button still claimed the camera was on while no
+   * track existed.
+   */
+  _syncLocalVideoState() {
+    if (!this.room) return;
+    const local = this.room.localParticipant;
+    const cameraPub = local.getTrackPublication('camera');
+    const screenPub = local.getTrackPublication('screen_share');
+    this.isVideoOff = !(cameraPub && cameraPub.track && !cameraPub.isMuted);
+    this.isScreenShareOn = !!(screenPub && screenPub.track && !screenPub.isMuted);
+    this._notifyMediaState();
+  }
+
+  /**
+   * Re-enables the camera if it was supposed to be on but no track survived the
+   * reconnect. LiveKit's republish silently swallows a failed getUserMedia, so
+   * without this retry the camera stays gone for the rest of the call.
+   */
+  async _restoreCameraIfNeeded(wantCamera) {
+    if (!wantCamera || !this.room) return;
+    const pub = this.room.localParticipant.getTrackPublication('camera');
+    if (pub && pub.track && !pub.isMuted) return;
+    try {
+      await this.room.localParticipant.setCameraEnabled(true);
+    } catch (e) {
+      console.warn('Failed to restore camera after reconnect:', e);
+      showToast('Не удалось восстановить камеру', 'error');
+    }
+    this._syncLocalVideoState();
+  }
+
   _notifyState() {
     if (typeof this.onCallStateChange === 'function') {
-      this.onCallStateChange(this.currentCall, {
-        isMuted: this.isMuted,
-        isVideoOff: this.isVideoOff,
-        isScreenShareOn: this.isScreenShareOn,
-        hasRemoteVideo: this.hasRemoteVideo,
-      });
+      this.onCallStateChange(this.currentCall, this._mediaState());
     }
   }
 
   _notifyMediaState() {
     if (typeof this.onMediaStateChange === 'function') {
-      this.onMediaStateChange({
-        isMuted: this.isMuted,
-        isVideoOff: this.isVideoOff,
-        isScreenShareOn: this.isScreenShareOn,
-        hasRemoteVideo: this.hasRemoteVideo,
-      });
+      this.onMediaStateChange(this._mediaState());
     }
+  }
+
+  _mediaState() {
+    return {
+      isMuted: this.isMuted,
+      isVideoOff: this.isVideoOff,
+      isScreenShareOn: this.isScreenShareOn,
+      hasRemoteVideo: this.hasRemoteVideo,
+      isReconnecting: this.isReconnecting,
+      peerOnline: this.peerOnline,
+    };
   }
 }
 
