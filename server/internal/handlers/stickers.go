@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -224,23 +225,50 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 		filePath := filepath.Join(cfg.StickersDir, packID, fileName)
 		info, err := os.Stat(filePath)
 		if os.IsNotExist(err) || (err == nil && info.IsDir()) {
-			// If not found with exact fileName, try common alternative extensions
-			// (e.g. client requested .webp but on disk it is .webm, .tgs, or .png)
 			base := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-			found := false
-			for _, altExt := range []string{".webm", ".webp", ".png", ".tgs", ".json", ""} {
-				altPath := filepath.Join(cfg.StickersDir, packID, base+altExt)
-				if altInfo, altErr := os.Stat(altPath); altErr == nil && !altInfo.IsDir() {
-					filePath = altPath
-					info = altInfo
-					fileName = base + altExt
-					found = true
-					break
+			reqExt := strings.ToLower(filepath.Ext(fileName))
+
+			// If requested webp or mp4 but only webm is on disk, transcode on-demand with ffmpeg
+			webmCandidate := filepath.Join(cfg.StickersDir, packID, base+".webm")
+			if _, webmErr := os.Stat(webmCandidate); webmErr == nil {
+				if reqExt == ".webp" {
+					outWebp := filepath.Join(cfg.StickersDir, packID, base+".webp")
+					_ = exec.Command("ffmpeg", "-y", "-i", webmCandidate, "-vcodec", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", "-vsync", "0", outWebp).Run()
+					if webpInfo, webpErr := os.Stat(outWebp); webpErr == nil && !webpInfo.IsDir() && webpInfo.Size() > 0 {
+						filePath = outWebp
+						info = webpInfo
+						fileName = base + ".webp"
+						err = nil
+					}
+				} else if reqExt == ".mp4" {
+					outMp4 := filepath.Join(cfg.StickersDir, packID, base+".mp4")
+					_ = exec.Command("ffmpeg", "-y", "-i", webmCandidate, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", outMp4).Run()
+					if mp4Info, mp4Err := os.Stat(outMp4); mp4Err == nil && !mp4Info.IsDir() && mp4Info.Size() > 0 {
+						filePath = outMp4
+						info = mp4Info
+						fileName = base + ".mp4"
+						err = nil
+					}
 				}
 			}
-			if !found {
-				http.Error(w, "sticker not found", http.StatusNotFound)
-				return
+
+			// If still not found, try other alternative extensions on disk
+			if err != nil || (info != nil && info.IsDir()) {
+				found := false
+				for _, altExt := range []string{".webp", ".mp4", ".webm", ".png", ".tgs", ".json", ""} {
+					altPath := filepath.Join(cfg.StickersDir, packID, base+altExt)
+					if altInfo, altErr := os.Stat(altPath); altErr == nil && !altInfo.IsDir() {
+						filePath = altPath
+						info = altInfo
+						fileName = base + altExt
+						found = true
+						break
+					}
+				}
+				if !found {
+					http.Error(w, "sticker not found", http.StatusNotFound)
+					return
+				}
 			}
 		} else if err != nil {
 			http.Error(w, "sticker not found", http.StatusNotFound)
