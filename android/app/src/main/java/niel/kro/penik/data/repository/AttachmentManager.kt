@@ -107,9 +107,11 @@ class AttachmentManager(
             // 1. Encrypt raw file via ChaCha20-Poly1305
             val encResult = e2eeCrypto.encryptFileChaCha20(info.rawBytes)
 
-            // 2. Upload ciphertext with progress tracking
-            val rawBody = encResult.encryptedBytes.toRequestBody("application/octet-stream".toMediaTypeOrNull())
-            val progressBody = ProgressRequestBody(rawBody) { loaded, total ->
+            // 2. Upload ciphertext with chunked live progress tracking
+            val progressBody = ProgressRequestBody(
+                "application/octet-stream".toMediaTypeOrNull(),
+                encResult.encryptedBytes
+            ) { loaded, total ->
                 UploadProgressBus.update(clientMsgId, loaded, if (total > 0) total else info.fileSize)
             }
             val part = MultipartBody.Part.createFormData("file", info.fileName, progressBody)
