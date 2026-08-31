@@ -443,7 +443,7 @@ func transcodeOnDemand(srcPath, dstPath, format string) bool {
 		return false
 	}
 
-	tmpPath := dstPath + fmt.Sprintf(".tmp_%d", time.Now().UnixNano())
+	tmpPath := dstPath + fmt.Sprintf(".tmp_%d.%s", time.Now().UnixNano(), format)
 	defer os.Remove(tmpPath)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -452,15 +452,15 @@ func transcodeOnDemand(srcPath, dstPath, format string) bool {
 	var cmd *exec.Cmd
 	if format == "webp" {
 		// Stage 1: Fast animated WebP with libwebp loop
-		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libwebp", "-loop", "0", "-an", tmpPath)
+		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libwebp", "-loop", "0", "-an", "-f", "webp", tmpPath)
 		if _, err := cmd.CombinedOutput(); err != nil || !validNonEmptyFile(tmpPath) {
 			_ = os.Remove(tmpPath)
 			// Stage 2: Animated WebP with rgba filter for transparent alpha
-			cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "format=rgba", "-c:v", "libwebp", "-loop", "0", "-an", tmpPath)
+			cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "format=rgba", "-c:v", "libwebp", "-loop", "0", "-an", "-f", "webp", tmpPath)
 			if _, err2 := cmd.CombinedOutput(); err2 != nil || !validNonEmptyFile(tmpPath) {
 				_ = os.Remove(tmpPath)
 				// Stage 3: Guaranteed single-frame snapshot
-				cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vframes", "1", "-c:v", "libwebp", tmpPath)
+				cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vframes", "1", "-c:v", "libwebp", "-f", "webp", tmpPath)
 				if out3, err3 := cmd.CombinedOutput(); err3 != nil || !validNonEmptyFile(tmpPath) {
 					_ = os.Remove(tmpPath)
 					log.Printf("[Stickers] ffmpeg webp transcode failed for %s -> %s: %v, out: %s", srcPath, dstPath, err3, string(out3))
@@ -469,7 +469,7 @@ func transcodeOnDemand(srcPath, dstPath, format string) bool {
 			}
 		}
 	} else if format == "mp4" {
-		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", tmpPath)
+		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", "-f", "mp4", tmpPath)
 		if out, err := cmd.CombinedOutput(); err != nil || !validNonEmptyFile(tmpPath) {
 			_ = os.Remove(tmpPath)
 			log.Printf("[Stickers] ffmpeg mp4 transcode failed for %s -> %s: %v, out: %s", srcPath, dstPath, err, string(out))
