@@ -561,17 +561,9 @@ fun StickerGridItem(
     sticker: StickerItemResponse,
     onClick: () -> Unit
 ) {
-    val isVideo = remember(sticker) {
-        sticker.fileName.endsWith(".webm", ignoreCase = true) ||
-        sticker.url?.endsWith(".webm", ignoreCase = true) == true
-    }
-    val url = remember(sticker, isVideo) {
-        if (!sticker.url.isNullOrBlank()) {
-            ApiConfig.getFullStickerUrl(sticker.url)
-        } else {
-            val fileName = sticker.fileName.ifBlank { "${sticker.id}.${if (isVideo) "webm" else "webp"}" }
-            ApiConfig.getStickerFileUrl(sticker.packId, fileName)
-        }
+    val thumbUrl = remember(sticker) {
+        val baseId = if (sticker.id.contains('.')) sticker.id.substringBeforeLast('.') else sticker.id
+        ApiConfig.getStickerFileUrl(sticker.packId, "$baseId.webp")
     }
 
     Box(
@@ -583,7 +575,7 @@ fun StickerGridItem(
         contentAlignment = Alignment.Center
     ) {
         AsyncImage(
-            model = url,
+            model = thumbUrl,
             contentDescription = sticker.emoji.ifBlank { "Стикер" },
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit
