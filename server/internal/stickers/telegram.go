@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -32,14 +33,24 @@ type tgStickerSet struct {
 	Stickers   []tgSticker `json:"stickers"`
 }
 
-type tgSticker struct {
+type tgPhotoSize struct {
 	FileID       string `json:"file_id"`
 	FileUniqueID string `json:"file_unique_id"`
 	Width        int    `json:"width"`
 	Height       int    `json:"height"`
-	IsAnimated   bool   `json:"is_animated"`
-	IsVideo      bool   `json:"is_video"`
-	Emoji        string `json:"emoji"`
+	FileSize     int    `json:"file_size,omitempty"`
+}
+
+type tgSticker struct {
+	FileID       string       `json:"file_id"`
+	FileUniqueID string       `json:"file_unique_id"`
+	Width        int          `json:"width"`
+	Height       int          `json:"height"`
+	IsAnimated   bool         `json:"is_animated"`
+	IsVideo      bool         `json:"is_video"`
+	Emoji        string       `json:"emoji"`
+	Thumbnail    *tgPhotoSize `json:"thumbnail,omitempty"`
+	Thumb        *tgPhotoSize `json:"thumb,omitempty"`
 }
 
 type tgFileResp struct {
@@ -311,11 +322,31 @@ func ImportTelegramPack(botToken string, stickersDir string, rawPackName string,
 		fileName := fmt.Sprintf("%s%s", s.FileUniqueID, ext)
 		targetPath := filepath.Join(packDir, fileName)
 
-		// Download file bytes with retry
+		// Download main file bytes with retry
 		if err := downloadTelegramFileWithRetry(client, botToken, tgFileInfo.FilePath, targetPath); err != nil {
 			// Check if file existed before
 			if _, statErr := os.Stat(targetPath); statErr != nil {
 				continue
+			}
+		}
+
+		// If this is a video or animated sticker, try to fetch its static webp thumbnail too
+		if ext == ".webm" || ext == ".tgs" {
+			targetThumbPath := filepath.Join(packDir, fmt.Sprintf("%s.webp", s.FileUniqueID))
+			if _, statErr := os.Stat(targetThumbPath); os.IsNotExist(statErr) {
+				thumbObj := s.Thumbnail
+				if thumbObj == nil {
+					thumbObj = s.Thumb
+				}
+				if thumbObj != nil && thumbObj.FileID != "" {
+					if thumbInfo, err := fetchTelegramFileWithRetry(client, botToken, thumbObj.FileID); err == nil && thumbInfo != nil && thumbInfo.FilePath != "" {
+						_ = downloadTelegramFileWithRetry(client, botToken, thumbInfo.FilePath, targetThumbPath)
+					}
+				}
+				// Fallback to ffmpeg single-frame extraction if webp still missing
+				if _, statErr := os.Stat(targetThumbPath); os.IsNotExist(statErr) && ext == ".webm" {
+					_ = exec.Command("ffmpeg", "-y", "-i", targetPath, "-vframes", "1", "-c:v", "libwebp", "-quality", "75", targetThumbPath).Run()
+				}
 			}
 		}
 
