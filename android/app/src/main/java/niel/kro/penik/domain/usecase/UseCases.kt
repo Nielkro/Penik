@@ -247,6 +247,8 @@ class HandleWebSocketEventUseCase @Inject constructor(
             is WebSocketEvent.CallReject -> callManager.onReject(event)
             is WebSocketEvent.CallEnd -> callManager.onEnd(event)
             is WebSocketEvent.CallTaken -> callManager.onTaken(event)
+            is WebSocketEvent.CallState -> callManager.onCallState(event)
+            is WebSocketEvent.CallPeerState -> callManager.onPeerLinkState(event)
             else -> {}
         }
     }

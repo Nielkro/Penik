@@ -47,14 +47,16 @@ const (
 	OpGroupMessageEdit        Opcode = 0x29 // client→server: edit group message
 	OpGroupMessageEditNotify  Opcode = 0x2a // server→client: notify group message was edited
 
-	OpCallOffer    Opcode = 0x30
-	OpCallIncoming Opcode = 0x31
-	OpCallAccept   Opcode = 0x32
-	OpCallAccepted Opcode = 0x33
-	OpCallReject   Opcode = 0x34
-	OpCallEnd      Opcode = 0x35
-	OpCallTaken    Opcode = 0x36
-	OpCallLog      Opcode = 0x37
+	OpCallOffer     Opcode = 0x30
+	OpCallIncoming  Opcode = 0x31
+	OpCallAccept    Opcode = 0x32
+	OpCallAccepted  Opcode = 0x33
+	OpCallReject    Opcode = 0x34
+	OpCallEnd       Opcode = 0x35
+	OpCallTaken     Opcode = 0x36
+	OpCallLog       Opcode = 0x37
+	OpCallState     Opcode = 0x38 // server→client: the call this device is still in, sent on reconnect
+	OpCallPeerState Opcode = 0x39 // server→client: the peer's signaling link dropped or came back
 )
 
 // Envelope is the top-level wire frame: [opcode byte][msgpack payload bytes...]
@@ -414,4 +416,30 @@ type CallLogEvent struct {
 	EndedAt    int64  `msgpack:"ended_at" json:"ended_at"`
 	Duration   int64  `msgpack:"duration" json:"duration"`
 }
+
+// CallState is sent server→client right after a device reconnects while it still
+// owns a side of a live call. A network switch drops the signaling socket for a
+// few seconds, and without this frame the client has no way to learn the call it
+// was in is still alive — it would sit in a dead UI until something else ended
+// the call.
+type CallState struct {
+	CallID     string `msgpack:"call_id"`
+	PeerUserID int64  `msgpack:"peer_user_id"`
+	IsVideo    bool   `msgpack:"is_video"`
+	RoomName   string `msgpack:"room_name"`
+	Accepted   bool   `msgpack:"accepted"`
+	// AnsweredAt lets a reconnecting client resume its call timer from the real
+	// start instead of restarting it from zero.
+	AnsweredAt int64 `msgpack:"answered_at"`
+}
+
+// CallPeerState tells a client that the peer's signaling link went away or came
+// back while the call itself is still held open by the reconnect grace period.
+// Without it the surviving side has no way to explain a frozen picture.
+type CallPeerState struct {
+	CallID string `msgpack:"call_id"`
+	// Online is false while the peer is inside the reconnect grace window.
+	Online bool `msgpack:"online"`
+}
+
 

@@ -192,6 +192,23 @@ sealed class WebSocketEvent {
     data class CallTaken(val callId: String, val reason: String) : WebSocketEvent()
     data class CallLog(val event: niel.kro.penik.data.network.api.CallLogEvent) : WebSocketEvent()
 
+    /**
+     * Replayed by the server right after this device reconnects while it still
+     * owns a side of a live call, so a network switch no longer leaves the call
+     * screen stranded.
+     */
+    data class CallState(
+        val callId: String,
+        val peerUserId: Long,
+        val isVideo: Boolean,
+        val roomName: String,
+        val accepted: Boolean,
+        val answeredAt: Long
+    ) : WebSocketEvent()
+
+    /** The peer's signaling link dropped or came back while the call is held open. */
+    data class CallPeerState(val callId: String, val online: Boolean) : WebSocketEvent()
+
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
     object Unauthorized : WebSocketEvent()
@@ -240,6 +257,8 @@ object Opcode {
     const val CALL_END: Byte = 0x35
     const val CALL_TAKEN: Byte = 0x36
     const val CALL_LOG: Byte = 0x37
+    const val CALL_STATE: Byte = 0x38
+    const val CALL_PEER_STATE: Byte = 0x39
 }
 
 private fun MessageUnpacker.readMsgRecvMap(): Map<String, Any?> {
@@ -509,6 +528,48 @@ class WebSocketManager @Inject constructor(
             Opcode.CALL_END -> handleCallEnd(payload)
             Opcode.CALL_TAKEN -> handleCallTaken(payload)
             Opcode.CALL_LOG -> handleCallLog(payload)
+            Opcode.CALL_STATE -> handleCallState(payload)
+            Opcode.CALL_PEER_STATE -> handleCallPeerState(payload)
+        }
+    }
+
+    private fun handleCallState(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            scope.launch {
+                _events.emit(
+                    WebSocketEvent.CallState(
+                        callId = map["call_id"]?.toString().orEmpty(),
+                        peerUserId = (map["peer_user_id"] as? Number)?.toLong() ?: 0L,
+                        isVideo = map["is_video"] as? Boolean ?: false,
+                        roomName = map["room_name"]?.toString().orEmpty(),
+                        accepted = map["accepted"] as? Boolean ?: false,
+                        answeredAt = (map["answered_at"] as? Number)?.toLong() ?: 0L
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse CallState frame", e)
+        }
+    }
+
+    private fun handleCallPeerState(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            scope.launch {
+                _events.emit(
+                    WebSocketEvent.CallPeerState(
+                        callId = map["call_id"]?.toString().orEmpty(),
+                        online = map["online"] as? Boolean ?: true
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse CallPeerState frame", e)
         }
     }
 

@@ -271,6 +271,22 @@ private fun ActiveCallView(callManager: CallManager) {
                     color = Color.White.copy(alpha = 0.7f),
                     fontSize = 14.sp
                 )
+                // A network switch takes the media session down for a few
+                // seconds while the call stays alive, which otherwise just looks
+                // like the picture froze for no reason.
+                val linkStatus = when {
+                    state.isReconnecting -> "Восстановление соединения…"
+                    !state.peerOnline -> "Собеседник теряет связь…"
+                    else -> null
+                }
+                if (linkStatus != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        linkStatus,
+                        color = Color(0xFFFFB74D),
+                        fontSize = 13.sp
+                    )
+                }
             }
         }
 
@@ -368,9 +384,17 @@ private fun VideoRenderer(
         }
     }
 
-    DisposableEffect(Unit) {
+    // Compose gives no ordering guarantee between the disposal of two effects,
+    // so the release path detaches the sink itself instead of trusting the
+    // effect above to have run first — otherwise the track could keep pushing
+    // frames into an already freed renderer.
+    DisposableEffect(renderer) {
+        val r = renderer
         onDispose {
-            try { renderer?.release() } catch (_: Exception) {}
+            if (track != null && r != null) {
+                try { track.removeRenderer(r) } catch (_: Exception) {}
+            }
+            try { r?.release() } catch (_: Exception) {}
         }
     }
 }

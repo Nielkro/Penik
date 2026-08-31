@@ -18,8 +18,16 @@ import (
 // "busy" for everyone else.
 const ringTimeout = 60 * time.Second
 
+// reconnectGrace is how long an accepted call survives after the signaling
+// socket of a participating device drops. Switching between Wi-Fi and mobile
+// data tears the WebSocket down for a couple of seconds while the LiveKit media
+// session survives via ICE restart, so ending the call on the first disconnect
+// hung up on both users over a transient network blip. It is a var so tests can
+// shorten it.
+var reconnectGrace = 30 * time.Second
+
 type activeCall struct {
-	CallID         string
+	CallID string
 	// Calls belong to a device, not just an account: a user with several
 	// connected devices must not lose an in-progress call because an idle
 	// device dropped its socket. CalleeDeviceID stays 0 until the callee
@@ -39,6 +47,13 @@ type activeCall struct {
 	StartedAt      time.Time
 	AnsweredAt     *time.Time
 	DB             *sql.DB
+	// pendingDrop is the timer armed when an owning device disconnected. It is
+	// cancelled if that device reconnects inside reconnectGrace, which is what
+	// makes a call survive a network switch.
+	pendingDrop *time.Timer
+	// awaitingDevice is the device the grace period is waiting for. Kept so a
+	// reconnect of a *different* device does not cancel the wrong timer.
+	awaitingDevice int64
 }
 
 // recordCallHistory logs the call outcome to the SQLite database and broadcasts
@@ -146,9 +161,24 @@ func (a *activeCall) otherRingingDevices(deviceID int64) []int64 {
 // dropCall removes a call and both participants' busy markers. Callers must hold
 // callsMu.
 func dropCall(ac *activeCall) {
+	if ac.pendingDrop != nil {
+		ac.pendingDrop.Stop()
+		ac.pendingDrop = nil
+		ac.awaitingDevice = 0
+	}
 	delete(activeCalls, ac.CallID)
 	delete(userCalls, ac.CallerID)
 	delete(userCalls, ac.CalleeID)
+}
+
+// cancelPendingDrop clears an armed grace timer. Callers must hold callsMu.
+func (a *activeCall) cancelPendingDrop() {
+	if a == nil || a.pendingDrop == nil {
+		return
+	}
+	a.pendingDrop.Stop()
+	a.pendingDrop = nil
+	a.awaitingDevice = 0
 }
 
 // notifyOtherCalleeDevices tells the callee's remaining devices to stop ringing
@@ -161,6 +191,17 @@ func notifyOtherCalleeDevices(hub *Hub, deviceIDs []int64, callID, reason string
 	for _, devID := range deviceIDs {
 		hub.SendToDeviceFrame(devID, OpCallTaken, payload)
 	}
+}
+
+// notifyPeerLink tells the other participant whether this call's peer currently
+// has a signaling link, so the surviving side can show "reconnecting" instead of
+// a silently frozen call.
+func notifyPeerLink(hub *Hub, ac *activeCall, awayUserID int64, online bool) {
+	if hub == nil || ac == nil {
+		return
+	}
+	payload, _ := msgpack.Marshal(CallPeerState{CallID: ac.CallID, Online: online})
+	hub.SendToUser(ac.peerOf(awayUserID), append([]byte{byte(OpCallPeerState)}, payload...))
 }
 
 var (
@@ -574,6 +615,10 @@ func (c *Client) handleCallEnd(payload []byte) error {
 // other device of the same user kill a live call just by disconnecting. A callee
 // that has not answered yet is only released once no device of theirs is left to
 // ring.
+//
+// An already accepted call is not ended right away. The signaling socket dies on
+// every network switch while the LiveKit media session survives, so the call is
+// only dropped if the device fails to come back within reconnectGrace.
 func CleanupDeviceCalls(hub *Hub, userID, deviceID int64) {
 	callsMu.Lock()
 
@@ -621,13 +666,26 @@ func CleanupDeviceCalls(hub *Hub, userID, deviceID int64) {
 		return
 	}
 
-	status := "completed"
-	if !ac.Accepted {
-		if userID == ac.CallerID {
-			status = "cancelled"
-		} else {
-			status = "missed"
+	// A call in progress gets a grace window: the media path outlives a Wi-Fi to
+	// mobile handover, so only a device that never comes back really hung up.
+	if ac.Accepted {
+		if ac.pendingDrop != nil && ac.awaitingDevice == deviceID {
+			callsMu.Unlock()
+			return
 		}
+		ac.cancelPendingDrop()
+		ac.awaitingDevice = deviceID
+		ac.pendingDrop = time.AfterFunc(reconnectGrace, func() {
+			expireDisconnectedCall(hub, callID, userID, deviceID)
+		})
+		callsMu.Unlock()
+		notifyPeerLink(hub, ac, userID, false)
+		return
+	}
+
+	status := "cancelled"
+	if userID != ac.CallerID {
+		status = "missed"
 	}
 
 	dropCall(ac)
@@ -643,6 +701,77 @@ func CleanupDeviceCalls(hub *Hub, userID, deviceID int64) {
 	// of a callee whose caller just vanished.
 	payload, _ := msgpack.Marshal(CallEnd{CallID: endedCallID, ToUserID: userID})
 	hub.SendToUser(peerID, append([]byte{byte(OpCallEnd)}, payload...))
+}
+
+// expireDisconnectedCall ends a call whose owning device never returned inside
+// reconnectGrace.
+func expireDisconnectedCall(hub *Hub, callID string, userID, deviceID int64) {
+	callsMu.Lock()
+	ac, ok := activeCalls[callID]
+	// A reconnect (or an explicit hangup) that beat the timer cleared it; the
+	// awaitingDevice check makes sure this timer still owns the call.
+	if !ok || ac.pendingDrop == nil || ac.awaitingDevice != deviceID {
+		callsMu.Unlock()
+		return
+	}
+	ac.pendingDrop = nil
+	ac.awaitingDevice = 0
+	dropCall(ac)
+	peerID := ac.peerOf(userID)
+	callsMu.Unlock()
+
+	recordCallHistory(hub, ac, "completed")
+
+	if hub == nil {
+		return
+	}
+	payload, _ := msgpack.Marshal(CallEnd{CallID: callID, ToUserID: userID})
+	hub.SendToUser(peerID, append([]byte{byte(OpCallEnd)}, payload...))
+}
+
+// ResumeDeviceCalls is called once a device is registered again. If that device
+// owns a side of a live call it cancels the pending grace drop and replays the
+// call state, so a client that lost its socket mid-call can tell the call is
+// still up instead of being stuck on a dead screen.
+//
+// deliver writes straight to the reconnecting connection rather than going
+// through the hub: hub registration is asynchronous, so the device may not be
+// routable yet at this point.
+func ResumeDeviceCalls(hub *Hub, userID, deviceID int64, deliver func(frame []byte)) {
+	callsMu.Lock()
+	callID, inCall := userCalls[userID]
+	if !inCall {
+		callsMu.Unlock()
+		return
+	}
+	ac, ok := activeCalls[callID]
+	if !ok || !ac.ownedByDevice(userID, deviceID) {
+		callsMu.Unlock()
+		return
+	}
+	resumed := ac.pendingDrop != nil && ac.awaitingDevice == deviceID
+	if resumed {
+		ac.cancelPendingDrop()
+	}
+	state := CallState{
+		CallID:     ac.CallID,
+		PeerUserID: ac.peerOf(userID),
+		IsVideo:    ac.IsVideo,
+		RoomName:   ac.RoomName,
+		Accepted:   ac.Accepted,
+	}
+	if ac.AnsweredAt != nil {
+		state.AnsweredAt = ac.AnsweredAt.Unix()
+	}
+	callsMu.Unlock()
+
+	if deliver != nil {
+		payload, _ := msgpack.Marshal(state)
+		deliver(append([]byte{byte(OpCallState)}, payload...))
+	}
+	if resumed {
+		notifyPeerLink(hub, ac, userID, true)
+	}
 }
 
 // expireUnansweredCall releases a call that is still ringing after ringTimeout

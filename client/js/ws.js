@@ -52,6 +52,8 @@ export const OP = {
   CALL_END:      0x35,
   CALL_TAKEN:    0x36,
   CALL_LOG:      0x37,
+  CALL_STATE:      0x38,
+  CALL_PEER_STATE: 0x39,
 };
 
 export function getWsUrl() {
