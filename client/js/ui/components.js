@@ -439,6 +439,15 @@ export function renderStickerContent(container, sticker) {
     video.addEventListener("canplay", () => {
       video.play().catch(() => {});
     });
+    video.onerror = () => {
+      const fallbackImg = document.createElement("img");
+      fallbackImg.src = url;
+      fallbackImg.className = "msg-sticker-media";
+      fallbackImg.loading = "lazy";
+      fallbackImg.alt = sticker.emoji || "стикер";
+      fallbackImg.style.pointerEvents = "none";
+      video.replaceWith(fallbackImg);
+    };
     wrapper.appendChild(video);
     setTimeout(() => {
       video.play().catch(() => {});

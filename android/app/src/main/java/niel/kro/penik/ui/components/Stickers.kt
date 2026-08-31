@@ -197,12 +197,19 @@ fun StickerMediaView(
         val cachedFile = rememberCachedStickerFile(url)
 
         if (cachedFile != null && cachedFile.exists()) {
+            var hasPlayerError by remember(cachedFile.absolutePath) { mutableStateOf(false) }
             val exoPlayer = remember(cachedFile.absolutePath) {
                 ExoPlayer.Builder(context).build().apply {
                     val mediaItem = MediaItem.fromUri(Uri.fromFile(cachedFile))
                     setMediaItem(mediaItem)
                     repeatMode = Player.REPEAT_MODE_ALL
                     volume = 0f
+                    addListener(object : Player.Listener {
+                        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                            Log.w("StickerMedia", "ExoPlayer failed for $url: ${error.message}")
+                            hasPlayerError = true
+                        }
+                    })
                     prepare()
                     playWhenReady = true
                 }
@@ -214,18 +221,27 @@ fun StickerMediaView(
                 }
             }
 
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = exoPlayer
-                        useController = false
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    }
-                },
-                modifier = modifier
-            )
+            if (!hasPlayerError) {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            player = exoPlayer
+                            useController = false
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        }
+                    },
+                    modifier = modifier
+                )
+            } else {
+                AsyncImage(
+                    model = cachedFile,
+                    contentDescription = contentDescription,
+                    modifier = modifier,
+                    contentScale = ContentScale.Fit
+                )
+            }
         } else {
             AsyncImage(
                 model = url,

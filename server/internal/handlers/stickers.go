@@ -247,21 +247,8 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		ext := strings.ToLower(filepath.Ext(fileName))
-		switch ext {
-		case ".webp":
-			w.Header().Set("Content-Type", "image/webp")
-		case ".png":
-			w.Header().Set("Content-Type", "image/png")
-		case ".webm":
-			w.Header().Set("Content-Type", "video/webm")
-		case ".tgs":
-			w.Header().Set("Content-Type", "application/x-tgsticker")
-		case ".json":
-			w.Header().Set("Content-Type", "application/json")
-		default:
-			w.Header().Set("Content-Type", "application/octet-stream")
-		}
+		contentType := detectStickerContentType(filePath, fileName)
+		w.Header().Set("Content-Type", contentType)
 
 		etag := `"` + fileName + `"`
 		w.Header().Set("ETag", etag)
@@ -283,6 +270,46 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 		}
 
 		http.ServeFile(w, r, filePath)
+	}
+}
+
+func detectStickerContentType(filePath, fileName string) string {
+	f, err := os.Open(filePath)
+	if err == nil {
+		defer f.Close()
+		buf := make([]byte, 16)
+		n, _ := f.Read(buf)
+		if n >= 2 && buf[0] == 0x1f && buf[1] == 0x8b {
+			return "application/x-tgsticker"
+		}
+		if n >= 4 && buf[0] == 0x1a && buf[1] == 0x45 && buf[2] == 0xdf && buf[3] == 0xa3 {
+			return "video/webm"
+		}
+		if n >= 12 && string(buf[0:4]) == "RIFF" && string(buf[8:12]) == "WEBP" {
+			return "image/webp"
+		}
+		if n >= 8 && string(buf[1:4]) == "PNG" {
+			return "image/png"
+		}
+		if n >= 1 && (buf[0] == '{' || buf[0] == '[') {
+			return "application/json"
+		}
+	}
+
+	ext := strings.ToLower(filepath.Ext(fileName))
+	switch ext {
+	case ".webp":
+		return "image/webp"
+	case ".png":
+		return "image/png"
+	case ".webm":
+		return "video/webm"
+	case ".tgs":
+		return "application/x-tgsticker"
+	case ".json":
+		return "application/json"
+	default:
+		return "application/octet-stream"
 	}
 }
 
