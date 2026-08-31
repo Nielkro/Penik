@@ -130,7 +130,11 @@ export function createStickerPicker(onSelect) {
     });
   });
 
+  const packCache = new Map();
+  let renderGen = 0;
+
   async function loadPacks() {
+    packCache.clear();
     try {
       installedPacks = await getMyStickers() || [];
     } catch {
@@ -185,6 +189,7 @@ export function createStickerPicker(onSelect) {
       }
 
       tabBtn.addEventListener("click", () => {
+        if (activeTab === pack.id) return;
         activeTab = pack.id;
         renderTabs();
         renderContent();
@@ -208,6 +213,7 @@ export function createStickerPicker(onSelect) {
   }
 
   async function renderContent() {
+    const currentGen = ++renderGen;
     contentArea.innerHTML = "";
 
     if (activeTab === "recent") {
@@ -239,30 +245,38 @@ export function createStickerPicker(onSelect) {
       return;
     }
 
-    contentArea.appendChild(spinner());
-    try {
-      const pack = await getStickerPack(activeTab);
-      currentPackDetails = pack;
-      contentArea.innerHTML = "";
-
-      const packHeader = el("div", { class: "sticker-pack-preview-header" });
-      packHeader.appendChild(el("span", { class: "pack-name" }, pack.title));
-      contentArea.appendChild(packHeader);
-
-      if (!pack.stickers || pack.stickers.length === 0) {
-        contentArea.appendChild(el("div", { class: "sticker-picker-empty" }, "В этом паке нет стикеров"));
+    let pack = packCache.get(activeTab);
+    if (!pack) {
+      contentArea.appendChild(spinner());
+      try {
+        pack = await getStickerPack(activeTab);
+        packCache.set(activeTab, pack);
+      } catch (err) {
+        if (currentGen !== renderGen) return;
+        contentArea.innerHTML = "";
+        contentArea.appendChild(el("div", { class: "sticker-picker-empty" }, "Не удалось загрузить стикеры"));
         return;
       }
-
-      const grid = el("div", { class: "stickers-grid" });
-      for (const s of pack.stickers) {
-        grid.appendChild(createStickerItem(s, pack));
-      }
-      contentArea.appendChild(grid);
-    } catch (err) {
-      contentArea.innerHTML = "";
-      contentArea.appendChild(el("div", { class: "sticker-picker-empty" }, "Не удалось загрузить стикеры"));
     }
+
+    if (currentGen !== renderGen) return;
+    currentPackDetails = pack;
+    contentArea.innerHTML = "";
+
+    const packHeader = el("div", { class: "sticker-pack-preview-header" });
+    packHeader.appendChild(el("span", { class: "pack-name" }, pack.title));
+    contentArea.appendChild(packHeader);
+
+    if (!pack.stickers || pack.stickers.length === 0) {
+      contentArea.appendChild(el("div", { class: "sticker-picker-empty" }, "В этом паке нет стикеров"));
+      return;
+    }
+
+    const grid = el("div", { class: "stickers-grid" });
+    for (const s of pack.stickers) {
+      grid.appendChild(createStickerItem(s, pack));
+    }
+    contentArea.appendChild(grid);
   }
 
   function createStickerItem(s, pack) {

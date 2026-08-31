@@ -438,18 +438,16 @@ fun StickerPickerBottomSheet(
                         }
                     }
                 } else {
-                    val activePack = packs.find { it.id == selectedTab }
-                    var packDetail by remember(selectedTab) { mutableStateOf(activePack) }
-                    var loadingDetails by remember(selectedTab) { mutableStateOf(activePack?.stickers.isNullOrEmpty()) }
+                    var packDetail by remember(selectedTab) { mutableStateOf<StickerPackResponse?>(null) }
+                    var loadingDetails by remember(selectedTab) { mutableStateOf(true) }
 
                     LaunchedEffect(selectedTab) {
-                        if (activePack != null && activePack.stickers.isEmpty()) {
-                            val detRes = stickerRepository.getPackDetails(selectedTab)
-                            if (detRes.isSuccess) {
-                                packDetail = detRes.getOrNull()
-                            }
-                            loadingDetails = false
+                        loadingDetails = true
+                        val detRes = stickerRepository.getPackDetails(selectedTab)
+                        if (detRes.isSuccess) {
+                            packDetail = detRes.getOrNull()
                         }
+                        loadingDetails = false
                     }
 
                     if (loadingDetails) {
@@ -561,9 +559,13 @@ fun StickerGridItem(
     sticker: StickerItemResponse,
     onClick: () -> Unit
 ) {
-    val thumbUrl = remember(sticker) {
-        val baseId = if (sticker.id.contains('.')) sticker.id.substringBeforeLast('.') else sticker.id
-        ApiConfig.getStickerFileUrl(sticker.packId, "$baseId.webp")
+    val url = remember(sticker) {
+        if (!sticker.url.isNullOrBlank()) {
+            ApiConfig.getFullStickerUrl(sticker.url)
+        } else {
+            val fileName = sticker.fileName.ifBlank { sticker.id }
+            ApiConfig.getStickerFileUrl(sticker.packId, fileName)
+        }
     }
 
     Box(
@@ -575,7 +577,7 @@ fun StickerGridItem(
         contentAlignment = Alignment.Center
     ) {
         AsyncImage(
-            model = thumbUrl,
+            model = url,
             contentDescription = sticker.emoji.ifBlank { "Стикер" },
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit
