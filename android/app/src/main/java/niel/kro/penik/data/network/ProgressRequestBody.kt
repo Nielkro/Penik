@@ -10,18 +10,6 @@ class ProgressRequestBody(
     private val onProgress: (bytesWritten: Long, contentLength: Long) -> Unit
 ) : RequestBody() {
 
-    constructor(
-        delegate: RequestBody,
-        onProgress: (bytesWritten: Long, contentLength: Long) -> Unit
-    ) : this(
-        delegate.contentType(),
-        run {
-            val buffer = okio.Buffer()
-            delegate.writeTo(buffer)
-            buffer.readByteArray()
-        },
-        onProgress
-    )
 
     override fun contentType(): MediaType? = contentType
 
