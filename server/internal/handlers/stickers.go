@@ -230,17 +230,30 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		filePath := filepath.Join(cfg.StickersDir, packID, fileName)
+		packDir := filepath.Join(cfg.StickersDir, packID)
+		if packDirInfo, statErr := os.Stat(packDir); statErr != nil || !packDirInfo.IsDir() {
+			if entries, dirErr := os.ReadDir(cfg.StickersDir); dirErr == nil {
+				for _, entry := range entries {
+					if entry.IsDir() && strings.EqualFold(entry.Name(), packID) {
+						packID = entry.Name()
+						packDir = filepath.Join(cfg.StickersDir, packID)
+						break
+					}
+				}
+			}
+		}
+
+		filePath := filepath.Join(packDir, fileName)
 		info, err := os.Stat(filePath)
 		if os.IsNotExist(err) || (err == nil && info.IsDir()) {
 			base := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 			reqExt := strings.ToLower(filepath.Ext(fileName))
 
 			// If requested webp or mp4 but only webm is on disk, transcode safely with concurrency limits
-			webmCandidate := filepath.Join(cfg.StickersDir, packID, base+".webm")
+			webmCandidate := filepath.Join(packDir, base+".webm")
 			if _, webmErr := os.Stat(webmCandidate); webmErr == nil {
 				if reqExt == ".webp" {
-					outWebp := filepath.Join(cfg.StickersDir, packID, base+".webp")
+					outWebp := filepath.Join(packDir, base+".webp")
 					if transcodeOnDemand(webmCandidate, outWebp, "webp") {
 						if webpInfo, webpErr := os.Stat(outWebp); webpErr == nil && !webpInfo.IsDir() && webpInfo.Size() > 0 {
 							filePath = outWebp
@@ -250,7 +263,7 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 						}
 					}
 				} else if reqExt == ".mp4" {
-					outMp4 := filepath.Join(cfg.StickersDir, packID, base+".mp4")
+					outMp4 := filepath.Join(packDir, base+".mp4")
 					if transcodeOnDemand(webmCandidate, outMp4, "mp4") {
 						if mp4Info, mp4Err := os.Stat(outMp4); mp4Err == nil && !mp4Info.IsDir() && mp4Info.Size() > 0 {
 							filePath = outMp4
@@ -266,13 +279,34 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 			if err != nil || (info != nil && info.IsDir()) {
 				found := false
 				for _, altExt := range []string{".webp", ".mp4", ".webm", ".png", ".tgs", ".json", ""} {
-					altPath := filepath.Join(cfg.StickersDir, packID, base+altExt)
+					altPath := filepath.Join(packDir, base+altExt)
 					if altInfo, altErr := os.Stat(altPath); altErr == nil && !altInfo.IsDir() {
 						filePath = altPath
 						info = altInfo
 						fileName = base + altExt
 						found = true
+						err = nil
 						break
+					}
+				}
+				// If still not found, scan pack directory for case-insensitive match on baseID
+				if !found {
+					if entries, dirErr := os.ReadDir(packDir); dirErr == nil {
+						for _, entry := range entries {
+							if !entry.IsDir() {
+								eBase := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+								if strings.EqualFold(eBase, base) {
+									filePath = filepath.Join(packDir, entry.Name())
+									if altInfo, altErr := entry.Info(); altErr == nil {
+										info = altInfo
+										fileName = entry.Name()
+										found = true
+										err = nil
+										break
+									}
+								}
+							}
+						}
 					}
 				}
 				if !found {
