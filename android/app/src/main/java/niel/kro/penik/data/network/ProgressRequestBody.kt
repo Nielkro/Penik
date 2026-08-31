@@ -2,35 +2,44 @@ package niel.kro.penik.data.network
 
 import okhttp3.MediaType
 import okhttp3.RequestBody
-import okio.Buffer
 import okio.BufferedSink
-import okio.ForwardingSink
-import okio.Sink
-import okio.buffer
 
 class ProgressRequestBody(
-    private val delegate: RequestBody,
+    private val contentType: MediaType?,
+    private val data: ByteArray,
     private val onProgress: (bytesWritten: Long, contentLength: Long) -> Unit
 ) : RequestBody() {
 
-    override fun contentType(): MediaType? = delegate.contentType()
+    constructor(
+        delegate: RequestBody,
+        onProgress: (bytesWritten: Long, contentLength: Long) -> Unit
+    ) : this(
+        delegate.contentType(),
+        run {
+            val buffer = okio.Buffer()
+            delegate.writeTo(buffer)
+            buffer.readByteArray()
+        },
+        onProgress
+    )
 
-    override fun contentLength(): Long = delegate.contentLength()
+    override fun contentType(): MediaType? = contentType
+
+    override fun contentLength(): Long = data.size.toLong()
 
     override fun writeTo(sink: BufferedSink) {
-        val countingSink = CountingSink(sink)
-        val bufferedSink = countingSink.buffer()
-        delegate.writeTo(bufferedSink)
-        bufferedSink.flush()
-    }
+        val total = data.size.toLong()
+        val chunkSize = 32 * 1024 // 32 KB chunk for smooth live progress updates
+        var offset = 0
 
-    private inner class CountingSink(delegate: Sink) : ForwardingSink(delegate) {
-        private var bytesWritten = 0L
+        onProgress(0L, total)
 
-        override fun write(source: Buffer, byteCount: Long) {
-            super.write(source, byteCount)
-            bytesWritten += byteCount
-            onProgress(bytesWritten, contentLength())
+        while (offset < data.size) {
+            val toWrite = minOf(chunkSize, data.size - offset)
+            sink.write(data, offset, toWrite)
+            sink.flush()
+            offset += toWrite
+            onProgress(offset.toLong(), total)
         }
     }
 }
