@@ -424,11 +424,14 @@ export function renderStickerContent(container, sticker) {
     video.muted = true;
     video.defaultMuted = true;
     video.playsInline = true;
+    video.controls = false;
+    video.disablePictureInPicture = true;
     video.setAttribute("autoplay", "");
     video.setAttribute("loop", "");
     video.setAttribute("muted", "");
     video.setAttribute("playsinline", "");
     video.setAttribute("preload", "auto");
+    video.style.pointerEvents = "none";
     video.className = "msg-sticker-media";
     video.addEventListener("loadeddata", () => {
       video.play().catch(() => {});
@@ -446,6 +449,7 @@ export function renderStickerContent(container, sticker) {
     img.className = "msg-sticker-media";
     img.loading = "lazy";
     img.alt = sticker.emoji || "стикер";
+    img.style.pointerEvents = "none";
     img.onerror = () => {
       const vid = document.createElement("video");
       vid.src = url.replace(/\.[a-zA-Z0-9]+$/, '.webm');
@@ -454,10 +458,13 @@ export function renderStickerContent(container, sticker) {
       vid.muted = true;
       vid.defaultMuted = true;
       vid.playsInline = true;
+      vid.controls = false;
+      vid.disablePictureInPicture = true;
       vid.setAttribute("autoplay", "");
       vid.setAttribute("loop", "");
       vid.setAttribute("muted", "");
       vid.setAttribute("playsinline", "");
+      vid.style.pointerEvents = "none";
       vid.className = "msg-sticker-media";
       vid.addEventListener("canplay", () => {
         vid.play().catch(() => {});
@@ -524,12 +531,10 @@ export function renderStickerContent(container, sticker) {
 
   wrapper.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (isLongPress) {
-      isLongPress = false;
-      return;
-    }
     clearTimer();
-    showFullscreenMedia(url, isVideo);
+    if (sticker.pack_id) {
+      openPackModal();
+    }
   });
 
   container.appendChild(wrapper);

@@ -2033,10 +2033,10 @@ fun MessageBubble(
                     }
                 )
                 .padding(
-                    start = if (isMediaNoCaption) 0.dp else 10.dp,
-                    end = if (isMediaNoCaption) 0.dp else 10.dp,
-                    top = if (isMediaNoCaption) 0.dp else 6.dp,
-                    bottom = if (isMediaNoCaption) 0.dp else 6.dp
+                    start = if (isMediaNoCaption || isSticker) 0.dp else 10.dp,
+                    end = if (isMediaNoCaption || isSticker) 0.dp else 10.dp,
+                    top = if (isMediaNoCaption || isSticker) 0.dp else 6.dp,
+                    bottom = if (isMediaNoCaption || isSticker) 0.dp else 6.dp
                 )
         ) {
             DropdownMenu(
