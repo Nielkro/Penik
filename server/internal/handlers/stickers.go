@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -450,31 +451,28 @@ func transcodeOnDemand(srcPath, dstPath, format string) bool {
 
 	var cmd *exec.Cmd
 	if format == "webp" {
-		// Stage 1: Try animated webp with rgba conversion (preserves alpha channel 100%)
-		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "format=rgba", "-c:v", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", tmpPath)
-		if err := cmd.Run(); err != nil || !validNonEmptyFile(tmpPath) {
+		// Stage 1: Fast animated WebP with libwebp loop
+		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libwebp", "-loop", "0", "-an", tmpPath)
+		if _, err := cmd.CombinedOutput(); err != nil || !validNonEmptyFile(tmpPath) {
 			_ = os.Remove(tmpPath)
-			// Stage 2: Try animated webp with yuva420p
-			cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "format=yuva420p", "-c:v", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", tmpPath)
-			if err2 := cmd.Run(); err2 != nil || !validNonEmptyFile(tmpPath) {
+			// Stage 2: Animated WebP with rgba filter for transparent alpha
+			cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "format=rgba", "-c:v", "libwebp", "-loop", "0", "-an", tmpPath)
+			if _, err2 := cmd.CombinedOutput(); err2 != nil || !validNonEmptyFile(tmpPath) {
 				_ = os.Remove(tmpPath)
-				// Stage 3: Default libwebp
-				cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libwebp", "-lossless", "0", "-q:v", "75", "-loop", "0", "-an", tmpPath)
-				if err3 := cmd.Run(); err3 != nil || !validNonEmptyFile(tmpPath) {
+				// Stage 3: Guaranteed single-frame snapshot
+				cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vframes", "1", "-c:v", "libwebp", tmpPath)
+				if out3, err3 := cmd.CombinedOutput(); err3 != nil || !validNonEmptyFile(tmpPath) {
 					_ = os.Remove(tmpPath)
-					// Stage 4: Single frame snapshot as guaranteed webp fallback
-					cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vframes", "1", "-c:v", "libwebp", "-q:v", "75", tmpPath)
-					if err4 := cmd.Run(); err4 != nil || !validNonEmptyFile(tmpPath) {
-						_ = os.Remove(tmpPath)
-						return false
-					}
+					log.Printf("[Stickers] ffmpeg webp transcode failed for %s -> %s: %v, out: %s", srcPath, dstPath, err3, string(out3))
+					return false
 				}
 			}
 		}
 	} else if format == "mp4" {
 		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", tmpPath)
-		if err := cmd.Run(); err != nil || !validNonEmptyFile(tmpPath) {
+		if out, err := cmd.CombinedOutput(); err != nil || !validNonEmptyFile(tmpPath) {
 			_ = os.Remove(tmpPath)
+			log.Printf("[Stickers] ffmpeg mp4 transcode failed for %s -> %s: %v, out: %s", srcPath, dstPath, err, string(out))
 			return false
 		}
 	} else {
