@@ -46,6 +46,15 @@ function createStickerMediaElement(url, isVideo, emoji = "", className = "sticke
     vid.addEventListener("canplay", () => {
       vid.play().catch(() => {});
     });
+    vid.onerror = () => {
+      const fallbackImg = document.createElement("img");
+      fallbackImg.src = url;
+      fallbackImg.className = className;
+      fallbackImg.loading = "lazy";
+      fallbackImg.alt = emoji || "стикер";
+      fallbackImg.style.pointerEvents = "none";
+      vid.replaceWith(fallbackImg);
+    };
     setTimeout(() => {
       vid.play().catch(() => {});
     }, 50);
