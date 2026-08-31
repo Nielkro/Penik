@@ -335,7 +335,9 @@ func ImportTelegramPack(botToken string, stickersDir string, rawPackName string,
 			targetWebpPath := filepath.Join(packDir, fmt.Sprintf("%s.webp", s.FileUniqueID))
 			targetMp4Path := filepath.Join(packDir, fmt.Sprintf("%s.mp4", s.FileUniqueID))
 			if _, statErr := os.Stat(targetWebpPath); os.IsNotExist(statErr) {
-				_ = exec.Command("ffmpeg", "-y", "-i", targetPath, "-vcodec", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", "-vsync", "0", targetWebpPath).Run()
+				if err := exec.Command("ffmpeg", "-y", "-i", targetPath, "-vf", "format=yuva420p", "-c:v", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", targetWebpPath).Run(); err != nil {
+					_ = exec.Command("ffmpeg", "-y", "-i", targetPath, "-c:v", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", targetWebpPath).Run()
+				}
 			}
 			if _, statErr := os.Stat(targetMp4Path); os.IsNotExist(statErr) {
 				_ = exec.Command("ffmpeg", "-y", "-i", targetPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", targetMp4Path).Run()

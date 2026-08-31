@@ -447,14 +447,20 @@ func transcodeOnDemand(srcPath, dstPath, format string) bool {
 
 	var cmd *exec.Cmd
 	if format == "webp" {
-		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vcodec", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", "-vsync", "0", tmpPath)
+		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "format=yuva420p", "-c:v", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", tmpPath)
+		if err := cmd.Run(); err != nil {
+			// Fallback without explicit pix_fmt filter if format filter fails
+			cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "75", "-loop", "0", "-an", tmpPath)
+			if err2 := cmd.Run(); err2 != nil {
+				return false
+			}
+		}
 	} else if format == "mp4" {
 		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", tmpPath)
+		if err := cmd.Run(); err != nil {
+			return false
+		}
 	} else {
-		return false
-	}
-
-	if err := cmd.Run(); err != nil {
 		return false
 	}
 
