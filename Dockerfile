@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Stage 3: Production runtime image
 FROM alpine:3.20
 WORKDIR /app
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata ffmpeg
 RUN mkdir -p /app/data /app/data/upload /app/data/stickers
 COPY --from=server-builder /app/bin/penik-server /app/penik-server
 
