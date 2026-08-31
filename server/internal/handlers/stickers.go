@@ -319,6 +319,25 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
+		// If WebM requested by Firefox or image-accepting client, try serving/transcoding to universally compatible WebP
+		if strings.HasSuffix(fileName, ".webm") && (strings.Contains(r.Header.Get("User-Agent"), "Firefox") || strings.Contains(r.Header.Get("Accept"), "image/webp")) {
+			base := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+			outWebp := filepath.Join(packDir, base+".webp")
+			if _, webpErr := os.Stat(outWebp); webpErr == nil {
+				filePath = outWebp
+				if altInfo, statErr := os.Stat(outWebp); statErr == nil {
+					info = altInfo
+				}
+				fileName = base + ".webp"
+			} else if transcodeOnDemand(filePath, outWebp, "webp") {
+				if webpInfo, webpErr := os.Stat(outWebp); webpErr == nil && !webpInfo.IsDir() && webpInfo.Size() > 0 {
+					filePath = outWebp
+					info = webpInfo
+					fileName = base + ".webp"
+				}
+			}
+		}
+
 		contentType := detectStickerContentType(filePath, fileName)
 		w.Header().Set("Content-Type", contentType)
 
