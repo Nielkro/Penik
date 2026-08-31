@@ -150,7 +150,7 @@ fun CallLogCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(horizontal = 12.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -168,16 +168,24 @@ fun CallLogCard(
                 modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
+            // The title is the only elastic part of the card: a long duration
+            // ("5 мин 7 сек") used to push the action label past the card edge,
+            // which then wrapped mid-word.
             Text(
                 text = title,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                color = if (isMissed) Color(0xFFEF5350) else LocalAppColors.current.textPrimary
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = if (isMissed) Color(0xFFEF5350) else LocalAppColors.current.textPrimary,
+                modifier = Modifier.weight(1f, fill = false)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(call.startedAt * 1000L)),
                 fontSize = 11.sp,
+                maxLines = 1,
+                softWrap = false,
                 color = LocalAppColors.current.textMuted
             )
             Spacer(modifier = Modifier.width(10.dp))
@@ -185,6 +193,8 @@ fun CallLogCard(
                 text = "Перезвонить",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false,
                 color = LocalAppColors.current.accent,
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))

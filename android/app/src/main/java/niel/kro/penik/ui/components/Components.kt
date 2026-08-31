@@ -61,6 +61,7 @@ import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import android.widget.Toast
 import androidx.compose.runtime.Composable
@@ -101,6 +102,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -112,11 +115,15 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.ceil
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.lazy.LazyColumn
@@ -633,19 +640,46 @@ private fun ClickableLinkedText(
     text: String,
     textColor: Color,
     linkColor: Color,
-    fontSize: androidx.compose.ui.unit.TextUnit = 15.sp,
+    fontSize: TextUnit = 15.sp,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null
+) {
+    val annotated = remember(text, linkColor) { buildLinkedText(text, linkColor) }
+    LinkedTextCore(
+        annotated = annotated,
+        style = rememberMessageTextStyle(textColor, fontSize),
+        modifier = modifier,
+        onLongClick = onLongClick
+    )
+}
+
+/**
+ * The exact style the message text is rendered with. Shared with the inline
+ * meta layout below, which has to re-measure the very same text to find out
+ * where its last line ends.
+ */
+@Composable
+private fun rememberMessageTextStyle(textColor: Color, fontSize: TextUnit): TextStyle {
+    val base = LocalTextStyle.current
+    return remember(base, textColor, fontSize) {
+        base.merge(TextStyle(color = textColor, fontSize = fontSize))
+    }
+}
+
+@Composable
+private fun LinkedTextCore(
+    annotated: androidx.compose.ui.text.AnnotatedString,
+    style: TextStyle,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null
 ) {
     val uriHandler = LocalUriHandler.current
-    val annotated = remember(text, linkColor) { buildLinkedText(text, linkColor) }
     var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
     val haptic = LocalHapticFeedback.current
 
     Text(
         text = annotated,
-        color = textColor,
-        fontSize = fontSize,
+        style = style,
         onTextLayout = { layoutResult = it },
         modifier = modifier.pointerInput(annotated) {
             detectTapGestures(
@@ -669,6 +703,94 @@ private fun ClickableLinkedText(
             )
         }
     )
+}
+
+/**
+ * Message text with the meta block (edit mark, time, delivery ticks) hung off
+ * its last line.
+ *
+ * A plain Row cannot do this: once the text fills the whole bubble width there
+ * is no horizontal room left, and the meta block — being shrinkable — collapses
+ * to the width of a single glyph and breaks into a vertical column of
+ * characters. So the meta block is measured with unbounded width first, then
+ * the text is re-measured to find where its last line ends, and only if the
+ * meta block genuinely fits after it does it go inline. Otherwise it drops onto
+ * its own trailing line, right-aligned.
+ */
+@Composable
+private fun MessageTextWithMeta(
+    text: String,
+    textColor: Color,
+    linkColor: Color,
+    fontSize: TextUnit = 15.sp,
+    inlineGap: Dp = 6.dp,
+    verticalGap: Dp = 2.dp,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    meta: @Composable () -> Unit
+) {
+    val annotated = remember(text, linkColor) { buildLinkedText(text, linkColor) }
+    val style = rememberMessageTextStyle(textColor, fontSize)
+    val measurer = rememberTextMeasurer()
+
+    Layout(
+        modifier = modifier,
+        content = {
+            LinkedTextCore(annotated = annotated, style = style, onLongClick = onLongClick)
+            Box { meta() }
+        }
+    ) { measurables, constraints ->
+        val textMeasurable = measurables[0]
+        val metaMeasurable = measurables[1]
+
+        // Unbounded: the meta block must never be squeezed or wrapped.
+        val metaPlaceable = metaMeasurable.measure(Constraints())
+
+        val textConstraints = Constraints(maxWidth = constraints.maxWidth)
+        val textPlaceable = textMeasurable.measure(textConstraints)
+
+        val inlineGapPx = inlineGap.roundToPx()
+        val verticalGapPx = verticalGap.roundToPx()
+
+        val textLayout = measurer.measure(
+            text = annotated,
+            style = style,
+            constraints = textConstraints,
+            layoutDirection = layoutDirection,
+            density = this
+        )
+        val lastLine = textLayout.lineCount - 1
+        val lastLineRight = ceil(textLayout.getLineRight(lastLine)).toInt()
+        val lastLineBottom = ceil(textLayout.getLineBottom(lastLine)).toInt()
+
+        val inlineWidth = lastLineRight + inlineGapPx + metaPlaceable.width
+        val fitsInline = constraints.maxWidth == Constraints.Infinity ||
+            inlineWidth <= constraints.maxWidth
+
+        val contentWidth: Int
+        val contentHeight: Int
+        val metaY: Int
+
+        if (fitsInline) {
+            contentWidth = maxOf(textPlaceable.width, inlineWidth)
+            metaY = (lastLineBottom - metaPlaceable.height).coerceAtLeast(0)
+            contentHeight = maxOf(textPlaceable.height, metaY + metaPlaceable.height)
+        } else {
+            contentWidth = maxOf(textPlaceable.width, metaPlaceable.width)
+            contentHeight = textPlaceable.height + verticalGapPx + metaPlaceable.height
+            metaY = textPlaceable.height + verticalGapPx
+        }
+
+        val width = contentWidth.coerceIn(constraints.minWidth, constraints.maxWidth)
+        val height = contentHeight.coerceIn(constraints.minHeight, constraints.maxHeight)
+
+        layout(width, height) {
+            textPlaceable.placeRelative(0, 0)
+            // Re-anchor to the final width so a fillMaxWidth bubble still keeps
+            // the meta block flush against the right edge.
+            metaPlaceable.placeRelative(maxOf(0, width - metaPlaceable.width), metaY)
+        }
+    }
 }
 
 private data class FileAttachment(
@@ -2213,75 +2335,25 @@ fun MessageBubble(
                         )
                     }
                 } else {
-                    val isSingleLineShort = !parsedText.contains('\n') && parsedText.length <= 35
-                    if (isSingleLineShort) {
-                        Row(
-                            modifier = Modifier
-                                .then(if (replySender != null) Modifier.fillMaxWidth() else Modifier)
-                                .padding(top = 1.dp),
-                            verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = if (replySender != null) Arrangement.SpaceBetween else Arrangement.Start
-                        ) {
-                            ClickableLinkedText(
-                                text = parsedText,
-                                textColor = textColor,
-                                linkColor = linkColor,
-                                fontSize = 15.sp,
-                                modifier = Modifier.padding(end = 6.dp),
-                                onLongClick = {
-                                    showMenu = true
-                                }
-                            )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .align(Alignment.Bottom)
-                                    .offset(y = 2.5.dp)
-                            ) {
-                                if (editedAt != null && editedAt > 0L) {
-                                    Text(
-                                        text = "ред.",
-                                        fontSize = 10.sp,
-                                        color = if (isSentByMe) LocalAppColors.current.sentMessageText.copy(alpha = 0.6f) else LocalAppColors.current.textMuted.copy(alpha = 0.6f),
-                                        modifier = Modifier.padding(end = 3.dp)
-                                    )
-                                }
-                                Text(
-                                    text = formatTime(timestamp),
-                                    fontSize = 10.sp,
-                                    color = if (isSentByMe) LocalAppColors.current.sentMessageText else LocalAppColors.current.textMuted
-                                )
-                                if (isSentByMe) {
-                                    Spacer(modifier = Modifier.width(3.dp))
-                                    MessageTicks(
-                                        delivered = delivered,
-                                        read = read,
-                                        isPending = isPending,
-                                        color = if (read) LocalAppColors.current.accent else LocalAppColors.current.textMuted
-                                    )
-                                }
-                            }
+                    MessageTextWithMeta(
+                        text = parsedText,
+                        textColor = textColor,
+                        linkColor = linkColor,
+                        fontSize = 15.sp,
+                        modifier = Modifier
+                            .then(if (replySender != null) Modifier.fillMaxWidth() else Modifier)
+                            .padding(top = 1.dp),
+                        onLongClick = {
+                            showMenu = true
                         }
-                    } else {
-                        ClickableLinkedText(
-                            text = parsedText,
-                            textColor = textColor,
-                            linkColor = linkColor,
-                            fontSize = 15.sp,
-                            onLongClick = {
-                                showMenu = true
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             if (editedAt != null && editedAt > 0L) {
                                 Text(
                                     text = "ред.",
                                     fontSize = 10.sp,
+                                    maxLines = 1,
+                                    softWrap = false,
                                     color = if (isSentByMe) LocalAppColors.current.sentMessageText.copy(alpha = 0.6f) else LocalAppColors.current.textMuted.copy(alpha = 0.6f),
                                     modifier = Modifier.padding(end = 3.dp)
                                 )
@@ -2289,10 +2361,12 @@ fun MessageBubble(
                             Text(
                                 text = formatTime(timestamp),
                                 fontSize = 10.sp,
+                                maxLines = 1,
+                                softWrap = false,
                                 color = if (isSentByMe) LocalAppColors.current.sentMessageText else LocalAppColors.current.textMuted
                             )
                             if (isSentByMe) {
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
                                 MessageTicks(
                                     delivered = delivered,
                                     read = read,
