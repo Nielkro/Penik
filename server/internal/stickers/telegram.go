@@ -13,18 +13,23 @@ import (
 	"time"
 )
 
+type tgResponseParameters struct {
+	RetryAfter int `json:"retry_after,omitempty"`
+}
+
 type tgStickerSetResp struct {
-	OK          bool         `json:"ok"`
-	Description string       `json:"description,omitempty"`
-	Result      *tgStickerSet `json:"result,omitempty"`
+	OK          bool                  `json:"ok"`
+	Description string                `json:"description,omitempty"`
+	Result      *tgStickerSet         `json:"result,omitempty"`
+	Parameters  *tgResponseParameters `json:"parameters,omitempty"`
 }
 
 type tgStickerSet struct {
-	Name        string      `json:"name"`
-	Title       string      `json:"title"`
-	IsAnimated  bool        `json:"is_animated"`
-	IsVideo     bool        `json:"is_video"`
-	Stickers    []tgSticker `json:"stickers"`
+	Name       string      `json:"name"`
+	Title      string      `json:"title"`
+	IsAnimated bool        `json:"is_animated"`
+	IsVideo    bool        `json:"is_video"`
+	Stickers   []tgSticker `json:"stickers"`
 }
 
 type tgSticker struct {
@@ -38,9 +43,10 @@ type tgSticker struct {
 }
 
 type tgFileResp struct {
-	OK          bool    `json:"ok"`
-	Description string  `json:"description,omitempty"`
-	Result      *tgFile `json:"result,omitempty"`
+	OK          bool                  `json:"ok"`
+	Description string                `json:"description,omitempty"`
+	Result      *tgFile               `json:"result,omitempty"`
+	Parameters  *tgResponseParameters `json:"parameters,omitempty"`
 }
 
 type tgFile struct {
@@ -68,6 +74,96 @@ func CleanTelegramPackName(raw string) string {
 	return raw
 }
 
+func fetchTelegramFileWithRetry(client *http.Client, botToken string, fileID string) (*tgFile, error) {
+	reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/getFile?file_id=%s", botToken, url.QueryEscape(fileID))
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		resp, err := client.Get(reqURL)
+		if err != nil {
+			lastErr = err
+			time.Sleep(time.Duration(300*(attempt+1)) * time.Millisecond)
+			continue
+		}
+
+		var fResp tgFileResp
+		_ = json.NewDecoder(resp.Body).Decode(&fResp)
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusTooManyRequests || (fResp.Parameters != nil && fResp.Parameters.RetryAfter > 0) {
+			sleepSec := 1
+			if fResp.Parameters != nil && fResp.Parameters.RetryAfter > 0 {
+				sleepSec = fResp.Parameters.RetryAfter
+			}
+			time.Sleep(time.Duration(sleepSec)*time.Second + 100*time.Millisecond)
+			continue
+		}
+
+		if fResp.OK && fResp.Result != nil && fResp.Result.FilePath != "" {
+			return fResp.Result, nil
+		}
+
+		if fResp.Description != "" {
+			lastErr = fmt.Errorf("telegram getFile error: %s", fResp.Description)
+		} else {
+			lastErr = fmt.Errorf("telegram getFile status %d", resp.StatusCode)
+		}
+		time.Sleep(time.Duration(200*(attempt+1)) * time.Millisecond)
+	}
+	return nil, lastErr
+}
+
+func downloadTelegramFileWithRetry(client *http.Client, botToken string, filePath string, targetPath string) error {
+	// If file already exists and is non-empty, skip re-download
+	if stat, err := os.Stat(targetPath); err == nil && stat.Size() > 0 {
+		return nil
+	}
+
+	downloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", botToken, filePath)
+	tempPath := targetPath + fmt.Sprintf(".tmp_%d", time.Now().UnixNano())
+
+	var lastErr error
+	for attempt := 0; attempt < 4; attempt++ {
+		resp, err := client.Get(downloadURL)
+		if err != nil {
+			lastErr = err
+			time.Sleep(time.Duration(300*(attempt+1)) * time.Millisecond)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("download status: %d", resp.StatusCode)
+			time.Sleep(time.Duration(500*(attempt+1)) * time.Millisecond)
+			continue
+		}
+
+		outFile, err := os.Create(tempPath)
+		if err != nil {
+			resp.Body.Close()
+			return fmt.Errorf("create temp file: %w", err)
+		}
+
+		_, copyErr := io.Copy(outFile, resp.Body)
+		outFile.Close()
+		resp.Body.Close()
+
+		if copyErr != nil {
+			_ = os.Remove(tempPath)
+			lastErr = copyErr
+			time.Sleep(time.Duration(200*(attempt+1)) * time.Millisecond)
+			continue
+		}
+
+		if stat, err := os.Stat(tempPath); err == nil && stat.Size() > 0 {
+			if err := os.Rename(tempPath, targetPath); err == nil {
+				return nil
+			}
+		}
+		_ = os.Remove(tempPath)
+	}
+	return lastErr
+}
+
 // ImportTelegramPack imports a sticker pack by name using Telegram Bot API and persists it.
 func ImportTelegramPack(botToken string, stickersDir string, rawPackName string, authorID int64, db *sql.DB) (*StickerPack, error) {
 	if strings.TrimSpace(botToken) == "" {
@@ -79,31 +175,56 @@ func ImportTelegramPack(botToken string, stickersDir string, rawPackName string,
 		return nil, fmt.Errorf("invalid sticker pack name")
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 35 * time.Second}
 
-	// 1. Fetch sticker set metadata
+	// 1. Fetch sticker set metadata with retries
 	reqURL := fmt.Sprintf("https://api.telegram.org/bot%s/getStickerSet?name=%s", botToken, url.QueryEscape(packName))
-	resp, err := client.Get(reqURL)
-	if err != nil {
-		return nil, fmt.Errorf("fetch telegram sticker set: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errResp tgStickerSetResp
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		if errResp.Description != "" {
-			return nil, fmt.Errorf("telegram api error: %s", errResp.Description)
-		}
-		return nil, fmt.Errorf("telegram api returned status %d", resp.StatusCode)
-	}
-
 	var setResp tgStickerSetResp
-	if err := json.NewDecoder(resp.Body).Decode(&setResp); err != nil {
-		return nil, fmt.Errorf("decode sticker set json: %w", err)
+	var fetchErr error
+
+	for attempt := 0; attempt < 3; attempt++ {
+		resp, err := client.Get(reqURL)
+		if err != nil {
+			fetchErr = err
+			time.Sleep(time.Duration(400*(attempt+1)) * time.Millisecond)
+			continue
+		}
+
+		decodeErr := json.NewDecoder(resp.Body).Decode(&setResp)
+		resp.Body.Close()
+
+		if decodeErr != nil {
+			fetchErr = decodeErr
+			continue
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests || (setResp.Parameters != nil && setResp.Parameters.RetryAfter > 0) {
+			sleepSec := 1
+			if setResp.Parameters != nil && setResp.Parameters.RetryAfter > 0 {
+				sleepSec = setResp.Parameters.RetryAfter
+			}
+			time.Sleep(time.Duration(sleepSec)*time.Second + 100*time.Millisecond)
+			continue
+		}
+
+		if setResp.OK && setResp.Result != nil {
+			fetchErr = nil
+			break
+		}
+
+		if setResp.Description != "" {
+			fetchErr = fmt.Errorf("telegram api error: %s", setResp.Description)
+		} else {
+			fetchErr = fmt.Errorf("telegram api status %d", resp.StatusCode)
+		}
+		time.Sleep(time.Duration(300*(attempt+1)) * time.Millisecond)
+	}
+
+	if fetchErr != nil {
+		return nil, fmt.Errorf("fetch telegram sticker set: %w", fetchErr)
 	}
 	if !setResp.OK || setResp.Result == nil {
-		return nil, fmt.Errorf("sticker set not found or error: %s", setResp.Description)
+		return nil, fmt.Errorf("sticker set not found: %s", setResp.Description)
 	}
 
 	set := setResp.Result
@@ -143,27 +264,45 @@ func ImportTelegramPack(botToken string, stickersDir string, rawPackName string,
 
 	var downloadedStickers []Sticker
 
-	// 2. Download and save each sticker
+	// 2. Download and save each sticker with rate-limit pacing and retries
 	for idx, s := range set.Stickers {
-		fileResp, err := client.Get(fmt.Sprintf("https://api.telegram.org/bot%s/getFile?file_id=%s", botToken, url.QueryEscape(s.FileID)))
+		// Rate-limit pacing between sticker file queries
+		if idx > 0 {
+			time.Sleep(45 * time.Millisecond)
+		}
+
+		tgFileInfo, err := fetchTelegramFileWithRetry(client, botToken, s.FileID)
 		if err != nil {
+			// If getFile fails after retries, try to fall back to existing file on disk if available
+			var fallbackExt string
+			if s.IsVideo || set.IsVideo {
+				fallbackExt = ".webm"
+			} else if s.IsAnimated || set.IsAnimated {
+				fallbackExt = ".tgs"
+			} else {
+				fallbackExt = ".webp"
+			}
+			fallbackName := fmt.Sprintf("%s%s", s.FileUniqueID, fallbackExt)
+			if _, statErr := os.Stat(filepath.Join(packDir, fallbackName)); statErr == nil {
+				downloadedStickers = append(downloadedStickers, Sticker{
+					ID:        s.FileUniqueID,
+					PackID:    packID,
+					Emoji:     s.Emoji,
+					FileName:  fallbackName,
+					Width:     s.Width,
+					Height:    s.Height,
+					SortOrder: idx,
+				})
+			}
 			continue
 		}
 
-		var fResp tgFileResp
-		_ = json.NewDecoder(fileResp.Body).Decode(&fResp)
-		fileResp.Body.Close()
-
-		if !fResp.OK || fResp.Result == nil || fResp.Result.FilePath == "" {
-			continue
-		}
-
-		ext := filepath.Ext(fResp.Result.FilePath)
+		ext := filepath.Ext(tgFileInfo.FilePath)
 		if ext == "" {
-			if s.IsAnimated {
-				ext = ".tgs"
-			} else if s.IsVideo {
+			if s.IsVideo || set.IsVideo {
 				ext = ".webm"
+			} else if s.IsAnimated || set.IsAnimated {
+				ext = ".tgs"
 			} else {
 				ext = ".webp"
 			}
@@ -172,17 +311,11 @@ func ImportTelegramPack(botToken string, stickersDir string, rawPackName string,
 		fileName := fmt.Sprintf("%s%s", s.FileUniqueID, ext)
 		targetPath := filepath.Join(packDir, fileName)
 
-		// Download file bytes if not already exists on disk
-		if _, err := os.Stat(targetPath); os.IsNotExist(err) {
-			fileDownloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", botToken, fResp.Result.FilePath)
-			downResp, err := client.Get(fileDownloadURL)
-			if err == nil && downResp.StatusCode == http.StatusOK {
-				outFile, err := os.Create(targetPath)
-				if err == nil {
-					_, _ = io.Copy(outFile, downResp.Body)
-					outFile.Close()
-				}
-				downResp.Body.Close()
+		// Download file bytes with retry
+		if err := downloadTelegramFileWithRetry(client, botToken, tgFileInfo.FilePath, targetPath); err != nil {
+			// Check if file existed before
+			if _, statErr := os.Stat(targetPath); statErr != nil {
+				continue
 			}
 		}
 

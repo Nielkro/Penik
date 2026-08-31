@@ -26,6 +26,62 @@ const ICON_PLUS = "M12 5v14M5 12h14";
 const ICON_CLOCK = "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z";
 const ICON_CLOSE = "M18 6L6 18M6 6l12 12";
 
+function createStickerMediaElement(url, isVideo, emoji = "", className = "sticker-img") {
+  if (isVideo) {
+    const vid = document.createElement("video");
+    vid.src = url;
+    vid.autoplay = true;
+    vid.loop = true;
+    vid.muted = true;
+    vid.defaultMuted = true;
+    vid.playsInline = true;
+    vid.controls = false;
+    vid.disablePictureInPicture = true;
+    vid.setAttribute("autoplay", "");
+    vid.setAttribute("loop", "");
+    vid.setAttribute("muted", "");
+    vid.setAttribute("playsinline", "");
+    vid.style.pointerEvents = "none";
+    vid.className = className;
+    vid.addEventListener("canplay", () => {
+      vid.play().catch(() => {});
+    });
+    setTimeout(() => {
+      vid.play().catch(() => {});
+    }, 50);
+    return vid;
+  }
+
+  const img = document.createElement("img");
+  img.src = url;
+  img.className = className;
+  img.loading = "lazy";
+  img.alt = emoji || "стикер";
+  img.style.pointerEvents = "none";
+  img.onerror = () => {
+    const vid = document.createElement("video");
+    vid.src = url.replace(/\.[a-zA-Z0-9]+$/, '.webm');
+    vid.autoplay = true;
+    vid.loop = true;
+    vid.muted = true;
+    vid.defaultMuted = true;
+    vid.playsInline = true;
+    vid.controls = false;
+    vid.disablePictureInPicture = true;
+    vid.setAttribute("autoplay", "");
+    vid.setAttribute("loop", "");
+    vid.setAttribute("muted", "");
+    vid.setAttribute("playsinline", "");
+    vid.style.pointerEvents = "none";
+    vid.className = className;
+    vid.addEventListener("canplay", () => {
+      vid.play().catch(() => {});
+    });
+    img.replaceWith(vid);
+  };
+  return img;
+}
+
 /**
  * Creates the sticker picker popover component.
  * @param {(sticker: object) => void} onSelect
@@ -107,21 +163,10 @@ export function createStickerPicker(onSelect) {
 
       if (coverUrl) {
         if (pack.is_video) {
-          const vid = el("video", { src: coverUrl, class: "sticker-tab-icon", autoplay: true, loop: true, muted: true, playsinline: true });
+          const vid = createStickerMediaElement(coverUrl, true, pack.title, "sticker-tab-icon");
           tabBtn.appendChild(vid);
         } else if (!pack.is_animated) {
-          const img = el("img", { src: coverUrl, class: "sticker-tab-icon", loading: "lazy" });
-          img.onerror = () => {
-            const vid = el("video", {
-              src: coverUrl.replace(/\.[a-zA-Z0-9]+$/, '.webm'),
-              class: "sticker-tab-icon",
-              autoplay: true,
-              loop: true,
-              muted: true,
-              playsinline: true
-            });
-            img.replaceWith(vid);
-          };
+          const img = createStickerMediaElement(coverUrl, false, pack.title, "sticker-tab-icon");
           tabBtn.appendChild(img);
         } else {
           tabBtn.textContent = pack.title.slice(0, 2);
@@ -217,37 +262,8 @@ export function createStickerPicker(onSelect) {
     const url = getFullApiUrl(s.url || `/api/v1/stickers/file/${s.pack_id}/${s.file_name || (s.id + (isVideo ? '.webm' : (isTgs ? '.tgs' : '.webp')))}`);
 
     const item = el("button", { class: "sticker-grid-item", title: s.emoji || "" });
-
-    if (isVideo) {
-      const vid = el("video", {
-        src: url,
-        autoplay: true,
-        loop: true,
-        muted: true,
-        playsinline: true,
-        class: "sticker-img"
-      });
-      item.appendChild(vid);
-    } else {
-      const img = el("img", {
-        src: url,
-        class: "sticker-img",
-        loading: "lazy",
-        alt: s.emoji || "стикер"
-      });
-      img.onerror = () => {
-        const vid = el("video", {
-          src: url.replace(/\.[a-zA-Z0-9]+$/, '.webm'),
-          autoplay: true,
-          loop: true,
-          muted: true,
-          playsinline: true,
-          class: "sticker-img"
-        });
-        img.replaceWith(vid);
-      };
-      item.appendChild(img);
-    }
+    const mediaEl = createStickerMediaElement(url, isVideo, s.emoji || "стикер", "sticker-img");
+    item.appendChild(mediaEl);
 
     item.addEventListener("click", () => {
       const stickerPayload = {
@@ -337,12 +353,8 @@ export async function showStickerPackModal(packId, onUpdate) {
       const isVideo = Boolean(pack.is_video || s.file_name?.endsWith('.webm'));
       const url = getFullApiUrl(s.url || `/api/v1/stickers/file/${pack.id}/${s.file_name}`);
       const item = el("div", { class: "sticker-grid-item preview-only" });
-
-      if (isVideo) {
-        item.appendChild(el("video", { src: url, autoplay: true, loop: true, muted: true, playsinline: true, class: "sticker-img" }));
-      } else {
-        item.appendChild(el("img", { src: url, class: "sticker-img", loading: "lazy" }));
-      }
+      const mediaEl = createStickerMediaElement(url, isVideo, s.emoji || "стикер", "sticker-img");
+      item.appendChild(mediaEl);
       grid.appendChild(item);
     }
 

@@ -217,12 +217,18 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     fun sendSticker(sticker: niel.kro.penik.data.network.api.StickerItemResponse, replyToMsgId: String? = null) {
-        val fileName = sticker.fileName.ifBlank { "${sticker.id}.webp" }
+        val isVideo = sticker.fileName.endsWith(".webm", ignoreCase = true) || sticker.url?.endsWith(".webm", ignoreCase = true) == true
+        val isAnim = sticker.fileName.endsWith(".tgs", ignoreCase = true) || sticker.url?.endsWith(".tgs", ignoreCase = true) == true
+        val ext = if (isVideo) "webm" else if (isAnim) "tgs" else "webp"
+        val fileName = if (sticker.fileName.isNotBlank()) sticker.fileName else "${sticker.id}.$ext"
         val payload = buildJsonObject {
             put("type", "sticker")
             put("pack_id", sticker.packId)
             put("sticker_id", sticker.id)
             put("emoji", sticker.emoji)
+            put("file_name", fileName)
+            put("is_video", isVideo)
+            put("is_animated", isAnim)
             put("url", "/api/v1/stickers/file/${sticker.packId}/$fileName")
         }.toString()
         viewModelScope.launch {

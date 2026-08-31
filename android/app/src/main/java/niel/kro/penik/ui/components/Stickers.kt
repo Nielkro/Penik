@@ -101,7 +101,8 @@ fun rememberCachedStickerFile(url: String): File? {
     val context = LocalContext.current
     var cachedFile by remember(url) {
         val cacheDir = File(context.cacheDir, "stickers")
-        val fileName = "stk_" + url.hashCode().toString() + "_" + url.substringAfterLast("/", "sticker.webm")
+        val ext = if (url.contains(".webm", ignoreCase = true)) ".webm" else ".webp"
+        val fileName = "stk_" + url.hashCode().toString() + ext
         val targetFile = File(cacheDir, fileName)
         if (targetFile.exists() && targetFile.length() > 0) {
             mutableStateOf<File?>(targetFile)
@@ -115,7 +116,8 @@ fun rememberCachedStickerFile(url: String): File? {
         withContext(Dispatchers.IO) {
             try {
                 val cacheDir = File(context.cacheDir, "stickers").apply { mkdirs() }
-                val fileName = "stk_" + url.hashCode().toString() + "_" + url.substringAfterLast("/", "sticker.webm")
+                val ext = if (url.contains(".webm", ignoreCase = true)) ".webm" else ".webp"
+                val fileName = "stk_" + url.hashCode().toString() + ext
                 val targetFile = File(cacheDir, fileName)
                 if (targetFile.exists() && targetFile.length() > 0) {
                     cachedFile = targetFile
@@ -152,7 +154,9 @@ data class StickerPayload(
     val sticker_id: String = "",
     val emoji: String = "",
     val url: String = "",
-    val file_name: String? = null
+    val file_name: String? = null,
+    val is_video: Boolean = false,
+    val is_animated: Boolean = false
 )
 
 fun parseSticker(text: String): StickerPayload? = runCatching {
@@ -165,13 +169,19 @@ fun parseSticker(text: String): StickerPayload? = runCatching {
     val emoji = root["emoji"]?.jsonPrimitive?.content ?: ""
     val url = root["url"]?.jsonPrimitive?.content ?: ""
     val fileName = root["file_name"]?.jsonPrimitive?.content
+    val isVideo = root["is_video"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()
+        ?: (fileName?.endsWith(".webm", ignoreCase = true) == true || url.endsWith(".webm", ignoreCase = true))
+    val isAnim = root["is_animated"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()
+        ?: (fileName?.endsWith(".tgs", ignoreCase = true) == true || url.endsWith(".tgs", ignoreCase = true))
     StickerPayload(
         type = "sticker",
         pack_id = packId,
         sticker_id = stickerId,
         emoji = emoji,
         url = url,
-        file_name = fileName
+        file_name = fileName,
+        is_video = isVideo,
+        is_animated = isAnim
     )
 }.getOrNull()
 
@@ -243,10 +253,11 @@ fun StickerMessageView(
 ) {
     val haptic = LocalHapticFeedback.current
     val isVideo = remember(payload) {
+        payload.is_video ||
         payload.file_name?.endsWith(".webm", ignoreCase = true) == true ||
         payload.url.endsWith(".webm", ignoreCase = true)
     }
-    val fullUrl = remember(payload) {
+    val fullUrl = remember(payload, isVideo) {
         if (payload.url.isNotBlank()) {
             ApiConfig.getFullStickerUrl(payload.url)
         } else {
@@ -489,8 +500,10 @@ fun StickerPickerBottomSheet(
                     val isPackActive = selectedTab == pack.id
                     val coverUrl = remember(pack) {
                         val stickerId = pack.coverStickerId ?: pack.stickers.firstOrNull()?.id
+                        val ext = if (pack.isVideo) "webm" else if (pack.isAnimated) "tgs" else "webp"
                         if (!stickerId.isNullOrBlank()) {
-                            ApiConfig.getStickerFileUrl(pack.id, "$stickerId.webp")
+                            val fileName = if (stickerId.contains('.')) stickerId else "$stickerId.$ext"
+                            ApiConfig.getStickerFileUrl(pack.id, fileName)
                         } else null
                     }
 
@@ -532,11 +545,15 @@ fun StickerGridItem(
     sticker: StickerItemResponse,
     onClick: () -> Unit
 ) {
-    val url = remember(sticker) {
+    val isVideo = remember(sticker) {
+        sticker.fileName.endsWith(".webm", ignoreCase = true) ||
+        sticker.url?.endsWith(".webm", ignoreCase = true) == true
+    }
+    val url = remember(sticker, isVideo) {
         if (!sticker.url.isNullOrBlank()) {
             ApiConfig.getFullStickerUrl(sticker.url)
         } else {
-            val fileName = sticker.fileName.ifBlank { "${sticker.id}.webp" }
+            val fileName = sticker.fileName.ifBlank { "${sticker.id}.${if (isVideo) "webm" else "webp"}" }
             ApiConfig.getStickerFileUrl(sticker.packId, fileName)
         }
     }
