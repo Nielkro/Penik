@@ -100,7 +100,12 @@ func HandleGetStickerPack(database *db.DB) http.HandlerFunc {
 				var s stickers.Sticker
 				s.PackID = packID
 				if err := rows.Scan(&s.ID, &s.Emoji, &s.FileName, &s.Width, &s.Height, &s.SortOrder); err == nil {
-					s.URL = "/api/v1/stickers/file/" + packID + "/" + s.FileName
+					baseID := strings.TrimSuffix(s.ID, filepath.Ext(s.ID))
+					if p.IsVideo || p.IsAnimated || strings.HasSuffix(s.FileName, ".webm") || strings.HasSuffix(s.FileName, ".tgs") {
+						s.URL = "/api/v1/stickers/file/" + packID + "/" + baseID + ".webp"
+					} else {
+						s.URL = "/api/v1/stickers/file/" + packID + "/" + s.FileName
+					}
 					p.Stickers = append(p.Stickers, s)
 				}
 			}
