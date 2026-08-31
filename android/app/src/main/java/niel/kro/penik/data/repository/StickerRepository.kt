@@ -53,11 +53,19 @@ class StickerRepository @Inject constructor(
         } catch (_: Exception) {}
     }
 
-    suspend fun getMyPacks(): Result<List<StickerPackResponse>> = withContext(Dispatchers.IO) {
+    private val packsMemoryCache = java.util.concurrent.ConcurrentHashMap<String, StickerPackResponse>()
+    private var myPacksCache: List<StickerPackResponse>? = null
+
+    suspend fun getMyPacks(forceRefresh: Boolean = false): Result<List<StickerPackResponse>> = withContext(Dispatchers.IO) {
+        if (!forceRefresh && myPacksCache != null) {
+            return@withContext Result.success(myPacksCache!!)
+        }
         try {
             val resp = apiService.getMyStickers()
             if (resp.isSuccessful) {
-                Result.success(resp.body() ?: emptyList())
+                val list = resp.body() ?: emptyList()
+                myPacksCache = list
+                Result.success(list)
             } else {
                 Result.failure(Exception("Ошибка загрузки стикерпаков (${resp.code()})"))
             }
@@ -66,11 +74,19 @@ class StickerRepository @Inject constructor(
         }
     }
 
-    suspend fun getPackDetails(packId: String): Result<StickerPackResponse> = withContext(Dispatchers.IO) {
+    suspend fun getPackDetails(packId: String, forceRefresh: Boolean = false): Result<StickerPackResponse> = withContext(Dispatchers.IO) {
+        if (!forceRefresh) {
+            val cached = packsMemoryCache[packId]
+            if (cached != null && cached.stickers.isNotEmpty()) {
+                return@withContext Result.success(cached)
+            }
+        }
         try {
             val resp = apiService.getStickerPack(packId)
             if (resp.isSuccessful && resp.body() != null) {
-                Result.success(resp.body()!!)
+                val pack = resp.body()!!
+                packsMemoryCache[packId] = pack
+                Result.success(pack)
             } else {
                 Result.failure(Exception("Стикерпак не найден"))
             }
@@ -83,6 +99,7 @@ class StickerRepository @Inject constructor(
         try {
             val resp = apiService.installStickerPack(packId)
             if (resp.isSuccessful) {
+                myPacksCache = null
                 Result.success(Unit)
             } else {
                 Result.failure(Exception("Не удалось установить стикерпак"))
@@ -96,6 +113,8 @@ class StickerRepository @Inject constructor(
         try {
             val resp = apiService.uninstallStickerPack(packId)
             if (resp.isSuccessful) {
+                myPacksCache = null
+                packsMemoryCache.remove(packId)
                 Result.success(Unit)
             } else {
                 Result.failure(Exception("Не удалось удалить стикерпак"))
@@ -109,7 +128,10 @@ class StickerRepository @Inject constructor(
         try {
             val resp = apiService.importTelegramStickerPack(ImportTelegramStickersRequest(url.trim()))
             if (resp.isSuccessful && resp.body() != null) {
-                Result.success(resp.body()!!)
+                val pack = resp.body()!!
+                myPacksCache = null
+                packsMemoryCache[pack.id] = pack
+                Result.success(pack)
             } else {
                 Result.failure(Exception("Не удалось импортировать стикерпак из Telegram"))
             }
