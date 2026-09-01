@@ -222,6 +222,68 @@ func HandleImportTelegramStickerPack(cfg *config.Config, database *db.DB) http.H
 	}
 }
 
+var (
+	packBuildMu      sync.Mutex
+	activePackBuilds = make(map[string]bool)
+)
+
+func triggerBackgroundPackOptimization(packDir string) {
+	packBuildMu.Lock()
+	if activePackBuilds[packDir] {
+		packBuildMu.Unlock()
+		return
+	}
+	activePackBuilds[packDir] = true
+	packBuildMu.Unlock()
+
+	go func() {
+		defer func() {
+			packBuildMu.Lock()
+			delete(activePackBuilds, packDir)
+			packBuildMu.Unlock()
+		}()
+
+		entries, err := os.ReadDir(packDir)
+		if err != nil {
+			return
+		}
+
+		hasChanges := false
+		for _, entry := range entries {
+			if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			ext := strings.ToLower(filepath.Ext(entry.Name()))
+			base := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+
+			if ext == ".webm" {
+				webpPath := filepath.Join(packDir, base+".webp")
+				wInfo, wErr := os.Stat(webpPath)
+				if wErr != nil || wInfo.Size() == 0 || wInfo.Size() > 350*1024 {
+					srcWebm := filepath.Join(packDir, entry.Name())
+					if transcodeOnDemand(srcWebm, webpPath, "webp") {
+						hasChanges = true
+					}
+				}
+			} else if ext == ".webp" {
+				if eInfo, statErr := entry.Info(); statErr == nil && eInfo.Size() > 350*1024 {
+					srcWebm := filepath.Join(packDir, base+".webm")
+					if _, webmErr := os.Stat(srcWebm); webmErr == nil {
+						if transcodeOnDemand(srcWebm, filepath.Join(packDir, entry.Name()), "webp") {
+							hasChanges = true
+						}
+					}
+				}
+			}
+		}
+
+		if hasChanges {
+			zipPath := filepath.Join(packDir, "bundle.zip")
+			_ = buildStickerPackZip(packDir, zipPath)
+		}
+	}()
+}
+
 // HandleServeStickerPackZip packages and serves all stickers of a pack as a single ZIP bundle.
 func HandleServeStickerPackZip(cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -251,22 +313,8 @@ func HandleServeStickerPackZip(cfg *config.Config) http.HandlerFunc {
 
 		zipPath := filepath.Join(packDir, "bundle.zip")
 		zipInfo, zipErr := os.Stat(zipPath)
-		needsRebuild := zipErr != nil || zipInfo.Size() == 0
-		if !needsRebuild {
-			if entries, err := os.ReadDir(packDir); err == nil {
-				for _, entry := range entries {
-					if entry.Name() != "bundle.zip" && !strings.HasPrefix(entry.Name(), ".") {
-						if eInfo, eErr := entry.Info(); eErr == nil && eInfo.ModTime().After(zipInfo.ModTime()) {
-							needsRebuild = true
-							break
-						}
-					}
-				}
-			}
-		}
-
-		if needsRebuild {
-			if zipErr == nil {
+		if zipErr != nil || zipInfo.Size() == 0 {
+			if zipErr == nil && zipInfo.Size() == 0 {
 				_ = os.Remove(zipPath)
 			}
 			if err := buildStickerPackZip(packDir, zipPath); err != nil {
@@ -280,6 +328,9 @@ func HandleServeStickerPackZip(cfg *config.Config) http.HandlerFunc {
 			http.Error(w, "empty sticker bundle", http.StatusInternalServerError)
 			return
 		}
+
+		// Trigger non-blocking background optimization for missing/bloated stickers
+		triggerBackgroundPackOptimization(packDir)
 
 		w.Header().Set("Content-Type", "application/zip")
 		etag := fmt.Sprintf(`"%x-%x"`, zipInfo.Size(), zipInfo.ModTime().UnixNano())
@@ -316,45 +367,13 @@ func buildStickerPackZip(packDir, zipPath string) error {
 
 	w := zip.NewWriter(zipFile)
 
-	// Map existing webp files to avoid packaging duplicate webm
-	// Pre-process and transcode any webm or oversized webp before building the zip
-	for _, entry := range entries {
-		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		base := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
-
-		if ext == ".webm" {
-			webpPath := filepath.Join(packDir, base+".webp")
-			wInfo, wErr := os.Stat(webpPath)
-			if wErr != nil || wInfo.Size() == 0 || wInfo.Size() > 350*1024 {
-				srcWebm := filepath.Join(packDir, entry.Name())
-				_ = transcodeOnDemand(srcWebm, webpPath, "webp")
-			}
-		} else if ext == ".webp" {
-			if eInfo, statErr := entry.Info(); statErr == nil && eInfo.Size() > 350*1024 {
-				srcWebm := filepath.Join(packDir, base+".webm")
-				if _, webmErr := os.Stat(srcWebm); webmErr == nil {
-					_ = transcodeOnDemand(srcWebm, filepath.Join(packDir, entry.Name()), "webp")
-				}
-			}
-		}
-	}
-
-	// Refresh directory entries after pre-processing
-	entries, err = os.ReadDir(packDir)
-	if err != nil {
-		return err
-	}
-
 	for _, entry := range entries {
 		if entry.IsDir() || entry.Name() == "bundle.zip" || strings.HasPrefix(entry.Name(), ".tmp_") || strings.Contains(entry.Name(), ".tmp_") {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
 
-		// Never package raw webm into bundle.zip (only webp, tgs, png)
+		// Only include lightweight displayable formats in bundle.zip
 		if ext != ".webp" && ext != ".tgs" && ext != ".png" {
 			continue
 		}
