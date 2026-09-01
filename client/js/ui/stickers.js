@@ -32,44 +32,68 @@ const downloadingPacks = new Set();
 async function unpackZipBundle(arrayBuffer) {
   const view = new DataView(arrayBuffer);
   const uint8 = new Uint8Array(arrayBuffer);
-  let offset = 0;
   const files = new Map();
 
-  while (offset + 30 <= arrayBuffer.byteLength) {
-    const sig = view.getUint32(offset, true);
-    if (sig !== 0x04034b50) break;
+  // Find End of Central Directory Record (EOCD)
+  let eocdOffset = -1;
+  for (let i = arrayBuffer.byteLength - 22; i >= Math.max(0, arrayBuffer.byteLength - 65536); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset === -1) {
+    console.warn("EOCD not found in ZIP");
+    return files;
+  }
 
-    const method = view.getUint16(offset + 8, true);
-    const compressedSize = view.getUint32(offset + 18, true);
-    const nameLen = view.getUint16(offset + 26, true);
-    const extraLen = view.getUint16(offset + 28, true);
+  const numEntries = view.getUint16(eocdOffset + 10, true);
+  let cdOffset = view.getUint32(eocdOffset + 16, true);
 
-    const nameBytes = uint8.subarray(offset + 30, offset + 30 + nameLen);
+  for (let i = 0; i < numEntries; i++) {
+    if (cdOffset + 46 > arrayBuffer.byteLength) break;
+    const sig = view.getUint32(cdOffset, true);
+    if (sig !== 0x02014b50) break;
+
+    const method = view.getUint16(cdOffset + 10, true);
+    const compressedSize = view.getUint32(cdOffset + 20, true);
+    const nameLen = view.getUint16(cdOffset + 28, true);
+    const extraLen = view.getUint16(cdOffset + 30, true);
+    const commentLen = view.getUint16(cdOffset + 32, true);
+    const localOffset = view.getUint32(cdOffset + 42, true);
+
+    const nameBytes = uint8.subarray(cdOffset + 46, cdOffset + 46 + nameLen);
     const name = new TextDecoder().decode(nameBytes);
 
-    const dataStart = offset + 30 + nameLen + extraLen;
+    cdOffset += 46 + nameLen + extraLen + commentLen;
+
+    if (localOffset + 30 > arrayBuffer.byteLength) continue;
+    const localSig = view.getUint32(localOffset, true);
+    if (localSig !== 0x04034b50) continue;
+
+    const localNameLen = view.getUint16(localOffset + 26, true);
+    const localExtraLen = view.getUint16(localOffset + 28, true);
+    const dataStart = localOffset + 30 + localNameLen + localExtraLen;
     const dataEnd = dataStart + compressedSize;
+
+    if (dataEnd > arrayBuffer.byteLength) continue;
     const compressedData = uint8.subarray(dataStart, dataEnd);
 
-    if (compressedSize > 0) {
-      try {
-        let blob;
-        const mime = name.endsWith('.webm') ? 'video/webm' : 'image/webp';
-        if (method === 8 && typeof DecompressionStream !== 'undefined') {
-          const ds = new DecompressionStream('deflate-raw');
-          const decompressedStream = new Response(new Blob([compressedData])).body.pipeThrough(ds);
-          const decompressedBuffer = await new Response(decompressedStream).arrayBuffer();
-          blob = new Blob([decompressedBuffer], { type: mime });
-        } else {
-          blob = new Blob([compressedData], { type: mime });
-        }
-        files.set(name, blob);
-      } catch (e) {
-        console.warn('Failed to decompress sticker', name, e);
+    try {
+      let blob;
+      const mime = name.endsWith('.webm') ? 'video/webm' : 'image/webp';
+      if (method === 8 && typeof DecompressionStream !== 'undefined') {
+        const ds = new DecompressionStream('deflate-raw');
+        const decompressedStream = new Response(new Blob([compressedData])).body.pipeThrough(ds);
+        const decompressedBuffer = await new Response(decompressedStream).arrayBuffer();
+        blob = new Blob([decompressedBuffer], { type: mime });
+      } else {
+        blob = new Blob([compressedData], { type: mime });
       }
+      files.set(name, blob);
+    } catch (e) {
+      console.warn('Failed to decompress sticker', name, e);
     }
-
-    offset = dataEnd;
   }
   return files;
 }
