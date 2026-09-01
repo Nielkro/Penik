@@ -302,11 +302,26 @@ func buildStickerPackZip(packDir, zipPath string) error {
 
 	w := zip.NewWriter(zipFile)
 
+	// Map existing webp files to avoid packaging duplicate webm
+	hasWebp := make(map[string]bool)
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".webp") {
+			base := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+			hasWebp[base] = true
+		}
+	}
+
 	for _, entry := range entries {
 		if entry.IsDir() || entry.Name() == "bundle.zip" || strings.HasPrefix(entry.Name(), ".tmp_") || strings.Contains(entry.Name(), ".tmp_") {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		base := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+
+		// If webp exists for this sticker, skip raw webm to keep bundle small
+		if ext == ".webm" && hasWebp[base] {
+			continue
+		}
 		if ext != ".webp" && ext != ".webm" && ext != ".tgs" && ext != ".png" {
 			continue
 		}
@@ -317,7 +332,15 @@ func buildStickerPackZip(packDir, zipPath string) error {
 			continue
 		}
 
-		f, err := w.Create(entry.Name())
+		fh := &zip.FileHeader{
+			Name:   entry.Name(),
+			Method: zip.Store, // Stored without recompression for fast packaging & extraction
+		}
+		if ext == ".tgs" || ext == ".json" {
+			fh.Method = zip.Deflate
+		}
+
+		f, err := w.CreateHeader(fh)
 		if err != nil {
 			continue
 		}

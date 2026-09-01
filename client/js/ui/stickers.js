@@ -331,7 +331,7 @@ export function createStickerPicker(onSelect) {
     if (!pack) {
       contentArea.appendChild(spinner());
       try {
-        preloadPackBundle(activeTab);
+        await preloadPackBundle(activeTab);
         pack = await getStickerPack(activeTab);
         packCache.set(activeTab, pack);
       } catch (err) {
@@ -341,7 +341,7 @@ export function createStickerPicker(onSelect) {
         return;
       }
     } else {
-      preloadPackBundle(activeTab);
+      await preloadPackBundle(activeTab);
     }
 
     if (currentGen !== renderGen) return;
