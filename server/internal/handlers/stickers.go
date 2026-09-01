@@ -259,14 +259,14 @@ func triggerBackgroundPackOptimization(packDir string) {
 			if ext == ".webm" {
 				webpPath := filepath.Join(packDir, base+".webp")
 				wInfo, wErr := os.Stat(webpPath)
-				if wErr != nil || wInfo.Size() == 0 || wInfo.Size() > 350*1024 {
+				if wErr != nil || wInfo.Size() == 0 || wInfo.Size() > 150*1024 {
 					srcWebm := filepath.Join(packDir, entry.Name())
 					if transcodeOnDemand(srcWebm, webpPath, "webp") {
 						hasChanges = true
 					}
 				}
 			} else if ext == ".webp" {
-				if eInfo, statErr := entry.Info(); statErr == nil && eInfo.Size() > 350*1024 {
+				if eInfo, statErr := entry.Info(); statErr == nil && eInfo.Size() > 150*1024 {
 					srcWebm := filepath.Join(packDir, base+".webm")
 					if _, webmErr := os.Stat(srcWebm); webmErr == nil {
 						if transcodeOnDemand(srcWebm, filepath.Join(packDir, entry.Name()), "webp") {
@@ -653,12 +653,12 @@ func transcodeOnDemand(srcPath, dstPath, format string) bool {
 
 	var cmd *exec.Cmd
 	if format == "webp" {
-		// Stage 1: Optimized lossy animated WebP with 256px scaling & 20fps (~60-120KB per sticker)
-		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "scale=256:256:force_original_aspect_ratio=decrease,fps=20,format=rgba", "-c:v", "libwebp", "-lossless", "0", "-q:v", "48", "-loop", "0", "-an", "-f", "webp", tmpPath)
+		// Stage 1: Optimized lossy animated WebP with 256px scaling & 15fps (~60-100KB per sticker)
+		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "scale=256:256:force_original_aspect_ratio=decrease,fps=15,format=rgba", "-c:v", "libwebp", "-lossless", "0", "-q:v", "35", "-compression_level", "6", "-loop", "0", "-an", "-f", "webp", tmpPath)
 		if _, err := cmd.CombinedOutput(); err != nil || !validNonEmptyFile(tmpPath) {
 			_ = os.Remove(tmpPath)
 			// Stage 2: Direct lossy animated WebP
-			cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libwebp", "-lossless", "0", "-q:v", "48", "-loop", "0", "-an", "-f", "webp", tmpPath)
+			cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libwebp", "-lossless", "0", "-q:v", "35", "-compression_level", "6", "-loop", "0", "-an", "-f", "webp", tmpPath)
 			if _, err2 := cmd.CombinedOutput(); err2 != nil || !validNonEmptyFile(tmpPath) {
 				_ = os.Remove(tmpPath)
 				// Stage 3: Guaranteed single-frame snapshot
