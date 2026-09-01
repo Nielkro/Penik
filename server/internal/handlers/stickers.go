@@ -313,10 +313,8 @@ func HandleServeStickerPackZip(cfg *config.Config) http.HandlerFunc {
 
 		zipPath := filepath.Join(packDir, "bundle.zip")
 		zipInfo, zipErr := os.Stat(zipPath)
-		if zipErr != nil || zipInfo.Size() == 0 {
-			if zipErr == nil && zipInfo.Size() == 0 {
-				_ = os.Remove(zipPath)
-			}
+		if zipErr != nil || zipInfo.Size() == 0 || zipInfo.Size() > 6*1024*1024 {
+			_ = os.Remove(zipPath)
 			if err := buildStickerPackZip(packDir, zipPath); err != nil {
 				http.Error(w, "failed to build sticker bundle", http.StatusInternalServerError)
 				return
@@ -372,13 +370,25 @@ func buildStickerPackZip(packDir, zipPath string) error {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		base := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
 
-		// Only include lightweight displayable formats in bundle.zip
+		// Never package raw webm into bundle.zip (only webp, tgs, png)
 		if ext != ".webp" && ext != ".tgs" && ext != ".png" {
 			continue
 		}
 
 		filePath := filepath.Join(packDir, entry.Name())
+
+		// If this is an oversized webp (> 150KB), re-transcode with compact lossy compression before packing
+		if ext == ".webp" {
+			if eInfo, sErr := entry.Info(); sErr == nil && eInfo.Size() > 150*1024 {
+				srcWebm := filepath.Join(packDir, base+".webm")
+				if _, webmErr := os.Stat(srcWebm); webmErr == nil {
+					_ = transcodeOnDemand(srcWebm, filePath, "webp")
+				}
+			}
+		}
+
 		fileBytes, err := os.ReadFile(filePath)
 		if err != nil || len(fileBytes) == 0 {
 			continue
