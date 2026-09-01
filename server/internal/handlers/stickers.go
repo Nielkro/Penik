@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"archive/zip"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -219,6 +220,119 @@ func HandleImportTelegramStickerPack(cfg *config.Config, database *db.DB) http.H
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(pack)
 	}
+}
+
+// HandleServeStickerPackZip packages and serves all stickers of a pack as a single ZIP bundle.
+func HandleServeStickerPackZip(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		packID := filepath.Clean(r.PathValue("id"))
+		if packID == "." || strings.Contains(packID, "..") {
+			http.Error(w, "invalid pack id", http.StatusBadRequest)
+			return
+		}
+
+		packDir := filepath.Join(cfg.StickersDir, packID)
+		if packDirInfo, statErr := os.Stat(packDir); statErr != nil || !packDirInfo.IsDir() {
+			if entries, dirErr := os.ReadDir(cfg.StickersDir); dirErr == nil {
+				for _, entry := range entries {
+					if entry.IsDir() && strings.EqualFold(entry.Name(), packID) {
+						packID = entry.Name()
+						packDir = filepath.Join(cfg.StickersDir, packID)
+						break
+					}
+				}
+			}
+		}
+
+		if info, err := os.Stat(packDir); err != nil || !info.IsDir() {
+			http.Error(w, "sticker pack not found", http.StatusNotFound)
+			return
+		}
+
+		zipPath := filepath.Join(packDir, "bundle.zip")
+		zipInfo, zipErr := os.Stat(zipPath)
+		if zipErr != nil || zipInfo.Size() == 0 {
+			if zipErr == nil && zipInfo.Size() == 0 {
+				_ = os.Remove(zipPath)
+			}
+			if err := buildStickerPackZip(packDir, zipPath); err != nil {
+				http.Error(w, "failed to build sticker bundle", http.StatusInternalServerError)
+				return
+			}
+			zipInfo, _ = os.Stat(zipPath)
+		}
+
+		if zipInfo == nil || zipInfo.Size() == 0 {
+			http.Error(w, "empty sticker bundle", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/zip")
+		etag := fmt.Sprintf(`"%x-%x"`, zipInfo.Size(), zipInfo.ModTime().UnixNano())
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Last-Modified", zipInfo.ModTime().UTC().Format(http.TimeFormat))
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		if match := r.Header.Get("If-None-Match"); match != "" {
+			if match == etag || match == "*" {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		}
+
+		http.ServeFile(w, r, zipPath)
+	}
+}
+
+func buildStickerPackZip(packDir, zipPath string) error {
+	tmpZipPath := zipPath + fmt.Sprintf(".tmp_%d.zip", time.Now().UnixNano())
+	defer os.Remove(tmpZipPath)
+
+	entries, err := os.ReadDir(packDir)
+	if err != nil {
+		return err
+	}
+
+	zipFile, err := os.Create(tmpZipPath)
+	if err != nil {
+		return err
+	}
+	defer zipFile.Close()
+
+	w := zip.NewWriter(zipFile)
+
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() == "bundle.zip" || strings.HasPrefix(entry.Name(), ".tmp_") || strings.Contains(entry.Name(), ".tmp_") {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if ext != ".webp" && ext != ".webm" && ext != ".tgs" && ext != ".png" {
+			continue
+		}
+
+		filePath := filepath.Join(packDir, entry.Name())
+		fileBytes, err := os.ReadFile(filePath)
+		if err != nil || len(fileBytes) == 0 {
+			continue
+		}
+
+		f, err := w.Create(entry.Name())
+		if err != nil {
+			continue
+		}
+		_, _ = f.Write(fileBytes)
+	}
+
+	if err := w.Close(); err != nil {
+		return err
+	}
+
+	if err := zipFile.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpZipPath, zipPath)
 }
 
 // HandleServeStickerFile serves static sticker files with aggressive caching.

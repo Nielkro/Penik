@@ -1,6 +1,7 @@
 package niel.kro.penik.data.network.api
 
 import okhttp3.MultipartBody
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -12,6 +13,7 @@ import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Part
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 interface ApiService {
 
@@ -193,6 +195,12 @@ interface ApiService {
     suspend fun getStickerPack(
         @Path("id") packId: String
     ): Response<StickerPackResponse>
+
+    @Streaming
+    @GET("stickers/pack/{id}/bundle.zip")
+    suspend fun downloadStickerPackBundle(
+        @Path("id") packId: String
+    ): Response<ResponseBody>
 
     @POST("stickers/pack/{id}/install")
     suspend fun installStickerPack(
