@@ -345,14 +345,14 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 		contentType := detectStickerContentType(filePath, fileName)
 		w.Header().Set("Content-Type", contentType)
 
-		etag := `"` + fileName + `"`
+		etag := fmt.Sprintf(`"%x-%x"`, info.Size(), info.ModTime().UnixNano())
 		w.Header().Set("ETag", etag)
 		w.Header().Set("Last-Modified", info.ModTime().UTC().Format(http.TimeFormat))
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 
 		if match := r.Header.Get("If-None-Match"); match != "" {
-			if strings.Contains(match, etag) || match == "*" {
+			if match == etag || match == "*" {
 				w.WriteHeader(http.StatusNotModified)
 				return
 			}
