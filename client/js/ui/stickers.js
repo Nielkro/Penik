@@ -26,6 +26,88 @@ const ICON_PLUS = "M12 5v14M5 12h14";
 const ICON_CLOCK = "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z";
 const ICON_CLOSE = "M18 6L6 18M6 6l12 12";
 
+const packBlobCache = new Map();
+const downloadingPacks = new Set();
+
+async function unpackZipBundle(arrayBuffer) {
+  const view = new DataView(arrayBuffer);
+  const uint8 = new Uint8Array(arrayBuffer);
+  let offset = 0;
+  const files = new Map();
+
+  while (offset + 30 <= arrayBuffer.byteLength) {
+    const sig = view.getUint32(offset, true);
+    if (sig !== 0x04034b50) break;
+
+    const method = view.getUint16(offset + 8, true);
+    const compressedSize = view.getUint32(offset + 18, true);
+    const nameLen = view.getUint16(offset + 26, true);
+    const extraLen = view.getUint16(offset + 28, true);
+
+    const nameBytes = uint8.subarray(offset + 30, offset + 30 + nameLen);
+    const name = new TextDecoder().decode(nameBytes);
+
+    const dataStart = offset + 30 + nameLen + extraLen;
+    const dataEnd = dataStart + compressedSize;
+    const compressedData = uint8.subarray(dataStart, dataEnd);
+
+    if (compressedSize > 0) {
+      try {
+        let blob;
+        const mime = name.endsWith('.webm') ? 'video/webm' : 'image/webp';
+        if (method === 8 && typeof DecompressionStream !== 'undefined') {
+          const ds = new DecompressionStream('deflate-raw');
+          const decompressedStream = new Response(new Blob([compressedData])).body.pipeThrough(ds);
+          const decompressedBuffer = await new Response(decompressedStream).arrayBuffer();
+          blob = new Blob([decompressedBuffer], { type: mime });
+        } else {
+          blob = new Blob([compressedData], { type: mime });
+        }
+        files.set(name, blob);
+      } catch (e) {
+        console.warn('Failed to decompress sticker', name, e);
+      }
+    }
+
+    offset = dataEnd;
+  }
+  return files;
+}
+
+export async function preloadPackBundle(packId) {
+  if (!packId || downloadingPacks.has(packId)) return;
+  downloadingPacks.add(packId);
+  try {
+    const bundleUrl = getFullApiUrl(`/api/v1/stickers/pack/${encodeURIComponent(packId)}/bundle.zip`);
+    const resp = await fetch(bundleUrl);
+    if (resp.ok) {
+      const buf = await resp.arrayBuffer();
+      const files = await unpackZipBundle(buf);
+      for (const [fileName, blob] of files.entries()) {
+        const blobUrl = URL.createObjectURL(blob);
+        packBlobCache.set(`${packId}/${fileName}`, blobUrl);
+        const base = fileName.replace(/\.[a-zA-Z0-9]+$/, '');
+        packBlobCache.set(`${packId}/${base}`, blobUrl);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to preload sticker pack bundle', packId, e);
+  } finally {
+    downloadingPacks.delete(packId);
+  }
+}
+
+export function getLocalStickerBlobUrl(packId, fileName, stickerId) {
+  if (!packId) return null;
+  if (fileName && packBlobCache.has(`${packId}/${fileName}`)) {
+    return packBlobCache.get(`${packId}/${fileName}`);
+  }
+  if (stickerId && packBlobCache.has(`${packId}/${stickerId}`)) {
+    return packBlobCache.get(`${packId}/${stickerId}`);
+  }
+  return null;
+}
+
 function createStickerMediaElement(url, isVideo, emoji = "", className = "sticker-img") {
   if (isVideo) {
     const vid = document.createElement("video");
@@ -249,6 +331,7 @@ export function createStickerPicker(onSelect) {
     if (!pack) {
       contentArea.appendChild(spinner());
       try {
+        preloadPackBundle(activeTab);
         pack = await getStickerPack(activeTab);
         packCache.set(activeTab, pack);
       } catch (err) {
@@ -257,6 +340,8 @@ export function createStickerPicker(onSelect) {
         contentArea.appendChild(el("div", { class: "sticker-picker-empty" }, "Не удалось загрузить стикеры"));
         return;
       }
+    } else {
+      preloadPackBundle(activeTab);
     }
 
     if (currentGen !== renderGen) return;
@@ -282,10 +367,12 @@ export function createStickerPicker(onSelect) {
   function createStickerItem(s, pack) {
     const isVideo = Boolean(pack?.is_video || s.file_name?.endsWith('.webm'));
     const isTgs = Boolean(pack?.is_animated || s.file_name?.endsWith('.tgs'));
-    const url = getFullApiUrl(s.url || `/api/v1/stickers/file/${s.pack_id}/${s.file_name || (s.id + (isVideo ? '.webm' : (isTgs ? '.tgs' : '.webp')))}`);
+    const defaultUrl = getFullApiUrl(s.url || `/api/v1/stickers/file/${s.pack_id}/${s.file_name || (s.id + (isVideo ? '.webm' : (isTgs ? '.tgs' : '.webp')))}`);
+    const localBlob = getLocalStickerBlobUrl(s.pack_id, s.file_name, s.id);
+    const mediaUrl = localBlob || defaultUrl;
 
     const item = el("button", { class: "sticker-grid-item", title: s.emoji || "" });
-    const mediaEl = createStickerMediaElement(url, isVideo, s.emoji || "стикер", "sticker-img");
+    const mediaEl = createStickerMediaElement(mediaUrl, isVideo, s.emoji || "стикер", "sticker-img");
     item.appendChild(mediaEl);
 
     item.addEventListener("click", () => {
@@ -295,7 +382,7 @@ export function createStickerPicker(onSelect) {
         id: s.id,
         emoji: s.emoji || "",
         file_name: s.file_name || "",
-        url: url,
+        url: defaultUrl,
         is_video: isVideo,
         is_animated: isTgs,
         width: s.width || 512,
