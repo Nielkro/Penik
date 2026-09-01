@@ -251,8 +251,22 @@ func HandleServeStickerPackZip(cfg *config.Config) http.HandlerFunc {
 
 		zipPath := filepath.Join(packDir, "bundle.zip")
 		zipInfo, zipErr := os.Stat(zipPath)
-		if zipErr != nil || zipInfo.Size() == 0 {
-			if zipErr == nil && zipInfo.Size() == 0 {
+		needsRebuild := zipErr != nil || zipInfo.Size() == 0
+		if !needsRebuild {
+			if entries, err := os.ReadDir(packDir); err == nil {
+				for _, entry := range entries {
+					if entry.Name() != "bundle.zip" && !strings.HasPrefix(entry.Name(), ".") {
+						if eInfo, eErr := entry.Info(); eErr == nil && eInfo.ModTime().After(zipInfo.ModTime()) {
+							needsRebuild = true
+							break
+						}
+					}
+				}
+			}
+		}
+
+		if needsRebuild {
+			if zipErr == nil {
 				_ = os.Remove(zipPath)
 			}
 			if err := buildStickerPackZip(packDir, zipPath); err != nil {
