@@ -355,7 +355,6 @@ export function createStickerPicker(onSelect) {
     if (!pack) {
       contentArea.appendChild(spinner());
       try {
-        await preloadPackBundle(activeTab);
         pack = await getStickerPack(activeTab);
         packCache.set(activeTab, pack);
       } catch (err) {
@@ -364,8 +363,6 @@ export function createStickerPicker(onSelect) {
         contentArea.appendChild(el("div", { class: "sticker-picker-empty" }, "Не удалось загрузить стикеры"));
         return;
       }
-    } else {
-      await preloadPackBundle(activeTab);
     }
 
     if (currentGen !== renderGen) return;
@@ -386,6 +383,22 @@ export function createStickerPicker(onSelect) {
       grid.appendChild(createStickerItem(s, pack));
     }
     contentArea.appendChild(grid);
+
+    // Preload bundle in background without blocking UI
+    preloadPackBundle(activeTab).then(() => {
+      if (currentGen === renderGen && activeTab === pack.id) {
+        const images = grid.querySelectorAll(".sticker-img");
+        images.forEach((img, idx) => {
+          const s = pack.stickers[idx];
+          if (s) {
+            const blobUrl = getLocalStickerBlobUrl(s.pack_id, s.file_name, s.id);
+            if (blobUrl && img.src !== blobUrl) {
+              img.src = blobUrl;
+            }
+          }
+        });
+      }
+    });
   }
 
   function createStickerItem(s, pack) {
