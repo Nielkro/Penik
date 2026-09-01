@@ -74,7 +74,61 @@ class StickerRepository @Inject constructor(
         }
     }
 
+    private val downloadingPacks = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    fun getLocalStickerFile(packId: String, fileName: String): java.io.File? {
+        if (packId.isBlank() || fileName.isBlank()) return null
+        val packDir = java.io.File(context.cacheDir, "stickers/$packId")
+        val file = java.io.File(packDir, fileName)
+        if (file.exists() && file.length() > 0) return file
+        val base = fileName.substringBeforeLast('.')
+        for (ext in listOf(".webp", ".webm", ".png", ".tgs")) {
+            val alt = java.io.File(packDir, base + ext)
+            if (alt.exists() && alt.length() > 0) return alt
+        }
+        return null
+    }
+
+    suspend fun preloadPackBundle(packId: String) = withContext(Dispatchers.IO) {
+        if (packId.isBlank()) return@withContext
+        val packDir = java.io.File(context.cacheDir, "stickers/$packId")
+        if (packDir.exists() && (packDir.list()?.isNotEmpty() == true)) {
+            return@withContext
+        }
+        if (!downloadingPacks.add(packId)) {
+            return@withContext
+        }
+        try {
+            val resp = apiService.downloadStickerPackBundle(packId)
+            if (resp.isSuccessful && resp.body() != null) {
+                packDir.mkdirs()
+                resp.body()!!.byteStream().use { stream ->
+                    java.util.zip.ZipInputStream(stream).use { zis ->
+                        var entry = zis.nextEntry
+                        while (entry != null) {
+                            val cleanName = java.io.File(entry.name).name
+                            if (!entry.isDirectory && cleanName.isNotBlank() && !cleanName.startsWith(".")) {
+                                val outFile = java.io.File(packDir, cleanName)
+                                outFile.outputStream().use { fos ->
+                                    zis.copyTo(fos)
+                                }
+                            }
+                            zis.closeEntry()
+                            entry = zis.nextEntry
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            downloadingPacks.remove(packId)
+        }
+    }
+
     suspend fun getPackDetails(packId: String, forceRefresh: Boolean = false): Result<StickerPackResponse> = withContext(Dispatchers.IO) {
+        // Preload zip bundle in parallel
+        preloadPackBundle(packId)
+
         if (!forceRefresh) {
             val cached = packsMemoryCache[packId]
             if (cached != null && cached.stickers.isNotEmpty()) {

@@ -102,14 +102,35 @@ fun rememberCachedStickerFile(rawUrl: String): File? {
     val url = remember(rawUrl) { ApiConfig.getFullStickerUrl(rawUrl) }
     var cachedFile by remember(url) {
         val cacheDir = File(context.cacheDir, "stickers")
-        val ext = if (url.contains(".webm", ignoreCase = true)) ".webm" else ".webp"
-        val fileName = "stk_" + url.hashCode().toString() + ext
-        val targetFile = File(cacheDir, fileName)
-        if (targetFile.exists() && targetFile.length() > 0) {
-            mutableStateOf<File?>(targetFile)
-        } else {
-            mutableStateOf<File?>(null)
+        var foundFile: File? = null
+        val parts = rawUrl.trimStart('/').split('/')
+        if (parts.size >= 5 && parts[0] == "api" && parts[1] == "v1" && parts[2] == "stickers" && parts[3] == "file") {
+            val packId = parts[4]
+            val fileName = parts.drop(5).joinToString("/")
+            val packDir = File(cacheDir, packId)
+            val candidate = File(packDir, fileName)
+            if (candidate.exists() && candidate.length() > 0) {
+                foundFile = candidate
+            } else {
+                val base = fileName.substringBeforeLast('.')
+                for (altExt in listOf(".webp", ".webm", ".png", ".tgs")) {
+                    val alt = File(packDir, base + altExt)
+                    if (alt.exists() && alt.length() > 0) {
+                        foundFile = alt
+                        break
+                    }
+                }
+            }
         }
+        if (foundFile == null) {
+            val ext = if (url.contains(".webm", ignoreCase = true)) ".webm" else ".webp"
+            val fileName = "stk_" + url.hashCode().toString() + ext
+            val targetFile = File(cacheDir, fileName)
+            if (targetFile.exists() && targetFile.length() > 0) {
+                foundFile = targetFile
+            }
+        }
+        mutableStateOf<File?>(foundFile)
     }
 
     LaunchedEffect(url) {
