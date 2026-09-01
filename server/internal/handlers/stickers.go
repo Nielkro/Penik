@@ -341,6 +341,17 @@ func buildStickerPackZip(packDir, zipPath string) error {
 		}
 
 		filePath := filepath.Join(packDir, entry.Name())
+
+		// If webp is oversized (> 1.2MB), re-transcode it with lossy compression before packaging
+		if ext == ".webp" {
+			if eInfo, statErr := entry.Info(); statErr == nil && eInfo.Size() > 1200*1024 {
+				srcWebm := filepath.Join(packDir, base+".webm")
+				if _, webmErr := os.Stat(srcWebm); webmErr == nil {
+					_ = transcodeOnDemand(srcWebm, filePath, "webp")
+				}
+			}
+		}
+
 		fileBytes, err := os.ReadFile(filePath)
 		if err != nil || len(fileBytes) == 0 {
 			continue
@@ -493,6 +504,19 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 			}
 		}
 
+		// If WebP is requested or found but bloated (> 1.2MB), re-transcode with optimized lossy compression if source .webm exists
+		if strings.HasSuffix(fileName, ".webp") && info != nil && info.Size() > 1200*1024 {
+			base := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+			srcWebm := filepath.Join(packDir, base+".webm")
+			if _, webmErr := os.Stat(srcWebm); webmErr == nil {
+				if transcodeOnDemand(srcWebm, filePath, "webp") {
+					if newInfo, statErr := os.Stat(filePath); statErr == nil {
+						info = newInfo
+					}
+				}
+			}
+		}
+
 		contentType := detectStickerContentType(filePath, fileName)
 		w.Header().Set("Content-Type", contentType)
 
@@ -602,16 +626,16 @@ func transcodeOnDemand(srcPath, dstPath, format string) bool {
 
 	var cmd *exec.Cmd
 	if format == "webp" {
-		// Stage 1: Fast animated WebP with libwebp loop
-		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libwebp", "-loop", "0", "-an", "-f", "webp", tmpPath)
+		// Stage 1: Optimized lossy animated WebP with 384px scaling & 24fps (10-20x smaller file size, smooth 24fps animation)
+		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "scale=384:384:force_original_aspect_ratio=decrease,fps=24,format=rgba", "-c:v", "libwebp", "-lossless", "0", "-q:v", "60", "-loop", "0", "-an", "-f", "webp", tmpPath)
 		if _, err := cmd.CombinedOutput(); err != nil || !validNonEmptyFile(tmpPath) {
 			_ = os.Remove(tmpPath)
-			// Stage 2: Animated WebP with rgba filter for transparent alpha
-			cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "format=rgba", "-c:v", "libwebp", "-loop", "0", "-an", "-f", "webp", tmpPath)
+			// Stage 2: Direct lossy animated WebP
+			cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libwebp", "-lossless", "0", "-q:v", "60", "-loop", "0", "-an", "-f", "webp", tmpPath)
 			if _, err2 := cmd.CombinedOutput(); err2 != nil || !validNonEmptyFile(tmpPath) {
 				_ = os.Remove(tmpPath)
 				// Stage 3: Guaranteed single-frame snapshot
-				cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vframes", "1", "-c:v", "libwebp", "-f", "webp", tmpPath)
+				cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vframes", "1", "-c:v", "libwebp", "-q:v", "60", "-f", "webp", tmpPath)
 				if out3, err3 := cmd.CombinedOutput(); err3 != nil || !validNonEmptyFile(tmpPath) {
 					_ = os.Remove(tmpPath)
 					log.Printf("[Stickers] ffmpeg webp transcode failed for %s -> %s: %v, out: %s", srcPath, dstPath, err3, string(out3))
