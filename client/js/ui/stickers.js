@@ -355,7 +355,11 @@ export function createStickerPicker(onSelect) {
     if (!pack) {
       contentArea.appendChild(spinner());
       try {
-        pack = await getStickerPack(activeTab);
+        const [p] = await Promise.all([
+          getStickerPack(activeTab),
+          preloadPackBundle(activeTab)
+        ]);
+        pack = p;
         packCache.set(activeTab, pack);
       } catch (err) {
         if (currentGen !== renderGen) return;
@@ -363,6 +367,8 @@ export function createStickerPicker(onSelect) {
         contentArea.appendChild(el("div", { class: "sticker-picker-empty" }, "Не удалось загрузить стикеры"));
         return;
       }
+    } else {
+      preloadPackBundle(activeTab);
     }
 
     if (currentGen !== renderGen) return;
@@ -383,29 +389,13 @@ export function createStickerPicker(onSelect) {
       grid.appendChild(createStickerItem(s, pack));
     }
     contentArea.appendChild(grid);
-
-    // Preload bundle in background without blocking UI
-    preloadPackBundle(activeTab).then(() => {
-      if (currentGen === renderGen && activeTab === pack.id) {
-        const images = grid.querySelectorAll(".sticker-img");
-        images.forEach((img, idx) => {
-          const s = pack.stickers[idx];
-          if (s) {
-            const blobUrl = getLocalStickerBlobUrl(s.pack_id, s.file_name, s.id);
-            if (blobUrl && img.src !== blobUrl) {
-              img.src = blobUrl;
-            }
-          }
-        });
-      }
-    });
   }
 
   function createStickerItem(s, pack) {
-    const isVideo = Boolean(pack?.is_video || s.file_name?.endsWith('.webm'));
-    const isTgs = Boolean(pack?.is_animated || s.file_name?.endsWith('.tgs'));
-    const defaultUrl = getFullApiUrl(s.url || `/api/v1/stickers/file/${s.pack_id}/${s.file_name || (s.id + (isVideo ? '.webm' : (isTgs ? '.tgs' : '.webp')))}`);
     const localBlob = getLocalStickerBlobUrl(s.pack_id, s.file_name, s.id);
+    const isTgs = Boolean(pack?.is_animated || s.file_name?.endsWith('.tgs'));
+    const isVideo = !localBlob && Boolean(pack?.is_video || s.file_name?.endsWith('.webm'));
+    const defaultUrl = getFullApiUrl(s.url || `/api/v1/stickers/file/${s.pack_id}/${s.file_name || (s.id + (isVideo ? '.webm' : (isTgs ? '.tgs' : '.webp')))}`);
     const mediaUrl = localBlob || defaultUrl;
 
     const item = el("button", { class: "sticker-grid-item", title: s.emoji || "" });
