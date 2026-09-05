@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chai2010/webp"
@@ -34,10 +35,28 @@ var nicknamePattern = regexp.MustCompile(`^[a-z0-9_]{3,32}$`)
 
 const nicknameCooldown = 7 * 24 * time.Hour
 
+// escapeLikePattern escapes SQLite LIKE wildcard characters (%, _, \).
+func escapeLikePattern(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r == '%' || r == '_' || r == '\\' {
+			b.WriteRune('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // SearchUsers handles GET /api/v1/users/search?q=&limit=20.
 func SearchUsers(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query().Get("q")
+		q := strings.TrimSpace(r.URL.Query().Get("q"))
+		if q == "" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]struct{}{})
+			return
+		}
+
 		limit := 20
 		if l := r.URL.Query().Get("limit"); l != "" {
 			if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 100 {
@@ -45,10 +64,10 @@ func SearchUsers(database *db.DB) http.HandlerFunc {
 			}
 		}
 
-		pattern := "%" + q + "%"
+		pattern := "%" + escapeLikePattern(q) + "%"
 		rows, err := database.QueryContext(r.Context(),
 			`SELECT id, name, nickname FROM users
-			 WHERE nickname LIKE ? OR name LIKE ?
+			 WHERE nickname LIKE ? ESCAPE '\' OR name LIKE ? ESCAPE '\'
 			 LIMIT ?`, pattern, pattern, limit)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)

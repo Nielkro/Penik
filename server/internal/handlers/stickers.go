@@ -335,7 +335,6 @@ func HandleServeStickerPackZip(cfg *config.Config) http.HandlerFunc {
 		w.Header().Set("ETag", etag)
 		w.Header().Set("Last-Modified", zipInfo.ModTime().UTC().Format(http.TimeFormat))
 		w.Header().Set("Cache-Control", "public, max-age=86400")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
 
 		if match := r.Header.Get("If-None-Match"); match != "" {
 			if match == etag || match == "*" {
@@ -549,7 +548,6 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 		w.Header().Set("ETag", etag)
 		w.Header().Set("Last-Modified", info.ModTime().UTC().Format(http.TimeFormat))
 		w.Header().Set("Cache-Control", "public, max-age=86400")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
 
 		if match := r.Header.Get("If-None-Match"); match != "" {
 			if match == etag || match == "*" {

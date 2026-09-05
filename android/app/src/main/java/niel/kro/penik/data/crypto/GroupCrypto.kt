@@ -105,16 +105,7 @@ class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
         val cipher = chaChaPoly1305()
         cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(messageKey, "ChaCha20"), IvParameterSpec(nonce))
         cipher.updateAAD(aad)
-        return try {
-            cipher.doFinal(ciphertext)
-        } catch (e: Exception) {
-            // Fallback for legacy v1 AAD
-            val aadv1 = buildAadv1(groupId, keyVersion, messageId, createdAt)
-            val c2 = chaChaPoly1305()
-            c2.init(Cipher.DECRYPT_MODE, SecretKeySpec(messageKey, "ChaCha20"), IvParameterSpec(nonce))
-            c2.updateAAD(aadv1)
-            c2.doFinal(ciphertext)
-        }
+        return cipher.doFinal(ciphertext)
     }
 
     /** Wrap a group key for one recipient device using the pairwise shared secret. */

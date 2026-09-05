@@ -170,11 +170,6 @@ class E2EECrypto {
             }
             return cipher.doFinal(ciphertext)
         } catch (e: Exception) {
-            if (aad != null) {
-                try {
-                    return decrypt(ciphertext, sharedSecret, salt, nonce, info, null)
-                } catch (_: Exception) {}
-            }
             if (info == "penik-pairwise-message-v1") {
                 return decrypt(ciphertext, sharedSecret, salt, nonce, "PenikE2EE", aad)
             }

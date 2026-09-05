@@ -233,3 +233,34 @@ func TestGetAttachment_NotFoundAndInvalidID(t *testing.T) {
 	}
 }
 
+func TestGetAttachment_OrphanRejected(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := &config.Config{
+		UploadDir:     tempDir,
+		MaxUploadSize: 10 * 1024 * 1024,
+	}
+	dbPath := filepath.Join(tempDir, "test.db")
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	defer database.Close()
+
+	// Write an orphan file directly to disk without database entry
+	attDir := filepath.Join(tempDir, "attachments")
+	_ = os.MkdirAll(attDir, 0700)
+	orphanID := "fedcba9876543210fedcba9876543210"
+	_ = os.WriteFile(filepath.Join(attDir, orphanID+".bin"), []byte("orphan content"), 0600)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/attachments/file/"+orphanID, nil)
+	req.SetPathValue("id", orphanID)
+	req = req.WithContext(context.WithValue(req.Context(), middleware.ContextUserID, int64(42)))
+	rec := httptest.NewRecorder()
+	GetAttachment(database, cfg)(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for orphan attachment on disk without DB record, got %d", rec.Code)
+	}
+}
+
+

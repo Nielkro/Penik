@@ -118,7 +118,7 @@ func sessionExists(t *testing.T, database *db.DB, token string) bool {
 	t.Helper()
 	tokenHash := db.HashSessionToken(token)
 	var n int
-	if err := database.QueryRow(`SELECT COUNT(*) FROM sessions WHERE token=? OR token=?`, tokenHash, token).Scan(&n); err != nil {
+	if err := database.QueryRow(`SELECT COUNT(*) FROM sessions WHERE token=?`, tokenHash).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n > 0

@@ -907,11 +907,17 @@ private suspend fun downloadAndDecryptAttachment(context: Context, attachment: F
             throw IllegalStateException("Attachment encryption key is not set")
         }
         
-        val fullUrl = when {
+        val rawUrl = when {
             attachment.url.startsWith("http://") || attachment.url.startsWith("https://") -> attachment.url
             attachment.url.startsWith("/") -> "${niel.kro.penik.data.network.api.ApiConfig.SCHEME}://${niel.kro.penik.data.network.api.ApiConfig.HOST}${attachment.url}"
             else -> "${niel.kro.penik.data.network.api.ApiConfig.SCHEME}://${niel.kro.penik.data.network.api.ApiConfig.HOST}/${attachment.url}"
         }
+        val uri = android.net.Uri.parse(rawUrl)
+        val expectedHost = niel.kro.penik.data.network.api.ApiConfig.HOST.substringBefore(':')
+        if (!uri.host.equals(expectedHost, ignoreCase = true) || !uri.path.orEmpty().startsWith("/api/v1/attachments/file/")) {
+            throw SecurityException("Untrusted attachment URL source: ${attachment.url}")
+        }
+        val fullUrl = rawUrl
         val digest = MessageDigest.getInstance("SHA-256")
             .digest((fullUrl + attachment.key).toByteArray())
             .joinToString("") { "%02x".format(it) }
@@ -927,7 +933,7 @@ private suspend fun downloadAndDecryptAttachment(context: Context, attachment: F
         val encrypted = (URL(fullUrl).openConnection() as HttpURLConnection).run {
             connectTimeout = 20_000
             readTimeout = 40_000
-            instanceFollowRedirects = true
+            instanceFollowRedirects = false
             setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             if (!token.isNullOrBlank()) {
                 setRequestProperty("Authorization", "Bearer $token")

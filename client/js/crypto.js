@@ -456,18 +456,7 @@ export async function e2eeEncrypt(plaintext, sharedSecret, info = "penik-pairwis
 
 export async function e2eeDecrypt(ciphertext, sharedSecret, salt, nonce, info = "penik-pairwise-message-v1", aad = new Uint8Array(0)) {
   const derivedKey = await hkdfDerive(salt, sharedSecret, info, 32);
-  try {
-    return await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext, aad);
-  } catch (e) {
-    if (aad && aad.length > 0) {
-      try {
-        return await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext, new Uint8Array(0));
-      } catch {
-        // rethrow original error
-      }
-    }
-    throw e;
-  }
+  return await chacha20Poly1305Decrypt(derivedKey, nonce, ciphertext, aad);
 }
 
 export async function encryptPairingHistory(data, sharedSecret) {
@@ -665,21 +654,11 @@ export async function groupEncrypt(plaintext, groupKey, groupId, keyVersion, sen
   return { ciphertext, salt, nonce };
 }
 
-// groupDecrypt reverses groupEncrypt with automatic v1 fallback. Throws if the AAD or tag does not verify.
+// groupDecrypt reverses groupEncrypt. Throws if the AAD or tag does not verify.
 export async function groupDecrypt(ciphertext, groupKey, salt, nonce, groupId, keyVersion, senderUserId, messageId, createdAt) {
   const messageKey = await hkdfDerive(salt, groupKey, "penik-group-message-v1", 32);
   const aad = buildGroupAAD(groupId, keyVersion, senderUserId, messageId, createdAt);
-  try {
-    return await chacha20Poly1305Decrypt(messageKey, nonce, ciphertext, aad);
-  } catch (e) {
-    // Fallback to legacy v1 AAD
-    try {
-      const aadv1 = buildGroupAADv1(groupId, keyVersion, messageId, createdAt);
-      return await chacha20Poly1305Decrypt(messageKey, nonce, ciphertext, aadv1);
-    } catch {
-      throw e;
-    }
-  }
+  return await chacha20Poly1305Decrypt(messageKey, nonce, ciphertext, aad);
 }
 
 // wrapGroupKeyForDevice encrypts a group key for one recipient device using the
