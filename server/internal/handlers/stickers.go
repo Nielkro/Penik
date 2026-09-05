@@ -370,25 +370,13 @@ func buildStickerPackZip(packDir, zipPath string) error {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		base := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
 
-		// Never package raw webm into bundle.zip (only webp, tgs, png)
+		// Only include lightweight displayable formats in bundle.zip (never raw webm)
 		if ext != ".webp" && ext != ".tgs" && ext != ".png" {
 			continue
 		}
 
 		filePath := filepath.Join(packDir, entry.Name())
-
-		// If this is an oversized webp (> 150KB), re-transcode with compact lossy compression before packing
-		if ext == ".webp" {
-			if eInfo, sErr := entry.Info(); sErr == nil && eInfo.Size() > 150*1024 {
-				srcWebm := filepath.Join(packDir, base+".webm")
-				if _, webmErr := os.Stat(srcWebm); webmErr == nil {
-					_ = transcodeOnDemand(srcWebm, filePath, "webp")
-				}
-			}
-		}
-
 		fileBytes, err := os.ReadFile(filePath)
 		if err != nil || len(fileBytes) == 0 {
 			continue
