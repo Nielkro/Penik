@@ -5,6 +5,8 @@ import android.media.AudioManager
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.media.ToneGenerator
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -35,7 +37,11 @@ import io.livekit.android.events.RoomEvent
 import io.livekit.android.room.Room
 import io.livekit.android.room.track.Track
 import io.livekit.android.room.track.VideoTrack
+import io.livekit.android.util.LoggingLevel
 import livekit.org.webrtc.EglBase
+import livekit.org.webrtc.RTCStats
+import livekit.org.webrtc.RTCStatsCollectorCallback
+import livekit.org.webrtc.RTCStatsReport
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.websocket.ConnectionState
 import niel.kro.penik.data.network.websocket.WebSocketEvent
@@ -65,6 +71,14 @@ data class CallUiState(
 )
 
 private const val TAG = "CallManager"
+
+// An outgoing call held until the user confirms they want to dial despite VPN.
+private data class PendingOutgoingCall(
+    val peerUserId: Long,
+    val peerName: String,
+    val isVideo: Boolean
+)
+
 private const val RING_TIMEOUT_MS = 30_000L
 private const val INCOMING_RING_TIMEOUT_MS = 45_000L
 private const val LIVEKIT_CONNECT_TIMEOUT_MS = 15_000L
@@ -97,10 +111,18 @@ class CallManager @Inject constructor(
     private val _toasts = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val toasts: SharedFlow<String> = _toasts.asSharedFlow()
 
+    // Emits whenever a call is started/accepted while an active VPN tunnel
+    // is detected. UI should surface this as a dialog, not a toast: media
+    // rides the tunnel interface and typically fails, so the user should be
+    // prompted to disable the VPN for the call.
+    private val _vpnWarning = MutableSharedFlow<Unit>(extraBufferCapacity = 2)
+    val vpnWarning: SharedFlow<Unit> = _vpnWarning.asSharedFlow()
+
     val eglBase: EglBase by lazy { EglBase.create() }
 
     private var room: Room? = null
     private var eventsJob: Job? = null
+    private var statsJob: Job? = null
     private var timerJob: Job? = null
     private var ringTimeoutJob: Job? = null
     private var ringtone: Ringtone? = null
@@ -109,12 +131,22 @@ class CallManager @Inject constructor(
     private var livekitFallbackUrl: String? = null
     private var token: String = ""
     private var currentCallId: String = ""
+    // Pending outgoing call that was held until the user confirms despite VPN.
+    private var pendingOutgoingCall: PendingOutgoingCall? = null
+    // True while an incoming call accept is held pending the VPN confirmation.
+    private var pendingAccept: Boolean = false
 
     private val ui get() = _state.value
 
     init {
         // LiveKit manages WebRTC media connectivity directly. Temporary WebSocket
         // disconnects (e.g. backgrounding, network switch) should not instantly drop an active call.
+
+        // Call connectivity diagnostics: SDK traces plus native WebRTC/ICE logs
+        // land in logcat (tags "LKLog", "CallManager", webrtc). Filter with:
+        //   adb logcat -s CallManager LKLog
+        LiveKit.loggingLevel = LoggingLevel.DEBUG
+        LiveKit.enableWebRTCLogging = true
     }
 
     // --- Outgoing ---
@@ -132,7 +164,13 @@ class CallManager @Inject constructor(
             isOutgoing = true
         )
         startDialingTone()
-        webSocketManager.sendCallOffer(peerUserId, isVideo)
+        // Ask to disable VPN (if active) BEFORE dialing so media does not try
+        // to collect candidates against the tunnel interface.
+        if (isVpnActive()) {
+            pendingOutgoingCall = PendingOutgoingCall(peerUserId, peerName, isVideo)
+            _vpnWarning.tryEmit(Unit)
+            return
+        }
         ringTimeoutJob = scope.launch {
             delay(RING_TIMEOUT_MS)
             if (ui.phase == CallPhase.DIALING) {
@@ -142,6 +180,7 @@ class CallManager @Inject constructor(
                 cleanup()
             }
         }
+        webSocketManager.sendCallOffer(peerUserId, isVideo)
     }
 
     // --- Incoming ---
@@ -192,6 +231,41 @@ class CallManager @Inject constructor(
         stopAllTones()
         notificationManager.cancelIncomingCallNotification()
         currentCallId = callIdOfIncoming
+        // Ask to disable VPN (if active) BEFORE connecting so media does not
+        // try to collect candidates against the tunnel interface.
+        if (isVpnActive()) {
+            pendingAccept = true
+            _vpnWarning.tryEmit(Unit)
+            return
+        }
+        proceedAcceptCall()
+    }
+
+    /** Called by the UI when the user confirms they want to continue despite the VPN. */
+    fun proceedCallAfterVpnWarning() {
+        // Re-check: if the VPN is still active, do NOT proceed — media will fail;
+        // re-trigger the warning so the user can disable it and try again.
+        if (isVpnActive()) {
+            Log.w(TAG, "VPN still active on continue; re-requesting confirmation")
+            _vpnWarning.tryEmit(Unit)
+            return
+        }
+        val pending = pendingOutgoingCall
+        if (pending != null) {
+            pendingOutgoingCall = null
+            startDialing()
+            return
+        }
+        if (pendingAccept) {
+            pendingAccept = false
+            proceedAcceptCall()
+        }
+    }
+
+    // --- Peer responses ---
+
+    private fun proceedAcceptCall() {
+        currentCallId = callIdOfIncoming
         _state.value = ui.copy(phase = CallPhase.CONNECTING)
         scope.launch {
             val token = tokenStorage.getToken()
@@ -215,6 +289,22 @@ class CallManager @Inject constructor(
             webSocketManager.sendCallAccept(callIdOfIncoming)
             connectLiveKit()
         }
+    }
+
+    private fun startDialing() {
+        if (ui.phase != CallPhase.DIALING) return
+        val peerUserId = ui.peerUserId
+        val isVideo = ui.isVideo
+        ringTimeoutJob = scope.launch {
+            delay(RING_TIMEOUT_MS)
+            if (ui.phase == CallPhase.DIALING) {
+                webSocketManager.sendCallReject(currentCallId, peerUserId, "declined")
+                playBusyTone()
+                toast("Нет ответа")
+                cleanup()
+            }
+        }
+        webSocketManager.sendCallOffer(peerUserId, isVideo)
     }
 
     fun rejectCall() {
@@ -404,10 +494,16 @@ class CallManager @Inject constructor(
         val urls = listOfNotNull(livekitUrl, livekitFallbackUrl).distinct().filter { it.isNotBlank() }
         for ((index, url) in urls.withIndex()) {
             var candidate: Room? = null
+            Log.i(TAG, "LiveKit connect attempt ${index + 1}/${urls.size}: $url")
             try {
                 candidate = createRoom()
+                // NOTE: do NOT bind the process to a physical network here.
+                // WebRTC still gathers candidates against the tun0 interface and
+                // changing the network mid-ICE breaks the handshake. Handle VPN by
+                // warning the user before the call instead.
                 withTimeout(LIVEKIT_CONNECT_TIMEOUT_MS) { candidate.connect(url, token) }
                 room = candidate
+                Log.i(TAG, "LiveKit connected via $url (state=${candidate.state})")
                 if (index > 0) {
                     toast("Подключено к резервному серверу — качество может быть хуже")
                 }
@@ -428,6 +524,19 @@ class CallManager @Inject constructor(
         // Tell the server the call is over so both users leave the busy state.
         webSocketManager.sendCallReject(currentCallId, ui.peerUserId, "declined")
         cleanup()
+    }
+
+    /** Returns true when the active network is a VPN tunnel (no NOT_VPN capability). */
+    private fun isVpnActive(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        return try {
+            val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
+            val active = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(active) ?: return false
+            !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun createRoom(): Room {
@@ -483,9 +592,23 @@ class CallManager @Inject constructor(
                         updateRemoteVideoTrack(room)
                     }
                 }
+                is RoomEvent.Connected ->
+                    Log.i(TAG, "LiveKit room connected")
+                is RoomEvent.FailedToConnect ->
+                    Log.e(TAG, "LiveKit room connect failed", event.error)
+                is RoomEvent.ParticipantConnected ->
+                    Log.i(TAG, "Peer entered room: identity=${event.participant.identity}")
+                is RoomEvent.ParticipantDisconnected ->
+                    Log.i(TAG, "Peer left room: identity=${event.participant.identity}")
+                is RoomEvent.ConnectionQualityChanged ->
+                    Log.i(TAG, "Connection quality ${event.quality} (identity=${event.participant.identity})")
+                is RoomEvent.TrackSubscriptionFailed ->
+                    Log.w(TAG, "Track subscription failed sid=${event.sid}", event.exception)
                 is RoomEvent.Reconnecting -> {
                     // Media is re-negotiating after a network change. The call is
                     // still alive server-side, so only surface the state.
+                    Log.w(TAG, "LiveKit reconnecting, dumping last ICE state")
+                    logIceStats("reconnecting")
                     _state.value = ui.copy(isReconnecting = true)
                 }
                 is RoomEvent.Reconnected -> {
@@ -493,6 +616,7 @@ class CallManager @Inject constructor(
                     // track under a new SID, and the per-track events for what
                     // already existed are not replayed. Rebuild from the room
                     // instead of waiting for notifications that never arrive.
+                    Log.i(TAG, "LiveKit reconnected")
                     val wantCamera = !ui.cameraOff
                     _state.value = ui.copy(isReconnecting = false)
                     updateRemoteVideoTrack(room)
@@ -503,6 +627,8 @@ class CallManager @Inject constructor(
                     // A failed initial connect also emits Disconnected before
                     // connect() throws; the failover loop owns CONNECTING.
                     // Only an ACTIVE room dropping is a real call end.
+                    Log.i(TAG, "LiveKit room disconnected (reason=${event.reason})")
+                    logIceStats("disconnected")
                     if (ui.phase == CallPhase.ACTIVE) {
                         if (currentCallId.isNotEmpty()) {
                             webSocketManager.sendCallEnd(currentCallId, ui.peerUserId)
@@ -592,6 +718,7 @@ class CallManager @Inject constructor(
         playConnectedTone()
         startTimer()
         updateRemoteVideoTrack(room)
+        scheduleIceStatsSampling()
         try {
             room.localParticipant.setMicrophoneEnabled(true)
             if (ui.isVideo) {
@@ -603,6 +730,105 @@ class CallManager @Inject constructor(
         // Derives cameraOff from the actual publication, so a failed camera
         // start cannot leave the button claiming the camera is live.
         publishLocalVideoTrack()
+    }
+
+    // --- ICE / media diagnostics ---
+
+    /**
+     * Samples WebRTC stats a few times after the room is up. A succeeded
+     * candidate pair with frozen byte counters means "connected but no media
+     * flows"; the pair addresses show which path was actually selected
+     * (tunnel interface vs public path).
+     */
+    private fun scheduleIceStatsSampling() {
+        statsJob?.cancel()
+        statsJob = scope.launch {
+            val marks = listOf(3_000L, 10_000L, 30_000L, 90_000L)
+            var prev = 0L
+            for (mark in marks) {
+                delay(mark - prev)
+                prev = mark
+                if (room != null) logIceStats("t+${mark / 1000}s")
+            }
+        }
+    }
+
+    private fun logIceStats(stage: String) {
+        val r = room ?: return
+        try {
+            r.getSubscriberRTCStats(RTCStatsCollectorCallback { report ->
+                dumpIceStats(stage, "subscriber", report)
+            })
+            r.getPublisherRTCStats(RTCStatsCollectorCallback { report ->
+                dumpIceStats(stage, "publisher", report)
+            })
+        } catch (e: Exception) {
+            Log.w(TAG, "ICE stats collection failed at $stage", e)
+        }
+    }
+
+    private fun dumpIceStats(stage: String, pc: String, report: RTCStatsReport) {
+        try {
+            val stats = report.statsMap.values
+
+            // All candidates gathered so far (local host/srflx/prflx and remote).
+            val localCands = stats.filter { it.type == "local-candidate" }
+            val remoteCands = stats.filter { it.type == "remote-candidate" }
+            if (localCands.isNotEmpty() || remoteCands.isNotEmpty()) {
+                Log.i(TAG, "ICE[$pc $stage] candidates:")
+                for (c in localCands) {
+                    Log.i(
+                        TAG,
+                        "  LOCAL  ${fmtCandidate(c)}"
+                    )
+                }
+                for (c in remoteCands) {
+                    Log.i(
+                        TAG,
+                        "  REMOTE ${fmtCandidate(c)}"
+                    )
+                }
+            }
+
+            // All candidate pairs with their state (failed / inprogress / succeeded / cancelled).
+            val pairs = stats.filter { it.type == "candidate-pair" }
+            if (pairs.isNotEmpty()) {
+                Log.i(TAG, "ICE[$pc $stage] pairs:")
+                val byId = stats.associateBy { it.id }
+                for (pair in pairs) {
+                    val local = byId[pair.members["localCandidateId"] as? String]
+                    val remote = byId[pair.members["remoteCandidateId"] as? String]
+                    Log.i(
+                        TAG,
+                        "  ${pair.members["state"]} selected=${pair.members["selected"]} " +
+                            "nominated=${pair.members["nominated"]} " +
+                            "local=[${fmtCandidate(local)}] remote=[${fmtCandidate(remote)}] " +
+                            "bytesSent=${pair.members["bytesSent"]} bytesReceived=${pair.members["bytesReceived"]} " +
+                            "rtt=${pair.members["currentRoundTripTime"]}"
+                    )
+                }
+            }
+
+            val succeeded = pairs.any {
+                it.members["state"] == "succeeded" && it.members["selected"] == true
+            }
+            if (pairs.isEmpty() || !succeeded) {
+                Log.w(TAG, "ICE[$pc $stage]: no succeeded selected candidate pair")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "ICE stats parsing failed at $stage/$pc", e)
+        }
+    }
+
+    private fun fmtCandidate(s: RTCStats?): String {
+        if (s == null) return "?"
+        val m = s.members
+        val type = m["candidateType"]
+        val addr = m["address"] ?: m["ip"]
+        val port = m["port"]
+        val proto = m["protocol"]
+        val net = m["networkType"]
+        return "$type $addr:$port $proto net=$net"
     }
 
     // --- Ringer / timer / misc ---
@@ -741,6 +967,8 @@ class CallManager @Inject constructor(
         ringTimeoutJob = null
         timerJob?.cancel()
         timerJob = null
+        statsJob?.cancel()
+        statsJob = null
         stopAllTones()
         notificationManager.cancelIncomingCallNotification()
         eventsJob?.cancel()
@@ -762,6 +990,8 @@ class CallManager @Inject constructor(
         token = ""
         callIdOfIncoming = ""
         currentCallId = ""
+        pendingOutgoingCall = null
+        pendingAccept = false
         _state.value = CallUiState()
     }
 }
