@@ -55,10 +55,28 @@ sw.addEventListener('fetch', (event) => {
 
 async function handleStreamRequest(request) {
   const url = new URL(request.url);
-  const mediaId = url.pathname.replace('/sw-stream/', '');
 
-  // Communicate with clients to retrieve blob from memory/IndexedDB cache
-  const clientList = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  // 1. Reject cross-origin requests
+  if (url.origin !== sw.location.origin) {
+    return new Response('Forbidden', { status: 403 });
+  }
+
+  // 2. Enforce Fetch Metadata: block cross-site embeds (e.g. attacker site embedding <video>)
+  const secFetchSite = request.headers.get('Sec-Fetch-Site');
+  if (secFetchSite && secFetchSite !== 'same-origin' && secFetchSite !== 'none') {
+    return new Response('Forbidden: Cross-site media streaming blocked', {
+      status: 403,
+      headers: { 'Content-Type': 'text/plain' },
+    });
+  }
+
+  const mediaId = url.pathname.replace('/sw-stream/', '');
+  if (!mediaId || mediaId.includes('..')) {
+    return new Response('Bad Request: Invalid media identifier', { status: 400 });
+  }
+
+  // Communicate only with same-origin controlled window clients
+  const clientList = await sw.clients.matchAll({ type: 'window', includeUncontrolled: false });
   if (!clientList || clientList.length === 0) {
     return new Response('No client available', { status: 503 });
   }
@@ -87,6 +105,8 @@ async function handleStreamRequest(request) {
         'Content-Type': mime,
         'Content-Length': size.toString(),
         'Accept-Ranges': 'bytes',
+        'Cross-Origin-Resource-Policy': 'same-origin',
+        'X-Content-Type-Options': 'nosniff',
       },
     });
   }
@@ -106,6 +126,8 @@ async function handleStreamRequest(request) {
       status: 416,
       headers: {
         'Content-Range': `bytes */${size}`,
+        'Cross-Origin-Resource-Policy': 'same-origin',
+        'X-Content-Type-Options': 'nosniff',
       },
     });
   }
@@ -120,6 +142,8 @@ async function handleStreamRequest(request) {
       'Content-Length': chunkSize.toString(),
       'Content-Range': `bytes ${start}-${end}/${size}`,
       'Accept-Ranges': 'bytes',
+      'Cross-Origin-Resource-Policy': 'same-origin',
+      'X-Content-Type-Options': 'nosniff',
     },
   });
 }
