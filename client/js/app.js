@@ -43,6 +43,16 @@ if ('serviceWorker' in navigator) {
       if (!port) return;
 
       try {
+        // Enforce authentication: refuse to serve decrypted media if user is logged out
+        if (!getToken()) {
+          port.postMessage(null);
+          return;
+        }
+        if (!mediaId || typeof mediaId !== 'string' || mediaId.includes('..')) {
+          port.postMessage(null);
+          return;
+        }
+
         const rawBlobUrl = window._streamMediaCache?.get(mediaId);
         let blob = null;
         if (rawBlobUrl) {

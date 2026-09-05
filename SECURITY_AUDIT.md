@@ -66,6 +66,8 @@
 - **Fallback по «сырому» токену сессии.** Исправлено. Убраны проверки `OR token=?` из `auth.go` и `logout.go`. Все проверки сессий выполняются строго по SHA-256 хешу (`WHERE token=?`, `tokenHash`).
 - **LIKE-wildcard инъекция в поиске пользователей.** Исправлено. Добавлено экранирование спецсимволов `%`, `_`, `\` с помощью `ESCAPE '\'`, а пустые поисковые запросы сразу возвращают пустой список (`users.go`). Покрыто тестами в `users_test.go`.
 - **CORS и публичные bundle в стикерах.** Исправлено. Удалены хардкодные заголовки `Access-Control-Allow-Origin: *` из `stickers.go`, а эндпоинт `GET /api/v1/stickers/pack/{id}/bundle.zip` защищён `authMW` (`main.go`, `stickers.js`).
+- **Раздача расшифрованных медиа Service Worker без аутентификации и кросс-доменных проверок.** Исправлено. `handleStreamRequest` в `client/sw.js` теперь отклоняет кросс-доменные запросы, проверяет `Sec-Fetch-Site` (`same-origin`/`none`), запрашивает данные только у активных контролируемых клиентов (`includeUncontrolled: false`) и выставляет заголовки `Cross-Origin-Resource-Policy: same-origin` и `X-Content-Type-Options: nosniff`. `app.js` проверяет активную авторизацию (`getToken()`) перед отдачей блоба.
+- **Отсутствие миграции легаси plaintext-БД на SQLCipher (Android).** Исправлено. В `DatabaseEncryption.kt` реализован полноценный механизм миграции: обнаружение нешифрованного заголовка SQLite (`SQLite format 3\0`), проверка контрольной точки WAL (`PRAGMA wal_checkpoint(FULL)`), экспорт данных через `sqlcipher_export` во временную БД с паролем из `SecureTokenStorage`, верификация целостности и атомарная замена оригинального файла с очисткой старых WAL/SHM файлов.
 
 ## 5. Рекомендации
 
