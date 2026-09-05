@@ -32,7 +32,7 @@ func Auth(database *db.DB) func(http.Handler) http.Handler {
 			var userID, deviceID int64
 			var expiresAt int64
 			err := database.QueryRowContext(r.Context(),
-				`SELECT user_id, device_id, expires_at FROM sessions WHERE token=? OR token=?`, tokenHash, token).
+				`SELECT user_id, device_id, expires_at FROM sessions WHERE token=?`, tokenHash).
 				Scan(&userID, &deviceID, &expiresAt)
 			if err != nil || time.Now().Unix() > expiresAt {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)

@@ -26,7 +26,7 @@ func Logout(database *db.DB) http.HandlerFunc {
 		}
 		tokenHash := db.HashSessionToken(token)
 		if _, err := database.ExecContext(r.Context(),
-			`DELETE FROM sessions WHERE token=? OR token=?`, tokenHash, token); err != nil {
+			`DELETE FROM sessions WHERE token=?`, tokenHash); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
@@ -43,14 +43,14 @@ func revokeOtherSessions(ctx context.Context, database *db.DB, userID int64, tok
 	tokenHash := db.HashSessionToken(token)
 	var createdAt int64
 	if err := database.QueryRowContext(ctx,
-		`SELECT created_at FROM sessions WHERE token=? OR token=?`, tokenHash, token).Scan(&createdAt); err != nil {
+		`SELECT created_at FROM sessions WHERE token=?`, tokenHash).Scan(&createdAt); err != nil {
 		return false, err
 	}
 	if time.Now().Unix()-createdAt <= oneDaySeconds {
 		return false, nil
 	}
 	if _, err := database.ExecContext(ctx,
-		`DELETE FROM sessions WHERE user_id=? AND token<>? AND token<>?`, userID, tokenHash, token); err != nil {
+		`DELETE FROM sessions WHERE user_id=? AND token<>?`, userID, tokenHash); err != nil {
 		return false, err
 	}
 	return true, nil

@@ -958,10 +958,16 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
 
       if (!blobUrl) {
         const token = getToken();
-        let fetchUrl = fileInfo.url;
-        if (!fetchUrl.startsWith("http://") && !fetchUrl.startsWith("https://")) {
-          fetchUrl = fetchUrl.startsWith("/") ? fetchUrl : `/${fetchUrl}`;
+        let parsed;
+        try {
+          parsed = new URL(fileInfo.url, window.location.origin);
+        } catch {
+          throw new AttachmentError("Invalid attachment URL");
         }
+        if (parsed.origin !== window.location.origin || !parsed.pathname.startsWith("/api/v1/attachments/file/")) {
+          throw new AttachmentError("Untrusted attachment URL source");
+        }
+        const fetchUrl = parsed.pathname + parsed.search;
         /** @type {Record<string, string>} */
         const headers = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;

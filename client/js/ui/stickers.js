@@ -1,4 +1,4 @@
-import { getMyStickers, getStickerPack, installStickerPack, uninstallStickerPack, importTelegramStickerPack, getFullApiUrl } from "../api.js";
+import { getMyStickers, getStickerPack, installStickerPack, uninstallStickerPack, importTelegramStickerPack, getFullApiUrl, getToken } from "../api.js";
 import { el, showToast, spinner, svgIcon } from "./components.js";
 
 const RECENT_KEY = "penik_recent_stickers";
@@ -103,7 +103,9 @@ export async function preloadPackBundle(packId) {
   downloadingPacks.add(packId);
   try {
     const bundleUrl = getFullApiUrl(`/api/v1/stickers/pack/${encodeURIComponent(packId)}/bundle.zip`);
-    const resp = await fetch(bundleUrl);
+    const token = getToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const resp = await fetch(bundleUrl, { headers });
     if (resp.ok) {
       const buf = await resp.arrayBuffer();
       const files = await unpackZipBundle(buf);

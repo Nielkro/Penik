@@ -113,25 +113,28 @@ func GetAttachment(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			var uploaderID int64
 			err := database.QueryRowContext(r.Context(),
 				`SELECT uploader_user_id FROM attachments WHERE id=?`, id).Scan(&uploaderID)
-			if err != nil && err != sql.ErrNoRows {
+			if err == sql.ErrNoRows {
+				http.Error(w, "attachment not found", http.StatusNotFound)
+				return
+			}
+			if err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}
-			if err == nil {
-				callerID := middleware.UserIDFromCtx(r.Context())
-				if callerID == 0 {
-					http.Error(w, "unauthorized", http.StatusUnauthorized)
-					return
-				}
-				allowed, err := database.CanAccessAttachment(r.Context(), callerID, uploaderID)
-				if err != nil {
-					http.Error(w, "internal error", http.StatusInternalServerError)
-					return
-				}
-				if !allowed {
-					http.Error(w, "forbidden: attachment not accessible", http.StatusForbidden)
-					return
-				}
+
+			callerID := middleware.UserIDFromCtx(r.Context())
+			if callerID == 0 {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			allowed, err := database.CanAccessAttachment(r.Context(), callerID, uploaderID)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			if !allowed {
+				http.Error(w, "forbidden: attachment not accessible", http.StatusForbidden)
+				return
 			}
 		}
 

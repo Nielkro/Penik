@@ -218,7 +218,7 @@ func main() {
 	mux.Handle("POST /api/v1/stickers/import/telegram",
 		authMW(http.HandlerFunc(handlers.HandleImportTelegramStickerPack(cfg, database))))
 	mux.Handle("GET /api/v1/stickers/pack/{id}/bundle.zip",
-		handlers.HandleServeStickerPackZip(cfg))
+		authMW(handlers.HandleServeStickerPackZip(cfg)))
 	mux.Handle("GET /api/v1/stickers/file/{pack_id}/{file_name}",
 		handlers.HandleServeStickerFile(cfg))
 
