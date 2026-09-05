@@ -19,9 +19,11 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -478,32 +480,45 @@ private fun VpnCallWarningDialog(callManager: CallManager, onDismiss: () -> Unit
         title = { Text("Активен VPN", fontWeight = FontWeight.Bold) },
         text = {
             Text(
-                "Во время звонка медиа передаётся по UDP. При активном VPN " +
-                    "звук и видео могут не работать.\n\n" +
-                    "Выключите VPN перед звонком, либо нажмите «Продолжить», " +
-                    "чтобы набрать без его отключения."
+                "Во время звонка медиа передаётся напрямую по протоколу UDP. " +
+                    "При активном VPN звук и видео блокируются.\n\n" +
+                    "Отключите VPN на устройстве и нажмите «Продолжить»."
             )
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    onDismiss()
-                    callManager.proceedCallAfterVpnWarning()
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Продолжить")
-            }
-        },
-        dismissButton = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { showWhyVideo = true }) {
+                TextButton(
+                    onClick = { showWhyVideo = true },
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
                     Text("Почему")
                 }
-                Spacer(Modifier.width(8.dp))
-                TextButton(onClick = onDismiss) {
-                    Text("Отмена")
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = onDismiss,
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Text("Отмена")
+                    }
+                    TextButton(
+                        onClick = {
+                            onDismiss()
+                            callManager.proceedCallAfterVpnWarning()
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Text("Продолжить")
+                    }
                 }
             }
-        }
+        },
+        dismissButton = null
     )
 }
