@@ -244,9 +244,10 @@ class CallManager @Inject constructor(
     /** Called by the UI when the user confirms they want to continue despite the VPN. */
     fun proceedCallAfterVpnWarning() {
         // Re-check: if the VPN is still active, do NOT proceed — media will fail;
-        // re-trigger the warning so the user can disable it and try again.
+        // notify the user and re-trigger the warning so they know it is still active.
         if (isVpnActive()) {
             Log.w(TAG, "VPN still active on continue; re-requesting confirmation")
+            _toasts.tryEmit("VPN всё ещё включен. Отключите его для звонка")
             _vpnWarning.tryEmit(Unit)
             return
         }
