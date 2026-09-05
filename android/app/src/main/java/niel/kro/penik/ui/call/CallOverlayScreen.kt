@@ -1,7 +1,10 @@
 package niel.kro.penik.ui.call
 
 import android.Manifest
+import android.net.Uri
 import android.widget.Toast
+import niel.kro.penik.R
+import niel.kro.penik.ui.components.LocalVideoViewer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -32,9 +35,12 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.livekit.android.renderer.TextureViewRenderer
 import io.livekit.android.room.track.VideoTrack
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import livekit.org.webrtc.EglBase
 import livekit.org.webrtc.RendererCommon
@@ -79,6 +86,19 @@ fun CallOverlay(callManager: CallManager) {
         callManager.toasts.collect { text ->
             Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    var showVpnDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        callManager.vpnWarning.collect {
+            showVpnDialog = true
+        }
+    }
+    if (showVpnDialog) {
+        VpnCallWarningDialog(
+            callManager = callManager,
+            onDismiss = { showVpnDialog = false }
+        )
     }
 
     DisposableEffect(state.phase) {
@@ -354,6 +374,7 @@ private fun VideoRenderer(
         modifier = modifier.background(Color.Black),
         factory = { ctx ->
             TextureViewRenderer(ctx).apply {
+                // init() must be called on the UI thread after the view is ready.
                 init(eglBase.eglBaseContext, null)
                 setScalingType(
                     if (scaleAspectFit) RendererCommon.ScalingType.SCALE_ASPECT_FIT
@@ -372,29 +393,23 @@ private fun VideoRenderer(
         }
     )
 
-    DisposableEffect(track, renderer) {
-        val r = renderer
-        if (track != null && r != null) {
-            track.addRenderer(r)
-        }
-        onDispose {
-            if (track != null && r != null) {
-                track.removeRenderer(r)
-            }
+    // Attach/detach the renderer whenever the track or the view instance changes.
+    // Recreate the renderer only when the track identity changes so stale frames
+    // from a previous track are not pushed into a black view.
+    LaunchedEffect(track, renderer) {
+        val r = renderer ?: return@LaunchedEffect
+        if (track == null) return@LaunchedEffect
+        track.addRenderer(r)
+        try {
+            awaitCancellation()
+        } finally {
+            track.removeRenderer(r)
         }
     }
 
-    // Compose gives no ordering guarantee between the disposal of two effects,
-    // so the release path detaches the sink itself instead of trusting the
-    // effect above to have run first — otherwise the track could keep pushing
-    // frames into an already freed renderer.
     DisposableEffect(renderer) {
-        val r = renderer
         onDispose {
-            if (track != null && r != null) {
-                try { track.removeRenderer(r) } catch (_: Exception) {}
-            }
-            try { r?.release() } catch (_: Exception) {}
+            renderer?.release()
         }
     }
 }
@@ -443,4 +458,52 @@ private fun ControlButton(
         Spacer(Modifier.height(8.dp))
         Text(label, color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp, textAlign = TextAlign.Center)
     }
+}
+@Composable
+private fun VpnCallWarningDialog(callManager: CallManager, onDismiss: () -> Unit) {
+    var showWhyVideo by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    if (showWhyVideo) {
+        val videoUri = Uri.parse("android.resource://${context.packageName}/${R.raw.vpn_why}")
+        LocalVideoViewer(
+            uri = videoUri,
+            contentDescription = "Почему нужно отключить VPN",
+            onDismiss = { showWhyVideo = false }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Активен VPN", fontWeight = FontWeight.Bold) },
+        text = {
+            Text(
+                "Во время звонка медиа передаётся по UDP. При активном VPN " +
+                    "звук и видео могут не работать.\n\n" +
+                    "Выключите VPN перед звонком, либо нажмите «Продолжить», " +
+                    "чтобы набрать без его отключения."
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onDismiss()
+                    callManager.proceedCallAfterVpnWarning()
+                }
+            ) {
+                Text("Продолжить")
+            }
+        },
+        dismissButton = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { showWhyVideo = true }) {
+                    Text("Почему")
+                }
+                Spacer(Modifier.width(8.dp))
+                TextButton(onClick = onDismiss) {
+                    Text("Отмена")
+                }
+            }
+        }
+    )
 }

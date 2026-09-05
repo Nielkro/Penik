@@ -94,7 +94,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/screen/chatslist/ChatsListScreen.kt` — Direct chat list UI and navigation to chat rooms.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/calls/CallsListScreen.kt` — Call history screen listing all incoming, outgoing, missed, and declined calls with redial buttons.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/chatroom/ChatRoomScreen.kt` — Direct chat room UI: message history, input, sending, receipts, connection state; scroll-down FAB shown only when last message is not visible; audio/video call buttons in the top bar.
-- `android/app/src/main/java/niel/kro/penik/ui/call/CallOverlayScreen.kt` — Global call overlay: incoming call accept/decline, dialing, and active call screens with remote/local video renderers, PiP swap, media controls, and a reconnect/peer-link status line.
+- `android/app/src/main/java/niel/kro/penik/ui/call/CallOverlayScreen.kt` — Global call overlay: incoming call accept/decline, dialing, active call screens with remote/local video renderers, PiP swap, media controls, a reconnect/peer-link status line, and a VPN warning dialog with an inline "Why" video explainer from raw resources (`vpn_why.mp4`).
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupsListScreen.kt` — Group list UI and pending invitations.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupChatScreen.kt` — Group chat room UI with messages and group actions; scroll-down FAB shown only when last message is not visible.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupSettingsScreen.kt` — Group settings screen: member list, roles, invitations, and key rotation.

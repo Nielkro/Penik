@@ -1077,7 +1077,7 @@ private fun formatVideoTime(ms: Long): String {
 }
 
 @Composable
-private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: () -> Unit) {
+fun LocalVideoViewer(uri: Uri, contentDescription: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(true) }
     var isMuted by remember { mutableStateOf(false) }
@@ -1093,9 +1093,9 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
         lastUserActivity = System.currentTimeMillis()
     }
 
-    val player = remember(file) {
+    val player = remember(uri) {
         ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+            setMediaItem(MediaItem.fromUri(uri))
             playWhenReady = true
             prepare()
         }
@@ -1328,6 +1328,11 @@ private fun LocalVideoViewer(file: File, contentDescription: String, onDismiss: 
             }
         }
     }
+}
+
+@Composable
+fun LocalVideoViewer(file: java.io.File, contentDescription: String, onDismiss: () -> Unit) {
+    LocalVideoViewer(uri = Uri.fromFile(file), contentDescription = contentDescription, onDismiss = onDismiss)
 }
 
 @Composable
