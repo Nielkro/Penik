@@ -263,6 +263,21 @@ class CallManager @Inject constructor(
         }
     }
 
+    /** Called by the UI when the user cancels the VPN warning dialog to abort the call attempt. */
+    fun cancelCallAfterVpnWarning() {
+        if (pendingOutgoingCall != null || ui.phase == CallPhase.DIALING) {
+            pendingOutgoingCall = null
+            cleanup()
+            return
+        }
+        if (pendingAccept) {
+            pendingAccept = false
+            rejectCall()
+            return
+        }
+        cleanup()
+    }
+
     // --- Peer responses ---
 
     private fun proceedAcceptCall() {
