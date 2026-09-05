@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,8 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
 
 	"messenger/server/internal/config"
+	"messenger/server/internal/db"
+	"messenger/server/internal/middleware"
 )
 
 var attachmentIDRegex = regexp.MustCompile(`^[a-f0-9]{32}$`)
@@ -22,8 +26,14 @@ type uploadAttachmentResponse struct {
 }
 
 // UploadAttachment handles POST /api/v1/attachments/upload (multipart, authenticated).
-func UploadAttachment(cfg *config.Config) http.HandlerFunc {
+func UploadAttachment(database *db.DB, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		uploaderID := middleware.UserIDFromCtx(r.Context())
+		if uploaderID == 0 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		if err := r.ParseMultipartForm(cfg.MaxUploadSize); err != nil {
 			http.Error(w, "multipart parse error", http.StatusBadRequest)
 			return
@@ -70,6 +80,18 @@ func UploadAttachment(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
+		if database != nil {
+			now := time.Now().Unix()
+			_, err = database.ExecContext(r.Context(),
+				`INSERT INTO attachments(id, uploader_user_id, created_at) VALUES(?, ?, ?)`,
+				id, uploaderID, now)
+			if err != nil {
+				_ = os.Remove(filePath)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(uploadAttachmentResponse{
 			ID:  id,
@@ -79,12 +101,38 @@ func UploadAttachment(cfg *config.Config) http.HandlerFunc {
 }
 
 // GetAttachment handles GET /api/v1/attachments/file/{id} (authenticated, supports Range requests).
-func GetAttachment(cfg *config.Config) http.HandlerFunc {
+func GetAttachment(database *db.DB, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		if !attachmentIDRegex.MatchString(id) {
 			http.Error(w, "invalid attachment id", http.StatusBadRequest)
 			return
+		}
+
+		if database != nil {
+			var uploaderID int64
+			err := database.QueryRowContext(r.Context(),
+				`SELECT uploader_user_id FROM attachments WHERE id=?`, id).Scan(&uploaderID)
+			if err != nil && err != sql.ErrNoRows {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			if err == nil {
+				callerID := middleware.UserIDFromCtx(r.Context())
+				if callerID == 0 {
+					http.Error(w, "unauthorized", http.StatusUnauthorized)
+					return
+				}
+				allowed, err := database.CanAccessAttachment(r.Context(), callerID, uploaderID)
+				if err != nil {
+					http.Error(w, "internal error", http.StatusInternalServerError)
+					return
+				}
+				if !allowed {
+					http.Error(w, "forbidden: attachment not accessible", http.StatusForbidden)
+					return
+				}
+			}
 		}
 
 		filePath := filepath.Join(cfg.UploadDir, "attachments", id+".bin")

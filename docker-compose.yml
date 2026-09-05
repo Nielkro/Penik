@@ -18,6 +18,7 @@ services:
       - LIVEKIT_FALLBACK_URL=wss://livekit.penik.ru
       - LIVEKIT_API_KEY=your_livekit_api_key
       - LIVEKIT_API_SECRET=your_livekit_api_secret
+      - TRUSTED_PROXIES=127.0.0.1/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
     volumes:
       - ./data:/app/data
 

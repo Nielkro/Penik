@@ -23,7 +23,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/handlers/calls.go` — REST handlers for listing user call history (`GET /api/v1/calls`) and peer-to-peer call logs (`GET /api/v1/calls/peer/:user_id`).
 - `server/internal/handlers/stickers.go` — REST handlers for sticker packs: listing installed packs, pack metadata, install/uninstall, Telegram sticker pack import, and static file serving.
 - `server/internal/stickers/models.go` — Data models for sticker packs and individual stickers.
--`server/internal/handlers/attachments.go` — Self-hosted encrypted attachment handlers: multipart upload (`POST /api/v1/attachments/upload`) and streaming file download (`GET /api/v1/attachments/file/:id`) with HTTP Range requests support.
+- `server/internal/handlers/attachments.go` — Self-hosted encrypted attachment handlers: multipart upload (`POST /api/v1/attachments/upload`), relation-based ACL checks, and streaming file download (`GET /api/v1/attachments/file/:id`) with HTTP Range requests support.
 - `server/internal/handlers/ws.go` — Authorizes WebSocket upgrades and creates server-side client sessions for real-time event exchange.
 - `server/internal/ws/client.go` — Implements the WebSocket client read/write pump, handling direct messages, key requests, receipt events, offline batching, and presence.
 - `server/internal/ws/group.go` — Receives and routes encrypted group messages, receipts, and offline delivery across group members.
@@ -83,6 +83,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ### Android client
 
 - `android/app/src/main/AndroidManifest.xml` — Android app declaration, components, permissions, application class, and FileProvider for decrypted attachments.
+- `android/app/src/main/res/xml/network_security_config.xml` — Network security configuration enforcing strict cleartext prohibition (`cleartextTrafficPermitted="false"`).
 - `android/app/src/main/res/xml/attachment_paths.xml` — FileProvider path configuration granting read-only content URIs for decrypted files in `cacheDir/attachments`.
 - `android/app/src/main/java/niel/kro/penik/MainActivity.kt` — Main Activity; enables edge-to-edge mode and launches Compose navigation within the app theme, with a global call overlay drawn above the nav graph and answer handling for call notification intents.
 - `android/app/src/main/java/niel/kro/penik/PenikApplication.kt` — Hilt Application class and entry point for the global WebSocket event coordinator.
@@ -143,7 +144,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 - `server/internal/db/schema.sql` — Canonical SQLite schema for users, devices, chats, messages, sessions, pairing, groups, key envelopes, and group history.
 - `server/internal/db/db.go` — Opens SQLite with WAL/foreign keys, applies the schema, and runs legacy structure migrations.
-- `server/internal/db/relations.go` — Answers whether two users share a 1:1 chat or a group; the ACL behind presence and typing disclosure.
+- `server/internal/db/relations.go` — Answers whether two users share a 1:1 chat or a group; the ACL behind presence, typing disclosure, and attachment downloads.
 - `server/internal/models/user.go` — Models for users and public server profiles.
 - `server/internal/models/device.go` — Models for user devices and runtime metadata.
 - `server/internal/models/message.go` — Models for direct messages and delivery/read/deletion statuses.

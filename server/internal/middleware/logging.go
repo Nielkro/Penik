@@ -55,14 +55,14 @@ func (r *responseRecorder) Flush() {
 // are believed. Anything else can set those headers freely, so trusting them
 // unconditionally would let a client pick its own rate-limit bucket and forge
 // the IP recorded for a device. Configured via TRUSTED_PROXIES (comma-separated
-// CIDRs or bare IPs); defaults to loopback and RFC1918 ranges, which covers a
-// reverse proxy running on the same host or in the same container network.
+// CIDRs or bare IPs); defaults to loopback only (127.0.0.0/8, ::1/128). Reverse
+// proxies in container or private networks must be explicitly declared in TRUSTED_PROXIES.
 var trustedProxies = parseTrustedProxies(os.Getenv("TRUSTED_PROXIES"))
 
 func parseTrustedProxies(raw string) []*net.IPNet {
 	entries := strings.Split(raw, ",")
 	if strings.TrimSpace(raw) == "" {
-		entries = []string{"127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"}
+		entries = []string{"127.0.0.0/8", "::1/128"}
 	}
 
 	var nets []*net.IPNet
