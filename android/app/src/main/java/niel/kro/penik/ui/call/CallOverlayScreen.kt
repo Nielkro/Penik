@@ -99,7 +99,14 @@ fun CallOverlay(callManager: CallManager) {
     if (showVpnDialog) {
         VpnCallWarningDialog(
             callManager = callManager,
-            onDismiss = { showVpnDialog = false }
+            onDismiss = {
+                showVpnDialog = false
+                callManager.cancelCallAfterVpnWarning()
+            },
+            onProceed = {
+                showVpnDialog = false
+                callManager.proceedCallAfterVpnWarning()
+            }
         )
     }
 
@@ -462,7 +469,11 @@ private fun ControlButton(
     }
 }
 @Composable
-private fun VpnCallWarningDialog(callManager: CallManager, onDismiss: () -> Unit) {
+private fun VpnCallWarningDialog(
+    callManager: CallManager,
+    onDismiss: () -> Unit,
+    onProceed: () -> Unit
+) {
     var showWhyVideo by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -508,10 +519,7 @@ private fun VpnCallWarningDialog(callManager: CallManager, onDismiss: () -> Unit
                         Text("Отмена")
                     }
                     TextButton(
-                        onClick = {
-                            onDismiss()
-                            callManager.proceedCallAfterVpnWarning()
-                        },
+                        onClick = onProceed,
                         contentPadding = PaddingValues(horizontal = 8.dp)
                     ) {
                         Text("Продолжить")
