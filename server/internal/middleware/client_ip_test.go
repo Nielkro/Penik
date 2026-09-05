@@ -19,7 +19,7 @@ func TestClientIPIgnoresHeadersFromUntrustedPeer(t *testing.T) {
 
 func TestClientIPHonorsTrustedProxy(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.RemoteAddr = "10.0.0.5:44321" // private range is trusted by default
+	req.RemoteAddr = "127.0.0.1:44321" // loopback is trusted by default
 
 	req.Header.Set("X-Forwarded-For", "198.51.100.7")
 	if got := ClientIP(req); got != "198.51.100.7" {
@@ -34,7 +34,7 @@ func TestClientIPHonorsTrustedProxy(t *testing.T) {
 	}
 
 	// Internal hops are skipped so the public client address is still found.
-	req.Header.Set("X-Forwarded-For", "198.51.100.7, 10.0.0.9")
+	req.Header.Set("X-Forwarded-For", "198.51.100.7, 127.0.0.2")
 	if got := ClientIP(req); got != "198.51.100.7" {
 		t.Errorf("expected 198.51.100.7 past the internal hop, got %q", got)
 	}

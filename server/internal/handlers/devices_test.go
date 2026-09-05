@@ -167,7 +167,15 @@ func TestClientIP(t *testing.T) {
 		t.Errorf("expected 192.168.1.50, got %q", ip)
 	}
 
-	req.Header.Set("X-Forwarded-For", "203.0.113.195, 10.0.0.1")
+	// Untrusted peer cannot spoof X-Forwarded-For
+	req.Header.Set("X-Forwarded-For", "203.0.113.195")
+	if ip := clientIP(req); ip != "192.168.1.50" {
+		t.Errorf("expected 192.168.1.50 from untrusted peer, got %q", ip)
+	}
+
+	// Trusted proxy (e.g. loopback) forwards real client IP
+	req.RemoteAddr = "127.0.0.1:54321"
+	req.Header.Set("X-Forwarded-For", "203.0.113.195, 127.0.0.2")
 	if ip := clientIP(req); ip != "203.0.113.195" {
 		t.Errorf("expected 203.0.113.195, got %q", ip)
 	}

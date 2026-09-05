@@ -131,9 +131,9 @@ func main() {
 	mux.Handle("PUT /api/v1/avatar",
 		authMW(http.HandlerFunc(handlers.UploadAvatar(database, cfg, hub))))
 	mux.Handle("POST /api/v1/attachments/upload",
-		authMW(attachmentUploadLimiter.Limit(http.HandlerFunc(handlers.UploadAttachment(cfg)))))
+		authMW(attachmentUploadLimiter.Limit(http.HandlerFunc(handlers.UploadAttachment(database, cfg)))))
 	mux.Handle("GET /api/v1/attachments/file/{id}",
-		authMW(http.HandlerFunc(handlers.GetAttachment(cfg))))
+		authMW(http.HandlerFunc(handlers.GetAttachment(database, cfg))))
 
 	mux.Handle("GET /api/v1/calls",
 		authMW(http.HandlerFunc(handlers.ListCalls(database))))
