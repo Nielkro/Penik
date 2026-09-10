@@ -204,8 +204,21 @@ pub fn wasm_build_pairwise_aad(
     timestamp: Option<i64>,
 ) -> js_sys::Uint8Array {
     let msg_id = client_msg_id.as_deref().unwrap_or("");
-    let ts = timestamp.unwrap_or(0);
-    let aad_bytes = aad::build_pairwise_aad(sender_user_id, recipient_user_id, msg_id, ts);
+    let aad_bytes = match timestamp {
+        Some(ts) => aad::build_pairwise_aad(sender_user_id, recipient_user_id, msg_id, ts),
+        None => aad::build_pairwise_aad_v2(sender_user_id, recipient_user_id, msg_id),
+    };
+    js_sys::Uint8Array::from(&aad_bytes[..])
+}
+
+#[wasm_bindgen(js_name = buildPairwiseAADV2)]
+pub fn wasm_build_pairwise_aad_v2(
+    sender_user_id: u64,
+    recipient_user_id: u64,
+    client_msg_id: Option<String>,
+) -> js_sys::Uint8Array {
+    let msg_id = client_msg_id.as_deref().unwrap_or("");
+    let aad_bytes = aad::build_pairwise_aad_v2(sender_user_id, recipient_user_id, msg_id);
     js_sys::Uint8Array::from(&aad_bytes[..])
 }
 

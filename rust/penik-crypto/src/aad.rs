@@ -1,4 +1,5 @@
 pub const PAIRWISE_PROTOCOL_VERSION: u32 = 1;
+pub const PAIRWISE_PROTOCOL_VERSION_V2: u32 = 2;
 pub const GROUP_PROTOCOL_VERSION: u32 = 2;
 
 fn encode_chunk(val: &str, buf: &mut Vec<u8>) {
@@ -20,6 +21,19 @@ pub fn build_pairwise_aad(
     encode_chunk(&recipient_user_id.to_string(), &mut out);
     encode_chunk(client_msg_id, &mut out);
     encode_chunk(&timestamp.to_string(), &mut out);
+    out
+}
+
+pub fn build_pairwise_aad_v2(
+    sender_user_id: u64,
+    recipient_user_id: u64,
+    client_msg_id: &str,
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(48);
+    encode_chunk(&PAIRWISE_PROTOCOL_VERSION_V2.to_string(), &mut out);
+    encode_chunk(&sender_user_id.to_string(), &mut out);
+    encode_chunk(&recipient_user_id.to_string(), &mut out);
+    encode_chunk(client_msg_id, &mut out);
     out
 }
 

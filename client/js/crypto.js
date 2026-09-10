@@ -345,9 +345,40 @@ export async function hkdfDerive(salt, ikm, info, length) {
 }
 
 export const PAIRWISE_PROTOCOL_VERSION = 1;
+export const PAIRWISE_PROTOCOL_VERSION_V2 = 2;
 
-// buildPairwiseAAD binds message context (sender, recipient, clientMsgId, timestamp) into the AEAD tag.
-export function buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId = "", timestamp = 0) {
+// buildPairwiseAADV2 binds message context (sender, recipient, clientMsgId) into the AEAD tag without timestamp.
+export function buildPairwiseAADV2(senderUserId, recipientUserId, clientMsgId = "") {
+  const fields = [
+    PAIRWISE_PROTOCOL_VERSION_V2,
+    String(senderUserId || 0),
+    String(recipientUserId || 0),
+    String(clientMsgId || ""),
+  ];
+
+  const chunks = [];
+  for (const field of fields) {
+    const bytes = new TextEncoder().encode(String(field));
+    const len = new Uint8Array(4);
+    new DataView(len.buffer).setUint32(0, bytes.length, false);
+    chunks.push(len, bytes);
+  }
+
+  const totalLen = chunks.reduce((sum, c) => sum + c.length, 0);
+  const out = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+// buildPairwiseAAD binds message context. If timestamp is null or undefined, V2 is used.
+export function buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId = "", timestamp = null) {
+  if (timestamp === null || timestamp === undefined) {
+    return buildPairwiseAADV2(senderUserId, recipientUserId, clientMsgId);
+  }
   const fields = [
     PAIRWISE_PROTOCOL_VERSION,
     String(senderUserId || 0),

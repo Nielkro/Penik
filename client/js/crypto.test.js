@@ -3,7 +3,8 @@ import {
   deriveSharedSecret,
   e2eeEncrypt,
   e2eeDecrypt,
-  buildPairwiseAAD
+  buildPairwiseAAD,
+  buildPairwiseAADV2
 } from './crypto.js';
 
 // Setup global crypto for older Node versions if needed
@@ -155,6 +156,45 @@ async function runTests() {
     console.log("Test 5: Pairwise AAD and cross-platform vectors passed.");
   } catch (e) {
     console.error("Test 5: Pairwise AAD test failed:", e);
+    failed++;
+  }
+
+  // Test 6: Pairwise AAD V2 (No timestamp, client_msg_id binding)
+  try {
+    const alice = await generateKeyPair();
+    const bob = await generateKeyPair();
+    const sharedSecret = await deriveSharedSecret(alice.privateKey, bob.publicKey);
+    const plaintext = new TextEncoder().encode("Hello Penik DM v2!");
+    const aadV2 = buildPairwiseAADV2(10, 20, "msg-dm-1");
+
+    const expectedPairwiseAadV2 = new Uint8Array([
+      0, 0, 0, 1, 50, // '2'
+      0, 0, 0, 2, 49, 48, // '1', '0'
+      0, 0, 0, 2, 50, 48, // '2', '0'
+      0, 0, 0, 8, 109, 115, 103, 45, 100, 109, 45, 49 // 'msg-dm-1'
+    ]);
+    assertArrayEquals(aadV2, expectedPairwiseAadV2, "Pairwise AAD v2 byte-exact vector matches");
+
+    // Calling buildPairwiseAAD without timestamp also yields v2
+    const aadV2Implicit = buildPairwiseAAD(10, 20, "msg-dm-1");
+    assertArrayEquals(aadV2Implicit, expectedPairwiseAadV2, "buildPairwiseAAD default is v2");
+
+    const enc = await e2eeEncrypt(plaintext, sharedSecret, "penik-pairwise-message-v1", aadV2);
+    const dec = await e2eeDecrypt(enc.ciphertext, sharedSecret, enc.salt, enc.nonce, "penik-pairwise-message-v1", aadV2);
+    assertArrayEquals(plaintext, dec, "Decrypted with AAD v2 matches plaintext");
+
+    let failedTamper = false;
+    try {
+      const wrongAad = buildPairwiseAADV2(999, 20, "msg-dm-1");
+      await e2eeDecrypt(enc.ciphertext, sharedSecret, enc.salt, enc.nonce, "penik-pairwise-message-v1", wrongAad);
+    } catch {
+      failedTamper = true;
+    }
+    assert(failedTamper, "Tampered pairwise AAD v2 fails decryption");
+
+    console.log("Test 6: Pairwise AAD v2 (clock-independent) passed.");
+  } catch (e) {
+    console.error("Test 6: Pairwise AAD v2 test failed:", e);
     failed++;
   }
 

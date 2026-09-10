@@ -381,7 +381,7 @@ class MessageRepository @Inject constructor(
         }
 
         val nowSec = System.currentTimeMillis() / 1000
-        val aad = e2eeCrypto.buildPairwiseAad(myId, toUserId, clientMsgId, nowSec)
+        val aad = e2eeCrypto.buildPairwiseAadV2(myId, toUserId, clientMsgId)
 
         val payloads = allDevices.map { device ->
             val recipientIKPub = java.util.Base64.getDecoder().decode(device.identityKey)
@@ -938,6 +938,25 @@ class MessageRepository @Inject constructor(
             ?: throw Exception("Identity Key private key not found locally")
         val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, fromIdentityKey)
 
+        // 1. Fast-path: modern V2 AAD (client_msg_id binding, no timestamp)
+        if (senderUserId != 0L || recipientUserId != 0L) {
+            val v2Aad = e2eeCrypto.buildPairwiseAadV2(senderUserId, recipientUserId, clientMsgId)
+            try {
+                val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, aad = v2Aad)
+                return String(plaintextBytes, Charsets.UTF_8)
+            } catch (_: Exception) {}
+
+            // In self-chat or inverted routing, also try inverted V2
+            if (recipientUserId != 0L && senderUserId != 0L && recipientUserId != senderUserId) {
+                val v2Inverted = e2eeCrypto.buildPairwiseAadV2(recipientUserId, senderUserId, clientMsgId)
+                try {
+                    val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, aad = v2Inverted)
+                    return String(plaintextBytes, Charsets.UTF_8)
+                } catch (_: Exception) {}
+            }
+        }
+
+        // 2. Legacy fallback for old messages stored with timestamps or empty AAD
         val tsSec = if (timestamp > 100_000_000_000L) timestamp / 1000 else timestamp
 
         val candidates = buildList {
@@ -1179,7 +1198,7 @@ class MessageRepository @Inject constructor(
                 val targetUserId = if (peerDevices.any { it.deviceId == dev.deviceId }) chatUserId else myId
                 val pinResult = identityPins.verify(targetUserId, dev.deviceId, peerIK)
                 val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, peerIK)
-                val aad = e2eeCrypto.buildPairwiseAad(myId, chatUserId, clientMsgId, nowSec)
+                val aad = e2eeCrypto.buildPairwiseAadV2(myId, chatUserId, clientMsgId)
                 val enc = e2eeCrypto.encrypt(newText.toByteArray(Charsets.UTF_8), secret, aad = aad)
                 E2EDevicePayload(dev.deviceId, enc.ciphertext, enc.salt, enc.nonce)
             } catch (e: Exception) {

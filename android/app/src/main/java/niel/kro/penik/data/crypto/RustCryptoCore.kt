@@ -32,6 +32,13 @@ object RustCryptoCore {
     ): ByteArray?
 
     @JvmStatic
+    external fun buildPairwiseAadV2(
+        senderUserId: Long,
+        recipientUserId: Long,
+        clientMsgId: String
+    ): ByteArray?
+
+    @JvmStatic
     external fun encrypt(
         plaintext: ByteArray,
         sharedSecret: ByteArray,
