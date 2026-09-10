@@ -1030,6 +1030,7 @@ fun ChatRoomScreen(
                                 Text(
                                     text = chatName,
                                     fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f, fill = false)
@@ -1054,7 +1055,7 @@ fun ChatRoomScreen(
                                 if (isPeerTyping) {
                                     Text(
                                         text = "печатает...",
-                                        fontSize = 12.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
@@ -1065,7 +1066,7 @@ fun ChatRoomScreen(
                                     if (presence.isNotEmpty()) {
                                         Text(
                                             text = presence,
-                                            fontSize = 12.sp,
+                                            fontSize = 11.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             color = if (online) LocalAppColors.current.accent else LocalAppColors.current.textMuted
