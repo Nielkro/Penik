@@ -135,6 +135,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `rust/penik-crypto/src/cipher.rs` — ChaCha20-Poly1305 encryption, decryption, file encryption, and E2EE message transforms.
 - `rust/penik-crypto/src/safety.rs` — Safety number calculation, SHA-256 fingerprinting, and Russian mnemonic word coder.
 - `rust/penik-crypto/src/wasm.rs` — WebAssembly (`wasm-bindgen`) exports connecting `penik-crypto` to JavaScript runtimes.
+- `rust/penik-crypto/src/c_abi.rs` — C-ABI FFI exports connecting `penik-crypto` to Python ctypes and native callers.
 - `client/pkg/penik-crypto-wasm/` — Compiled WebAssembly package (`penik_crypto_bg.wasm`) and bindings produced by `wasm-pack`.
 - `client/js/vault.js` — Seals local secrets (private identity key, group keys, session token) with a non-extractable AES-GCM key so an IndexedDB dump is not a usable copy.
 - `client/js/wordcoder.js` — Base256 mnemonic word coder using a 256-word Russian dictionary (<= 10 chars) for encoding byte sequences into memorable word lists.
@@ -200,7 +201,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 ### Testing & Automation
 
-- `tests/e2e/crypto_utils.py` — Python cryptographic helper implementing X25519 key pairs, Diffie-Hellman derivation, pairwise AAD construction, ChaCha20-Poly1305 encryption/decryption, file crypto, and safety fingerprinting.
+- `tests/e2e/crypto_utils.py` — Python cryptographic helper powered by the Rust `penik-crypto` micro-core via C-ABI / ctypes for X25519, ChaCha20-Poly1305, pairwise AAD, file crypto, and safety fingerprinting.
 - `tests/e2e/client.py` — Multi-platform Penik test client simulating complete REST and WebSocket workflows with binary MsgPack frame serialization.
 - `tests/e2e/test_runner.py` — Automated E2E test suite running 34 assertions across live auth, key bundles, dual-client live E2EE messaging, offline queuing, attachments, safety numbers, and groups.
 - `scripts/run_e2e.py` — Entry point script managing ephemeral test server lifecycle and executing the full Python E2E verification suite.

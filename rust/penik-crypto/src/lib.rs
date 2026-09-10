@@ -1,4 +1,5 @@
 pub mod aad;
+pub mod c_abi;
 pub mod cipher;
 pub mod errors;
 pub mod kdf;
