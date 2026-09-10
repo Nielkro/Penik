@@ -1025,11 +1025,14 @@ fun ChatRoomScreen(
                             avatarKey = avatarKey,
                             modifier = Modifier.padding(end = 12.dp)
                         )
-                        Column {
+                        Column(modifier = Modifier.weight(1f, fill = false)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = chatName,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
                                 )
                                 if (!isSelfChat) {
                                     Icon(
@@ -1037,12 +1040,12 @@ fun ChatRoomScreen(
                                         contentDescription = "Код безопасности E2EE",
                                         tint = LocalAppColors.current.success,
                                         modifier = Modifier
-                                            .padding(start = 8.dp)
+                                            .padding(start = 6.dp)
                                             .clip(RoundedCornerShape(4.dp))
                                             .background(LocalAppColors.current.success.copy(alpha = 0.15f))
                                             .clickable { viewModel.onSafetyClick() }
-                                            .padding(4.dp)
-                                            .size(16.dp)
+                                            .padding(3.dp)
+                                            .size(18.dp)
                                     )
                                 }
                             }
@@ -1053,6 +1056,8 @@ fun ChatRoomScreen(
                                         text = "печатает...",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                         color = LocalAppColors.current.accent
                                     )
                                 } else {
@@ -1061,6 +1066,8 @@ fun ChatRoomScreen(
                                         Text(
                                             text = presence,
                                             fontSize = 12.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                             color = if (online) LocalAppColors.current.accent else LocalAppColors.current.textMuted
                                         )
                                     }
