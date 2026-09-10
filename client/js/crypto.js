@@ -265,7 +265,7 @@ export async function computeSafetyNumber(identityKeysA, identityKeysB) {
   return blocks.join(" ");
 }
 
-export async function computeSafetyFingerprint(identityKeysA, identityKeysB) {
+export async function computeSafetyFingerprint(identityKeysA, identityKeysB, userId = null) {
   const listA = Array.isArray(identityKeysA) ? identityKeysA : [identityKeysA];
   const listB = Array.isArray(identityKeysB) ? identityKeysB : [identityKeysB];
 
@@ -299,7 +299,7 @@ export async function computeSafetyFingerprint(identityKeysA, identityKeysB) {
   const words = defaultWordCoder.encode(hash.subarray(0, 10));
 
   const hex = Array.from(hash).map(b => b.toString(16).padStart(2, "0")).join("");
-  const qrPayload = `penik://safety?fp=${hex}`;
+  const qrPayload = `penik://safety?fp=${hex}${userId ? `&uid=${encodeURIComponent(userId)}` : ""}`;
 
   return {
     number,

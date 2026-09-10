@@ -45,8 +45,9 @@ object SafetyNumber {
         return sb.toString()
     }
 
-    fun computeQrPayload(identityKeysA: List<ByteArray>, identityKeysB: List<ByteArray>): String {
-        return "penik://safety?fp=" + computeFingerprintHex(identityKeysA, identityKeysB)
+    fun computeQrPayload(identityKeysA: List<ByteArray>, identityKeysB: List<ByteArray>, userId: Long? = null): String {
+        val base = "penik://safety?fp=" + computeFingerprintHex(identityKeysA, identityKeysB)
+        return if (userId != null && userId > 0) "$base&uid=$userId" else base
     }
 
     fun compute(identityKeysA: List<ByteArray>, identityKeysB: List<ByteArray>): String {
