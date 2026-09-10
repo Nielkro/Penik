@@ -252,6 +252,7 @@ fun ChatRoomScreen(
     val safetyWords by viewModel.safetyWords.collectAsState()
     val safetyQrPayload by viewModel.safetyQrPayload.collectAsState()
     val safetyVerifyResult by viewModel.safetyVerifyResult.collectAsState()
+    val safetyVerifyMismatchInfo by viewModel.safetyVerifyMismatchInfo.collectAsState()
     val showDialog by viewModel.showSafetyDialog.collectAsState()
     val showE2eeDialog by viewModel.showE2eeDialog.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -484,6 +485,14 @@ fun ChatRoomScreen(
                             when {
                                 isScanningSafetyQr -> {
                                     Text(
+                                        text = "Вы проверяете: $chatName",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = LocalAppColors.current.textPrimary,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(bottom = 4.dp)
+                                    )
+                                    Text(
                                         text = "Наведите камеру на QR-код собеседника",
                                         fontSize = 13.sp,
                                         color = LocalAppColors.current.textMuted,
@@ -593,7 +602,7 @@ fun ChatRoomScreen(
                                             modifier = Modifier.padding(bottom = 6.dp)
                                         )
                                         Text(
-                                            text = "Внимание! Отсканированный отпечаток отличается. Возможно вмешательство в сеть или подмена ключей.",
+                                            text = safetyVerifyMismatchInfo ?: "Внимание! Отсканированный отпечаток отличается. Возможно вмешательство в сеть или подмена ключей.",
                                             fontSize = 13.sp,
                                             color = LocalAppColors.current.textPrimary,
                                             textAlign = TextAlign.Center,

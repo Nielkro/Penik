@@ -1670,7 +1670,7 @@ export async function calculateSafetyFingerprint(userId1, userId2) {
   const decode = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   const keys1 = bundle1.devices.map(d => decode(d.identity_key));
   const keys2 = bundle2.devices.map(d => decode(d.identity_key));
-  return computeSafetyFingerprint(keys1, keys2);
+  return computeSafetyFingerprint(keys1, keys2, userId1);
 }
 
 export async function calculateSafetyNumber(userId1, userId2) {

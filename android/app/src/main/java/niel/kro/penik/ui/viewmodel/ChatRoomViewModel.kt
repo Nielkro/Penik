@@ -84,6 +84,9 @@ class ChatRoomViewModel @Inject constructor(
     private val _safetyVerifyResult = MutableStateFlow<Boolean?>(null)
     val safetyVerifyResult: StateFlow<Boolean?> = _safetyVerifyResult
 
+    private val _safetyVerifyMismatchInfo = MutableStateFlow<String?>(null)
+    val safetyVerifyMismatchInfo: StateFlow<String?> = _safetyVerifyMismatchInfo
+
     private val _showSafetyDialog = MutableStateFlow(false)
     val showSafetyDialog: StateFlow<Boolean> = _showSafetyDialog
 
@@ -331,16 +334,38 @@ class ChatRoomViewModel @Inject constructor(
             else -> null
         }
 
+        // Check if QR contains a user ID parameter
+        val scannedUid = if (trimmed.contains("uid=")) {
+            trimmed.substringAfter("uid=").substringBefore("&").trim()
+        } else null
+
+        if (scannedUid != null && scannedUid.isNotEmpty()) {
+            val scannedLong = scannedUid.toLongOrNull()
+            if (scannedLong != null && scannedLong != chatUserId) {
+                viewModelScope.launch {
+                    val contact = chatRepository.getChat(scannedLong)
+                    val scannedName = contact?.name
+                        ?: (if (!contact?.nickname.isNullOrBlank()) "@${contact?.nickname}" else "@$scannedUid")
+                    val targetName = if (chatName.isNotBlank()) chatName else "@$chatUserId"
+                    _safetyVerifyMismatchInfo.value = "Это код $scannedName, а вы в чате с $targetName"
+                }
+                _safetyVerifyResult.value = false
+                return false
+            }
+        }
+
         if (fp != null) {
             if (fp.matches(Regex("^[0-9a-fA-F]{64}$"))) {
                 val matches = fp.equals(expectedHex, ignoreCase = true)
                 _safetyVerifyResult.value = matches
+                if (matches) _safetyVerifyMismatchInfo.value = null
                 return matches
             }
             val cleanDigits = fp.replace(" ", "").replace("-", "")
             if (cleanDigits.matches(Regex("^[0-9]{25}$")) && expectedNum.isNotEmpty()) {
                 val matches = cleanDigits == expectedNum
                 _safetyVerifyResult.value = matches
+                if (matches) _safetyVerifyMismatchInfo.value = null
                 return matches
             }
         }
@@ -350,6 +375,7 @@ class ChatRoomViewModel @Inject constructor(
 
     fun resetVerifyResult() {
         _safetyVerifyResult.value = null
+        _safetyVerifyMismatchInfo.value = null
     }
 
     private suspend fun calculateSafetyData(): SafetyBundle {
@@ -370,7 +396,7 @@ class ChatRoomViewModel @Inject constructor(
 
         val number = SafetyNumber.compute(keys1, keys2)
         val words = SafetyNumber.computeWords(keys1, keys2)
-        val qrPayload = SafetyNumber.computeQrPayload(keys1, keys2)
+        val qrPayload = SafetyNumber.computeQrPayload(keys1, keys2, myId)
         val hex = SafetyNumber.computeFingerprintHex(keys1, keys2)
         return SafetyBundle(number, words, qrPayload, hex)
     }
