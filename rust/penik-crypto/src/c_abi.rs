@@ -4,6 +4,7 @@ use std::slice;
 
 use crate::aad;
 use crate::cipher;
+use crate::kdf;
 use crate::keys;
 use crate::safety;
 
@@ -82,6 +83,42 @@ pub unsafe extern "C" fn penik_build_pairwise_aad(
     };
 
     let aad = aad::build_pairwise_aad(sender_user_id, recipient_user_id, msg_id, timestamp);
+    if out_buf.is_null() {
+        *out_len = aad.len();
+        return 0;
+    }
+
+    if *out_len < aad.len() {
+        *out_len = aad.len();
+        return -2; // Buffer too small
+    }
+
+    std::ptr::copy_nonoverlapping(aad.as_ptr(), out_buf, aad.len());
+    *out_len = aad.len();
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn penik_build_pairwise_aad_v2(
+    sender_user_id: u64,
+    recipient_user_id: u64,
+    client_msg_id: *const c_char,
+    out_buf: *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    if out_len.is_null() {
+        return -1;
+    }
+    let msg_id = if client_msg_id.is_null() {
+        ""
+    } else {
+        match CStr::from_ptr(client_msg_id).to_str() {
+            Ok(s) => s,
+            Err(_) => return -1,
+        }
+    };
+
+    let aad = aad::build_pairwise_aad_v2(sender_user_id, recipient_user_id, msg_id);
     if out_buf.is_null() {
         *out_len = aad.len();
         return 0;
@@ -312,4 +349,72 @@ pub unsafe extern "C" fn penik_compute_safety_fingerprint(
         }
         Err(_) => -1,
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn penik_pbkdf2_derive(
+    passphrase: *const u8,
+    passphrase_len: usize,
+    salt: *const u8,
+    salt_len: usize,
+    iterations: u32,
+    out_key: *mut u8,
+    out_len: usize,
+) -> i32 {
+    if passphrase.is_null() || salt.is_null() || out_key.is_null() || out_len == 0 {
+        return -1;
+    }
+    let pass_slice = slice::from_raw_parts(passphrase, passphrase_len);
+    let salt_slice = slice::from_raw_parts(salt, salt_len);
+    let derived = kdf::pbkdf2_derive(pass_slice, salt_slice, iterations, out_len);
+    std::ptr::copy_nonoverlapping(derived.as_ptr(), out_key, out_len);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn penik_hkdf_derive(
+    secret: *const u8,
+    secret_len: usize,
+    salt: *const u8,
+    salt_len: usize,
+    info: *const u8,
+    info_len: usize,
+    out_key: *mut u8,
+    out_len: usize,
+) -> i32 {
+    if secret.is_null() || out_key.is_null() || out_len == 0 {
+        return -1;
+    }
+    let secret_slice = slice::from_raw_parts(secret, secret_len);
+    let salt_slice = if !salt.is_null() && salt_len > 0 {
+        slice::from_raw_parts(salt, salt_len)
+    } else {
+        &[]
+    };
+    let info_slice = if !info.is_null() && info_len > 0 {
+        slice::from_raw_parts(info, info_len)
+    } else {
+        &[]
+    };
+
+    match kdf::hkdf_derive(salt_slice, secret_slice, info_slice, out_len) {
+        Ok(derived) => {
+            std::ptr::copy_nonoverlapping(derived.as_ptr(), out_key, out_len);
+            0
+        }
+        Err(_) => -1,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn penik_zeroize(
+    buf: *mut u8,
+    len: usize,
+) -> i32 {
+    if buf.is_null() || len == 0 {
+        return 0;
+    }
+    let s = slice::from_raw_parts_mut(buf, len);
+    zeroize::Zeroize::zeroize(s);
+    0
 }

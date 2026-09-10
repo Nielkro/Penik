@@ -55,6 +55,44 @@ def _load_rust_crypto_lib() -> ctypes.CDLL:
     ]
     lib.penik_build_pairwise_aad.restype = ctypes.c_int32
 
+    lib.penik_build_pairwise_aad_v2.argtypes = [
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_char_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    lib.penik_build_pairwise_aad_v2.restype = ctypes.c_int32
+
+    lib.penik_pbkdf2_derive.argtypes = [
+        ctypes.c_char_p,
+        ctypes.c_size_t,
+        ctypes.c_char_p,
+        ctypes.c_size_t,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+    ]
+    lib.penik_pbkdf2_derive.restype = ctypes.c_int32
+
+    lib.penik_hkdf_derive.argtypes = [
+        ctypes.c_char_p,
+        ctypes.c_size_t,
+        ctypes.c_char_p,
+        ctypes.c_size_t,
+        ctypes.c_char_p,
+        ctypes.c_size_t,
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+    ]
+    lib.penik_hkdf_derive.restype = ctypes.c_int32
+
+    lib.penik_zeroize.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+    ]
+    lib.penik_zeroize.restype = ctypes.c_int32
+
     lib.penik_e2ee_encrypt.argtypes = [
         ctypes.c_char_p,
         ctypes.c_size_t,
@@ -190,6 +228,96 @@ def build_pairwise_aad(
     if res != 0:
         raise RuntimeError("penik_build_pairwise_aad failed in Rust core")
     return bytes(buf)
+
+
+def build_pairwise_aad_v2(
+    sender_user_id: int,
+    recipient_user_id: int,
+    client_msg_id: str = "",
+) -> bytes:
+    """
+    Constructs clock-independent binary AAD v2 for pairwise messages using Rust core.
+    """
+    msg_id_bytes = client_msg_id.encode("utf-8")
+    out_len = ctypes.c_size_t(0)
+    _lib.penik_build_pairwise_aad_v2(
+        ctypes.c_uint64(sender_user_id),
+        ctypes.c_uint64(recipient_user_id),
+        msg_id_bytes,
+        None,
+        ctypes.byref(out_len),
+    )
+    buf = (ctypes.c_uint8 * out_len.value)()
+    res = _lib.penik_build_pairwise_aad_v2(
+        ctypes.c_uint64(sender_user_id),
+        ctypes.c_uint64(recipient_user_id),
+        msg_id_bytes,
+        buf,
+        ctypes.byref(out_len),
+    )
+    if res != 0:
+        raise RuntimeError("penik_build_pairwise_aad_v2 failed in Rust core")
+    return bytes(buf)
+
+
+def derive_key_pbkdf2(
+    passphrase: str | bytes,
+    salt: bytes,
+    iterations: int = 600000,
+    length: int = 32,
+) -> bytes:
+    """
+    Derives key using PBKDF2-HMAC-SHA256 in Rust core.
+    """
+    if isinstance(passphrase, str):
+        passphrase = passphrase.encode("utf-8")
+    out_buf = (ctypes.c_uint8 * length)()
+    res = _lib.penik_pbkdf2_derive(
+        passphrase,
+        len(passphrase),
+        salt,
+        len(salt),
+        ctypes.c_uint32(iterations),
+        out_buf,
+        length,
+    )
+    if res != 0:
+        raise RuntimeError("penik_pbkdf2_derive failed in Rust core")
+    return bytes(out_buf)
+
+
+def hkdf_derive(
+    secret: bytes,
+    salt: bytes,
+    info: bytes,
+    length: int = 32,
+) -> bytes:
+    """
+    Derives key using HKDF-SHA256 in Rust core.
+    """
+    out_buf = (ctypes.c_uint8 * length)()
+    res = _lib.penik_hkdf_derive(
+        secret,
+        len(secret),
+        salt,
+        len(salt),
+        info,
+        len(info),
+        out_buf,
+        length,
+    )
+    if res != 0:
+        raise RuntimeError("penik_hkdf_derive failed in Rust core")
+    return bytes(out_buf)
+
+
+def zeroize(buf: Any) -> None:
+    """
+    Wipes memory buffer in-place using Rust core zeroize.
+    """
+    if isinstance(buf, (bytearray, ctypes.Array)):
+        ptr = ctypes.cast(ctypes.byref(buf), ctypes.c_void_p) if isinstance(buf, ctypes.Array) else (ctypes.c_char * len(buf)).from_buffer(buf)
+        _lib.penik_zeroize(ptr, len(buf))
 
 
 def e2ee_encrypt(
