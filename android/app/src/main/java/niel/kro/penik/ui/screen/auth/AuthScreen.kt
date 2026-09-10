@@ -71,6 +71,7 @@ fun AuthScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val currentVariant by niel.kro.penik.ui.theme.AppIconManager.currentVariant.collectAsState()
 
     var showPassword by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
@@ -314,7 +315,7 @@ fun AuthScreen(
             when (state.mode) {
                 AuthMode.WELCOME -> {
                     Text(
-                        text = "Penik",
+                        text = currentVariant.displayName,
                         color = LocalAppColors.current.accent,
                         fontSize = 36.sp,
                         fontWeight = FontWeight.Bold

@@ -35,6 +35,7 @@ import niel.kro.penik.domain.call.CallManager
 import niel.kro.penik.ui.call.CallOverlay
 import niel.kro.penik.ui.notification.CallActionReceiver
 import niel.kro.penik.ui.theme.ThemeManager
+import niel.kro.penik.ui.theme.AppIconManager
 import niel.kro.penik.ui.theme.PenikTheme
 import javax.inject.Inject
 import android.util.Log
@@ -67,6 +68,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ThemeManager.init(this)
+        AppIconManager.init(this)
         enableEdgeToEdge()
         extractNavigationRoute(intent)
 
