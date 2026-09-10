@@ -214,12 +214,16 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   display: none;
   flex-direction: column;
   height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
 .screen.active {
   display: flex;
   width: 100%;
+  min-width: 0;
 }
 
 .hidden { display: none !important; }
@@ -308,9 +312,13 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 /* ── Main layout ── */
 #main-wrap {
   display: flex;
+  flex-direction: column;
   flex: 1;
   overflow: hidden;
   height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
 #screens-wrap {
@@ -318,6 +326,10 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   overflow: hidden;
   display: flex;
   position: relative;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /* ── Nav bar ── */
@@ -327,6 +339,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   order: 1;
+  width: 100%;
 }
 
 .nav-item {
@@ -1410,6 +1423,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 /* ── Desktop layout ── */
 @media (min-width: 700px) {
   #app { flex-direction: row; }
+  #main-wrap { flex-direction: row; }
 
   .nav-bar {
     flex-direction: column;
@@ -1421,6 +1435,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
     gap: 2px;
     order: -1;
     height: 100%;
+    flex-shrink: 0;
   }
 
   .nav-item {
@@ -1439,6 +1454,8 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
     flex: 1;
     display: flex;
     overflow: hidden;
+    min-width: 0;
+    min-height: 0;
   }
 
   .chat-back {
@@ -1456,7 +1473,9 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   }
 
   .chatlist-screen.active:has(~ .chat-screen.active) {
-    width: 480px;
+    width: 360px;
+    max-width: 40vw;
+    min-width: 260px;
     border-right: 1px solid var(--border);
   }
 
@@ -1471,9 +1490,48 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   .chat-screen.active {
     flex: 1;
     width: auto;
+    min-width: 0;
   }
 
   .toast-container { bottom: 24px; }
+}
+
+/* ── Mobile layout rules ── */
+@media (max-width: 699px) {
+  #main-wrap {
+    flex-direction: column !important;
+  }
+
+  .nav-bar {
+    width: 100% !important;
+    order: 1 !important;
+  }
+
+  /* When inside a chat or group screen on mobile, hide the bottom nav bar */
+  #main-wrap.in-chat .nav-bar,
+  #main-wrap:has(.chat-screen.active) .nav-bar {
+    display: none !important;
+  }
+
+  /* When inside a chat or group screen on mobile, hide the chat list */
+  #main-wrap.in-chat .chatlist-screen,
+  .chatlist-screen.active:has(~ .chat-screen.active) {
+    display: none !important;
+  }
+
+  .chat-screen.active {
+    width: 100% !important;
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+  }
+
+  .chat-back {
+    display: block !important;
+  }
+
+  .sidebar-toggle {
+    display: none !important;
+  }
 }
 
 /* Reply Preview Bar above input */
