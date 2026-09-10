@@ -217,4 +217,6 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `Docs/WEBSOCKET.md` — Complete WebSocket protocol reference: connection upgrade, binary framing, opcodes (0x01-0x28), and MsgPack payloads.
 - `Docs/ARCHITECTURE.md` — Deep dive into E2EE (X3DH/ChaCha20-Poly1305), epoch-based group encryption, device pairing, self-hosted attachment storage, and multi-tier persistence.
 - `Docs/CALLS.md` — LiveKit 1:1 calls architecture, signaling opcodes (0x24-0x29), environment variables, fail-closed validation, and client failover algorithm.
+- `plan/micro_rust_core_plan.md` — Architecture plan for unifying cryptography in a Rust micro-core (`penik-crypto`) with WebAssembly and UniFFI bindings.
+- `plan/new_device_key_invalidation_plan.md` — Architecture plan for handling key bundle invalidation and retry flows when users add new devices.
 
