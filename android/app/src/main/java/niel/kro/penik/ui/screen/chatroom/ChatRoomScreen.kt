@@ -64,6 +64,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Numbers
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.Spacer
@@ -271,7 +276,85 @@ fun ChatRoomScreen(
     val isUnauthorized = connectionState == niel.kro.penik.data.network.websocket.ConnectionState.UNAUTHORIZED
     val isSelfChat = viewModel.isSelfChat
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
+    var showProfileDialog by remember { mutableStateOf(false) }
     var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
+
+    if (showProfileDialog) {
+        val online by viewModel.online.collectAsState()
+        val lastSeen by viewModel.lastSeen.collectAsState()
+        val userAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.userAvatarKeys.collectAsState()
+        val avatarKey = userAvatarKeys[chatUserId]
+        AlertDialog(
+            onDismissRequest = { showProfileDialog = false },
+            containerColor = LocalAppColors.current.panel,
+            titleContentColor = LocalAppColors.current.textPrimary,
+            title = {
+                Text(text = "Профиль пользователя", fontWeight = FontWeight.SemiBold)
+            },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    niel.kro.penik.ui.components.UserAvatar(
+                        userId = chatUserId,
+                        name = chatName,
+                        size = 80.dp,
+                        avatarKey = avatarKey,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable {
+                                showProfileDialog = false
+                                fullscreenAvatarUrl = niel.kro.penik.ui.components.avatarUrlFor(
+                                    isGroup = false,
+                                    id = chatUserId,
+                                    avatarKey = avatarKey
+                                )
+                            }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = chatName,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = LocalAppColors.current.textPrimary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    if (!isSelfChat) {
+                        val presence = niel.kro.penik.ui.util.formatPresence(online, lastSeen)
+                        if (presence.isNotEmpty()) {
+                            Text(
+                                text = presence,
+                                fontSize = 13.sp,
+                                color = if (online) LocalAppColors.current.accent else LocalAppColors.current.textMuted
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "ID пользователя: $chatUserId",
+                        fontSize = 12.sp,
+                        color = LocalAppColors.current.textMuted
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showProfileDialog = false }) {
+                    Text("Закрыть", color = LocalAppColors.current.accent)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showProfileDialog = false
+                        viewModel.deleteChat { onBack() }
+                    }
+                ) {
+                    Text("Удалить чат", color = Color(0xFFEF5350))
+                }
+            }
+        )
+    }
 
     LaunchedEffect(editingMessage) {
         editingMessage?.let {
@@ -928,21 +1011,16 @@ fun ChatRoomScreen(
                     val lastSeen by viewModel.lastSeen.collectAsState()
                     val userAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.userAvatarKeys.collectAsState()
                     val avatarKey = userAvatarKeys[chatUserId]
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { showProfileDialog = true }
+                    ) {
                         niel.kro.penik.ui.components.UserAvatar(
                             userId = chatUserId,
                             name = chatName,
                             size = 36.dp,
                             avatarKey = avatarKey,
-                            modifier = Modifier
-                                .padding(end = 12.dp)
-                                .clickable {
-                                    fullscreenAvatarUrl = niel.kro.penik.ui.components.avatarUrlFor(
-                                        isGroup = false,
-                                        id = chatUserId,
-                                        avatarKey = avatarKey
-                                    )
-                                }
+                            modifier = Modifier.padding(end = 12.dp)
                         )
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1014,6 +1092,46 @@ fun ChatRoomScreen(
                                 tint = LocalAppColors.current.textPrimary
                             )
                         }
+                    }
+                    var showOverflowMenu by remember { mutableStateOf(false) }
+                    IconButton(onClick = { showOverflowMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Меню",
+                            tint = LocalAppColors.current.textPrimary
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showOverflowMenu,
+                        onDismissRequest = { showOverflowMenu = false },
+                        modifier = Modifier.background(LocalAppColors.current.panel)
+                    ) {
+                        if (!isSelfChat) {
+                            DropdownMenuItem(
+                                text = { Text("Профиль пользователя", color = LocalAppColors.current.textPrimary) },
+                                leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = LocalAppColors.current.textPrimary) },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    showProfileDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Код безопасности E2EE", color = LocalAppColors.current.textPrimary) },
+                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = LocalAppColors.current.success) },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    viewModel.onSafetyClick()
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Удалить чат", color = Color(0xFFEF5350)) },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFEF5350)) },
+                            onClick = {
+                                showOverflowMenu = false
+                                viewModel.deleteChat { onBack() }
+                            }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
