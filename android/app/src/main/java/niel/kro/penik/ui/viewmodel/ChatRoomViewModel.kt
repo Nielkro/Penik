@@ -103,6 +103,9 @@ class ChatRoomViewModel @Inject constructor(
     private val _peerCalls = MutableStateFlow<List<niel.kro.penik.data.network.api.CallLogItemResponse>>(emptyList())
     val peerCalls: StateFlow<List<niel.kro.penik.data.network.api.CallLogItemResponse>> = _peerCalls
 
+    private val _peerNickname = MutableStateFlow("")
+    val peerNickname: StateFlow<String> = _peerNickname
+
     private fun loadPeerCalls() {
         if (isSelfChat || chatUserId <= 0) return
         viewModelScope.launch {
@@ -188,13 +191,19 @@ class ChatRoomViewModel @Inject constructor(
             val profile = apiService.getUserProfile(chatUserId).body() ?: return
             _online.value = profile.online
             _lastSeen.value = profile.lastSeen
+            if (profile.nickname.isNotBlank()) {
+                _peerNickname.value = profile.nickname
+            }
             // Update name/nickname in case the contact was imported without it
             val existing = chatRepository.getChat(chatUserId)
             if (existing != null && (existing.name.isBlank() && existing.nickname.isBlank())) {
                 chatRepository.upsertContact(chatUserId, profile.nickname, profile.name, null)
             }
         } catch (_: Exception) {
-            // Keep showing whatever was last known.
+            val existing = chatRepository.getChat(chatUserId)
+            if (existing != null && existing.nickname.isNotBlank()) {
+                _peerNickname.value = existing.nickname
+            }
         }
     }
 

@@ -330,12 +330,15 @@ fun ChatRoomScreen(
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "ID пользователя: $chatUserId",
-                        fontSize = 12.sp,
-                        color = LocalAppColors.current.textMuted
-                    )
+                    val peerNickname by viewModel.peerNickname.collectAsState()
+                    if (peerNickname.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "@$peerNickname",
+                            fontSize = 14.sp,
+                            color = LocalAppColors.current.textMuted
+                        )
+                    }
                 }
             },
             confirmButton = {
