@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Penik Messenger — свой мессенджер с E2EE-шифрованием</title>
-<meta name="description" content="Penik Messenger — безопасный мессенджер со сквозным шифрованием (E2EE). E2EE на X25519 + ChaCha20-Poly1305, зашифрованные группы, мультидевайсинг и бинарный WebSocket. Даже сервер не видит ваши сообщения.">
+<meta name="description" content="Penik Messenger — безопасный мессенджер со сквозным шифрованием (E2EE) сообщений. E2EE на X25519 + ChaCha20-Poly1305 для личных и групповых чатов, мультидевайсинг и бинарный WebSocket. Даже сервер не видит ваши сообщения.">
 <link rel="icon" href="https://web.penik.ru/assets/favicon-BYBt5M59.ico">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/cyrillic-400-normal.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/cyrillic-600-normal.css">
@@ -352,7 +352,7 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
   <div class="hero-bg"></div>
   <div class="container hero-grid">
     <div class="hero-text">
-      <div class="badge"><span class="pulse"></span> E2EE по умолчанию · X25519 + ChaCha20-Poly1305</div>
+      <div class="badge"><span class="pulse"></span> E2EE в чатах · X25519 + ChaCha20-Poly1305</div>
       <h1>Свой мессенджер.<br><span class="grad">Свои правила.</span></h1>
       <p><b>Penik Messenger</b> — приватный мессенджер со сквозным шифрованием. Сообщения шифруются прямо на устройстве, так что даже наш сервер не знает, о чём вы пишете. В отличие от Телеграма. И тем более МАКС.</p>
       <div class="hero-btns">
@@ -387,7 +387,7 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
 
   <div class="container">
     <div class="stats">
-      <div class="stat reveal" style="--d:.05s"><b>E2EE</b><span>по умолчанию везде</span></div>
+      <div class="stat reveal" style="--d:.05s"><b>E2EE</b><span>в личных чатах и группах</span></div>
       <div class="stat reveal" style="--d:.12s"><b>2</b><span>алгоритма: X25519 + ChaCha20-Poly1305</span></div>
       <div class="stat reveal" style="--d:.19s"><b>∞</b><span>устройств на один аккаунт</span></div>
       <div class="stat reveal" style="--d:.26s"><b>100%</b><span>сообщений зашифровано</span></div>
@@ -439,8 +439,8 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
       <div class="feat reveal" style="--d:.12s">
         <span class="ico">📞</span>
         <h3>Аудио и видеозвонки</h3>
-        <p>Вызовы 1:1 в высоком качестве со сквозной сигнализацией через WebSocket и поддержкой демонстрации экрана.</p>
-        <div class="feat-tags"><span>LiveKit</span><span>HD видео</span><span>Звонки</span></div>
+        <p>Вызовы 1:1 в высоком качестве через WebRTC / LiveKit с быстрой сигнализацией через WebSocket и поддержкой демонстрации экрана.</p>
+        <div class="feat-tags"><span>LiveKit SFU</span><span>WebRTC</span><span>HD видео</span></div>
       </div>
       <div class="feat reveal" style="--d:.19s">
         <span class="ico">🔑</span>
@@ -512,9 +512,9 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
         </thead>
         <tbody>
           <tr>
-            <td>E2EE по умолчанию</td>
-            <td class="penik-col yes">✅ да, везде</td>
-            <td class="yes">✅ да, везде</td>
+            <td>E2EE в переписке</td>
+            <td class="penik-col yes">✅ лички и группы</td>
+            <td class="yes">✅ лички и группы</td>
             <td class="meh">⚠️ только «секретные чаты»</td>
             <td class="no">❌ нет</td>
           </tr>
@@ -541,7 +541,7 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
           </tr>
           <tr>
             <td>Сохраненки (чат с самим собой)</td>
-            <td class="penik-col yes">✅ есть, E2EE-облако</td>
+            <td class="penik-col yes">✅ есть, зашифровано</td>
             <td class="meh">⚠️ только локальные заметки</td>
             <td class="meh">⚠️ есть, но без E2EE</td>
             <td class="meh">⚠️ есть, но без E2EE</td>
@@ -610,7 +610,7 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
     <div class="faq-wrap">
       <div class="faq-item reveal" style="--d:.05s">
         <button class="faq-q" type="button">Это вообще безопасно? <span class="plus">+</span></button>
-        <div class="faq-a"><p>Да. Шифрование <b>сквозное и включено по умолчанию</b> — и в личках, и в группах. Ключи хранятся только на ваших устройствах, сервер видит лишь набор байтов. Мы бы и сами хотели почитать ваши переписки, но математика против.</p></div>
+        <div class="faq-a"><p>Да. Переписка защищена <b>сквозным шифрованием (E2EE)</b> — и в личках, и в группах. Ключи хранятся только на ваших устройствах, сервер видит лишь зашифрованные пакеты. Звонки передаются через WebRTC с защищённым шифрованием транспорта (DTLS-SRTP).</p></div>
       </div>
       <div class="faq-item reveal" style="--d:.1s">
         <button class="faq-q" type="button">Какая библиотека отвечает за криптографию? <span class="plus">+</span></button>
@@ -680,7 +680,7 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
     </div>
     <div class="foot-bottom">
       <span>© Niel kro, in 2026</span>
-      <span>работает даже на интернете Кирилла · <code>e2ee_by_default = true</code></span>
+      <span>работает даже на интернете Кирилла · <code>e2ee_chats = true</code></span>
     </div>
   </div>
 </footer>
