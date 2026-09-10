@@ -1704,7 +1704,7 @@ export async function showSafetyExplanationModal(peerId) {
 
   const tabBtns = ["QR-код", "Кодовые слова", "По-старому"].map((label, idx) => {
     const btn = el("button", {
-      style: `flex:1;padding:6px 8px;font-size:12px;font-weight:500;border:none;border-radius:8px;cursor:pointer;transition:all 0.2s;background:${idx === 0 ? "rgba(0,230,118,0.2)" : "transparent"};color:${idx === 0 ? "#00e676" : "#aaa"};`
+      style: `flex:1;padding:6px 8px;font-size:12px;font-weight:500;border:none;border-radius:8px;cursor:pointer;transition:all 0.2s;background:${idx === 0 ? "rgba(91,110,245,0.2)" : "transparent"};color:${idx === 0 ? "#5B6EF5" : "#aaa"};`
     }, label);
     btn.onclick = () => switchTab(idx);
     tabsRow.appendChild(btn);
@@ -1730,21 +1730,20 @@ export async function showSafetyExplanationModal(peerId) {
 
   // Tab 1: Words Section
   const wordsSection = el("div", {
-    style: "display:none;margin-bottom:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px;"
+    style: "display:none;margin-bottom:16px;background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;text-align:left;"
   });
 
   const wordsTitle = el("div", {
-    style: "font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:8px;font-weight:600;"
+    style: "font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#888;margin-bottom:8px;font-weight:700;"
   }, "Кодовые слова");
 
   const wordsGrid = el("div", {
-    style: "display:grid;grid-template-columns:repeat(2, 1fr);gap:6px;text-align:left;font-family:inherit;margin-bottom:12px;"
+    style: "display:grid;grid-template-columns:repeat(2, 1fr);gap:6px 12px;margin-bottom:12px;"
   });
 
   let currentWordsStr = "";
   const copyWordsBtn = el("button", {
-    class: "btn-secondary",
-    style: "width:100%;padding:8px;font-size:12px;cursor:pointer;background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.3);color:#00e676;border-radius:8px;transition:all 0.2s;"
+    style: "width:100%;padding:8px;font-size:12px;cursor:pointer;background:rgba(255,255,255,0.06);border:none;color:#eee;border-radius:8px;transition:all 0.2s;"
   }, "📋 Скопировать кодовые слова");
 
   copyWordsBtn.onclick = () => {
@@ -1761,17 +1760,16 @@ export async function showSafetyExplanationModal(peerId) {
 
   // Tab 2: Classic Numbers Section
   const numbersSection = el("div", {
-    style: "display:none;margin-bottom:16px;background:rgba(255,255,255,0.03);border:1px dashed rgba(255,255,255,0.15);border-radius:10px;padding:12px;"
+    style: "display:none;margin-bottom:16px;background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;text-align:left;"
   });
   const numbersTitle = el("div", {
-    style: "font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:6px;font-weight:600;"
+    style: "font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#888;margin-bottom:8px;font-weight:700;"
   }, "Числовой отпечаток (старый формат)");
   const numbersText = el("div", {
-    style: "font-size:18px;font-weight:bold;letter-spacing:2px;color:#00e676;font-family:monospace;margin-bottom:12px;"
+    style: "font-size:16px;font-weight:bold;letter-spacing:1px;color:#4EC97A;font-family:monospace;margin-bottom:12px;line-height:1.4;text-align:center;"
   }, "...");
   const copyNumbersBtn = el("button", {
-    class: "btn-secondary",
-    style: "width:100%;padding:8px;font-size:12px;cursor:pointer;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:#ccc;border-radius:8px;transition:all 0.2s;"
+    style: "width:100%;padding:8px;font-size:12px;cursor:pointer;background:rgba(255,255,255,0.06);border:none;color:#eee;border-radius:8px;transition:all 0.2s;"
   }, "📋 Скопировать числовой код");
 
   copyNumbersBtn.onclick = () => {
@@ -1786,57 +1784,18 @@ export async function showSafetyExplanationModal(peerId) {
   numbersSection.appendChild(copyNumbersBtn);
   content.appendChild(numbersSection);
 
-  // WhatsApp-style Alternative Methods Section
-  const altSection = el("div", {
-    style: "margin-top:16px;margin-bottom:14px;text-align:left;"
-  });
-  const altTitle = el("div", {
-    style: "font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:6px;font-weight:600;"
-  }, "Другие способы проверки");
-  const altList = el("div", {
-    style: "display:flex;flex-direction:column;gap:6px;"
-  });
-  altSection.appendChild(altTitle);
-  altSection.appendChild(altList);
-
-  function renderAltMethods(currentTab) {
-    altList.innerHTML = "";
-    const methods = [
-      { id: 0, icon: "⚏", title: "QR-код отпечатка", desc: "Показать QR-код для сканирования камерой" },
-      { id: 1, icon: "🔤", title: "Сравнить 10 кодовых слов", desc: "Удобно для голосового звонка или встречи" },
-      { id: 2, icon: "🔢", title: "Сравнить числовой код (по-старому)", desc: "Классические 25 цифр отпечатка" }
-    ];
-    methods.filter(m => m.id !== currentTab).forEach(m => {
-      const row = el("div", {
-        style: "display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.03);cursor:pointer;transition:background 0.2s;border:1px solid rgba(255,255,255,0.06);",
-        onclick: () => switchTab(m.id)
-      },
-        el("div", { style: "width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.06);border-radius:6px;font-size:14px;" }, m.icon),
-        el("div", { style: "flex:1;line-height:1.3;" },
-          el("div", { style: "font-size:13px;font-weight:600;color:#eee;" }, m.title),
-          el("div", { style: "font-size:11px;color:#888;" }, m.desc)
-        )
-      );
-      altList.appendChild(row);
-    });
-  }
-
   function switchTab(idx) {
     activeTab = idx;
     tabBtns.forEach((btn, i) => {
       const active = i === idx;
-      btn.style.background = active ? "rgba(0,230,118,0.2)" : "transparent";
-      btn.style.color = active ? "#00e676" : "#aaa";
+      btn.style.background = active ? "rgba(91,110,245,0.2)" : "transparent";
+      btn.style.color = active ? "#5B6EF5" : "#aaa";
       btn.style.fontWeight = active ? "600" : "500";
     });
     qrContainer.style.display = idx === 0 ? "flex" : "none";
     wordsSection.style.display = idx === 1 ? "block" : "none";
     numbersSection.style.display = idx === 2 ? "block" : "none";
-    renderAltMethods(idx);
   }
-
-  content.appendChild(altSection);
-  renderAltMethods(0);
 
   // Action buttons
   const buttonsRow = el("div", {
@@ -1860,15 +1819,12 @@ export async function showSafetyExplanationModal(peerId) {
     numbersText.textContent = number;
     currentWordsStr = words.map((w, idx) => `${idx + 1}. ${w}`).join("\n");
 
-    // Populate words
+    // Populate words (clean text list with Android success color)
     wordsGrid.innerHTML = "";
     words.forEach((w, idx) => {
       const item = el("div", {
-        style: "display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.05);padding:6px 10px;border-radius:6px;font-size:13px;"
-      },
-        el("span", { style: "color:#666;font-size:11px;min-width:18px;" }, `${idx + 1}.`),
-        el("span", { style: "color:#00e676;font-weight:500;" }, w)
-      );
+        style: "font-size:14px;font-weight:600;color:#4EC97A;"
+      }, `${idx + 1}. ${w}`);
       wordsGrid.appendChild(item);
     });
 
