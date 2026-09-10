@@ -13,7 +13,15 @@ import base64
 import hashlib
 import asyncio
 import argparse
+import socket
+import glob
+import signal
+import subprocess
+import tempfile
+from pathlib import Path
 from typing import List, Dict, Any
+
+import requests
 
 from .client import (
     PenikClient,
@@ -353,13 +361,99 @@ class E2ETestSuite:
             pass
 
 
+def _is_port_in_use(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _wait_for_server(url: str, timeout: float = 6.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            r = requests.get(f"{url}/api/v1/users/search", timeout=0.5)
+            if r.status_code in (200, 401):
+                return True
+        except requests.RequestException:
+            pass
+        time.sleep(0.1)
+    return False
+
+
+def _cleanup_db(db_path: str):
+    for f in glob.glob(f"{db_path}*"):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+
+
 def main():
     parser = argparse.ArgumentParser(description="Penik E2E Test Suite")
-    parser.add_argument("--url", default="http://localhost:8143", help="Base HTTP URL of Penik server")
+    parser.add_argument("--url", default=None, help="Base HTTP URL of Penik server (if omitted, auto-starts ephemeral server)")
     parser.add_argument("--ws-url", default=None, help="Base WebSocket URL of Penik server")
+    parser.add_argument("--temp-server", "--ephemeral", action="store_true", help="Always launch an isolated ephemeral server with temporary database")
+    parser.add_argument("--port", type=int, default=8145, help="Port for auto-started test server (default: 8145)")
+    parser.add_argument("--db-path", default=None, help="Custom DB path for ephemeral test server")
+    parser.add_argument("--no-build", action="store_true", help="Skip compiling penik-server if it already exists")
     args = parser.parse_args()
 
-    base_url = args.url.rstrip("/")
+    server_proc = None
+    test_db_path = None
+
+    if args.url and not args.temp_server:
+        base_url = args.url.rstrip("/")
+    else:
+        # Check if default port 8143 already has a running and healthy server (unless temp-server requested)
+        if not args.temp_server and not args.db_path and _is_port_in_use(8143) and _wait_for_server("http://localhost:8143", timeout=1.0):
+            base_url = "http://localhost:8143"
+        else:
+            # Auto-start ephemeral server with temporary database
+            repo_root = Path(__file__).resolve().parent.parent.parent
+            binary_path = repo_root / "penik-server"
+            if not binary_path.exists() or not args.no_build:
+                print(f"{YELLOW}[build] Compiling ./penik-server binary...{RESET}")
+                res = subprocess.run(
+                    ["go", "build", "-o", str(binary_path), "cmd/server/main.go"],
+                    cwd=str(repo_root / "server"),
+                    capture_output=True,
+                    text=True,
+                )
+                if res.returncode != 0:
+                    print(f"{RED}[build failed]\n{res.stderr}{RESET}")
+                    sys.exit(1)
+                print(f"{GREEN}[build] ./penik-server ready.{RESET}")
+
+            test_port = args.port
+            if _is_port_in_use(test_port):
+                test_port = 8146
+
+            test_db_path = args.db_path or str(Path(tempfile.gettempdir()) / f"penik_test_{os.getpid()}_{uuid.uuid4().hex[:6]}.db")
+            _cleanup_db(test_db_path)
+
+            base_url = f"http://127.0.0.1:{test_port}"
+            env = os.environ.copy()
+            env["PENIK_SQLITE_PATH"] = test_db_path
+            env["PORT"] = str(test_port)
+            env["ENV"] = "development"
+            env["ALLOWED_ORIGINS"] = f"http://localhost:{test_port},http://127.0.0.1:{test_port},https://web.penik.ru,https://penik.ru"
+
+            print(f"{CYAN}[server] Starting ephemeral test server on {base_url} (DB: {test_db_path})...{RESET}")
+            server_proc = subprocess.Popen(
+                [str(binary_path)],
+                cwd=str(repo_root),
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+            if not _wait_for_server(base_url):
+                print(f"{RED}[error] Ephemeral test server failed to start on {base_url}{RESET}")
+                if server_proc:
+                    server_proc.kill()
+                _cleanup_db(test_db_path)
+                sys.exit(1)
+            print(f"{GREEN}[server] Test server is healthy and responding.{RESET}")
+
     if args.ws_url:
         ws_url = args.ws_url
     else:
@@ -367,8 +461,21 @@ def main():
         host = base_url.split("://", 1)[1]
         ws_url = f"{ws_scheme}://{host}/api/v1/ws"
 
-    suite = E2ETestSuite(base_url=base_url, ws_url=ws_url)
-    exit_code = asyncio.run(suite.run_all())
+    try:
+        suite = E2ETestSuite(base_url=base_url, ws_url=ws_url)
+        exit_code = asyncio.run(suite.run_all())
+    finally:
+        if server_proc:
+            print(f"\n{YELLOW}[server] Stopping ephemeral test server...{RESET}")
+            server_proc.send_signal(signal.SIGTERM)
+            try:
+                server_proc.wait(timeout=3.0)
+            except subprocess.TimeoutExpired:
+                server_proc.kill()
+            if test_db_path:
+                _cleanup_db(test_db_path)
+            print(f"{GREEN}[server] Ephemeral test database cleaned up.{RESET}")
+
     sys.exit(exit_code)
 
 

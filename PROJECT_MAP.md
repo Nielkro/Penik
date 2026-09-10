@@ -203,7 +203,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 - `tests/e2e/crypto_utils.py` — Python cryptographic helper powered by the Rust `penik-crypto` micro-core via C-ABI / ctypes for X25519, ChaCha20-Poly1305, pairwise AAD, file crypto, and safety fingerprinting.
 - `tests/e2e/client.py` — Multi-platform Penik test client simulating complete REST and WebSocket workflows with binary MsgPack frame serialization.
-- `tests/e2e/test_runner.py` — Automated E2E test suite running 34 assertions across live auth, key bundles, dual-client live E2EE messaging, offline queuing, attachments, safety numbers, and groups.
+- `tests/e2e/test_runner.py` — Automated E2E test suite running 34 assertions across live auth, key bundles, dual-client live E2EE messaging, offline queuing, attachments, safety numbers, and groups; supports auto-starting ephemeral test servers with isolated databases.
 - `scripts/run_e2e.py` — Entry point script managing ephemeral test server lifecycle and executing the full Python E2E verification suite.
 
 ### Documentation
