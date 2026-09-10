@@ -225,7 +225,8 @@ data class GroupEnvelopeResponse(
     @SerialName("encrypted_key") val encryptedKey: String,
     val salt: String,
     val nonce: String,
-    @SerialName("sender_device_id") val senderDeviceId: Long
+    @SerialName("sender_device_id") val senderDeviceId: Long,
+    @SerialName("sender_user_id") val senderUserId: Long? = null
 )
 
 @Serializable
