@@ -341,6 +341,7 @@ fun StickerPickerBottomSheet(
     onOpenPack: (String) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
     val recents by stickerRepository.recentStickers.collectAsState()
     var packs by remember { mutableStateOf<List<StickerPackResponse>>(emptyList()) }
     var selectedTab by remember { mutableStateOf("recent") } // "recent" or packId
@@ -540,7 +541,7 @@ fun StickerPickerBottomSheet(
                 // Installed packs tabs
                 for (pack in packs) {
                     val isPackActive = selectedTab == pack.id
-                    val coverUrl = remember(pack) {
+                    val coverUrl = remember(pack, context) {
                         val stickerId = pack.coverStickerId ?: pack.stickers.firstOrNull()?.id
                         val ext = if (pack.isVideo) "webm" else if (pack.isAnimated) "tgs" else "webp"
                         if (!stickerId.isNullOrBlank()) {
