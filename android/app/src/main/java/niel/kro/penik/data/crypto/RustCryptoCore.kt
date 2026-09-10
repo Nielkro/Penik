@@ -64,4 +64,23 @@ object RustCryptoCore {
 
     @JvmStatic
     external fun generateSafetyWords(ikA: ByteArray, ikB: ByteArray): Array<String>?
+
+    @JvmStatic
+    external fun deriveKeyPbkdf2(
+        passphrase: String,
+        salt: ByteArray,
+        iterations: Int,
+        length: Int
+    ): ByteArray?
+
+    @JvmStatic
+    external fun hkdfDerive(
+        salt: ByteArray,
+        ikm: ByteArray,
+        info: ByteArray,
+        length: Int
+    ): ByteArray?
+
+    @JvmStatic
+    external fun zeroize(array: ByteArray)
 }

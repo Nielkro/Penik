@@ -137,7 +137,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `rust/penik-crypto/src/wasm.rs` — WebAssembly (`wasm-bindgen`) exports connecting `penik-crypto` to JavaScript runtimes.
 - `rust/penik-crypto/src/c_abi.rs` — C-ABI FFI exports connecting `penik-crypto` to Python ctypes and native callers.
 - `rust/penik-crypto/src/jni.rs` — JNI FFI exports connecting `penik-crypto` directly to Android Java/Kotlin runtime (`RustCryptoCore`).
-- `client/pkg/penik-crypto-wasm/` — Compiled WebAssembly package (`penik_crypto_bg.wasm`) and bindings produced by `wasm-pack`.
+- `scripts/build_rust.sh` — Unified compilation script building `penik-crypto` for all 4 Android architectures via NDK and optionally WebAssembly via `wasm-pack`.
 - `android/app/src/main/jniLibs/` — Compiled Android native release shared libraries (`libpenik_crypto.so`) for `arm64-v8a`, `armeabi-v7a`, `x86_64`, and `x86`.
 - `android/app/src/main/java/niel/kro/penik/data/crypto/RustCryptoCore.kt` — Kotlin JNI wrapper object providing low-overhead access to native Rust crypto functions on Android.
 - `client/js/vault.js` — Seals local secrets (private identity key, group keys, session token) with a non-extractable AES-GCM key so an IndexedDB dump is not a usable copy.
