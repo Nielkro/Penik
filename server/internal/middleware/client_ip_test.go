@@ -38,6 +38,12 @@ func TestClientIPHonorsTrustedProxy(t *testing.T) {
 	if got := ClientIP(req); got != "198.51.100.7" {
 		t.Errorf("expected 198.51.100.7 past the internal hop, got %q", got)
 	}
+
+	req.Header.Del("X-Forwarded-For")
+	req.Header.Set("CF-Connecting-IP", "203.0.113.88")
+	if got := ClientIP(req); got != "203.0.113.88" {
+		t.Errorf("expected CF-Connecting-IP 203.0.113.88, got %q", got)
+	}
 }
 
 func TestClientIPFallsBackToPeerWithoutHeaders(t *testing.T) {
