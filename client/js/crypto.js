@@ -298,10 +298,14 @@ export async function computeSafetyFingerprint(identityKeysA, identityKeysB) {
   const number = blocks.join(" ");
   const words = defaultWordCoder.encode(hash.subarray(0, 10));
 
+  const hex = Array.from(hash).map(b => b.toString(16).padStart(2, "0")).join("");
+  const qrPayload = `penik://safety?fp=${hex}`;
+
   return {
     number,
     words,
-    qrPayload: `penik-safety-v1:${number}`
+    hex,
+    qrPayload
   };
 }
 

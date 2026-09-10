@@ -320,17 +320,32 @@ class ChatRoomViewModel @Inject constructor(
 
     fun verifyScannedQr(raw: String): Boolean? {
         val trimmed = raw.trim()
-        val expected = _safetyFingerprintHex.value ?: return null
+        val expectedHex = _safetyFingerprintHex.value ?: return null
+        val expectedNum = _safetyNumber.value?.replace(" ", "").orEmpty()
+
         val fp = when {
             trimmed.startsWith("penik://safety?fp=") -> trimmed.substringAfter("penik://safety?fp=").substringBefore("&")
             trimmed.contains("fp=") -> trimmed.substringAfter("fp=").substringBefore("&")
+            trimmed.startsWith("penik-safety-v1:") -> trimmed.substringAfter("penik-safety-v1:").trim()
             trimmed.matches(Regex("^[0-9a-fA-F]{64}$")) -> trimmed
             else -> null
-        } ?: return null
+        }
 
-        val matches = fp.equals(expected, ignoreCase = true)
-        _safetyVerifyResult.value = matches
-        return matches
+        if (fp != null) {
+            if (fp.matches(Regex("^[0-9a-fA-F]{64}$"))) {
+                val matches = fp.equals(expectedHex, ignoreCase = true)
+                _safetyVerifyResult.value = matches
+                return matches
+            }
+            val cleanDigits = fp.replace(" ", "").replace("-", "")
+            if (cleanDigits.matches(Regex("^[0-9]{25}$")) && expectedNum.isNotEmpty()) {
+                val matches = cleanDigits == expectedNum
+                _safetyVerifyResult.value = matches
+                return matches
+            }
+        }
+
+        return null
     }
 
     fun resetVerifyResult() {
