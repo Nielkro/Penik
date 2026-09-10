@@ -59,6 +59,11 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.Spacer
@@ -429,10 +434,11 @@ fun ChatRoomScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .height(38.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(LocalAppColors.current.panelSecondary)
                             .padding(3.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         val tabs = listOf("QR-код", "Кодовые слова", "По-старому")
                         tabs.forEachIndexed { index, label ->
@@ -440,21 +446,27 @@ fun ChatRoomScreen(
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
+                                    .fillMaxHeight()
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSelected) LocalAppColors.current.accent.copy(alpha = 0.2f) else Color.Transparent)
+                                    .background(
+                                        if (isSelected) LocalAppColors.current.success.copy(alpha = 0.15f)
+                                        else Color.Transparent
+                                    )
                                     .clickable {
                                         selectedSafetyTab = index
                                         isScanningSafetyQr = false
                                         viewModel.resetVerifyResult()
-                                    }
-                                    .padding(vertical = 6.dp),
+                                    },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = label,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) LocalAppColors.current.accent else LocalAppColors.current.textMuted
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected) LocalAppColors.current.success else LocalAppColors.current.textMuted,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -669,7 +681,7 @@ fun ChatRoomScreen(
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(10.dp))
+                                        .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(12.dp))
                                         .padding(12.dp)
                                 ) {
                                     Text(
@@ -685,25 +697,53 @@ fun ChatRoomScreen(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .padding(vertical = 3.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
                                             val idx1 = row * 2
                                             val idx2 = row * 2 + 1
-                                            Text(
-                                                text = "${idx1 + 1}. ${words[idx1]}",
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = LocalAppColors.current.success,
-                                                modifier = Modifier.weight(1f)
-                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(Color.White.copy(alpha = 0.05f))
+                                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = "${idx1 + 1}. ",
+                                                        fontSize = 11.sp,
+                                                        color = LocalAppColors.current.textMuted
+                                                    )
+                                                    Text(
+                                                        text = words[idx1],
+                                                        fontSize = 13.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = LocalAppColors.current.success
+                                                    )
+                                                }
+                                            }
                                             if (idx2 < words.size) {
-                                                Text(
-                                                    text = "${idx2 + 1}. ${words[idx2]}",
-                                                    fontSize = 14.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = LocalAppColors.current.success,
-                                                    modifier = Modifier.weight(1f)
-                                                )
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(Color.White.copy(alpha = 0.05f))
+                                                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Text(
+                                                            text = "${idx2 + 1}. ",
+                                                            fontSize = 11.sp,
+                                                            color = LocalAppColors.current.textMuted
+                                                        )
+                                                        Text(
+                                                            text = words[idx2],
+                                                            fontSize = 13.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            color = LocalAppColors.current.success
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -716,11 +756,15 @@ fun ChatRoomScreen(
                                         cm?.setPrimaryClip(android.content.ClipData.newPlainText("Кодовые слова", textToCopy))
                                         android.widget.Toast.makeText(context, "Кодовые слова скопированы", android.widget.Toast.LENGTH_SHORT).show()
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.panelSecondary),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = LocalAppColors.current.success.copy(alpha = 0.12f),
+                                        contentColor = LocalAppColors.current.success
+                                    ),
+                                    border = BorderStroke(1.dp, LocalAppColors.current.success.copy(alpha = 0.35f)),
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("📋 Скопировать кодовые слова", fontSize = 12.sp, color = LocalAppColors.current.textPrimary)
+                                    Text("📋 Скопировать кодовые слова", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             } else {
                                 Text("Загрузка кодовых слов...", fontSize = 13.sp, color = LocalAppColors.current.textMuted)
@@ -747,8 +791,8 @@ fun ChatRoomScreen(
                                 lineHeight = 22.sp,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(8.dp))
-                                    .padding(12.dp)
+                                    .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(10.dp))
+                                    .padding(14.dp)
                             )
                             Spacer(modifier = Modifier.height(10.dp))
                             Button(
@@ -767,16 +811,170 @@ fun ChatRoomScreen(
                             }
                         }
                     }
+
+                    // WhatsApp-style "Другие способы проверки шифрования"
+                    if (!isScanningSafetyQr) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "ДРУГИЕ СПОСОБЫ ПРОВЕРКИ",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = LocalAppColors.current.textMuted,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 4.dp)
+                        )
+
+                        if (selectedSafetyTab != 0) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        selectedSafetyTab = 0
+                                        isScanningSafetyQr = false
+                                        viewModel.resetVerifyResult()
+                                    }
+                                    .padding(vertical = 7.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(LocalAppColors.current.panelSecondary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.QrCode,
+                                        contentDescription = null,
+                                        tint = LocalAppColors.current.textPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Сканировать или показать QR-код",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = LocalAppColors.current.textPrimary
+                                    )
+                                    Text(
+                                        text = "Моментальная верификация камерой",
+                                        fontSize = 11.sp,
+                                        color = LocalAppColors.current.textMuted
+                                    )
+                                }
+                            }
+                        }
+
+                        if (selectedSafetyTab != 1) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        selectedSafetyTab = 1
+                                        isScanningSafetyQr = false
+                                        viewModel.resetVerifyResult()
+                                    }
+                                    .padding(vertical = 7.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(LocalAppColors.current.panelSecondary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.TextFields,
+                                        contentDescription = null,
+                                        tint = LocalAppColors.current.textPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Сравнить 10 кодовых слов",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = LocalAppColors.current.textPrimary
+                                    )
+                                    Text(
+                                        text = "Удобно для звонка или личной встречи",
+                                        fontSize = 11.sp,
+                                        color = LocalAppColors.current.textMuted
+                                    )
+                                }
+                            }
+                        }
+
+                        if (selectedSafetyTab != 2) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        selectedSafetyTab = 2
+                                        isScanningSafetyQr = false
+                                        viewModel.resetVerifyResult()
+                                    }
+                                    .padding(vertical = 7.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(LocalAppColors.current.panelSecondary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Numbers,
+                                        contentDescription = null,
+                                        tint = LocalAppColors.current.textPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Сравнить числовой код (по-старому)",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = LocalAppColors.current.textPrimary
+                                    )
+                                    Text(
+                                        text = "Классические 25 цифр отпечатка",
+                                        fontSize = 11.sp,
+                                        color = LocalAppColors.current.textMuted
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Full-width Close button (styled consistently like Web)
+                    Button(
+                        onClick = {
+                            isScanningSafetyQr = false
+                            viewModel.dismissSafetyDialog()
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.accent),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 16.dp)
+                    ) {
+                        Text("Закрыть", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    }
                 }
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    isScanningSafetyQr = false
-                    viewModel.dismissSafetyDialog()
-                }) {
-                    Text("Закрыть", color = LocalAppColors.current.accent)
-                }
-            }
+            confirmButton = {}
         )
     }
 

@@ -1786,6 +1786,41 @@ export async function showSafetyExplanationModal(peerId) {
   numbersSection.appendChild(copyNumbersBtn);
   content.appendChild(numbersSection);
 
+  // WhatsApp-style Alternative Methods Section
+  const altSection = el("div", {
+    style: "margin-top:16px;margin-bottom:14px;text-align:left;"
+  });
+  const altTitle = el("div", {
+    style: "font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:6px;font-weight:600;"
+  }, "Другие способы проверки");
+  const altList = el("div", {
+    style: "display:flex;flex-direction:column;gap:6px;"
+  });
+  altSection.appendChild(altTitle);
+  altSection.appendChild(altList);
+
+  function renderAltMethods(currentTab) {
+    altList.innerHTML = "";
+    const methods = [
+      { id: 0, icon: "⚏", title: "QR-код отпечатка", desc: "Показать QR-код для сканирования камерой" },
+      { id: 1, icon: "🔤", title: "Сравнить 10 кодовых слов", desc: "Удобно для голосового звонка или встречи" },
+      { id: 2, icon: "🔢", title: "Сравнить числовой код (по-старому)", desc: "Классические 25 цифр отпечатка" }
+    ];
+    methods.filter(m => m.id !== currentTab).forEach(m => {
+      const row = el("div", {
+        style: "display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.03);cursor:pointer;transition:background 0.2s;border:1px solid rgba(255,255,255,0.06);",
+        onclick: () => switchTab(m.id)
+      },
+        el("div", { style: "width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.06);border-radius:6px;font-size:14px;" }, m.icon),
+        el("div", { style: "flex:1;line-height:1.3;" },
+          el("div", { style: "font-size:13px;font-weight:600;color:#eee;" }, m.title),
+          el("div", { style: "font-size:11px;color:#888;" }, m.desc)
+        )
+      );
+      altList.appendChild(row);
+    });
+  }
+
   function switchTab(idx) {
     activeTab = idx;
     tabBtns.forEach((btn, i) => {
@@ -1797,7 +1832,11 @@ export async function showSafetyExplanationModal(peerId) {
     qrContainer.style.display = idx === 0 ? "flex" : "none";
     wordsSection.style.display = idx === 1 ? "block" : "none";
     numbersSection.style.display = idx === 2 ? "block" : "none";
+    renderAltMethods(idx);
   }
+
+  content.appendChild(altSection);
+  renderAltMethods(0);
 
   // Action buttons
   const buttonsRow = el("div", {
