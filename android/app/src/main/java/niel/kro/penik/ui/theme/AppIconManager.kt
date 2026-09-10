@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import niel.kro.penik.R
 
 enum class AppVariant(val id: String, val displayName: String, val iconRes: Int) {
-    PENIK("penik", "Penik", R.mipmap.ic_launcher),
+    PENIK("penik", "Penik", R.drawable.ic_logo_penik),
     REPIK("repik", "Репик", R.drawable.ic_logo_repik);
 
     companion object {
