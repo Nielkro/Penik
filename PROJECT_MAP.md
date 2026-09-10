@@ -188,6 +188,13 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/build.gradle.kts` — Root Gradle configuration for the Android project.
 - `android/app/build.gradle.kts` — Configuration for the Android app, SDK, Compose, Media3 playback, Hilt, Room, SQLCipher, and network dependencies.
 
+### Testing & Automation
+
+- `tests/e2e/crypto_utils.py` — Python cryptographic helper implementing X25519 key pairs, Diffie-Hellman derivation, pairwise AAD construction, ChaCha20-Poly1305 encryption/decryption, file crypto, and safety fingerprinting.
+- `tests/e2e/client.py` — Multi-platform Penik test client simulating complete REST and WebSocket workflows with binary MsgPack frame serialization.
+- `tests/e2e/test_runner.py` — Automated E2E test suite running 34 assertions across live auth, key bundles, dual-client live E2EE messaging, offline queuing, attachments, safety numbers, and groups.
+- `scripts/run_e2e.py` — Entry point script for executing the full Python E2E verification suite.
+
 ### Documentation
 
 - `README.md` — Root project overview: stack, repository layout, build and run instructions for server/web/Android, configuration reference, architecture summary (E2EE, pairing, WebSocket transport, storage, attachments), rate limits, test commands, and known security limitations.
