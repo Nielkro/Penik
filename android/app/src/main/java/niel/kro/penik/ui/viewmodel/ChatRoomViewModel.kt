@@ -72,6 +72,9 @@ class ChatRoomViewModel @Inject constructor(
     private val _safetyNumber = MutableStateFlow<String?>(null)
     val safetyNumber: StateFlow<String?> = _safetyNumber
 
+    private val _safetyWords = MutableStateFlow<List<String>?>(null)
+    val safetyWords: StateFlow<List<String>?> = _safetyWords
+
     private val _showSafetyDialog = MutableStateFlow(false)
     val showSafetyDialog: StateFlow<Boolean> = _showSafetyDialog
 
@@ -287,15 +290,16 @@ class ChatRoomViewModel @Inject constructor(
     private fun loadSafetyNumber() {
         viewModelScope.launch {
             try {
-                val number = withContext(Dispatchers.IO) { calculateSafetyNumber() }
+                val (number, words) = withContext(Dispatchers.IO) { calculateSafetyData() }
                 _safetyNumber.value = number
+                _safetyWords.value = words
             } catch (e: Exception) {
                 _safetyNumber.value = "Ошибка загрузки"
             }
         }
     }
 
-    private suspend fun calculateSafetyNumber(): String {
+    private suspend fun calculateSafetyData(): Pair<String, List<String>> {
         val myId = tokenStorage.getUserId()
         val bundle1 = apiService.getKeyBundle(myId).body()
         val bundle2 = apiService.getKeyBundle(chatUserId).body()
@@ -311,7 +315,9 @@ class ChatRoomViewModel @Inject constructor(
             throw Exception("Ключи устройств не найдены")
         }
 
-        return SafetyNumber.compute(keys1, keys2)
+        val number = SafetyNumber.compute(keys1, keys2)
+        val words = SafetyNumber.computeWords(keys1, keys2)
+        return Pair(number, words)
     }
 
     fun forwardMessage(rawText: String, senderName: String, target: niel.kro.penik.ui.components.ForwardTargetItem, onDone: () -> Unit) {
