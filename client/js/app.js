@@ -18,7 +18,7 @@ import { renderSearch } from './ui/search.js';
 import { renderSettings, renderDevices } from './ui/settings.js';
 import { initTheme } from './theme.js';
 import {
-  deriveSharedSecret, e2eeEncrypt, e2eeDecrypt, buildPairwiseAAD,
+  deriveSharedSecret, e2eeEncrypt, e2eeDecrypt, buildPairwiseAAD, buildPairwiseAADV2,
   encryptKeyBackup, decryptKeyBackup, derivePublicKey, generateKeyPair
 } from './crypto.js';
 import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
@@ -1145,11 +1145,20 @@ export async function decryptMessagePayload(payload) {
     candidateTimestamps.push(localTs);
   }
 
+  // 1. Fast-path: modern V2 AAD (client_msg_id binding, no timestamp)
+  const v2Aads = [];
+  for (const { s, r } of candidateUsers) {
+    for (const cId of candidateClientIds) {
+      v2Aads.push(buildPairwiseAADV2(s, r, cId));
+    }
+  }
+
+  // 2. Legacy fallback for old messages stored with timestamps or empty AAD
   const timeOffsets = [0];
   for (let i = 1; i <= 60; i++) {
     timeOffsets.push(-i, i);
   }
-  const candidateAads = [];
+  const legacyAads = [];
   const addedSet = new Set();
 
   for (const { s, r } of candidateUsers) {
@@ -1160,13 +1169,13 @@ export async function decryptMessagePayload(payload) {
           const key = `${s}:${r}:${cId}:${t}`;
           if (!addedSet.has(key)) {
             addedSet.add(key);
-            candidateAads.push(buildPairwiseAAD(s, r, cId, t));
+            legacyAads.push(buildPairwiseAAD(s, r, cId, t));
           }
         }
       }
     }
   }
-  candidateAads.push(new Uint8Array(0));
+  legacyAads.push(new Uint8Array(0));
 
   let textBytes = null;
   let lastErr = null;
@@ -1175,7 +1184,17 @@ export async function decryptMessagePayload(payload) {
     if (!ikBytes || !ikBytes.length) return null;
     try {
       const sec = await deriveSharedSecret(myPrivateIK, ikBytes);
-      for (const aad of candidateAads) {
+      // Fast path: modern V2 AAD (instant O(1) decryption)
+      for (const aad of v2Aads) {
+        try {
+          const res = await e2eeDecrypt(ciphertext, sec, salt, nonce, "penik-pairwise-message-v1", aad);
+          if (res) return res;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      // Fallback: legacy V1 AAD with timestamp offsets or empty AAD
+      for (const aad of legacyAads) {
         try {
           const res = await e2eeDecrypt(ciphertext, sec, salt, nonce, "penik-pairwise-message-v1", aad);
           if (res) return res;
@@ -1296,7 +1315,7 @@ export async function encryptMessagePayload(text, recipientUserId, clientMsgId =
     throw new Error("Private Identity Key not found");
   }
 
-  const aad = buildPairwiseAAD(myId, recipientUserId, clientMsgId, tsSec);
+  const aad = buildPairwiseAADV2(myId, recipientUserId, clientMsgId);
 
   const payloads = [];
   for (const device of allDevices) {

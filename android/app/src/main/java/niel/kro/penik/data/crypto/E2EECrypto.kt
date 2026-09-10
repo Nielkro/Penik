@@ -151,6 +151,28 @@ class E2EECrypto {
         return bos.toByteArray()
     }
 
+    fun buildPairwiseAadV2(senderUserId: Long, recipientUserId: Long, clientMsgId: String = ""): ByteArray {
+        if (RustCryptoCore.isAvailable()) {
+            val aad = RustCryptoCore.buildPairwiseAadV2(senderUserId, recipientUserId, clientMsgId)
+            if (aad != null) return aad
+        }
+        val fields = listOf(
+            "2",
+            senderUserId.toString(),
+            recipientUserId.toString(),
+            clientMsgId
+        )
+        val bos = java.io.ByteArrayOutputStream()
+        for (field in fields) {
+            val bytes = field.toByteArray(Charsets.UTF_8)
+            val lenBytes = ByteArray(4)
+            java.nio.ByteBuffer.wrap(lenBytes).putInt(bytes.size)
+            bos.write(lenBytes)
+            bos.write(bytes)
+        }
+        return bos.toByteArray()
+    }
+
     fun encrypt(plaintext: ByteArray, sharedSecret: ByteArray, info: String = "penik-pairwise-message-v1", aad: ByteArray? = null): E2EEncrypted {
         if (RustCryptoCore.isAvailable()) {
             val infoBytes = info.toByteArray(Charsets.UTF_8)

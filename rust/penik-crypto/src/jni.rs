@@ -98,6 +98,34 @@ pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_bui
 }
 
 #[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_buildPairwiseAadV2<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    sender_user_id: jlong,
+    recipient_user_id: jlong,
+    client_msg_id: JString<'local>,
+) -> jbyteArray {
+    let msg_id_str: String = if client_msg_id.is_null() {
+        String::new()
+    } else {
+        env.get_string(&client_msg_id)
+            .map(|s| s.into())
+            .unwrap_or_default()
+    };
+
+    let aad_bytes = aad::build_pairwise_aad_v2(
+        sender_user_id as u64,
+        recipient_user_id as u64,
+        &msg_id_str,
+    );
+
+    match env.byte_array_from_slice(&aad_bytes) {
+        Ok(arr) => arr.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_encrypt<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
