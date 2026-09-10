@@ -27,7 +27,12 @@ const ICON_CLOCK = "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z";
 const ICON_CLOSE = "M18 6L6 18M6 6l12 12";
 
 const packBlobCache = new Map();
-const downloadingPacks = new Set();
+const downloadingPacks = new Map();
+const loadedPacks = new Set();
+
+export function isPackLoaded(packId) {
+  return Boolean(packId && loadedPacks.has(packId));
+}
 
 async function unpackZipBundle(arrayBuffer) {
   const view = new DataView(arrayBuffer);
@@ -99,28 +104,36 @@ async function unpackZipBundle(arrayBuffer) {
 }
 
 export async function preloadPackBundle(packId) {
-  if (!packId || downloadingPacks.has(packId)) return;
-  downloadingPacks.add(packId);
-  try {
-    const bundleUrl = getFullApiUrl(`/api/v1/stickers/pack/${encodeURIComponent(packId)}/bundle.zip`);
-    const token = getToken();
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    const resp = await fetch(bundleUrl, { headers });
-    if (resp.ok) {
-      const buf = await resp.arrayBuffer();
-      const files = await unpackZipBundle(buf);
-      for (const [fileName, blob] of files.entries()) {
-        const blobUrl = URL.createObjectURL(blob);
-        packBlobCache.set(`${packId}/${fileName}`, blobUrl);
-        const base = fileName.replace(/\.[a-zA-Z0-9]+$/, '');
-        packBlobCache.set(`${packId}/${base}`, blobUrl);
-      }
-    }
-  } catch (e) {
-    console.warn('Failed to preload sticker pack bundle', packId, e);
-  } finally {
-    downloadingPacks.delete(packId);
+  if (!packId) return;
+  if (loadedPacks.has(packId)) return;
+  if (downloadingPacks.has(packId)) {
+    return downloadingPacks.get(packId);
   }
+  const promise = (async () => {
+    try {
+      const bundleUrl = getFullApiUrl(`/api/v1/stickers/pack/${encodeURIComponent(packId)}/bundle.zip`);
+      const token = getToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const resp = await fetch(bundleUrl, { headers });
+      if (resp.ok) {
+        const buf = await resp.arrayBuffer();
+        const files = await unpackZipBundle(buf);
+        for (const [fileName, blob] of files.entries()) {
+          const blobUrl = URL.createObjectURL(blob);
+          packBlobCache.set(`${packId}/${fileName}`, blobUrl);
+          const base = fileName.replace(/\.[a-zA-Z0-9]+$/, '');
+          packBlobCache.set(`${packId}/${base}`, blobUrl);
+        }
+        loadedPacks.add(packId);
+      }
+    } catch (e) {
+      console.warn('Failed to preload sticker pack bundle', packId, e);
+    } finally {
+      downloadingPacks.delete(packId);
+    }
+  })();
+  downloadingPacks.set(packId, promise);
+  return promise;
 }
 
 export function getLocalStickerBlobUrl(packId, fileName, stickerId) {
@@ -130,6 +143,12 @@ export function getLocalStickerBlobUrl(packId, fileName, stickerId) {
   }
   if (stickerId && packBlobCache.has(`${packId}/${stickerId}`)) {
     return packBlobCache.get(`${packId}/${stickerId}`);
+  }
+  if (fileName) {
+    const base = fileName.replace(/\.[a-zA-Z0-9]+$/, '');
+    if (packBlobCache.has(`${packId}/${base}`)) {
+      return packBlobCache.get(`${packId}/${base}`);
+    }
   }
   return null;
 }
@@ -248,6 +267,14 @@ export function createStickerPicker(onSelect) {
     } catch {
       installedPacks = [];
     }
+
+    // Preload bundles for recents so recent stickers use zip blobs
+    const recents = getRecentStickers();
+    const recentPackIds = [...new Set(recents.map(s => s.pack_id).filter(Boolean))];
+    if (recentPackIds.length > 0) {
+      await Promise.allSettled(recentPackIds.map(id => preloadPackBundle(id)));
+    }
+
     renderTabs();
     renderContent();
   }
@@ -278,9 +305,10 @@ export function createStickerPicker(onSelect) {
       const coverExt = pack.cover_sticker_id && !pack.cover_sticker_id.includes('.')
         ? `.${pack.is_video ? 'webm' : (pack.is_animated ? 'tgs' : 'webp')}`
         : '';
-      const coverUrl = pack.cover_sticker_id
+      const localCover = getLocalStickerBlobUrl(pack.id, pack.cover_sticker_id, pack.cover_sticker_id);
+      const coverUrl = localCover || (pack.cover_sticker_id
         ? getFullApiUrl(`/api/v1/stickers/file/${pack.id}/${pack.cover_sticker_id}${coverExt}`)
-        : "";
+        : "");
 
       if (coverUrl) {
         if (pack.is_video) {
@@ -350,6 +378,17 @@ export function createStickerPicker(onSelect) {
         grid.appendChild(createStickerItem(s));
       }
       contentArea.appendChild(grid);
+
+      // In case any recent sticker packs are still loading in background, refresh once loaded
+      const recentPackIds = [...new Set(recents.map(s => s.pack_id).filter(Boolean))];
+      const pending = recentPackIds.filter(id => !isPackLoaded(id));
+      if (pending.length > 0) {
+        Promise.allSettled(pending.map(id => preloadPackBundle(id))).then(() => {
+          if (activeTab === "recent" && currentGen === renderGen) {
+            renderContent();
+          }
+        });
+      }
       return;
     }
 
@@ -468,7 +507,10 @@ export async function showStickerPackModal(packId, onUpdate) {
   });
 
   try {
-    const pack = await getStickerPack(packId);
+    const [pack] = await Promise.all([
+      getStickerPack(packId),
+      preloadPackBundle(packId)
+    ]);
     let myPacks = [];
     try { myPacks = await getMyStickers(); } catch {}
     const isInstalled = myPacks.some(p => p.id === pack.id);
@@ -489,8 +531,11 @@ export async function showStickerPackModal(packId, onUpdate) {
     const grid = el("div", { class: "stickers-grid" });
 
     for (const s of (pack.stickers || [])) {
-      const isVideo = Boolean(pack.is_video || s.file_name?.endsWith('.webm'));
-      const url = getFullApiUrl(s.url || `/api/v1/stickers/file/${pack.id}/${s.file_name}`);
+      const localBlob = getLocalStickerBlobUrl(pack.id, s.file_name, s.id);
+      const isTgs = Boolean(pack.is_animated || s.file_name?.endsWith('.tgs'));
+      const isVideo = !localBlob && Boolean(pack.is_video || s.file_name?.endsWith('.webm'));
+      const defaultUrl = getFullApiUrl(s.url || `/api/v1/stickers/file/${pack.id}/${s.file_name || (s.id + (isVideo ? '.webm' : (isTgs ? '.tgs' : '.webp')))}`);
+      const url = localBlob || defaultUrl;
       const item = el("div", { class: "sticker-grid-item preview-only" });
       const mediaEl = createStickerMediaElement(url, isVideo, s.emoji || "стикер", "sticker-img");
       item.appendChild(mediaEl);

@@ -3,7 +3,7 @@ import { getToken, BASE, getApiOrigin, getFullApiUrl } from "../api.js";
 import { getCachedMedia, saveCachedMedia, getAllContacts, getAllGroups } from "../storage.js";
 import { sendGroupMessage } from "../groups.js";
 import { sendDirectMessageToUser } from "./chat.js";
-import { showStickerPackModal } from "./stickers.js";
+import { showStickerPackModal, getLocalStickerBlobUrl } from "./stickers.js";
 
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -409,12 +409,13 @@ export function renderStickerContent(container, sticker) {
     ? `Стикер (${sticker.emoji}) — нажмите для полноэкранного просмотра, удерживайте для пака`
     : "Нажмите для полноэкранного просмотра, удерживайте для пака";
 
-  const isVideo = Boolean(
+  const localBlob = getLocalStickerBlobUrl(sticker.pack_id, sticker.file_name, sticker.id || sticker.sticker_id);
+  const isVideo = !localBlob && Boolean(
     sticker.is_video ||
     (sticker.file_name && sticker.file_name.endsWith(".webm")) ||
     (sticker.url && sticker.url.endsWith(".webm"))
   );
-  const url = getFullApiUrl(sticker.url || `/api/v1/stickers/file/${sticker.pack_id}/${sticker.file_name || (sticker.id + (isVideo ? '.webm' : '.webp'))}`);
+  const url = localBlob || getFullApiUrl(sticker.url || `/api/v1/stickers/file/${sticker.pack_id}/${sticker.file_name || (sticker.id + (isVideo ? '.webm' : '.webp'))}`);
 
   if (isVideo) {
     const video = document.createElement("video");
