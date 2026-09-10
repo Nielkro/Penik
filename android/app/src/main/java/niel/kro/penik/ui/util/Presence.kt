@@ -13,7 +13,7 @@ fun formatPresence(online: Boolean, lastSeenUnixSeconds: Long): String {
     val seenMillis = lastSeenUnixSeconds * 1000
     val nowMillis = System.currentTimeMillis()
     // Within the last minute — show "just now" instead of a clock time.
-    if (nowMillis - seenMillis < 60_000) return "был(а) в сети только что"
+    if (nowMillis - seenMillis < 60_000) return "был(а) только что"
 
     val seen = Calendar.getInstance().apply { timeInMillis = seenMillis }
     val now = Calendar.getInstance()
@@ -21,13 +21,13 @@ fun formatPresence(online: Boolean, lastSeenUnixSeconds: Long): String {
 
     val isToday = seen.get(Calendar.YEAR) == now.get(Calendar.YEAR) &&
         seen.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)
-    if (isToday) return "был(а) в сети в $time"
+    if (isToday) return "был(а) в $time"
 
     val yesterday = (now.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
     val isYesterday = seen.get(Calendar.YEAR) == yesterday.get(Calendar.YEAR) &&
         seen.get(Calendar.DAY_OF_YEAR) == yesterday.get(Calendar.DAY_OF_YEAR)
-    if (isYesterday) return "был(а) в сети вчера в $time"
+    if (isYesterday) return "был(а) вчера в $time"
 
     val date = SimpleDateFormat("d MMMM", Locale("ru")).format(Date(seenMillis))
-    return "был(а) в сети $date в $time"
+    return "был(а) $date в $time"
 }

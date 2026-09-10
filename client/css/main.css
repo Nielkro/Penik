@@ -508,6 +508,9 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 .chat-header-nick {
   font-size: 12px;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-safety {
