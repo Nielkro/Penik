@@ -43,3 +43,5 @@ penik-server
 landing/*.apk
 __pycache__/
 *.pyc
+target/
+rust/**/target/

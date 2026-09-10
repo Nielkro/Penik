@@ -126,9 +126,19 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 ## Crypto
 
+- `rust/penik-crypto/Cargo.toml` — Manifest for the unified Penik cryptography Rust micro-core (`penik-crypto`).
+- `rust/penik-crypto/src/lib.rs` — Root module of `penik-crypto`, exposing unified crypto API and type re-exports.
+- `rust/penik-crypto/src/errors.rs` — Typed `CryptoError` definitions for cryptographic operations.
+- `rust/penik-crypto/src/keys.rs` — X25519 key pair generation, zeroization, public key normalization, and Diffie-Hellman scalar multiplication.
+- `rust/penik-crypto/src/kdf.rs` — HKDF-SHA256 key derivation.
+- `rust/penik-crypto/src/aad.rs` — Big-endian binary AAD constructors for pairwise and group message framing.
+- `rust/penik-crypto/src/cipher.rs` — ChaCha20-Poly1305 encryption, decryption, file encryption, and E2EE message transforms.
+- `rust/penik-crypto/src/safety.rs` — Safety number calculation, SHA-256 fingerprinting, and Russian mnemonic word coder.
+- `rust/penik-crypto/src/wasm.rs` — WebAssembly (`wasm-bindgen`) exports connecting `penik-crypto` to JavaScript runtimes.
+- `client/pkg/penik-crypto-wasm/` — Compiled WebAssembly package (`penik_crypto_bg.wasm`) and bindings produced by `wasm-pack`.
 - `client/js/vault.js` — Seals local secrets (private identity key, group keys, session token) with a non-extractable AES-GCM key so an IndexedDB dump is not a usable copy.
 - `client/js/wordcoder.js` — Base256 mnemonic word coder using a 256-word Russian dictionary (<= 10 chars) for encoding byte sequences into memorable word lists.
-- `client/js/crypto.js` — Implements browser cryptography: X25519, HKDF, ChaCha20-Poly1305, direct message E2EE, signatures, safety numbers, key backups, and group encryption.
+- `client/js/crypto.js` — Browser cryptography module powered by the `penik-crypto` WebAssembly micro-core with WebCrypto vault integration.
 - `client/js/pinning.js` — TOFU pinning of peer devices' public identity keys: pins on first sight, displays a warning notification and updates the pin on key change without blocking communication.
 - `client/js/groups.js` — Coordinates client-side group E2EE: epoch key generation, wrapping envelopes for devices, rotation, message encryption, and history synchronization.
 - `android/app/src/main/java/niel/kro/penik/data/crypto/E2EECrypto.kt` — Implements Android E2EE using X25519, HKDF, and ChaCha20-Poly1305, including encryption/decryption of private key backups and file attachment encryption (`encryptFileChaCha20`).
