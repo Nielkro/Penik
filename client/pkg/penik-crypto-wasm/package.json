@@ -1,0 +1,15 @@
+{
+  "name": "penik-crypto",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "penik_crypto_bg.wasm",
+    "penik_crypto.js",
+    "penik_crypto.d.ts"
+  ],
+  "main": "penik_crypto.js",
+  "types": "penik_crypto.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
