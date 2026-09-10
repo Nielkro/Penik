@@ -170,7 +170,7 @@ class GroupRepository @Inject constructor(
             failedKeyVersions.add(cacheKey)
             return null
         }
-        val senderIK = fetchDeviceIK(groupId, env.senderDeviceId)
+        val senderIK = fetchDeviceIK(groupId, env.senderDeviceId, env.senderUserId)
         if (senderIK == null) {
             failedKeyVersions.add(cacheKey)
             return null
@@ -196,9 +196,24 @@ class GroupRepository @Inject constructor(
         return key
     }
 
-    private suspend fun fetchDeviceIK(groupId: Long, deviceId: Long): ByteArray? {
-        val members = dao.getMembers(groupId).map { it.userId }.ifEmpty { listOf(myUserId()) }
-        return fetchDeviceKeys(members).find { it.deviceId == deviceId }?.ikPub
+    private suspend fun fetchDeviceIK(groupId: Long, deviceId: Long, senderUserId: Long? = null): ByteArray? {
+        if (senderUserId != null && senderUserId > 0L) {
+            val direct = fetchDeviceKeys(listOf(senderUserId)).find { it.deviceId == deviceId }?.ikPub
+            if (direct != null) return direct
+        }
+        var members = dao.getMembers(groupId).map { it.userId }
+        if (members.isEmpty()) {
+            runCatching { refreshMembers(groupId) }
+            members = dao.getMembers(groupId).map { it.userId }
+        }
+        val targetMembers = members.ifEmpty { listOf(myUserId()) }
+        var ik = fetchDeviceKeys(targetMembers).find { it.deviceId == deviceId }?.ikPub
+        if (ik == null) {
+            runCatching { refreshMembers(groupId) }
+            val freshMembers = dao.getMembers(groupId).map { it.userId }
+            ik = fetchDeviceKeys(freshMembers.ifEmpty { listOf(myUserId()) }).find { it.deviceId == deviceId }?.ikPub
+        }
+        return ik
     }
 
     /* ── Lifecycle ── */

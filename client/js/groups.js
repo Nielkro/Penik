@@ -158,7 +158,8 @@ export async function ensureGroupKey(groupId, version) {
       // The envelope was wrapped by sender_device_id using our device's pairwise
       // secret. We derive the same secret from our private IK and the sender's IK.
       const senderDeviceId = Number(env.sender_device_id);
-      const senderIK = await fetchDeviceIK(groupId, senderDeviceId);
+      const senderUserId = env.sender_user_id ? Number(env.sender_user_id) : null;
+      const senderIK = await fetchDeviceIK(groupId, senderDeviceId, senderUserId);
       if (!senderIK) throw new Error(`sender device ${senderDeviceId} identity key not found`);
 
       const myPriv = await resolvePrivateIK();
@@ -199,18 +200,55 @@ function cachedDeviceIK(deviceId) {
   return entry.ik;
 }
 
-// fetchDeviceIK returns one device's public identity key by scanning the given
-// group's members' key bundles. groupId is passed explicitly so concurrent
+// fetchDeviceIK returns one device's public identity key by checking senderUserId or
+// scanning the given group's members' key bundles. groupId is passed explicitly so concurrent
 // lookups for different groups cannot race on shared state.
-async function fetchDeviceIK(groupId, deviceId) {
+async function fetchDeviceIK(groupId, deviceId, senderUserId = null) {
   const cached = cachedDeviceIK(deviceId);
   if (cached) return cached;
-  const members = await getGroupMembers(groupId).catch(() => []);
-  const userIds = members.map(m => m.user_id);
-  const devices = await fetchDeviceKeys(userIds.length ? userIds : [myUserId()]);
+
+  if (senderUserId) {
+    try {
+      const senderDevices = await fetchDeviceKeys([senderUserId]);
+      for (const d of senderDevices) {
+        deviceIKCache.set(d.device_id, { ik: d.ik_pub, at: Date.now() });
+      }
+      const found = cachedDeviceIK(deviceId);
+      if (found) return found;
+    } catch (e) {
+      console.warn('[groups] failed to fetch sender key bundle', e);
+    }
+  }
+
+  let members = await getGroupMembers(groupId).catch(() => []);
+  if (!members || !members.length) {
+    try {
+      members = await refreshMembers(groupId);
+    } catch (e) {
+      members = [];
+    }
+  }
+  let userIds = members.map(m => m.user_id);
+  const targetUserIds = userIds.length ? [...new Set([...userIds, myUserId()])] : [myUserId()];
+  let devices = await fetchDeviceKeys(targetUserIds);
   for (const d of devices) {
     deviceIKCache.set(d.device_id, { ik: d.ik_pub, at: Date.now() });
   }
+  let found = cachedDeviceIK(deviceId);
+  if (found) return found;
+
+  // Fallback: force refresh members in case member list was stale
+  try {
+    members = await refreshMembers(groupId);
+    userIds = members.map(m => m.user_id);
+    devices = await fetchDeviceKeys([...new Set([...userIds, myUserId()])]);
+    for (const d of devices) {
+      deviceIKCache.set(d.device_id, { ik: d.ik_pub, at: Date.now() });
+    }
+  } catch (e) {
+    console.warn('[groups] member refresh fallback failed', e);
+  }
+
   return cachedDeviceIK(deviceId);
 }
 
@@ -466,13 +504,20 @@ export async function sendGroupMessage(groupId, text, replyToMsgId = null) {
     groupKey = await ensureGroupKey(groupId, version);
   } catch (e) {
     // If the envelope is missing for this device, attempt to rotate the group key.
-    // This succeeds if the user is an owner/admin, restoring their ability to send.
-    console.log('[groups] key unavailable, attempting auto-rotation...', e.message);
-    try {
-      version = await rotateAndDistribute(groupId);
-      groupKey = await ensureGroupKey(groupId, version);
-    } catch (rotateErr) {
-      console.error('[groups] auto-rotation failed', rotateErr);
+    // This succeeds only if the user is an owner/admin, restoring their ability to send.
+    const members = await getGroupMembers(groupId).catch(() => []);
+    const me = members.find(m => Number(m.user_id) === myUserId());
+    const canRotate = me && (me.role === 'owner' || me.role === 'admin');
+    if (canRotate) {
+      console.log('[groups] key unavailable, attempting auto-rotation as privileged member...', e.message);
+      try {
+        version = await rotateAndDistribute(groupId);
+        groupKey = await ensureGroupKey(groupId, version);
+      } catch (rotateErr) {
+        console.error('[groups] auto-rotation failed', rotateErr);
+        throw e;
+      }
+    } else {
       throw e;
     }
   }

@@ -345,7 +345,12 @@ export async function renderGroup(container, groupId) {
     } catch { /* keep fallback name/avatar */ }
     renderHeaderAvatar();
     try {
-      const members = await getGroupMembers(groupId);
+      let members = await getGroupMembers(groupId);
+      if (!members || !members.length) {
+        members = await refreshMembers(groupId).catch(() => []);
+      } else {
+        refreshMembers(groupId).catch(() => {});
+      }
       for (const m of members) nameById.set(Number(m.user_id), memberName(m));
       // If we own/admin this group, stage the current key for any active member
       // device that is missing it (e.g. someone who joined or re-logged in after

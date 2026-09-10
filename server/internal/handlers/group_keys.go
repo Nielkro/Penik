@@ -328,10 +328,13 @@ func GetEnvelope(database *db.DB) http.HandlerFunc {
 		deviceID := middleware.DeviceIDFromCtx(r.Context())
 		var key, salt, nonce []byte
 		var senderDevice int64
+		var senderUser sql.NullInt64
 		err = database.QueryRowContext(r.Context(),
-			`SELECT encrypted_key,encryption_salt,encryption_nonce,sender_device_id
-			 FROM group_key_envelopes WHERE group_id=? AND key_version=? AND device_id=?`,
-			groupID, version, deviceID).Scan(&key, &salt, &nonce, &senderDevice)
+			`SELECT e.encrypted_key, e.encryption_salt, e.encryption_nonce, e.sender_device_id, d.user_id
+			 FROM group_key_envelopes e
+			 LEFT JOIN devices d ON d.id = e.sender_device_id
+			 WHERE e.group_id=? AND e.key_version=? AND e.device_id=?`,
+			groupID, version, deviceID).Scan(&key, &salt, &nonce, &senderDevice, &senderUser)
 		if err == sql.ErrNoRows {
 			http.Error(w, "envelope not found", http.StatusNotFound)
 			return
@@ -343,12 +346,16 @@ func GetEnvelope(database *db.DB) http.HandlerFunc {
 		_, _ = database.ExecContext(r.Context(),
 			`UPDATE group_key_envelopes SET delivered_at=? WHERE group_id=? AND key_version=? AND device_id=? AND delivered_at IS NULL`,
 			time.Now().Unix(), groupID, version, deviceID)
-		json.NewEncoder(w).Encode(map[string]any{
+		resp := map[string]any{
 			"key_version":      version,
 			"encrypted_key":    base64.RawURLEncoding.EncodeToString(key),
 			"salt":             base64.RawURLEncoding.EncodeToString(salt),
 			"nonce":            base64.RawURLEncoding.EncodeToString(nonce),
 			"sender_device_id": senderDevice,
-		})
+		}
+		if senderUser.Valid && senderUser.Int64 > 0 {
+			resp["sender_user_id"] = senderUser.Int64
+		}
+		json.NewEncoder(w).Encode(resp)
 	}
 }
