@@ -65,6 +65,10 @@ object SafetyNumber {
     }
 
     fun compute(identityKeyA: ByteArray, identityKeyB: ByteArray): String {
+        if (RustCryptoCore.isAvailable()) {
+            val num = RustCryptoCore.computeSafetyNumber(identityKeyA, identityKeyB)
+            if (num != null) return num
+        }
         return compute(listOf(identityKeyA), listOf(identityKeyB))
     }
 
@@ -104,6 +108,10 @@ object SafetyNumber {
     )
 
     fun computeWords(identityKeyA: ByteArray, identityKeyB: ByteArray): List<String> {
+        if (RustCryptoCore.isAvailable()) {
+            val words = RustCryptoCore.generateSafetyWords(identityKeyA, identityKeyB)
+            if (words != null) return words.toList()
+        }
         return computeWords(listOf(identityKeyA), listOf(identityKeyB))
     }
 
