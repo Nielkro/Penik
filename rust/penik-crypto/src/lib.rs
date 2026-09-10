@@ -9,6 +9,9 @@ pub mod safety;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod jni;
+
 // Re-export common types and functions for easy use
 pub use aad::{build_group_aad, build_group_aad_v1, build_pairwise_aad, GROUP_PROTOCOL_VERSION, PAIRWISE_PROTOCOL_VERSION};
 pub use cipher::{
