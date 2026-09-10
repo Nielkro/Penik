@@ -1,5 +1,6 @@
 import { apiGet, apiDelete, uploadAttachment, listPeerCalls } from "../api.js";
-import { encryptFileChaCha20, encodeKey, computeSafetyNumber } from "../crypto.js";
+import { encryptFileChaCha20, encodeKey, computeSafetyNumber, computeSafetyFingerprint } from "../crypto.js";
+import QRCode from "qrcode";
 import {
   saveMessage, getMessages, getMessage,
   updateMessageDelivered, updateMessageText, getContact, saveContact, getAllContacts,
@@ -1655,7 +1656,7 @@ export async function renderChat(container, userId) {
 // the one shared implementation in crypto.js. It used to carry its own copy of the
 // hashing and formatting, which is how the codebase ended up with three variants
 // that could disagree.
-export async function calculateSafetyNumber(userId1, userId2) {
+export async function calculateSafetyFingerprint(userId1, userId2) {
   const bundle1 = await apiGet(`/keys/bundle/${userId1}`);
   const bundle2 = await apiGet(`/keys/bundle/${userId2}`);
 
@@ -1669,7 +1670,12 @@ export async function calculateSafetyNumber(userId1, userId2) {
   const decode = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   const keys1 = bundle1.devices.map(d => decode(d.identity_key));
   const keys2 = bundle2.devices.map(d => decode(d.identity_key));
-  return computeSafetyNumber(keys1, keys2);
+  return computeSafetyFingerprint(keys1, keys2);
+}
+
+export async function calculateSafetyNumber(userId1, userId2) {
+  const res = await calculateSafetyFingerprint(userId1, userId2);
+  return res.number;
 }
 
 export async function showSafetyExplanationModal(peerId) {
@@ -1677,40 +1683,142 @@ export async function showSafetyExplanationModal(peerId) {
   const myId = me.id || me.user_id;
 
   const modal = el("div", {
-    style: "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;box-sizing:border-box;"
+    style: "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;box-sizing:border-box;overflow-y:auto;"
   });
 
   const content = el("div", {
-    style: "background:#1e1e1e;border:1px solid rgba(255,255,255,0.1);padding:24px;border-radius:12px;max-width:400px;width:100%;color:#fff;text-align:center;box-shadow: 0 8px 32px rgba(0,0,0,0.5);"
+    style: "background:#1e1e1e;border:1px solid rgba(255,255,255,0.12);padding:24px;border-radius:16px;max-width:420px;width:100%;color:#fff;text-align:center;box-shadow: 0 12px 40px rgba(0,0,0,0.6);"
   },
-    el("h3", { style: "margin-top:0;font-size:18px;margin-bottom:12px;" }, "Код безопасности E2EE"),
-    el("p", { style: "font-size:13px;color:#aaa;line-height:1.4;margin-bottom:20px;" },
-      "Сравните эти числа с числами на устройстве вашего собеседника. Если они совпадают, ваше сквозное шифрование на 100% защищено от перехвата."
+    el("h3", { style: "margin-top:0;font-size:18px;font-weight:600;margin-bottom:8px;color:#fff;" }, "Код безопасности E2EE"),
+    el("p", { style: "font-size:13px;color:#aaa;line-height:1.4;margin-bottom:16px;" },
+      "Сравните кодовые слова или отсканируйте QR-код для подтверждения подлинности сквозного шифрования."
     )
   );
 
-  const numberEl = el("div", {
-    style: "font-size:24px;font-weight:bold;letter-spacing:2px;background:rgba(255,255,255,0.05);padding:16px;border-radius:8px;border:1px dashed rgba(255,255,255,0.2);margin-bottom:20px;color:#00e676;font-family:monospace;"
-  }, "Загрузка...");
+  // QR Container
+  const qrContainer = el("div", {
+    style: "display:flex;flex-direction:column;align-items:center;justify-content:center;margin-bottom:16px;"
+  });
+  const qrCanvas = el("canvas", {
+    style: "display:none;border-radius:10px;background:#fff;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.3);"
+  });
+  const qrLoading = el("div", {
+    style: "width:180px;height:180px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.04);border-radius:10px;border:1px dashed rgba(255,255,255,0.15);color:#888;font-size:13px;"
+  }, "Генерация QR-кода...");
 
-  content.appendChild(numberEl);
+  qrContainer.appendChild(qrCanvas);
+  qrContainer.appendChild(qrLoading);
+  content.appendChild(qrContainer);
+
+  // WordCoder Words Container
+  const wordsSection = el("div", {
+    style: "margin-bottom:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px;"
+  });
+
+  const wordsTitle = el("div", {
+    style: "font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:8px;font-weight:600;"
+  }, "Кодовые слова (WordCoder)");
+
+  const wordsGrid = el("div", {
+    style: "display:grid;grid-template-columns:repeat(2, 1fr);gap:6px;text-align:left;font-family:inherit;"
+  });
+
+  wordsSection.appendChild(wordsTitle);
+  wordsSection.appendChild(wordsGrid);
+  content.appendChild(wordsSection);
+
+  // Classic Numbers Container (Hidden by default, shown via toggle button)
+  const numbersSection = el("div", {
+    style: "display:none;margin-bottom:16px;background:rgba(255,255,255,0.03);border:1px dashed rgba(255,255,255,0.15);border-radius:10px;padding:12px;"
+  });
+  const numbersTitle = el("div", {
+    style: "font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:6px;font-weight:600;"
+  }, "Числовой отпечаток (старый формат)");
+  const numbersText = el("div", {
+    style: "font-size:18px;font-weight:bold;letter-spacing:2px;color:#00e676;font-family:monospace;"
+  }, "...");
+  numbersSection.appendChild(numbersTitle);
+  numbersSection.appendChild(numbersText);
+  content.appendChild(numbersSection);
+
+  // Action buttons
+  const buttonsRow = el("div", {
+    style: "display:flex;flex-direction:column;gap:8px;"
+  });
+
+  // Toggle button for classic numbers
+  let isNumbersVisible = false;
+  const toggleNumbersBtn = el("button", {
+    class: "btn-secondary",
+    style: "width:100%;padding:8px;font-size:12px;cursor:pointer;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:#ccc;border-radius:8px;transition:all 0.2s;"
+  }, "🔢 Показать числовой код (старый формат)");
+
+  toggleNumbersBtn.onclick = () => {
+    isNumbersVisible = !isNumbersVisible;
+    numbersSection.style.display = isNumbersVisible ? "block" : "none";
+    toggleNumbersBtn.textContent = isNumbersVisible
+      ? "🔤 Скрыть числовой код"
+      : "🔢 Показать числовой код (старый формат)";
+  };
+
+  const copyWordsBtn = el("button", {
+    class: "btn-secondary",
+    style: "width:100%;padding:8px;font-size:12px;cursor:pointer;background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.3);color:#00e676;border-radius:8px;transition:all 0.2s;"
+  }, "📋 Скопировать кодовые слова");
+
+  let currentWordsStr = "";
+  copyWordsBtn.onclick = () => {
+    if (currentWordsStr) {
+      navigator.clipboard.writeText(currentWordsStr);
+      showToast("Кодовые слова скопированы");
+    }
+  };
 
   const closeBtn = el("button", {
     class: "btn-primary",
-    style: "width:100%;padding:10px;cursor:pointer;",
+    style: "width:100%;padding:10px;font-weight:600;margin-top:4px;cursor:pointer;border-radius:8px;",
     onclick: () => modal.remove()
   }, "Закрыть");
 
-  content.appendChild(closeBtn);
+  buttonsRow.appendChild(copyWordsBtn);
+  buttonsRow.appendChild(toggleNumbersBtn);
+  buttonsRow.appendChild(closeBtn);
+  content.appendChild(buttonsRow);
+
   modal.appendChild(content);
   document.body.appendChild(modal);
 
   try {
-    const safetyNumber = await calculateSafetyNumber(myId, peerId);
-    numberEl.textContent = safetyNumber;
+    const { number, words, qrPayload } = await calculateSafetyFingerprint(myId, peerId);
+    numbersText.textContent = number;
+    currentWordsStr = words.map((w, idx) => `${idx + 1}. ${w}`).join("\n");
+
+    // Populate words
+    wordsGrid.innerHTML = "";
+    words.forEach((w, idx) => {
+      const item = el("div", {
+        style: "display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.05);padding:6px 10px;border-radius:6px;font-size:13px;"
+      },
+        el("span", { style: "color:#666;font-size:11px;min-width:18px;" }, `${idx + 1}.`),
+        el("span", { style: "color:#00e676;font-weight:500;" }, w)
+      );
+      wordsGrid.appendChild(item);
+    });
+
+    // Render QR
+    await QRCode.toCanvas(qrCanvas, qrPayload, {
+      width: 170,
+      margin: 1,
+      color: { dark: "#000000", light: "#ffffff" }
+    });
+    qrLoading.style.display = "none";
+    qrCanvas.style.display = "block";
+
   } catch (err) {
-    numberEl.textContent = "Ошибка загрузки";
-    console.error("Error calculating safety number:", err);
+    qrLoading.textContent = "Ошибка загрузки";
+    numbersText.textContent = "Ошибка загрузки";
+    wordsGrid.innerHTML = "<div style='color:#ff5252;grid-column:span 2;'>Не удалось рассчитать код безопасности</div>";
+    console.error("Error calculating safety fingerprint:", err);
   }
 }
 

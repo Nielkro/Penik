@@ -126,6 +126,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ## Crypto
 
 - `client/js/vault.js` — Seals local secrets (private identity key, group keys, session token) with a non-extractable AES-GCM key so an IndexedDB dump is not a usable copy.
+- `client/js/wordcoder.js` — Base256 mnemonic word coder using a 256-word Russian dictionary (<= 10 chars) for encoding byte sequences into memorable word lists.
 - `client/js/crypto.js` — Implements browser cryptography: X25519, HKDF, ChaCha20-Poly1305, direct message E2EE, signatures, safety numbers, key backups, and group encryption.
 - `client/js/pinning.js` — TOFU pinning of peer devices' public identity keys: pins on first sight, displays a warning notification and updates the pin on key change without blocking communication.
 - `client/js/groups.js` — Coordinates client-side group E2EE: epoch key generation, wrapping envelopes for devices, rotation, message encryption, and history synchronization.

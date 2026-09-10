@@ -228,6 +228,7 @@ fun ChatRoomScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val safetyNumber by viewModel.safetyNumber.collectAsState()
+    val safetyWords by viewModel.safetyWords.collectAsState()
     val showDialog by viewModel.showSafetyDialog.collectAsState()
     val showE2eeDialog by viewModel.showE2eeDialog.collectAsState()
     val editingMessage by viewModel.editingMessage.collectAsState()
@@ -391,29 +392,88 @@ fun ChatRoomScreen(
                 }
             },
             text = {
+                var showClassicNumbers by remember { mutableStateOf(false) }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "Сравните эти числа с числами на устройстве вашего собеседника. Если они совпадают, ваше сквозное шифрование на 100% защищено от перехвата.",
+                        text = "Сравните кодовые слова с собеседником. Если они совпадают, ваше сквозное шифрование на 100% защищено от перехвата.",
                         fontSize = 13.sp,
                         color = LocalAppColors.current.textMuted,
                         textAlign = TextAlign.Center,
                         lineHeight = 18.sp,
-                        modifier = Modifier.padding(bottom = 16.dp)
+                        modifier = Modifier.padding(bottom = 12.dp)
                     )
-                    Text(
-                        text = safetyNumber ?: "Загрузка...",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        color = LocalAppColors.current.success,
-                        textAlign = TextAlign.Center,
-                        letterSpacing = 2.sp,
-                        lineHeight = 28.sp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(8.dp))
-                            .padding(16.dp)
-                    )
+
+                    if (safetyWords != null && safetyWords!!.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(10.dp))
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                text = "КОДОВЫЕ СЛОВА (WORDCODER)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = LocalAppColors.current.textMuted,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            val words = safetyWords!!
+                            for (row in 0 until (words.size + 1) / 2) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 3.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    val idx1 = row * 2
+                                    val idx2 = row * 2 + 1
+                                    Text(
+                                        text = "${idx1 + 1}. ${words[idx1]}",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = LocalAppColors.current.success,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (idx2 < words.size) {
+                                        Text(
+                                            text = "${idx2 + 1}. ${words[idx2]}",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = LocalAppColors.current.success,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (showClassicNumbers) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = safetyNumber ?: "Загрузка...",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = LocalAppColors.current.success,
+                            textAlign = TextAlign.Center,
+                            letterSpacing = 1.sp,
+                            lineHeight = 22.sp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(onClick = { showClassicNumbers = !showClassicNumbers }) {
+                        Text(
+                            text = if (showClassicNumbers) "Скрыть числовой код" else "Показать числовой код (старый формат)",
+                            fontSize = 12.sp,
+                            color = LocalAppColors.current.accent
+                        )
+                    }
                 }
             },
             confirmButton = {

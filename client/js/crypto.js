@@ -1,3 +1,5 @@
+import { defaultWordCoder } from "./wordcoder.js";
+
 const subtle = crypto.subtle;
 
 let _sodium = null;
@@ -261,6 +263,46 @@ export async function computeSafetyNumber(identityKeysA, identityKeysB) {
     blocks.push(digits.substring(i, i + 5));
   }
   return blocks.join(" ");
+}
+
+export async function computeSafetyFingerprint(identityKeysA, identityKeysB) {
+  const listA = Array.isArray(identityKeysA) ? identityKeysA : [identityKeysA];
+  const listB = Array.isArray(identityKeysB) ? identityKeysB : [identityKeysB];
+
+  const allKeys = [...listA, ...listB]
+    .filter(k => k != null)
+    .map(normalizeIdentityKey)
+    .sort(compareUnsigned);
+
+  if (allKeys.length === 0) {
+    throw new Error("safety number: no identity keys provided");
+  }
+
+  const concatenated = new Uint8Array(allKeys.length * 32);
+  for (let i = 0; i < allKeys.length; i++) {
+    concatenated.set(allKeys[i], i * 32);
+  }
+
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", concatenated));
+
+  let digits = "";
+  for (let i = 0; i + 1 < hash.length && digits.length < SAFETY_NUMBER_BLOCKS * 5; i += 2) {
+    const val = (hash[i] << 8) | hash[i + 1];
+    digits += String(val).padStart(5, "0").substring(0, 5);
+  }
+
+  const blocks = [];
+  for (let i = 0; i < digits.length; i += 5) {
+    blocks.push(digits.substring(i, i + 5));
+  }
+  const number = blocks.join(" ");
+  const words = defaultWordCoder.encode(hash.subarray(0, 10));
+
+  return {
+    number,
+    words,
+    qrPayload: `penik-safety-v1:${number}`
+  };
 }
 
 export function replacer(key, value) {
