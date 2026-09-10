@@ -23,6 +23,7 @@ class PenikApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         niel.kro.penik.data.network.api.ApiConfig.init(this)
+        niel.kro.penik.ui.theme.AppIconManager.init(this)
         appNotificationManager.createNotificationChannels()
         webSocketEventCoordinator.start()
 

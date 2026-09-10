@@ -121,6 +121,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/notification/PenikFirebaseMessagingService.kt` — Firebase Messaging service handling background data pushes and showing conversation notifications.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Theme.kt` — Material/Compose app theme and color scheme.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/ThemeManager.kt` — SharedPreferences-backed light/dark theme state exposed as a StateFlow.
+- `android/app/src/main/java/niel/kro/penik/ui/theme/AppIconManager.kt` — Manages app identity variant (Penik vs Репик), dynamic launcher icon via activity-alias, and reactive app title StateFlow.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Color.kt` — Android UI color palette.
 - `android/app/src/main/java/niel/kro/penik/ui/theme/Type.kt` — Compose UI typography.
 
