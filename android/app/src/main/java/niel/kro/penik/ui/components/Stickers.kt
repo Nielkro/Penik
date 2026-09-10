@@ -274,8 +274,9 @@ fun StickerMediaView(
             )
         }
     } else {
+        val cachedFile = rememberCachedStickerFile(fullUrl)
         AsyncImage(
-            model = fullUrl,
+            model = cachedFile ?: fullUrl,
             contentDescription = contentDescription,
             modifier = modifier,
             contentScale = ContentScale.Fit
@@ -352,6 +353,10 @@ fun StickerPickerBottomSheet(
             isLoading = true
             val res = stickerRepository.getMyPacks()
             packs = res.getOrDefault(emptyList())
+            val packIds = recents.map { it.packId }.distinct().filter { it.isNotBlank() }
+            packIds.forEach { pId ->
+                launch { stickerRepository.preloadPackBundle(pId) }
+            }
             isLoading = false
         }
     }
@@ -540,7 +545,10 @@ fun StickerPickerBottomSheet(
                         val ext = if (pack.isVideo) "webm" else if (pack.isAnimated) "tgs" else "webp"
                         if (!stickerId.isNullOrBlank()) {
                             val fileName = if (stickerId.contains('.')) stickerId else "$stickerId.$ext"
-                            ApiConfig.getStickerFileUrl(pack.id, fileName)
+                            val packDir = File(context.cacheDir, "stickers/${pack.id}")
+                            val local = File(packDir, fileName)
+                            if (local.exists() && local.length() > 0) local
+                            else ApiConfig.getStickerFileUrl(pack.id, fileName)
                         } else null
                     }
 
@@ -582,11 +590,27 @@ fun StickerGridItem(
     sticker: StickerItemResponse,
     onClick: () -> Unit
 ) {
-    val url = remember(sticker) {
+    val context = LocalContext.current
+    val fileName = remember(sticker) {
+        sticker.fileName.ifBlank { sticker.id }
+    }
+    val localFile = remember(sticker.packId, fileName) {
+        if (sticker.packId.isBlank()) null
+        else {
+            val packDir = File(context.cacheDir, "stickers/${sticker.packId}")
+            val candidate = File(packDir, fileName)
+            if (candidate.exists() && candidate.length() > 0) candidate
+            else {
+                val base = fileName.substringBeforeLast('.')
+                listOf(".webp", ".webm", ".png", ".tgs").map { File(packDir, base + it) }.firstOrNull { it.exists() && it.length() > 0 }
+            }
+        }
+    }
+
+    val model: Any = localFile ?: remember(sticker, fileName) {
         if (!sticker.url.isNullOrBlank()) {
             ApiConfig.getFullStickerUrl(sticker.url)
         } else {
-            val fileName = sticker.fileName.ifBlank { sticker.id }
             ApiConfig.getStickerFileUrl(sticker.packId, fileName)
         }
     }
@@ -600,7 +624,7 @@ fun StickerGridItem(
         contentAlignment = Alignment.Center
     ) {
         AsyncImage(
-            model = url,
+            model = model,
             contentDescription = sticker.emoji.ifBlank { "Стикер" },
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit

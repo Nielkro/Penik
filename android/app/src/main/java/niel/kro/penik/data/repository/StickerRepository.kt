@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.ImportTelegramStickersRequest
 import niel.kro.penik.data.network.api.StickerItemResponse
@@ -74,7 +76,7 @@ class StickerRepository @Inject constructor(
         }
     }
 
-    private val downloadingPacks = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val packMutexes = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
 
     fun getLocalStickerFile(packId: String, fileName: String): java.io.File? {
         if (packId.isBlank() || fileName.isBlank()) return null
@@ -95,33 +97,34 @@ class StickerRepository @Inject constructor(
         if (packDir.exists() && (packDir.list()?.isNotEmpty() == true)) {
             return@withContext
         }
-        if (!downloadingPacks.add(packId)) {
-            return@withContext
-        }
-        try {
-            val resp = apiService.downloadStickerPackBundle(packId)
-            if (resp.isSuccessful && resp.body() != null) {
-                packDir.mkdirs()
-                resp.body()!!.byteStream().use { stream ->
-                    java.util.zip.ZipInputStream(stream).use { zis ->
-                        var entry = zis.nextEntry
-                        while (entry != null) {
-                            val cleanName = java.io.File(entry.name).name
-                            if (!entry.isDirectory && cleanName.isNotBlank() && !cleanName.startsWith(".")) {
-                                val outFile = java.io.File(packDir, cleanName)
-                                outFile.outputStream().use { fos ->
-                                    zis.copyTo(fos)
+        val mutex = packMutexes.computeIfAbsent(packId) { Mutex() }
+        mutex.withLock {
+            if (packDir.exists() && (packDir.list()?.isNotEmpty() == true)) {
+                return@withLock
+            }
+            try {
+                val resp = apiService.downloadStickerPackBundle(packId)
+                if (resp.isSuccessful && resp.body() != null) {
+                    packDir.mkdirs()
+                    resp.body()!!.byteStream().use { stream ->
+                        java.util.zip.ZipInputStream(stream).use { zis ->
+                            var entry = zis.nextEntry
+                            while (entry != null) {
+                                val cleanName = java.io.File(entry.name).name
+                                if (!entry.isDirectory && cleanName.isNotBlank() && !cleanName.startsWith(".")) {
+                                    val outFile = java.io.File(packDir, cleanName)
+                                    outFile.outputStream().use { fos ->
+                                        zis.copyTo(fos)
+                                    }
                                 }
+                                zis.closeEntry()
+                                entry = zis.nextEntry
                             }
-                            zis.closeEntry()
-                            entry = zis.nextEntry
                         }
                     }
                 }
+            } catch (_: Exception) {
             }
-        } catch (_: Exception) {
-        } finally {
-            downloadingPacks.remove(packId)
         }
     }
 
