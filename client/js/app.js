@@ -214,7 +214,6 @@ function buildMainLayout() {
 
   const wrap = document.createElement('div');
   wrap.id = 'main-wrap';
-  wrap.style.cssText = 'display:flex;flex:1;overflow:hidden;height:100%';
 
   /* Nav bar */
   const nav = document.createElement('nav');
@@ -249,7 +248,6 @@ function buildMainLayout() {
   /* Screens container */
   const screensWrap = document.createElement('div');
   screensWrap.id = 'screens-wrap';
-  screensWrap.style.cssText = 'flex:1;overflow:hidden;display:flex;position:relative';
 
   const chatListScreen = document.createElement('div');
   chatListScreen.className = 'screen chatlist-screen';
@@ -301,9 +299,15 @@ function showAuth(mode) {
 
 function showMain(screen, userId) {
   const layout = buildMainLayout();
+  const mainWrap = document.getElementById('main-wrap');
+
+  const isChat = (screen === 'chat' || screen === 'group');
+  if (mainWrap) {
+    mainWrap.classList.toggle('in-chat', isChat);
+  }
 
   /* Update nav */
-  const activeNavScreen = (screen === 'chat' || screen === 'group') ? 'chats'
+  const activeNavScreen = isChat ? 'chats'
     : (screen === 'devices') ? 'settings'
     : screen;
   layout.nav.querySelectorAll('.nav-item').forEach(btn => {
@@ -327,6 +331,8 @@ function showMain(screen, userId) {
         _chatListRendered = true;
         renderChatList(layout.chatListScreen);
       }
+    } else {
+      layout.chatListScreen.classList.remove('active');
     }
   } else if (screen === 'chats') {
     layout.chatListScreen.classList.add('active');
@@ -338,6 +344,11 @@ function showMain(screen, userId) {
       /* Keep chat screen open on desktop */
       const chatEl = document.getElementById('screen-chat');
       if (chatEl && chatEl.innerHTML.trim()) chatEl.classList.add('active');
+    } else {
+      const chatEl = document.getElementById('screen-chat');
+      if (chatEl) chatEl.classList.remove('active');
+      const groupEl = document.getElementById('screen-group');
+      if (groupEl) groupEl.classList.remove('active');
     }
   } else if (screen === 'calls') {
     layout.callsScreen.classList.add('active');
@@ -372,6 +383,8 @@ function showMain(screen, userId) {
         _chatListRendered = true;
         renderChatList(layout.chatListScreen);
       }
+    } else {
+      layout.chatListScreen.classList.remove('active');
     }
   }
 }
@@ -453,6 +466,31 @@ async function boot() {
   if (loading) loading.remove();
 
   window.addEventListener('hashchange', handleRoute);
+  window.addEventListener('resize', () => {
+    if (!_mainLayout) return;
+    const { screen } = parseHash();
+    const isWide = window.innerWidth >= 700;
+    if (screen === 'chat' || screen === 'group') {
+      if (isWide) {
+        if (!_mainLayout.chatListScreen.classList.contains('active')) {
+          _mainLayout.chatListScreen.classList.add('active');
+          if (!_chatListRendered) {
+            _chatListRendered = true;
+            renderChatList(_mainLayout.chatListScreen);
+          }
+        }
+      } else {
+        _mainLayout.chatListScreen.classList.remove('active');
+      }
+    } else if (screen === '#chats' || screen === 'chats') {
+      if (!isWide) {
+        const chatEl = document.getElementById('screen-chat');
+        if (chatEl) chatEl.classList.remove('active');
+        const groupEl = document.getElementById('screen-group');
+        if (groupEl) groupEl.classList.remove('active');
+      }
+    }
+  });
   handleRoute();
 }
 
