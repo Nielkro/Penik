@@ -22,8 +22,7 @@ web.penik.ru {
     handle /api/* {
         reverse_proxy 127.0.0.1:8143 {
             header_up Host {host}
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
+            header_up X-Real-IP {client_ip}
             header_up X-Forwarded-Proto {scheme}
         }
     }
@@ -54,8 +53,7 @@ web.penik.ru {
 api.penik.ru {
     reverse_proxy 127.0.0.1:8143 {
         header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
+        header_up X-Real-IP {client_ip}
         header_up X-Forwarded-Proto {scheme}
     }
 

@@ -95,7 +95,7 @@ func Load() *Config {
 	cfg := &Config{
 		Env:                getEnv("ENV", "development"),
 		Port:               getEnv("PORT", "8143"),
-		DBPath:             getEnv("DB_PATH", "./data/messenger.db"),
+		DBPath:             getEnv("PENIK_SQLITE_PATH", getEnv("DB_PATH", "./data/messenger.db")),
 		MaxAvatarSize:      getEnvInt64("MAX_AVATAR_SIZE", 5*1024*1024),
 		MaxBodySize:        getEnvInt64("MAX_BODY_SIZE", 12*1024*1024),        // ordinary JSON/form requests
 		MaxUploadSize:      getEnvInt64("MAX_UPLOAD_SIZE", 210*1024*1024),   // attachment endpoint only, ~200MB payloads
