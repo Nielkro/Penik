@@ -2,10 +2,17 @@ export function getApiOrigin() {
   if (typeof window !== 'undefined' && window.__PENIK_API_ORIGIN__) {
     return window.__PENIK_API_ORIGIN__;
   }
-  if (typeof window !== 'undefined' && window.location.hostname.startsWith('web.')) {
-    return `${window.location.protocol}//api.${window.location.hostname.slice(4)}`;
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname.includes('dev')) {
+      return `${window.location.protocol}//${window.location.host}`;
+    }
+    if (hostname.startsWith('web.')) {
+      return `${window.location.protocol}//api.${hostname.slice(4)}`;
+    }
+    return `${window.location.protocol}//${window.location.host}`;
   }
-  return typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.host}` : '';
+  return '';
 }
 
 export const BASE = `${getApiOrigin()}/api/v1`;
