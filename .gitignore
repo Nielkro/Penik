@@ -12,6 +12,8 @@ client/node_modules/
 client/dist/
 server/cmd/server/dist/
 server/data/upload
+server/data/stickers
+server/data/stickers/*
 .env
 *.env
 server/.env
