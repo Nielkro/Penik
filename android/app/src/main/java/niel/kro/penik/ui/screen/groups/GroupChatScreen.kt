@@ -290,8 +290,8 @@ fun GroupChatScreen(
                             )
                         }
                         Column {
-                            Text(groupName, color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.SemiBold)
-                            Text("${members.size} участников", color = LocalAppColors.current.textMuted, fontSize = 12.sp)
+                            Text(groupName, color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${members.size} участников", color = LocalAppColors.current.textMuted, fontSize = 11.sp)
                         }
                     }
                 },

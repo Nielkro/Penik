@@ -498,7 +498,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 }
 
 .chat-header-name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -506,7 +506,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 }
 
 .chat-header-nick {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
