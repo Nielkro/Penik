@@ -75,6 +75,15 @@ class ChatRoomViewModel @Inject constructor(
     private val _safetyWords = MutableStateFlow<List<String>?>(null)
     val safetyWords: StateFlow<List<String>?> = _safetyWords
 
+    private val _safetyQrPayload = MutableStateFlow<String?>(null)
+    val safetyQrPayload: StateFlow<String?> = _safetyQrPayload
+
+    private val _safetyFingerprintHex = MutableStateFlow<String?>(null)
+    val safetyFingerprintHex: StateFlow<String?> = _safetyFingerprintHex
+
+    private val _safetyVerifyResult = MutableStateFlow<Boolean?>(null)
+    val safetyVerifyResult: StateFlow<Boolean?> = _safetyVerifyResult
+
     private val _showSafetyDialog = MutableStateFlow(false)
     val showSafetyDialog: StateFlow<Boolean> = _showSafetyDialog
 
@@ -277,6 +286,7 @@ class ChatRoomViewModel @Inject constructor(
 
     fun dismissSafetyDialog() {
         _showSafetyDialog.value = false
+        _safetyVerifyResult.value = null
     }
 
     fun onE2eeClick() {
@@ -287,19 +297,47 @@ class ChatRoomViewModel @Inject constructor(
         _showE2eeDialog.value = false
     }
 
+    private data class SafetyBundle(
+        val number: String,
+        val words: List<String>,
+        val qrPayload: String,
+        val hex: String
+    )
+
     private fun loadSafetyNumber() {
         viewModelScope.launch {
             try {
-                val (number, words) = withContext(Dispatchers.IO) { calculateSafetyData() }
-                _safetyNumber.value = number
-                _safetyWords.value = words
+                val data = withContext(Dispatchers.IO) { calculateSafetyData() }
+                _safetyNumber.value = data.number
+                _safetyWords.value = data.words
+                _safetyQrPayload.value = data.qrPayload
+                _safetyFingerprintHex.value = data.hex
             } catch (e: Exception) {
                 _safetyNumber.value = "Ошибка загрузки"
             }
         }
     }
 
-    private suspend fun calculateSafetyData(): Pair<String, List<String>> {
+    fun verifyScannedQr(raw: String): Boolean? {
+        val trimmed = raw.trim()
+        val expected = _safetyFingerprintHex.value ?: return null
+        val fp = when {
+            trimmed.startsWith("penik://safety?fp=") -> trimmed.substringAfter("penik://safety?fp=").substringBefore("&")
+            trimmed.contains("fp=") -> trimmed.substringAfter("fp=").substringBefore("&")
+            trimmed.matches(Regex("^[0-9a-fA-F]{64}$")) -> trimmed
+            else -> null
+        } ?: return null
+
+        val matches = fp.equals(expected, ignoreCase = true)
+        _safetyVerifyResult.value = matches
+        return matches
+    }
+
+    fun resetVerifyResult() {
+        _safetyVerifyResult.value = null
+    }
+
+    private suspend fun calculateSafetyData(): SafetyBundle {
         val myId = tokenStorage.getUserId()
         val bundle1 = apiService.getKeyBundle(myId).body()
         val bundle2 = apiService.getKeyBundle(chatUserId).body()
@@ -317,7 +355,9 @@ class ChatRoomViewModel @Inject constructor(
 
         val number = SafetyNumber.compute(keys1, keys2)
         val words = SafetyNumber.computeWords(keys1, keys2)
-        return Pair(number, words)
+        val qrPayload = SafetyNumber.computeQrPayload(keys1, keys2)
+        val hex = SafetyNumber.computeFingerprintHex(keys1, keys2)
+        return SafetyBundle(number, words, qrPayload, hex)
     }
 
     fun forwardMessage(rawText: String, senderName: String, target: niel.kro.penik.ui.components.ForwardTargetItem, onDone: () -> Unit) {

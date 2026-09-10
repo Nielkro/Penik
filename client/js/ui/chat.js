@@ -1695,7 +1695,25 @@ export async function showSafetyExplanationModal(peerId) {
     )
   );
 
-  // QR Container
+  // Segmented Tabs: [ QR-код ] [ Кодовые слова ] [ По-старому ]
+  let activeTab = 0; // 0: QR, 1: Words, 2: Numbers
+
+  const tabsRow = el("div", {
+    style: "display:flex;background:rgba(255,255,255,0.06);border-radius:10px;padding:3px;margin-bottom:16px;"
+  });
+
+  const tabBtns = ["QR-код", "Кодовые слова", "По-старому"].map((label, idx) => {
+    const btn = el("button", {
+      style: `flex:1;padding:6px 8px;font-size:12px;font-weight:500;border:none;border-radius:8px;cursor:pointer;transition:all 0.2s;background:${idx === 0 ? "rgba(0,230,118,0.2)" : "transparent"};color:${idx === 0 ? "#00e676" : "#aaa"};`
+    }, label);
+    btn.onclick = () => switchTab(idx);
+    tabsRow.appendChild(btn);
+    return btn;
+  });
+
+  content.appendChild(tabsRow);
+
+  // Tab 0: QR Container
   const qrContainer = el("div", {
     style: "display:flex;flex-direction:column;align-items:center;justify-content:center;margin-bottom:16px;"
   });
@@ -1710,63 +1728,25 @@ export async function showSafetyExplanationModal(peerId) {
   qrContainer.appendChild(qrLoading);
   content.appendChild(qrContainer);
 
-  // WordCoder Words Container
+  // Tab 1: Words Section
   const wordsSection = el("div", {
-    style: "margin-bottom:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px;"
+    style: "display:none;margin-bottom:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px;"
   });
 
   const wordsTitle = el("div", {
     style: "font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:8px;font-weight:600;"
-  }, "Кодовые слова (WordCoder)");
+  }, "Кодовые слова");
 
   const wordsGrid = el("div", {
-    style: "display:grid;grid-template-columns:repeat(2, 1fr);gap:6px;text-align:left;font-family:inherit;"
+    style: "display:grid;grid-template-columns:repeat(2, 1fr);gap:6px;text-align:left;font-family:inherit;margin-bottom:12px;"
   });
 
-  wordsSection.appendChild(wordsTitle);
-  wordsSection.appendChild(wordsGrid);
-  content.appendChild(wordsSection);
-
-  // Classic Numbers Container (Hidden by default, shown via toggle button)
-  const numbersSection = el("div", {
-    style: "display:none;margin-bottom:16px;background:rgba(255,255,255,0.03);border:1px dashed rgba(255,255,255,0.15);border-radius:10px;padding:12px;"
-  });
-  const numbersTitle = el("div", {
-    style: "font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:6px;font-weight:600;"
-  }, "Числовой отпечаток (старый формат)");
-  const numbersText = el("div", {
-    style: "font-size:18px;font-weight:bold;letter-spacing:2px;color:#00e676;font-family:monospace;"
-  }, "...");
-  numbersSection.appendChild(numbersTitle);
-  numbersSection.appendChild(numbersText);
-  content.appendChild(numbersSection);
-
-  // Action buttons
-  const buttonsRow = el("div", {
-    style: "display:flex;flex-direction:column;gap:8px;"
-  });
-
-  // Toggle button for classic numbers
-  let isNumbersVisible = false;
-  const toggleNumbersBtn = el("button", {
-    class: "btn-secondary",
-    style: "width:100%;padding:8px;font-size:12px;cursor:pointer;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:#ccc;border-radius:8px;transition:all 0.2s;"
-  }, "🔢 Показать числовой код (старый формат)");
-
-  toggleNumbersBtn.onclick = () => {
-    isNumbersVisible = !isNumbersVisible;
-    numbersSection.style.display = isNumbersVisible ? "block" : "none";
-    toggleNumbersBtn.textContent = isNumbersVisible
-      ? "🔤 Скрыть числовой код"
-      : "🔢 Показать числовой код (старый формат)";
-  };
-
+  let currentWordsStr = "";
   const copyWordsBtn = el("button", {
     class: "btn-secondary",
     style: "width:100%;padding:8px;font-size:12px;cursor:pointer;background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.3);color:#00e676;border-radius:8px;transition:all 0.2s;"
   }, "📋 Скопировать кодовые слова");
 
-  let currentWordsStr = "";
   copyWordsBtn.onclick = () => {
     if (currentWordsStr) {
       navigator.clipboard.writeText(currentWordsStr);
@@ -1774,14 +1754,62 @@ export async function showSafetyExplanationModal(peerId) {
     }
   };
 
+  wordsSection.appendChild(wordsTitle);
+  wordsSection.appendChild(wordsGrid);
+  wordsSection.appendChild(copyWordsBtn);
+  content.appendChild(wordsSection);
+
+  // Tab 2: Classic Numbers Section
+  const numbersSection = el("div", {
+    style: "display:none;margin-bottom:16px;background:rgba(255,255,255,0.03);border:1px dashed rgba(255,255,255,0.15);border-radius:10px;padding:12px;"
+  });
+  const numbersTitle = el("div", {
+    style: "font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:6px;font-weight:600;"
+  }, "Числовой отпечаток (старый формат)");
+  const numbersText = el("div", {
+    style: "font-size:18px;font-weight:bold;letter-spacing:2px;color:#00e676;font-family:monospace;margin-bottom:12px;"
+  }, "...");
+  const copyNumbersBtn = el("button", {
+    class: "btn-secondary",
+    style: "width:100%;padding:8px;font-size:12px;cursor:pointer;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:#ccc;border-radius:8px;transition:all 0.2s;"
+  }, "📋 Скопировать числовой код");
+
+  copyNumbersBtn.onclick = () => {
+    if (numbersText.textContent && numbersText.textContent !== "...") {
+      navigator.clipboard.writeText(numbersText.textContent);
+      showToast("Числовой код скопирован");
+    }
+  };
+
+  numbersSection.appendChild(numbersTitle);
+  numbersSection.appendChild(numbersText);
+  numbersSection.appendChild(copyNumbersBtn);
+  content.appendChild(numbersSection);
+
+  function switchTab(idx) {
+    activeTab = idx;
+    tabBtns.forEach((btn, i) => {
+      const active = i === idx;
+      btn.style.background = active ? "rgba(0,230,118,0.2)" : "transparent";
+      btn.style.color = active ? "#00e676" : "#aaa";
+      btn.style.fontWeight = active ? "600" : "500";
+    });
+    qrContainer.style.display = idx === 0 ? "flex" : "none";
+    wordsSection.style.display = idx === 1 ? "block" : "none";
+    numbersSection.style.display = idx === 2 ? "block" : "none";
+  }
+
+  // Action buttons
+  const buttonsRow = el("div", {
+    style: "display:flex;flex-direction:column;gap:8px;"
+  });
+
   const closeBtn = el("button", {
     class: "btn-primary",
     style: "width:100%;padding:10px;font-weight:600;margin-top:4px;cursor:pointer;border-radius:8px;",
     onclick: () => modal.remove()
   }, "Закрыть");
 
-  buttonsRow.appendChild(copyWordsBtn);
-  buttonsRow.appendChild(toggleNumbersBtn);
   buttonsRow.appendChild(closeBtn);
   content.appendChild(buttonsRow);
 
