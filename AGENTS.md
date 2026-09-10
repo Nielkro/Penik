@@ -28,3 +28,6 @@ fix: show "just now" for presence when last seen under a minute
 refactor: drop presence REST polling now that WS push delivers live updates
 chore: untrack uploaded files, ignore server/data/upload
 ```
+
+## 4. Android Build Verification (Antigravity)
+- If the agent is **Antigravity**, always verify Android build changes by running `bash ./gradlew compileDebugKotlin` from the `android/` directory. Never invoke `./gradlew` directly without `bash` (to avoid permission/deny rules).
