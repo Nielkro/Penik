@@ -283,6 +283,16 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
+    fun deleteChat(onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            messageRepository.deleteChatMessages(chatUserId)
+            chatRepository.deleteChat(chatUserId)
+            withContext(Dispatchers.Main) {
+                onDeleted()
+            }
+        }
+    }
+
     fun onSafetyClick() {
         _showSafetyDialog.value = true
     }
