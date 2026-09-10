@@ -313,7 +313,7 @@ func HandleServeStickerPackZip(cfg *config.Config) http.HandlerFunc {
 
 		zipPath := filepath.Join(packDir, "bundle.zip")
 		zipInfo, zipErr := os.Stat(zipPath)
-		if zipErr != nil || zipInfo.Size() == 0 || zipInfo.Size() > 6*1024*1024 {
+		if zipErr != nil || zipInfo.Size() == 0 {
 			_ = os.Remove(zipPath)
 			if err := buildStickerPackZip(packDir, zipPath); err != nil {
 				http.Error(w, "failed to build sticker bundle", http.StatusInternalServerError)

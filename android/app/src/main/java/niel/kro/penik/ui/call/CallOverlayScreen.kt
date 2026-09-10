@@ -488,7 +488,7 @@ private fun VpnCallWarningDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Активен VPN", fontWeight = FontWeight.Bold) },
+        title = { Text("Нужно выключить VPN", fontWeight = FontWeight.Bold) },
         text = {
             Text(
                 "Во время звонка медиа передаётся напрямую по протоколу UDP. " +
