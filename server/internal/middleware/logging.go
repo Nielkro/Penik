@@ -138,6 +138,9 @@ func ClientIP(r *http.Request) string {
 			return ip
 		}
 	}
+	if cfip := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); cfip != "" && net.ParseIP(cfip) != nil {
+		return cfip
+	}
 	if xrip := strings.TrimSpace(r.Header.Get("X-Real-IP")); xrip != "" && net.ParseIP(xrip) != nil {
 		return xrip
 	}
