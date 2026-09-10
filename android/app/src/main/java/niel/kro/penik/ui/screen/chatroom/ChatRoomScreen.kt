@@ -48,6 +48,22 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
 import niel.kro.penik.ui.components.StickerPickerBottomSheet
 import niel.kro.penik.ui.components.StickerPackDetailDialog
+import niel.kro.penik.ui.util.QrCodeGenerator
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.ui.viewinterop.AndroidView
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.core.content.ContextCompat
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -229,8 +245,21 @@ fun ChatRoomScreen(
     val coroutineScope = rememberCoroutineScope()
     val safetyNumber by viewModel.safetyNumber.collectAsState()
     val safetyWords by viewModel.safetyWords.collectAsState()
+    val safetyQrPayload by viewModel.safetyQrPayload.collectAsState()
+    val safetyVerifyResult by viewModel.safetyVerifyResult.collectAsState()
     val showDialog by viewModel.showSafetyDialog.collectAsState()
     val showE2eeDialog by viewModel.showE2eeDialog.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var isScanningSafetyQr by remember { mutableStateOf(false) }
+    val safetyCameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            isScanningSafetyQr = true
+        } else {
+            android.widget.Toast.makeText(context, "Требуется доступ к камере для сканирования QR", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
     val editingMessage by viewModel.editingMessage.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val isUnauthorized = connectionState == niel.kro.penik.data.network.websocket.ConnectionState.UNAUTHORIZED
@@ -371,113 +400,380 @@ fun ChatRoomScreen(
     }
 
     if (showDialog) {
+        var selectedSafetyTab by remember { mutableStateOf(0) } // 0: QR, 1: Words, 2: Old/Numbers
+
         AlertDialog(
-            onDismissRequest = { viewModel.dismissSafetyDialog() },
+            onDismissRequest = {
+                isScanningSafetyQr = false
+                viewModel.dismissSafetyDialog()
+            },
             containerColor = LocalAppColors.current.panel,
             titleContentColor = LocalAppColors.current.textPrimary,
             title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "Код безопасности ",
-                        fontWeight = FontWeight.SemiBold,
-                        color = LocalAppColors.current.textPrimary
-                    )
-                    Text(
-                        text = "E2EE",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = LocalAppColors.current.accent,
-                        modifier = Modifier.clickable { viewModel.onE2eeClick() }
-                    )
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Код безопасности ",
+                            fontWeight = FontWeight.SemiBold,
+                            color = LocalAppColors.current.textPrimary
+                        )
+                        Text(
+                            text = "E2EE",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = LocalAppColors.current.accent,
+                            modifier = Modifier.clickable { viewModel.onE2eeClick() }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(LocalAppColors.current.panelSecondary)
+                            .padding(3.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        val tabs = listOf("QR-код", "Кодовые слова", "По-старому")
+                        tabs.forEachIndexed { index, label ->
+                            val isSelected = selectedSafetyTab == index
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) LocalAppColors.current.accent.copy(alpha = 0.2f) else Color.Transparent)
+                                    .clickable {
+                                        selectedSafetyTab = index
+                                        isScanningSafetyQr = false
+                                        viewModel.resetVerifyResult()
+                                    }
+                                    .padding(vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) LocalAppColors.current.accent else LocalAppColors.current.textMuted
+                                )
+                            }
+                        }
+                    }
                 }
             },
             text = {
-                var showClassicNumbers by remember { mutableStateOf(false) }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Сравните кодовые слова с собеседником. Если они совпадают, ваше сквозное шифрование на 100% защищено от перехвата.",
-                        fontSize = 13.sp,
-                        color = LocalAppColors.current.textMuted,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 18.sp,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-
-                    if (safetyWords != null && safetyWords!!.isNotEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(10.dp))
-                                .padding(12.dp)
-                        ) {
-                            Text(
-                                text = "КОДОВЫЕ СЛОВА (WORDCODER)",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = LocalAppColors.current.textMuted,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            )
-                            val words = safetyWords!!
-                            for (row in 0 until (words.size + 1) / 2) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 3.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    val idx1 = row * 2
-                                    val idx2 = row * 2 + 1
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    when (selectedSafetyTab) {
+                        0 -> {
+                            // QR-код
+                            when {
+                                isScanningSafetyQr -> {
                                     Text(
-                                        text = "${idx1 + 1}. ${words[idx1]}",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = LocalAppColors.current.success,
-                                        modifier = Modifier.weight(1f)
+                                        text = "Наведите камеру на QR-код собеседника",
+                                        fontSize = 13.sp,
+                                        color = LocalAppColors.current.textMuted,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(bottom = 12.dp)
                                     )
-                                    if (idx2 < words.size) {
-                                        Text(
-                                            text = "${idx2 + 1}. ${words[idx2]}",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = LocalAppColors.current.success,
-                                            modifier = Modifier.weight(1f)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(240.dp)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(Color.Black)
+                                            .border(2.dp, LocalAppColors.current.accent, RoundedCornerShape(14.dp))
+                                    ) {
+                                        AndroidView(
+                                            factory = { ctx ->
+                                                PreviewView(ctx).also { previewView ->
+                                                    val providerFuture = ProcessCameraProvider.getInstance(ctx)
+                                                    providerFuture.addListener({
+                                                        val provider = providerFuture.get()
+                                                        val preview = Preview.Builder().build().also {
+                                                            it.setSurfaceProvider(previewView.surfaceProvider)
+                                                        }
+                                                        val analysis = ImageAnalysis.Builder()
+                                                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                                            .build()
+                                                        val scanner = BarcodeScanning.getClient()
+                                                        analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { proxy ->
+                                                            val image = proxy.image
+                                                            if (image != null) {
+                                                                val inputImage = InputImage.fromMediaImage(image, proxy.imageInfo.rotationDegrees)
+                                                                scanner.process(inputImage)
+                                                                    .addOnSuccessListener { barcodes ->
+                                                                        for (b in barcodes) {
+                                                                            val raw = b.rawValue
+                                                                            if (!raw.isNullOrBlank()) {
+                                                                                val res = viewModel.verifyScannedQr(raw)
+                                                                                if (res != null) {
+                                                                                    isScanningSafetyQr = false
+                                                                                    break
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    .addOnCompleteListener { proxy.close() }
+                                                            } else {
+                                                                proxy.close()
+                                                            }
+                                                        }
+                                                        provider.unbindAll()
+                                                        provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                                                    }, ContextCompat.getMainExecutor(ctx))
+                                                }
+                                            },
+                                            modifier = Modifier.fillMaxSize()
                                         )
+                                    }
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    TextButton(onClick = { isScanningSafetyQr = false }) {
+                                        Text("Отмена", color = LocalAppColors.current.textMuted)
+                                    }
+                                }
+                                safetyVerifyResult == true -> {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(LocalAppColors.current.success.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                                            .border(1.dp, LocalAppColors.current.success.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                                            .padding(16.dp)
+                                    ) {
+                                        Text("✅", fontSize = 40.sp, modifier = Modifier.padding(bottom = 8.dp))
+                                        Text(
+                                            text = "Ключи проверены!",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = LocalAppColors.current.success,
+                                            modifier = Modifier.padding(bottom = 6.dp)
+                                        )
+                                        Text(
+                                            text = "Отпечаток ключей совпадает. Ваше соединение полностью защищено от перехвата (MITM).",
+                                            fontSize = 13.sp,
+                                            color = LocalAppColors.current.textPrimary,
+                                            textAlign = TextAlign.Center,
+                                            lineHeight = 18.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    TextButton(onClick = { viewModel.resetVerifyResult() }) {
+                                        Text("Показать мой QR-код", color = LocalAppColors.current.accent)
+                                    }
+                                }
+                                safetyVerifyResult == false -> {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color(0xFFE53935).copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                                            .border(1.dp, Color(0xFFE53935).copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                                            .padding(16.dp)
+                                    ) {
+                                        Text("⚠️", fontSize = 40.sp, modifier = Modifier.padding(bottom = 8.dp))
+                                        Text(
+                                            text = "Ключи НЕ совпадают!",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFE53935),
+                                            modifier = Modifier.padding(bottom = 6.dp)
+                                        )
+                                        Text(
+                                            text = "Внимание! Отсканированный отпечаток отличается. Возможно вмешательство в сеть или подмена ключей.",
+                                            fontSize = 13.sp,
+                                            color = LocalAppColors.current.textPrimary,
+                                            textAlign = TextAlign.Center,
+                                            lineHeight = 18.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button(
+                                            onClick = {
+                                                viewModel.resetVerifyResult()
+                                                safetyCameraLauncher.launch(android.Manifest.permission.CAMERA)
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.accent),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text("Сканировать снова", fontSize = 12.sp, color = Color.White)
+                                        }
+                                        TextButton(onClick = { viewModel.resetVerifyResult() }) {
+                                            Text("Мой QR", color = LocalAppColors.current.textMuted)
+                                        }
+                                    }
+                                }
+                                else -> {
+                                    Text(
+                                        text = "Покажите QR-код собеседнику или отсканируйте его код для моментальной проверки.",
+                                        fontSize = 13.sp,
+                                        color = LocalAppColors.current.textMuted,
+                                        textAlign = TextAlign.Center,
+                                        lineHeight = 18.sp,
+                                        modifier = Modifier.padding(bottom = 12.dp)
+                                    )
+                                    val qrBitmap = remember(safetyQrPayload) {
+                                        safetyQrPayload?.let { QrCodeGenerator.generateBitmap(it, 400) }
+                                    }
+                                    if (qrBitmap != null) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(Color.White)
+                                                .padding(10.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Image(
+                                                bitmap = qrBitmap.asImageBitmap(),
+                                                contentDescription = "QR Code",
+                                                modifier = Modifier.size(170.dp)
+                                            )
+                                        }
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(170.dp)
+                                                .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(12.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("Загрузка QR...", color = LocalAppColors.current.textMuted, fontSize = 12.sp)
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    Button(
+                                        onClick = {
+                                            safetyCameraLauncher.launch(android.Manifest.permission.CAMERA)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.accent),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("📷 Отсканировать QR собеседника", fontSize = 13.sp, color = Color.White)
                                     }
                                 }
                             }
                         }
-                    }
-
-                    if (showClassicNumbers) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = safetyNumber ?: "Загрузка...",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = LocalAppColors.current.success,
-                            textAlign = TextAlign.Center,
-                            letterSpacing = 1.sp,
-                            lineHeight = 22.sp,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(8.dp))
-                                .padding(12.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    TextButton(onClick = { showClassicNumbers = !showClassicNumbers }) {
-                        Text(
-                            text = if (showClassicNumbers) "Скрыть числовой код" else "Показать числовой код (старый формат)",
-                            fontSize = 12.sp,
-                            color = LocalAppColors.current.accent
-                        )
+                        1 -> {
+                            // Кодовые слова
+                            Text(
+                                text = "Сравните эти 10 слов с собеседником при звонке или личной встрече.",
+                                fontSize = 13.sp,
+                                color = LocalAppColors.current.textMuted,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 18.sp,
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+                            if (safetyWords != null && safetyWords!!.isNotEmpty()) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(10.dp))
+                                        .padding(12.dp)
+                                ) {
+                                    Text(
+                                        text = "КОДОВЫЕ СЛОВА",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = LocalAppColors.current.textMuted,
+                                        modifier = Modifier.padding(bottom = 8.dp)
+                                    )
+                                    val words = safetyWords!!
+                                    for (row in 0 until (words.size + 1) / 2) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 3.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            val idx1 = row * 2
+                                            val idx2 = row * 2 + 1
+                                            Text(
+                                                text = "${idx1 + 1}. ${words[idx1]}",
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = LocalAppColors.current.success,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (idx2 < words.size) {
+                                                Text(
+                                                    text = "${idx2 + 1}. ${words[idx2]}",
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = LocalAppColors.current.success,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Button(
+                                    onClick = {
+                                        val textToCopy = safetyWords!!.mapIndexed { i, w -> "${i + 1}. $w" }.joinToString("\n")
+                                        val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                        cm?.setPrimaryClip(android.content.ClipData.newPlainText("Кодовые слова", textToCopy))
+                                        android.widget.Toast.makeText(context, "Кодовые слова скопированы", android.widget.Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.panelSecondary),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("📋 Скопировать кодовые слова", fontSize = 12.sp, color = LocalAppColors.current.textPrimary)
+                                }
+                            } else {
+                                Text("Загрузка кодовых слов...", fontSize = 13.sp, color = LocalAppColors.current.textMuted)
+                            }
+                        }
+                        2 -> {
+                            // По-старому (Числовой код)
+                            Text(
+                                text = "Классический числовой код E2EE (5 блоков по 5 цифр).",
+                                fontSize = 13.sp,
+                                color = LocalAppColors.current.textMuted,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 18.sp,
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+                            Text(
+                                text = safetyNumber ?: "Загрузка...",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = LocalAppColors.current.success,
+                                textAlign = TextAlign.Center,
+                                letterSpacing = 1.sp,
+                                lineHeight = 22.sp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(8.dp))
+                                    .padding(12.dp)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Button(
+                                onClick = {
+                                    safetyNumber?.let { num ->
+                                        val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                        cm?.setPrimaryClip(android.content.ClipData.newPlainText("Числовой код", num))
+                                        android.widget.Toast.makeText(context, "Числовой код скопирован", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.panelSecondary),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("📋 Скопировать числовой код", fontSize = 12.sp, color = LocalAppColors.current.textPrimary)
+                            }
+                        }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { viewModel.dismissSafetyDialog() }) {
+                TextButton(onClick = {
+                    isScanningSafetyQr = false
+                    viewModel.dismissSafetyDialog()
+                }) {
                     Text("Закрыть", color = LocalAppColors.current.accent)
                 }
             }

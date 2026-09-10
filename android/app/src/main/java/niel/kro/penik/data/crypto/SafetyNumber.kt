@@ -20,7 +20,7 @@ object SafetyNumber {
 
     private const val BLOCKS = 5
 
-    fun compute(identityKeysA: List<ByteArray>, identityKeysB: List<ByteArray>): String {
+    fun computeHash(identityKeysA: List<ByteArray>, identityKeysB: List<ByteArray>): ByteArray {
         val allKeys = (identityKeysA + identityKeysB)
             .filter { it.isNotEmpty() }
             .map { normalize(it) }
@@ -33,7 +33,24 @@ object SafetyNumber {
             System.arraycopy(key, 0, concat, index * 32, 32)
         }
 
-        val hash = MessageDigest.getInstance("SHA-256").digest(concat)
+        return MessageDigest.getInstance("SHA-256").digest(concat)
+    }
+
+    fun computeFingerprintHex(identityKeysA: List<ByteArray>, identityKeysB: List<ByteArray>): String {
+        val hash = computeHash(identityKeysA, identityKeysB)
+        val sb = java.lang.StringBuilder(hash.size * 2)
+        for (b in hash) {
+            sb.append(String.format("%02x", b.toInt() and 0xFF))
+        }
+        return sb.toString()
+    }
+
+    fun computeQrPayload(identityKeysA: List<ByteArray>, identityKeysB: List<ByteArray>): String {
+        return "penik://safety?fp=" + computeFingerprintHex(identityKeysA, identityKeysB)
+    }
+
+    fun compute(identityKeysA: List<ByteArray>, identityKeysB: List<ByteArray>): String {
+        val hash = computeHash(identityKeysA, identityKeysB)
 
         val digits = StringBuilder()
         var i = 0
@@ -82,8 +99,7 @@ object SafetyNumber {
         "орион", "орхидея", "осада", "осина", "остров", "отзвук", "отмель", "отряд",
         "павлин", "паладин", "пальма", "панцирь", "парус", "пассат", "перо", "песок",
         "пещера", "пингвин", "пирамида", "пирс", "пламя", "планета", "племя", "плита",
-        "плющ", "побег", "подвиг", "полюс", "порог", "порыв", "поток", "прибой",
-        "привал", "призма", "пристань", "провод", "прорыв", "пульсар", "пульс", "пустыня"
+        "плющ", "побег", "подвиг", "полюс", "порог", "порыв", "поток", "прибой"
     )
 
     fun computeWords(identityKeyA: ByteArray, identityKeyB: ByteArray): List<String> {
@@ -91,19 +107,7 @@ object SafetyNumber {
     }
 
     fun computeWords(identityKeysA: List<ByteArray>, identityKeysB: List<ByteArray>): List<String> {
-        val allKeys = (identityKeysA + identityKeysB)
-            .filter { it.isNotEmpty() }
-            .map { normalize(it) }
-            .sortedWith { a, b -> compareUnsigned(a, b) }
-
-        require(allKeys.isNotEmpty()) { "safety number: no identity keys provided" }
-
-        val concat = ByteArray(allKeys.size * 32)
-        allKeys.forEachIndexed { index, key ->
-            System.arraycopy(key, 0, concat, index * 32, 32)
-        }
-
-        val hash = MessageDigest.getInstance("SHA-256").digest(concat)
+        val hash = computeHash(identityKeysA, identityKeysB)
         return (0 until 10).map { i ->
             val idx = hash[i].toInt() and 0xFF
             RUSSIAN_WORDS[idx]
