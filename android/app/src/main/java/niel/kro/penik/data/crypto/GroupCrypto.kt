@@ -76,16 +76,8 @@ class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
         messageId: String,
         createdAt: Long,
     ): E2EEncrypted {
-        val salt = ByteArray(32).also { SecureRandom().nextBytes(it) }
-        val nonce = ByteArray(12).also { SecureRandom().nextBytes(it) }
-        val messageKey = hkdf(salt, groupKey, MESSAGE_INFO.toByteArray(Charsets.UTF_8), 32)
         val aad = buildAad(groupId, keyVersion, senderUserId, messageId, createdAt)
-
-        val cipher = chaChaPoly1305()
-        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(messageKey, "ChaCha20"), IvParameterSpec(nonce))
-        cipher.updateAAD(aad)
-        val ciphertext = cipher.doFinal(plaintext)
-        return E2EEncrypted(ciphertext, salt, nonce)
+        return e2ee.encrypt(plaintext, groupKey, MESSAGE_INFO, aad)
     }
 
     fun decryptMessage(
@@ -99,13 +91,8 @@ class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
         messageId: String,
         createdAt: Long,
     ): ByteArray {
-        val messageKey = hkdf(salt, groupKey, MESSAGE_INFO.toByteArray(Charsets.UTF_8), 32)
         val aad = buildAad(groupId, keyVersion, senderUserId, messageId, createdAt)
-
-        val cipher = chaChaPoly1305()
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(messageKey, "ChaCha20"), IvParameterSpec(nonce))
-        cipher.updateAAD(aad)
-        return cipher.doFinal(ciphertext)
+        return e2ee.decrypt(ciphertext, groupKey, salt, nonce, MESSAGE_INFO, aad)
     }
 
     /** Wrap a group key for one recipient device using the pairwise shared secret. */

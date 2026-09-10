@@ -58,6 +58,14 @@ class E2EECrypto {
     )
 
     fun generateX25519KeyPair(): Pair<ByteArray, ByteArray> {
+        if (RustCryptoCore.isAvailable()) {
+            val keyPairBytes = RustCryptoCore.generateKeyPair()
+            if (keyPairBytes != null && keyPairBytes.size == 64) {
+                val pubKey = keyPairBytes.copyOfRange(0, 32)
+                val privKey = keyPairBytes.copyOfRange(32, 64)
+                return Pair(privKey, pubKey)
+            }
+        }
         val kpg = KeyPairGenerator.getInstance("X25519")
         val keyPair = kpg.generateKeyPair()
         
@@ -71,13 +79,15 @@ class E2EECrypto {
     }
 
     fun derivePublicKey(privateKey: ByteArray): ByteArray {
+        if (RustCryptoCore.isAvailable()) {
+            val pub = RustCryptoCore.derivePublicKey(privateKey)
+            if (pub != null) return pub
+        }
         val basepoint = ByteArray(32).also { it[0] = 9 }
         return deriveSharedSecret(privateKey, basepoint)
     }
 
     fun deriveSharedSecret(myPrivateKey: ByteArray, theirPublicKey: ByteArray): ByteArray {
-        val keyFactory = KeyFactory.getInstance("X25519")
-        
         var cleanPublicKey = theirPublicKey
         if (cleanPublicKey.size == 44) {
             try {
@@ -95,6 +105,12 @@ class E2EECrypto {
             cleanPublicKey = cleanPublicKey.copyOfRange(1, 33)
         }
 
+        if (RustCryptoCore.isAvailable()) {
+            val shared = RustCryptoCore.diffieHellman(myPrivateKey, cleanPublicKey)
+            if (shared != null) return shared
+        }
+
+        val keyFactory = KeyFactory.getInstance("X25519")
         val fullPrivate = ByteArray(16 + myPrivateKey.size)
         System.arraycopy(pkcs8Header, 0, fullPrivate, 0, 16)
         System.arraycopy(myPrivateKey, 0, fullPrivate, 16, myPrivateKey.size)
@@ -113,6 +129,10 @@ class E2EECrypto {
     }
 
     fun buildPairwiseAad(senderUserId: Long, recipientUserId: Long, clientMsgId: String = "", timestamp: Long = 0L): ByteArray {
+        if (RustCryptoCore.isAvailable()) {
+            val aad = RustCryptoCore.buildPairwiseAad(senderUserId, recipientUserId, clientMsgId, timestamp)
+            if (aad != null) return aad
+        }
         val fields = listOf(
             "1",
             senderUserId.toString(),
@@ -132,6 +152,16 @@ class E2EECrypto {
     }
 
     fun encrypt(plaintext: ByteArray, sharedSecret: ByteArray, info: String = "penik-pairwise-message-v1", aad: ByteArray? = null): E2EEncrypted {
+        if (RustCryptoCore.isAvailable()) {
+            val infoBytes = info.toByteArray(Charsets.UTF_8)
+            val result = RustCryptoCore.encrypt(plaintext, sharedSecret, infoBytes, aad)
+            if (result != null && result.size >= 44) {
+                val salt = result.copyOfRange(0, 32)
+                val nonce = result.copyOfRange(32, 44)
+                val ciphertext = result.copyOfRange(44, result.size)
+                return E2EEncrypted(ciphertext, salt, nonce)
+            }
+        }
         val salt = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val derivedKeyBytes = hkdfDerive(salt, sharedSecret, info.toByteArray(Charsets.UTF_8), 32)
         
@@ -154,6 +184,11 @@ class E2EECrypto {
     }
 
     fun decrypt(ciphertext: ByteArray, sharedSecret: ByteArray, salt: ByteArray, nonce: ByteArray, info: String = "penik-pairwise-message-v1", aad: ByteArray? = null): ByteArray {
+        if (RustCryptoCore.isAvailable()) {
+            val infoBytes = info.toByteArray(Charsets.UTF_8)
+            val pt = RustCryptoCore.decrypt(ciphertext, salt, nonce, sharedSecret, infoBytes, aad)
+            if (pt != null) return pt
+        }
         try {
             val derivedKeyBytes = hkdfDerive(salt, sharedSecret, info.toByteArray(Charsets.UTF_8), 32)
             val derivedKey = SecretKeySpec(derivedKeyBytes, "ChaCha20")

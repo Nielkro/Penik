@@ -136,16 +136,19 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `rust/penik-crypto/src/safety.rs` — Safety number calculation, SHA-256 fingerprinting, and Russian mnemonic word coder.
 - `rust/penik-crypto/src/wasm.rs` — WebAssembly (`wasm-bindgen`) exports connecting `penik-crypto` to JavaScript runtimes.
 - `rust/penik-crypto/src/c_abi.rs` — C-ABI FFI exports connecting `penik-crypto` to Python ctypes and native callers.
+- `rust/penik-crypto/src/jni.rs` — JNI FFI exports connecting `penik-crypto` directly to Android Java/Kotlin runtime (`RustCryptoCore`).
 - `client/pkg/penik-crypto-wasm/` — Compiled WebAssembly package (`penik_crypto_bg.wasm`) and bindings produced by `wasm-pack`.
+- `android/app/src/main/jniLibs/` — Compiled Android native release shared libraries (`libpenik_crypto.so`) for `arm64-v8a`, `armeabi-v7a`, `x86_64`, and `x86`.
+- `android/app/src/main/java/niel/kro/penik/data/crypto/RustCryptoCore.kt` — Kotlin JNI wrapper object providing low-overhead access to native Rust crypto functions on Android.
 - `client/js/vault.js` — Seals local secrets (private identity key, group keys, session token) with a non-extractable AES-GCM key so an IndexedDB dump is not a usable copy.
 - `client/js/wordcoder.js` — Base256 mnemonic word coder using a 256-word Russian dictionary (<= 10 chars) for encoding byte sequences into memorable word lists.
 - `client/js/crypto.js` — Browser cryptography module powered by the `penik-crypto` WebAssembly micro-core with WebCrypto vault integration.
 - `client/js/pinning.js` — TOFU pinning of peer devices' public identity keys: pins on first sight, displays a warning notification and updates the pin on key change without blocking communication.
 - `client/js/groups.js` — Coordinates client-side group E2EE: epoch key generation, wrapping envelopes for devices, rotation, message encryption, and history synchronization.
-- `android/app/src/main/java/niel/kro/penik/data/crypto/E2EECrypto.kt` — Implements Android E2EE using X25519, HKDF, and ChaCha20-Poly1305, including encryption/decryption of private key backups and file attachment encryption (`encryptFileChaCha20`).
-- `android/app/src/main/java/niel/kro/penik/data/crypto/SafetyNumber.kt` — Single Android definition of the conversation safety number, kept byte-identical to the web implementation.
+- `android/app/src/main/java/niel/kro/penik/data/crypto/E2EECrypto.kt` — Implements Android E2EE using X25519, HKDF, and ChaCha20-Poly1305, delegated to native Rust crypto (`RustCryptoCore`) with fallback to Java security, including key backups and file attachment encryption (`encryptFileChaCha20`).
+- `android/app/src/main/java/niel/kro/penik/data/crypto/SafetyNumber.kt` — Single Android definition of conversation safety numbers and Russian word list, using native `RustCryptoCore` with byte-identical Kotlin fallback.
 - `android/app/src/main/java/niel/kro/penik/data/crypto/IdentityPinStore.kt` — TOFU pinning of peer devices' identity keys on Android (Keystore-backed), the counterpart of `client/js/pinning.js`: pins on first sight, reports a change once per pair without blocking delivery.
-- `android/app/src/main/java/niel/kro/penik/data/crypto/GroupCrypto.kt` — Implements group encryption, AAD protocol, derivation of message keys, and wrapping/unwrapping group keys for devices.
+- `android/app/src/main/java/niel/kro/penik/data/crypto/GroupCrypto.kt` — Implements group encryption, AAD protocol, derivation of message keys, and key wrapping/unwrapping, unified with `E2EECrypto` and native `RustCryptoCore`.
 - `android/app/src/main/java/niel/kro/penik/data/local/database/DatabaseEncryption.kt` — Prepares the Android local database encryption key and handles migration for previously unencrypted DBs.
 - `android/app/src/main/java/niel/kro/penik/data/repository/AuthRepository.kt` — Generates and persists stable identity key pairs during register/login, and handles upload/restore of encrypted key backups.
 - `server/internal/models/keys.go` — Defines server models for identity keys, one-time keys, key backups, and device key bundles.
