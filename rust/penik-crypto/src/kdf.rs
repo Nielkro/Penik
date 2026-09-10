@@ -11,3 +11,9 @@ pub fn hkdf_derive(salt: &[u8], ikm: &[u8], info: &[u8], length: usize) -> Resul
         .map_err(|e| CryptoError::HkdfError(e.to_string()))?;
     Ok(okm)
 }
+
+pub fn pbkdf2_derive(passphrase: &[u8], salt: &[u8], iterations: u32, length: usize) -> Vec<u8> {
+    let mut okm = vec![0u8; length];
+    pbkdf2::pbkdf2_hmac::<Sha256>(passphrase, salt, iterations, &mut okm);
+    okm
+}

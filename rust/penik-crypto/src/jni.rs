@@ -1,10 +1,11 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::{jbyteArray, jlong, jobjectArray, jstring};
+use jni::sys::{jbyteArray, jint, jlong, jobjectArray, jstring};
 use jni::JNIEnv;
+use zeroize::Zeroize;
 
-use crate::{aad, cipher, keys, safety};
+use crate::{aad, cipher, kdf, keys, safety};
 
 #[no_mangle]
 pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_generateKeyPair<'local>(
@@ -28,18 +29,20 @@ pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_der
     _class: JClass<'local>,
     priv_key: JByteArray<'local>,
 ) -> jbyteArray {
-    let priv_bytes = match env.convert_byte_array(priv_key) {
+    let mut priv_bytes = match env.convert_byte_array(priv_key) {
         Ok(b) => b,
         Err(_) => return std::ptr::null_mut(),
     };
 
-    match keys::derive_public_key(&priv_bytes) {
+    let res = match keys::derive_public_key(&priv_bytes) {
         Ok(pub_key) => match env.byte_array_from_slice(&pub_key) {
             Ok(arr) => arr.into_raw(),
             Err(_) => std::ptr::null_mut(),
         },
         Err(_) => std::ptr::null_mut(),
-    }
+    };
+    priv_bytes.zeroize();
+    res
 }
 
 #[no_mangle]
@@ -49,21 +52,108 @@ pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_dif
     priv_key: JByteArray<'local>,
     peer_pub_key: JByteArray<'local>,
 ) -> jbyteArray {
-    let priv_bytes = match env.convert_byte_array(priv_key) {
+    let mut priv_bytes = match env.convert_byte_array(priv_key) {
         Ok(b) => b,
         Err(_) => return std::ptr::null_mut(),
     };
     let peer_pub_bytes = match env.convert_byte_array(peer_pub_key) {
         Ok(b) => b,
-        Err(_) => return std::ptr::null_mut(),
+        Err(_) => {
+            priv_bytes.zeroize();
+            return std::ptr::null_mut();
+        }
     };
 
-    match keys::diffie_hellman(&priv_bytes, &peer_pub_bytes) {
+    let res = match keys::diffie_hellman(&priv_bytes, &peer_pub_bytes) {
         Ok(shared) => match env.byte_array_from_slice(&shared) {
             Ok(arr) => arr.into_raw(),
             Err(_) => std::ptr::null_mut(),
         },
         Err(_) => std::ptr::null_mut(),
+    };
+    priv_bytes.zeroize();
+    res
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_deriveKeyPbkdf2<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    passphrase: JString<'local>,
+    salt: JByteArray<'local>,
+    iterations: jint,
+    length: jint,
+) -> jbyteArray {
+    let pass_str: String = if passphrase.is_null() {
+        String::new()
+    } else {
+        env.get_string(&passphrase)
+            .map(|s| s.into())
+            .unwrap_or_default()
+    };
+    let salt_bytes = match env.convert_byte_array(salt) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    let derived = kdf::pbkdf2_derive(
+        pass_str.as_bytes(),
+        &salt_bytes,
+        iterations as u32,
+        length as usize,
+    );
+
+    match env.byte_array_from_slice(&derived) {
+        Ok(arr) => arr.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_hkdfDerive<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    salt: JByteArray<'local>,
+    ikm: JByteArray<'local>,
+    info: JByteArray<'local>,
+    length: jint,
+) -> jbyteArray {
+    let salt_bytes = match env.convert_byte_array(salt) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let ikm_bytes = match env.convert_byte_array(ikm) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let info_bytes = match env.convert_byte_array(info) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    match kdf::hkdf_derive(&salt_bytes, &ikm_bytes, &info_bytes, length as usize) {
+        Ok(okm) => match env.byte_array_from_slice(&okm) {
+            Ok(arr) => arr.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_zeroize<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    array: JByteArray<'local>,
+) {
+    if array.is_null() {
+        return;
+    }
+    if let Ok(len) = env.get_array_length(&array) {
+        if len > 0 {
+            let zeros = vec![0i8; len as usize];
+            let _ = env.set_byte_array_region(&array, 0, &zeros);
+        }
     }
 }
 

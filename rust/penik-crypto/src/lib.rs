@@ -13,7 +13,10 @@ pub mod wasm;
 pub mod jni;
 
 // Re-export common types and functions for easy use
-pub use aad::{build_group_aad, build_group_aad_v1, build_pairwise_aad, GROUP_PROTOCOL_VERSION, PAIRWISE_PROTOCOL_VERSION};
+pub use aad::{
+    build_group_aad, build_group_aad_v1, build_pairwise_aad, build_pairwise_aad_v2,
+    GROUP_PROTOCOL_VERSION, PAIRWISE_PROTOCOL_VERSION, PAIRWISE_PROTOCOL_VERSION_V2,
+};
 pub use cipher::{
     chacha20poly1305_decrypt, chacha20poly1305_encrypt, decrypt_file, e2ee_decrypt,
     e2ee_encrypt, encrypt_file, group_decrypt, group_encrypt, unwrap_group_key,
@@ -21,7 +24,7 @@ pub use cipher::{
     GROUP_WRAP_INFO, KEY_SIZE, NONCE_SIZE, TAG_SIZE,
 };
 pub use errors::CryptoError;
-pub use kdf::hkdf_derive;
+pub use kdf::{hkdf_derive, pbkdf2_derive};
 pub use keys::{
     decode_key, derive_public_key, diffie_hellman, encode_key, generate_key_pair,
     normalize_public_key, KeyPair,

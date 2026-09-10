@@ -155,3 +155,37 @@ fn test_group_key_wrap_unwrap() {
 
     assert_eq!(unwrapped, group_key);
 }
+
+#[test]
+fn test_pairwise_aad_v2_exact() {
+    use penik_crypto::build_pairwise_aad_v2;
+    let aad = build_pairwise_aad_v2(10, 20, "msg-dm-1");
+    let expected = vec![
+        0, 0, 0, 1, 50, // '2'
+        0, 0, 0, 2, 49, 48, // '1', '0'
+        0, 0, 0, 2, 50, 48, // '2', '0'
+        0, 0, 0, 8, 109, 115, 103, 45, 100, 109, 45, 49, // 'msg-dm-1'
+    ];
+    assert_eq!(aad, expected, "Pairwise AAD v2 matches expected byte-for-byte");
+}
+
+#[test]
+fn test_pbkdf2_derive() {
+    use penik_crypto::pbkdf2_derive;
+    let salt = b"salt_for_backup";
+    let key = pbkdf2_derive(b"super_secret_password", salt, 1000, 32);
+    assert_eq!(key.len(), 32);
+    // Deterministic output
+    let key2 = pbkdf2_derive(b"super_secret_password", salt, 1000, 32);
+    assert_eq!(key, key2);
+}
+
+#[test]
+fn test_hkdf_derive() {
+    use penik_crypto::hkdf_derive;
+    let ikm = [42u8; 32];
+    let salt = [7u8; 32];
+    let okm = hkdf_derive(&salt, &ikm, b"test-info", 64).expect("hkdf derive");
+    assert_eq!(okm.len(), 64);
+}
+

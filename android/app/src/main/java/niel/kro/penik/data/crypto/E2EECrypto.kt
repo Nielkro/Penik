@@ -268,6 +268,10 @@ class E2EECrypto {
     }
 
     private fun hkdfDerive(salt: ByteArray, ikm: ByteArray, info: ByteArray, length: Int): ByteArray {
+        if (RustCryptoCore.isAvailable()) {
+            val okm = RustCryptoCore.hkdfDerive(salt, ikm, info, length)
+            if (okm != null) return okm
+        }
         val macExtract = Mac.getInstance("HmacSHA256")
         val saltKey = if (salt.isEmpty()) {
             SecretKeySpec(ByteArray(32), "HmacSHA256")
@@ -333,10 +337,24 @@ class E2EECrypto {
     }
 
     private fun deriveKeyFromPassphrase(passphrase: String, salt: ByteArray, iterations: Int): SecretKeySpec {
+        if (RustCryptoCore.isAvailable()) {
+            val keyBytes = RustCryptoCore.deriveKeyPbkdf2(passphrase, salt, iterations, 32)
+            if (keyBytes != null) {
+                return SecretKeySpec(keyBytes, "AES")
+            }
+        }
         val spec = PBEKeySpec(passphrase.toCharArray(), salt, iterations, 256)
         val f = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
         val key = f.generateSecret(spec)
         return SecretKeySpec(key.encoded, "AES")
+    }
+
+    fun zeroize(array: ByteArray) {
+        if (RustCryptoCore.isAvailable()) {
+            RustCryptoCore.zeroize(array)
+        } else {
+            array.fill(0)
+        }
     }
 }
 
