@@ -87,6 +87,8 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/AndroidManifest.xml` — Android app declaration, components, permissions, application class, and FileProvider for decrypted attachments.
 - `android/app/src/main/res/xml/network_security_config.xml` — Network security configuration enforcing strict cleartext prohibition (`cleartextTrafficPermitted="false"`).
 - `android/app/src/main/res/xml/attachment_paths.xml` — FileProvider path configuration granting read-only content URIs for decrypted files in `cacheDir/attachments`.
+- `android/app/src/main/res/drawable/ic_launcher_monochrome.xml` — Vector monochrome silhouette layer for themed launcher icons.
+- `android/app/src/main/res/drawable/ic_logo_repik_monochrome.png` — Monochrome silhouette layer for Repik activity-alias themed icon.
 - `android/app/src/main/java/niel/kro/penik/MainActivity.kt` — Main Activity; enables edge-to-edge mode and launches Compose navigation within the app theme, with a global call overlay drawn above the nav graph and answer handling for call notification intents.
 - `android/app/src/main/java/niel/kro/penik/PenikApplication.kt` — Hilt Application class and entry point for the global WebSocket event coordinator.
 - `android/app/src/main/java/niel/kro/penik/ui/navigation/NavGraph.kt` — Compose Navigation graph for auth, main screen, direct/group chats, group settings, and pairing scanner.
