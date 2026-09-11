@@ -4,11 +4,11 @@
 
 # Penik Messenger
 
-Мессенджер со сквозным шифрованием: Go-бэкенд, веб-клиент и Android-приложение
+Мессенджер со сквозным шифрованием: Go-бэкенд, нативное Rust-ядро, веб-клиент и Android-приложение
 
 </div>
 
-Мультиплатформенный мессенджер с E2EE: Go-бэкенд, веб-клиент на ванильном JS и Android-клиент на Jetpack Compose. Мульти-девайс, личные и групповые чаты, аудио/видеозвонки через LiveKit, стикеры с импортом из Telegram, собственное E2EE-хранилище вложений, бинарный WebSocket-протокол на MessagePack.
+Мультиплатформенный мессенджер с E2EE: производительный Go-бэкенд, нативное криптографическое ядро на Rust, веб-клиент на ванильном JS/WebCrypto/WASM и Android-клиент на Jetpack Compose с JNI-интеграцией. Мульти-девайс, личные и групповые чаты, аудио/видеозвонки через LiveKit, стикеры с импортом из Telegram, собственное E2EE-хранилище вложений, бинарный WebSocket-протокол на MessagePack, динамическая смена идентичности приложения (Penik / Репик).
 
 Сервер маршрутизирует шифртекст и не имеет доступа к содержимому сообщений: ключи генерируются и остаются на устройствах, на сервер уходят только публичные ключи и запечатанные конверты.
 
@@ -17,9 +17,10 @@
 | Часть | Технологии |
 |-------|-----------|
 | Сервер | Go 1.22, SQLite (`modernc.org/sqlite`, pure Go без CGo), `nhooyr.io/websocket`, MessagePack, Argon2id, GeoIP (MaxMind .mmdb), LiveKit Server SDK |
-| Веб-клиент | Vanilla JS (ES-модули), Vite 8, libsodium-wrappers, WebCrypto, IndexedDB, Service Worker, LiveKit Client SDK |
-| Android | Kotlin 2.2, Compose (Material 3), Hilt, Room + SQLCipher, Retrofit, OkHttp WebSocket, msgpack-core, Coil, Media3 ExoPlayer, LiveKit Android SDK |
-| Криптография | X25519, HKDF, ChaCha20-Poly1305, AES-GCM, PBKDF2 (600k итераций), TOFU Key Pinning |
+| Нативное криптоядро | Rust 2021 (`penik-crypto`), JNI FFI (`jni` crate), C-ABI exports, WebAssembly (`wasm-bindgen`), Zeroize (secure RAM wipe) |
+| Веб-клиент | Vanilla JS (ES-модули), Vite 8, libsodium-wrappers, WebCrypto, IndexedDB, Service Worker (HTTP 206 streaming), LiveKit Client SDK |
+| Android | Kotlin 2.2, Compose (Material 3), Hilt, Room + SQLCipher, JNI Rust Crypto Core, Retrofit, OkHttp WebSocket, msgpack-core, Coil, Media3 ExoPlayer, LiveKit Android SDK |
+| Криптография | X25519, HKDF, ChaCha20-Poly1305, AES-GCM, PBKDF2 (600k итераций в Rust), Zeroize очистка RAM, TOFU Key Pinning, Pairwise AAD v2 |
 
 ## Структура репозитория
 
@@ -27,14 +28,17 @@
 Docs/            Подробная документация: REST API, WebSocket, Architecture, Calls
 server/          Go-бэкенд: REST + WebSocket, SQLite, встроенная раздача веб-клиента
   cmd/server/    точка входа, embed собранного фронтенда
-  internal/      config, db, handlers (auth, stickers, attachments, ws, call), middleware, ws
-client/          Веб-клиент (Vite)
+  internal/      config, db, handlers (auth, stickers, attachments, time, ws, call), middleware, ws
+rust/            Нативное ядро penik-crypto: X25519, ChaCha20-Poly1305, KDF, Zeroize, JNI, C-ABI, WASM
+scripts/         Скрипты сборки: build_rust.sh (NDK cross-compilation под arm64-v8a, armeabi-v7a, x86_64, x86)
+client/          Веб-клиент (Vite, WebCrypto, libsodium, WASM)
   js/            api, ws, crypto, groups, pairing, presence, call, app + ui/ (chat, stickers, call_modal)
   css/           стили
   sw.js          Service Worker: стриминг зашифрованной медиа через HTTP 206
-android/         Android-клиент (Gradle, Compose)
-  data/          network (api, ws), crypto, repository (stickers, attachment, auth, group), local
-  ui/            screen (auth, chats, chatroom, groups, call), components (stickers, video, bubble)
+android/         Android-клиент (Gradle, Compose, JNI Rust Crypto)
+  data/          network (api, ws, time), crypto (JNI RustCryptoCore), repository, local (Room + SQLCipher)
+  ui/            screen (auth, chats, chatroom, groups, call, settings), theme (AppIconManager)
+tests/           E2E и кросс-языковые тесты верификации криптографии (Python, Rust, JS)
 plan/            Спецификации протоколов: api_protocol, e2ee_plan, groups_plan, android_client_plan
 PROJECT_MAP.md   Индекс файлов проекта с описанием назначения каждого
 AUDIT.md         Аудит криптографии клиента
@@ -44,6 +48,14 @@ SECURITY_AUDIT.md Аудит безопасности с реестром нах
 Навигация по коду — через `PROJECT_MAP.md`: там перечислены все значимые файлы с описанием назначения.
 
 ## Быстрый старт
+
+### Нативное криптоядро (Rust / Android NDK)
+
+Скрипт кросс-компилирует библиотеки `libpenik_crypto.so` для 4 целевых платформ Android (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) и копирует их в `android/app/src/main/jniLibs/`:
+
+```bash
+bash scripts/build_rust.sh
+```
 
 ### Сервер
 
@@ -75,7 +87,7 @@ npm run build   # сборка в dist/ + копирование sw.js
 
 ```bash
 cd android
-./gradlew assembleDebug
+bash ./gradlew assembleDebug
 ```
 
 `minSdk` 26, `targetSdk` 36, `compileSdk` 37.
@@ -102,13 +114,19 @@ cd android
 
 ### Сквозное шифрование
 
-**Личные сообщения.** У каждого устройства своя долговременная пара X25519 (identity key). Общий секрет выводится через X25519, из него по HKDF со случайной 32-байтной солью — ключ сообщения (`info: penik-pairwise-message-v1`), шифрование ChaCha20-Poly1305 со случайным nonce. Дополнительные аутентификационные данные (AAD v1) связывают отправителя, получателя и таймстемп кадра. Приватный ключ в вебе запечатан в IndexedDB, на Android — в зашифрованном SQLCipher/Keystore хранилище; на сервер уходит только публичная часть.
+- **Личные сообщения (AAD v2):** У каждого устройства своя долговременная пара X25519 (identity key). Общий секрет выводится через X25519, из него по HKDF со случайной 32-байтной солью — ключ сообщения (`info: penik-pairwise-message-v1`), шифрование ChaCha20-Poly1305 со случайным nonce. Аутентификационные данные (AAD v2: `["2", sender, recipient, client_msg_id]`) связывают участников и ID сообщения без привязки к локальному времени устройств, что исключает ошибки расшифровки при рассинхронизации часов. Поддерживается обратная совместимость с сообщениями AAD v1.
+- **Группы:** У каждой эпохи группы свой 32-байтный ключ. Он оборачивается отдельно под каждое устройство-получателя на парном X25519-секрете и складывается на сервер как непрозрачный конверт (`group_key_envelopes`). Ключ сообщения выводится из группового по HKDF (`info: penik-group-message-v1`), а `groupId`, версия ключа, id сообщения, транспортный отправитель (`sender_user_id`) и время привязываются как AAD v2 — это исключает подмену авторства сервером и переносы шифртекста между чатами. При смене состава группы ключ ротируется.
+- **Нативное ядро Rust & Zeroize:** Все тяжелые и критические криптооперации на Android (X25519, ChaCha20-Poly1305, HKDF, PBKDF2, AAD, Safety Numbers) выполняются через нативные JNI-биндинги `penik-crypto` с автоматическим fallback на Kotlin. Память приватных ключей при уничтожении объектов очищается нулями (`zeroize`). Разблокировка бэкапа ключей через нативный Rust PBKDF2 (600 000 итераций) происходит в 10–20 раз быстрее.
+- **Синхронизация времени:** Сервер предоставляет эндпоинт `GET /api/v1/time`. Клиенты (Android и Web) при старте и реконнекте калибруют локальное смещение времени относительно сервера с компенсацией половины RTT. Сервер клэмпит время входящих сообщений (`msgTS <= now`) и атомарно обновляет `devices.last_seen`, гарантируя, что статус присутствия никогда не отстает от времени отправленных сообщений.
+- **Бэкап ключей:** Приватный ключ шифруется парольной фразой: PBKDF2 (600 000 итераций) → AES-GCM. Сервер хранит только непрозрачный blob.
+- **Safety numbers и TOFU Pinning:** Отпечаток пары identity-ключей для ручной сверки собеседниками. Автоматический TOFU-пининг (Trust-On-First-Use) запоминает открытые ключи собеседников и предупреждает о смене ключей.
 
-**Группы.** У каждой эпохи группы свой 32-байтный ключ. Он оборачивается отдельно под каждое устройство-получателя на парном X25519-секрете и складывается на сервер как непрозрачный конверт (`group_key_envelopes`). Ключ сообщения выводится из группового по HKDF (`info: penik-group-message-v1`), а `groupId`, версия ключа, id сообщения, транспортный отправитель (`sender_user_id`) и время привязываются как AAD v2 — это исключает подмену атрибуции сервером и переносы шифртекста между чатами. При смене состава группы ключ ротируется, конверты рассылаются заново.
+### Динамическая идентичность (Penik / Репик)
 
-**Бэкап ключей.** Приватный ключ шифруется парольной фразой: PBKDF2 (600 000 итераций) → AES-GCM. Сервер хранит только непрозрачный blob.
-
-**Safety numbers и TOFU Pinning.** Отпечаток пары identity-ключей для ручной сверки собеседниками. Автоматический TOFU-пининг (Trust-On-First-Use) запоминает открытые ключи собеседников и предупреждает о смене ключей.
+Android-клиент поддерживает переключение названия и иконки лаунчера в настройках без переустановки:
+- **Penik** — основная темная фирменная тема и брендинг.
+- **Репик** — альтернативное название и маскировочная иконка приложения.
+- Переключение реализовано через `activity-alias` в AndroidManifest и менеджер `AppIconManager`.
 
 ### Мульти-девайс и pairing
 
@@ -132,7 +150,7 @@ cd android
 
 ### Транспорт
 
-REST под `/api/v1/` — регистрация, профили, ключи, группы, история, pairing, вложения, стикеры, устройства. Реалтайм — один бинарный WebSocket на `/api/v1/ws`, токен передаётся через `Sec-WebSocket-Protocol: access_token, <token>`.
+REST под `/api/v1/` — регистрация, профили, синхронизация времени (`/api/v1/time`), ключи, группы, история, pairing, вложения, стикеры, устройства. Реалтайм — один бинарный WebSocket на `/api/v1/ws`, токен передаётся через `Sec-WebSocket-Protocol: access_token, <token>`.
 
 Формат кадра: первый байт — опкод, остаток — MessagePack payload.
 
@@ -167,16 +185,20 @@ SQLite в режиме WAL с включёнными внешними ключа
 
 Плюс глобальный лимит размера тела запроса, строгий Content-Security-Policy (CSP), CORS с проверкой origin и CSRF-защита в `server/internal/middleware/`.
 
-## Тесты
+## Тестирование
 
 ```bash
-# Тесты сервера
-cd server
-go test ./...
+# 1. Тесты Go-сервера
+cd server && go test ./...
 
-# Кросс-платформенные тесты криптографии (байт-в-байт AAD Web ↔ Android)
-cd client
-npm test
+# 2. Тесты Rust-криптоядра
+cd rust/penik-crypto && cargo test
+
+# 3. Кросс-платформенная сверка криптографии (Rust ↔ Python стандарты RFC 7748 / 8439 / 2898)
+python3 tests/e2e/test_crypto_core.py
+
+# 4. Кросс-платформенные тесты криптографии веб-клиента (JS WebCrypto / libsodium)
+node client/js/crypto.test.js
 ```
 
 ## Статус безопасности
@@ -185,12 +207,13 @@ npm test
 
 - **Forward Secrecy не реализован**: в текущей версии протокола нет механизма Double Ratchet / ротации предключей (OTPK) на каждое сообщение. Компрометация приватного identity-ключа устройства раскрывает историю входящих сообщений этого устройства.
 - **Аутентификация ключей**: реализован TOFU (Trust-On-First-Use) пининг публичных ключей собеседников с оповещением при их смене, а также 60-значные Safety Numbers для ручной сверки.
-- **Защита контекста (AAD)**: личные сообщения используют AAD v1, а групповые сообщения — AAD v2 с авторитарной привязкой ID отправителя (`sender_user_id`), ID группы, эпохи ключа, ID сообщения и времени, что исключает подмену авторства сервером и replay-атаки между чатами.
+- **Защита контекста (AAD)**: личные сообщения используют AAD v2 (независимый от времени, с обратной совместимостью с v1), а групповые сообщения — AAD v2 с авторитарной привязкой ID отправителя (`sender_user_id`), ID группы, эпохи ключа, ID сообщения и времени, что исключает подмену авторства сервером и replay-атаки между чатами.
+- **Защита RAM**: приватные ключи и промежуточные секреты в нативной памяти Android/Rust очищаются нулями перед освобождением через crate `zeroize`.
 - **Хранение секретов**:
   - **Web**: приватные identity и групповые ключи запечатаны в IndexedDB мастер-ключом WebCrypto (non-extractable vault).
   - **Android**: база данных Room защищена SQLCipher, приватные ключи хранятся в Keystore/EncryptedSharedPreferences.
   - **Сервер**: сессионные токены хранятся исключительно в виде SHA-256 хешей (`token_hash`). Реализован отзыв сессий (`/logout`) и удаленный сброс других сессий (`/logout/all`).
-- **Сетевая защита**: реализована валидация габаритов изображений перед декодированием (защита от декомпрессионных бомб памяти), строгий Content-Security-Policy (CSP), CORS без wildcard и rate limiting на чувствительные операции.
+- **Сетевая защита**: валидация габаритов изображений перед декодированием (защита от декомпрессионных бомб памяти), строгий Content-Security-Policy (CSP), CORS без wildcard, клэмп будущих таймстампов и rate limiting на чувствительные операции.
 
 ## Документация
 
@@ -202,4 +225,3 @@ npm test
 - [`PROJECT_MAP.md`](PROJECT_MAP.md) — Индекс исходников с назначением каждого файла
 - [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md) — Аудит безопасности с реестром находок
 - [`AUDIT.md`](AUDIT.md) — Аудит криптографии клиента
-
