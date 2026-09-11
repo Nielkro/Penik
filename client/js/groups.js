@@ -25,6 +25,7 @@ import {
   getGroupHistoryPacket,
   renameGroup as apiRenameGroup,
   uploadGroupAvatar,
+  getServerTimeSec,
 } from './api.js';
 import {
   deriveSharedSecret,
@@ -526,7 +527,7 @@ export async function sendGroupMessage(groupId, text, replyToMsgId = null) {
   // created_at is bound into the AAD and must match what the server persists and
   // relays. The server works in Unix seconds, so encode seconds here — mixing
   // milliseconds made the recipient's AAD mismatch and decryption fail.
-  const createdAt = Math.floor(Date.now() / 1000);
+  const createdAt = getServerTimeSec();
   const senderUserId = myUserId();
   const { ciphertext, salt, nonce } = await groupEncrypt(text, groupKey, groupId, version, senderUserId, messageId, createdAt);
 
@@ -805,7 +806,7 @@ export async function editGroupMessage(groupId, messageId, newText) {
   const version = group ? Number(group.current_key_version) : await currentVersion(groupId);
   const groupKey = await ensureGroupKey(groupId, version);
 
-  const editedAt = Math.floor(Date.now() / 1000);
+  const editedAt = getServerTimeSec();
   const senderUserId = myUserId();
   const { ciphertext, salt, nonce } = await groupEncrypt(newText, groupKey, groupId, version, senderUserId, messageId, editedAt);
 

@@ -7,6 +7,7 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.VideoFrameDecoder
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.launch
 import niel.kro.penik.domain.WebSocketEventCoordinator
 import niel.kro.penik.ui.notification.AppNotificationManager
 import javax.inject.Inject
@@ -20,12 +21,18 @@ class PenikApplication : Application(), ImageLoaderFactory {
     @Inject
     lateinit var appNotificationManager: AppNotificationManager
 
+    @Inject
+    lateinit var timeSyncManager: niel.kro.penik.data.network.TimeSyncManager
+
     override fun onCreate() {
         super.onCreate()
         niel.kro.penik.data.network.api.ApiConfig.init(this)
         niel.kro.penik.ui.theme.AppIconManager.init(this)
         appNotificationManager.createNotificationChannels()
         webSocketEventCoordinator.start()
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            timeSyncManager.syncTime()
+        }
 
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             private var startedActivities = 0

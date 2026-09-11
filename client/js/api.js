@@ -360,3 +360,31 @@ export function installStickerPack(id) { return post(`/stickers/pack/${encodeURI
 export function uninstallStickerPack(id) { return del(`/stickers/pack/${encodeURIComponent(id)}/install`); }
 export function importTelegramStickerPack(url) { return post('/stickers/import/telegram', { url }); }
 
+let _serverTimeOffsetMs = 0;
+let _timeSynced = false;
+
+export async function syncServerTime() {
+  try {
+    const t0 = Date.now();
+    const res = await fetch(`${BASE}/time`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const t1 = Date.now();
+    const latency = Math.round((t1 - t0) / 2);
+    const serverTimeMs = data.server_time_ms || (data.server_time * 1000);
+    _serverTimeOffsetMs = (serverTimeMs + latency) - t1;
+    _timeSynced = true;
+  } catch (e) {
+    console.warn('[TimeSync] Failed to sync server time:', e);
+  }
+}
+
+export function getServerTimeMs() {
+  return Date.now() + _serverTimeOffsetMs;
+}
+
+export function getServerTimeSec() {
+  return Math.floor(getServerTimeMs() / 1000);
+}
+
+

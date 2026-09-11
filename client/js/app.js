@@ -1,4 +1,4 @@
-import { getToken, setToken, primeToken, getUserById, apiGet, apiPost } from './api.js';
+import { getToken, setToken, primeToken, getUserById, apiGet, apiPost, syncServerTime, getServerTimeMs, getServerTimeSec } from './api.js';
 import {
   openDB, saveMessage, updateMessageRead, updateMessageText,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
@@ -431,6 +431,7 @@ async function boot() {
   localStorage.removeItem("penik_sign_jwk");
   await openDB();
   await primeToken();
+  syncServerTime().catch(() => {});
   setupGlobalWSListeners();
 
   const token = getToken();
@@ -1291,7 +1292,7 @@ export async function encryptMessagePayload(text, recipientUserId, clientMsgId =
   const myId = Number(localStorage.getItem("user_id"));
   const myDeviceId = Number(localStorage.getItem("device_id"));
   const isSelfChat = Number(recipientUserId) === myId;
-  const tsSec = Number(timestamp) > 1e11 ? Math.floor(Number(timestamp) / 1000) : (Number(timestamp) || Math.floor(Date.now() / 1000));
+  const tsSec = Number(timestamp) > 1e11 ? Math.floor(Number(timestamp) / 1000) : (Number(timestamp) || getServerTimeSec());
 
   let recipientBundle = await getCachedKeyBundle(recipientUserId);
   let senderBundle = await getCachedKeyBundle(myId);
@@ -1371,7 +1372,7 @@ export async function flushOutbox() {
         seen.add(id);
         return true;
       });
-      const msgCreatedAt = Number(msg.created_at || Date.now());
+      const msgCreatedAt = Number(msg.created_at || getServerTimeMs());
       const tsSec = msgCreatedAt > 1e11 ? Math.floor(msgCreatedAt / 1000) : msgCreatedAt;
       const sent = ws.send(0x01, {
         to_user_id: Number(msg.chat_id),

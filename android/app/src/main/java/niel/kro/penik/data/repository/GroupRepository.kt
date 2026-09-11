@@ -324,7 +324,7 @@ class GroupRepository @Inject constructor(
     /* ── Messaging ── */
 
     suspend fun insertOptimisticMessage(groupId: Long, messageId: String, text: String, replyToMsgId: String? = null) {
-        val createdAt = System.currentTimeMillis() / 1000
+        val createdAt = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
         val senderUserId = myUserId()
         val version = currentVersion(groupId)
         dao.upsertMessage(
@@ -347,7 +347,7 @@ class GroupRepository @Inject constructor(
         // created_at is bound into the AAD and must match what the server persists
         // and relays. Server and web work in Unix seconds — sending milliseconds
         // here made the recipient's AAD mismatch and decryption fail.
-        val createdAt = System.currentTimeMillis() / 1000
+        val createdAt = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
         val senderUserId = myUserId()
         val enc = groupCrypto.encryptMessage(
             text.toByteArray(Charsets.UTF_8), groupKey, groupId, version, senderUserId, messageId, createdAt
@@ -412,7 +412,7 @@ class GroupRepository @Inject constructor(
     suspend fun editMessage(groupId: Long, messageId: String, newText: String) {
         val version = currentVersion(groupId)
         val groupKey = ensureGroupKey(groupId, version) ?: return
-        val editedAt = System.currentTimeMillis() / 1000
+        val editedAt = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
         val senderUserId = myUserId()
         val enc = groupCrypto.encryptMessage(
             newText.toByteArray(Charsets.UTF_8), groupKey, groupId, version, senderUserId, messageId, editedAt

@@ -20,6 +20,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/handlers/pairing.go` — Creates, presents, and manages pairing sessions for linking new devices and transferring history.
 - `server/internal/handlers/keys.go` — REST handlers for publishing identity/key material, retrieving key bundles, and key backups.
 - `server/internal/handlers/presence.go` — Serves and broadcasts user presence states and active device information.
+- `server/internal/handlers/time.go` — REST handler `GET /api/v1/time` serving current server timestamp and millisecond precision for client clock calibration.
 - `server/internal/handlers/calls.go` — REST handlers for listing user call history (`GET /api/v1/calls`) and peer-to-peer call logs (`GET /api/v1/calls/peer/:user_id`).
 - `server/internal/handlers/stickers.go` — REST handlers for sticker packs: listing installed packs, pack metadata, install/uninstall, Telegram sticker pack import, and static file serving.
 - `server/internal/stickers/models.go` — Data models for sticker packs and individual stickers.
@@ -56,6 +57,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiService.kt` — Retrofit contract for the Android client's REST API covering auth, profiles, messages, pairing, groups, keys, and avatars.
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiModels.kt` — Kotlin data models for Retrofit API requests and responses.
 - `android/app/src/main/java/niel/kro/penik/data/network/websocket/WebSocketManager.kt` — Maintains the OkHttp WebSocket connection, binary MsgPack protocol, reconnects, ping/pong, and flow of typed events, including call signaling frames (0x30-0x39).
+- `android/app/src/main/java/niel/kro/penik/data/network/TimeSyncManager.kt` — Calibrates client-server clock offset via `/api/v1/time` to eliminate future message timestamps and skew.
 - `android/app/src/main/java/niel/kro/penik/domain/call/CallManager.kt` — Singleton 1:1 call state machine (idle/dialing/incoming/connecting/active): LiveKit room connect with primary/fallback failover, mic/camera toggles, ringtone and vibration, ring timeout, call timer resumed from the server answer time, call_id matching with `CALL_TAKEN` handling for calls answered on another device, track resync and camera restore after a LiveKit reconnect, and cleanup on all exit paths.
 - `android/app/src/main/java/niel/kro/penik/data/repository/SecureTokenStorage.kt` — Stores tokens, user/device IDs, and cryptographic keys in secure local storage.
 
