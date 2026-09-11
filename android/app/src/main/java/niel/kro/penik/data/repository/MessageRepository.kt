@@ -380,7 +380,7 @@ class MessageRepository @Inject constructor(
             recipientBundles.forEach { put(it.deviceId, toUserId) }
         }
 
-        val nowSec = System.currentTimeMillis() / 1000
+        val nowSec = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
         val aad = e2eeCrypto.buildPairwiseAadV2(myId, toUserId, clientMsgId)
 
         val payloads = allDevices.map { device ->
@@ -1166,7 +1166,7 @@ class MessageRepository @Inject constructor(
 
     suspend fun editMessage(chatUserId: Long, clientMsgId: String, newText: String) {
         val myId = tokenStorage.getUserId()
-        val nowSec = System.currentTimeMillis() / 1000
+        val nowSec = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
         val editedAtMs = nowSec * 1000
 
         // 1. Update Room DB immediately

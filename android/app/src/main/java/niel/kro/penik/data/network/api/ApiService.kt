@@ -23,6 +23,9 @@ interface ApiService {
     @POST("login")
     suspend fun login(@Body body: LoginRequestBody): Response<AuthResponseBody>
 
+    @GET("time")
+    suspend fun getServerTime(): Response<ServerTimeResponse>
+
     @GET("users/me")
     suspend fun getMe(): Response<UserSearchResult>
 

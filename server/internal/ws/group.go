@@ -136,6 +136,17 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 			return fmt.Errorf("group message: track device: %w", err)
 		}
 	}
+
+	lastSeenTS := nowUnix
+	if now > lastSeenTS {
+		lastSeenTS = now
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE devices SET last_seen=? WHERE id=? AND last_seen < ?`,
+		lastSeenTS, c.deviceID, lastSeenTS); err != nil {
+		return fmt.Errorf("group message: update sender last_seen: %w", err)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return err
 	}

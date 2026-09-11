@@ -384,3 +384,9 @@ data class CallLogEvent(
     @SerialName("ended_at") val endedAt: Long,
     val duration: Long = 0
 )
+
+@Serializable
+data class ServerTimeResponse(
+    @SerialName("server_time") val serverTime: Long,
+    @SerialName("server_time_ms") val serverTimeMs: Long
+)

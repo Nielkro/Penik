@@ -527,10 +527,14 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 
 	msgTS := now
 	if msg.CreatedAt > 0 {
-		msgTS = msg.CreatedAt
-		if msgTS > 1e11 {
-			msgTS = msgTS / 1000
+		ts := msg.CreatedAt
+		if ts > 1e11 {
+			ts = ts / 1000
 		}
+		if ts > now {
+			ts = now
+		}
+		msgTS = ts
 	}
 
 	for _, dev := range msg.Devices {
@@ -592,6 +596,13 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 				TS:                msgTS,
 			},
 		})
+	}
+
+	// Update sender device last_seen so last_seen is guaranteed to reflect message activity and be >= msgTS.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE devices SET last_seen=? WHERE id=? AND last_seen < ?`,
+		now, c.deviceID, now); err != nil {
+		return fmt.Errorf("update sender last_seen: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
