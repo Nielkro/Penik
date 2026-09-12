@@ -27,6 +27,7 @@ const ICON_CLOCK = "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z";
 const ICON_CLOSE = "M18 6L6 18M6 6l12 12";
 
 const packBlobCache = new Map();
+const packBlobMeta = new Map();
 const downloadingPacks = new Map();
 const loadedPacks = new Set();
 
@@ -120,9 +121,13 @@ export async function preloadPackBundle(packId) {
         const files = await unpackZipBundle(buf);
         for (const [fileName, blob] of files.entries()) {
           const blobUrl = URL.createObjectURL(blob);
+          const isVideo = blob.type.startsWith('video/') || fileName.endsWith('.webm');
+          const meta = { isVideo, mime: blob.type };
           packBlobCache.set(`${packId}/${fileName}`, blobUrl);
+          packBlobMeta.set(`${packId}/${fileName}`, meta);
           const base = fileName.replace(/\.[a-zA-Z0-9]+$/, '');
           packBlobCache.set(`${packId}/${base}`, blobUrl);
+          packBlobMeta.set(`${packId}/${base}`, meta);
         }
         loadedPacks.add(packId);
       }
@@ -153,6 +158,21 @@ export function getLocalStickerBlobUrl(packId, fileName, stickerId) {
   return null;
 }
 
+export function getLocalStickerEntry(packId, fileName, stickerId) {
+  if (!packId) return null;
+  const url = getLocalStickerBlobUrl(packId, fileName, stickerId);
+  if (!url) return null;
+  const meta = (fileName && packBlobMeta.get(`${packId}/${fileName}`)) ||
+               (stickerId && packBlobMeta.get(`${packId}/${stickerId}`)) ||
+               (fileName && packBlobMeta.get(`${packId}/${fileName.replace(/\.[a-zA-Z0-9]+$/, '')}`)) ||
+               (stickerId && packBlobMeta.get(`${packId}/${stickerId.replace(/\.[a-zA-Z0-9]+$/, '')}`));
+  return {
+    url,
+    isVideo: meta ? meta.isVideo : false,
+    mime: meta ? meta.mime : 'image/webp'
+  };
+}
+
 function createStickerMediaElement(url, isVideo, emoji = "", className = "sticker-img") {
   if (isVideo) {
     const vid = document.createElement("video");
@@ -175,7 +195,7 @@ function createStickerMediaElement(url, isVideo, emoji = "", className = "sticke
     });
     vid.onerror = () => {
       const fallbackImg = document.createElement("img");
-      fallbackImg.src = url;
+      fallbackImg.src = url.replace(/\.[a-zA-Z0-9]+$/, '.webp');
       fallbackImg.className = className;
       fallbackImg.loading = "lazy";
       fallbackImg.alt = emoji || "стикер";
