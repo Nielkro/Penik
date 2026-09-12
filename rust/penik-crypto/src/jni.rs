@@ -311,7 +311,7 @@ pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_dec
         &info_bytes[..]
     };
 
-    match cipher::e2ee_decrypt(&ct_bytes, &salt_bytes, &nonce_bytes, &secret_bytes, info_ref, &aad_bytes) {
+    match cipher::e2ee_decrypt(&ct_bytes, &secret_bytes, &salt_bytes, &nonce_bytes, info_ref, &aad_bytes) {
         Ok(pt) => match env.byte_array_from_slice(&pt) {
             Ok(arr) => arr.into_raw(),
             Err(_) => std::ptr::null_mut(),

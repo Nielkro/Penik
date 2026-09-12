@@ -314,14 +314,66 @@ export async function getMaxServerMsgId() {
   });
 }
 
-export async function updateMessageDelivered(msgId, status) {
+export async function updateMessageDelivered(msgId, status, clientMsgId = null) {
   await openDB();
   const transaction = _db.transaction(["messages"], "readwrite");
   const store = transaction.objectStore("messages");
-  
-  const msg = await get(store, msgId);
+
+  let msg = null;
+  if (msgId != null) {
+    msg = await get(store, msgId);
+    if (!msg && typeof msgId === "string" && !isNaN(Number(msgId))) {
+      msg = await get(store, Number(msgId));
+    }
+    if (!msg && typeof msgId === "number") {
+      msg = await get(store, String(msgId));
+    }
+  }
+  if (!msg && clientMsgId != null) {
+    msg = await get(store, clientMsgId);
+    if (!msg && typeof clientMsgId === "string" && !isNaN(Number(clientMsgId))) {
+      msg = await get(store, Number(clientMsgId));
+    }
+  }
+
+  // Fallback scan if direct get failed (e.g. pending message with client UUID key)
+  if (!msg) {
+    const targetStr = msgId != null ? String(msgId) : null;
+    const clientStr = clientMsgId != null ? String(clientMsgId) : null;
+    msg = await new Promise((resolve) => {
+      const req = store.openCursor();
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (!cursor) {
+          resolve(null);
+          return;
+        }
+        const val = cursor.value;
+        if (
+          (targetStr && (String(val.msg_id) === targetStr || String(cursor.key) === targetStr)) ||
+          (clientStr && (String(val.client_msg_id) === clientStr || String(val.msg_id) === clientStr || String(cursor.key) === clientStr))
+        ) {
+          resolve(val);
+        } else {
+          cursor.continue();
+        }
+      };
+      req.onerror = () => resolve(null);
+    });
+  }
+
   if (msg) {
+    const oldKey = msg.msg_id;
+    if (msgId != null && String(oldKey) !== String(msgId) && typeof oldKey === "string" && (oldKey.startsWith("tmp-") || oldKey.includes("-"))) {
+      await del(store, oldKey);
+      if (!msg.client_msg_id) {
+        msg.client_msg_id = String(oldKey);
+      }
+      msg.msg_id = msgId;
+    }
     msg.delivered = status;
+    delete msg.pending;
+    msg.server_acked = true;
     if (status) {
       msg.delivered_at = Date.now();
     }
@@ -331,14 +383,71 @@ export async function updateMessageDelivered(msgId, status) {
   return false;
 }
 
-export async function updateMessageRead(msgId) {
+export async function updateMessageRead(msgId, clientMsgId = null) {
   await openDB();
-  const store = tx("messages", "readwrite");
-  const msg = await get(store, msgId);
-  if (!msg) return false;
-  msg.read = 1;
-  await put(store, msg);
-  return true;
+  const transaction = _db.transaction(["messages"], "readwrite");
+  const store = transaction.objectStore("messages");
+
+  let msg = null;
+  if (msgId != null) {
+    msg = await get(store, msgId);
+    if (!msg && typeof msgId === "string" && !isNaN(Number(msgId))) {
+      msg = await get(store, Number(msgId));
+    }
+    if (!msg && typeof msgId === "number") {
+      msg = await get(store, String(msgId));
+    }
+  }
+  if (!msg && clientMsgId != null) {
+    msg = await get(store, clientMsgId);
+    if (!msg && typeof clientMsgId === "string" && !isNaN(Number(clientMsgId))) {
+      msg = await get(store, Number(clientMsgId));
+    }
+  }
+
+  // Fallback scan if direct get failed
+  if (!msg) {
+    const targetStr = msgId != null ? String(msgId) : null;
+    const clientStr = clientMsgId != null ? String(clientMsgId) : null;
+    msg = await new Promise((resolve) => {
+      const req = store.openCursor();
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (!cursor) {
+          resolve(null);
+          return;
+        }
+        const val = cursor.value;
+        if (
+          (targetStr && (String(val.msg_id) === targetStr || String(cursor.key) === targetStr)) ||
+          (clientStr && (String(val.client_msg_id) === clientStr || String(val.msg_id) === clientStr || String(cursor.key) === clientStr))
+        ) {
+          resolve(val);
+        } else {
+          cursor.continue();
+        }
+      };
+      req.onerror = () => resolve(null);
+    });
+  }
+
+  if (msg) {
+    const oldKey = msg.msg_id;
+    if (msgId != null && String(oldKey) !== String(msgId) && typeof oldKey === "string" && (oldKey.startsWith("tmp-") || oldKey.includes("-"))) {
+      await del(store, oldKey);
+      if (!msg.client_msg_id) {
+        msg.client_msg_id = String(oldKey);
+      }
+      msg.msg_id = msgId;
+    }
+    msg.read = 1;
+    msg.delivered = 1;
+    delete msg.pending;
+    msg.server_acked = true;
+    await put(store, msg);
+    return true;
+  }
+  return false;
 }
 
 // Contacts
@@ -438,13 +547,16 @@ export async function updateMsgId(oldId, newId) {
   return false;
 }
 
-export async function updateMsgIdAndDelivered(oldId, newId, deliveredStatus) {
+export async function updateMsgIdAndDelivered(oldId, newId, deliveredStatus, readStatus = 0) {
   await openDB();
   const transaction = _db.transaction(["messages"], "readwrite");
   const store = transaction.objectStore("messages");
   let msg = await get(store, oldId);
   if (!msg && typeof oldId === "string" && !isNaN(Number(oldId))) {
     msg = await get(store, Number(oldId));
+  }
+  if (!msg && typeof oldId === "number") {
+    msg = await get(store, String(oldId));
   }
   if (msg) {
     await del(store, oldId);
@@ -453,6 +565,9 @@ export async function updateMsgIdAndDelivered(oldId, newId, deliveredStatus) {
     }
     msg.msg_id = newId;
     msg.delivered = deliveredStatus;
+    if (readStatus) {
+      msg.read = 1;
+    }
     delete msg.pending;
     msg.server_acked = true;
     if (deliveredStatus) {
@@ -460,6 +575,29 @@ export async function updateMsgIdAndDelivered(oldId, newId, deliveredStatus) {
     }
     await put(store, msg);
     return true;
+  }
+  if (!msg && newId) {
+    msg = await get(store, newId);
+    if (!msg && typeof newId === "string" && !isNaN(Number(newId))) {
+      msg = await get(store, Number(newId));
+    }
+    if (!msg && typeof newId === "number") {
+      msg = await get(store, String(newId));
+    }
+    if (msg) {
+      msg.delivered = deliveredStatus != null ? deliveredStatus : msg.delivered;
+      if (readStatus) {
+        msg.read = 1;
+        msg.delivered = 1;
+      }
+      if (deliveredStatus && !msg.delivered_at) {
+        msg.delivered_at = Date.now();
+      }
+      delete msg.pending;
+      msg.server_acked = true;
+      await put(store, msg);
+      return true;
+    }
   }
   return false;
 }

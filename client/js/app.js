@@ -709,9 +709,11 @@ async function onMsgAckGlobal(payload) {
 }
 
 async function onMsgDeliveredGlobal(payload) {
-  if (!payload?.msg_id) return;
-  await updateMessageDelivered(payload.msg_id, 1);
-  if (_activeChatCallback) _activeChatCallback.onAck?.(payload.msg_id);
+  if (!payload?.msg_id && !payload?.client_msg_id) return;
+  const msgId = payload.msg_id;
+  const clientMsgId = payload.client_msg_id;
+  await updateMessageDelivered(msgId, 1, clientMsgId);
+  if (_activeChatCallback) _activeChatCallback.onStatus?.(msgId, "delivered", clientMsgId);
 }
 
 async function onOfflineBatchGlobal(payload) {
@@ -795,11 +797,11 @@ async function onMsgAckReceivedGlobal(payload) {
 
     if (_activeChatCallback && String(_activeChatCallback.userId) === String(pending.userId)) {
       _activeChatCallback.onAck?.(serverMsgId, clientMsgId);
-      const bubble = /** @type {HTMLElement} */ (document.querySelector(`[data-msg-id="${pending.tempId}"]`));
+      const bubble = /** @type {HTMLElement} */ (document.querySelector(`[data-msg-id="${pending.tempId}"], [data-client-msg-id="${pending.tempId}"]`));
       if (bubble) {
         bubble.dataset.msgId = serverMsgId;
         const statusEl = /** @type {HTMLElement} */ (bubble.querySelector(".msg-status, .msg-status-wrapper"));
-        if (statusEl) {
+        if (statusEl && !statusEl.classList.contains("msg-status-read") && statusEl.querySelectorAll(".chk").length < 2) {
           statusEl.dataset.msgId = serverMsgId;
           statusEl.className = "msg-status-wrapper";
           statusEl.innerHTML = '<span class="chk chk-1">✓</span>';
@@ -812,9 +814,11 @@ async function onMsgAckReceivedGlobal(payload) {
 }
 
 async function onMsgReadGlobal(payload) {
-  if (!payload?.msg_id) return;
-  await updateMessageRead(payload.msg_id);
-  if (_activeChatCallback) _activeChatCallback.onStatus?.(payload.msg_id, "read");
+  if (!payload?.msg_id && !payload?.client_msg_id) return;
+  const msgId = payload.msg_id;
+  const clientMsgId = payload.client_msg_id;
+  await updateMessageRead(msgId, clientMsgId);
+  if (_activeChatCallback) _activeChatCallback.onStatus?.(msgId, "read", clientMsgId);
 }
 
 async function onMsgDeleteNotifyGlobal(payload) {
@@ -854,18 +858,20 @@ async function onMsgDeleteNotifyGlobal(payload) {
 async function onMsgStatusBatchGlobal(payload) {
   if (!payload || !payload.statuses || !Array.isArray(payload.statuses)) return;
   for (const item of payload.statuses) {
-    if (!item.msg_id) continue;
+    if (!item.msg_id && !item.client_msg_id) continue;
+    const msgId = item.msg_id;
+    const clientMsgId = item.client_msg_id;
     if (item.delivered) {
-      await updateMessageDelivered(item.msg_id, 1);
+      await updateMessageDelivered(msgId, 1, clientMsgId);
     }
     if (item.read) {
-      await updateMessageRead(item.msg_id);
+      await updateMessageRead(msgId, clientMsgId);
     }
     if (_activeChatCallback) {
       if (item.read) {
-        _activeChatCallback.onStatus?.(item.msg_id, "read");
+        _activeChatCallback.onStatus?.(msgId, "read", clientMsgId);
       } else if (item.delivered) {
-        _activeChatCallback.onAck?.(item.msg_id);
+        _activeChatCallback.onStatus?.(msgId, "delivered", clientMsgId);
       }
     }
   }
@@ -1028,9 +1034,12 @@ export async function syncMessageHistory(options = {}) {
 
       if (Number(item.sender_id) === myId) {
         const resolved = item.client_msg_id
-          ? await updateMsgIdAndDelivered(item.client_msg_id, item.id, item.delivered)
+          ? await updateMsgIdAndDelivered(item.client_msg_id, item.id, item.delivered, item.read)
           : await findAndResolvePendingSentMessage(peerId, item.timestamp, item.id);
         if (resolved) {
+          if (item.read) {
+            await updateMessageRead(item.id, item.client_msg_id);
+          }
           if (item.edited_at) {
             await updateMessageText(item.id, text, item.edited_at * 1000);
           }
@@ -1044,7 +1053,8 @@ export async function syncMessageHistory(options = {}) {
         sender_id: Number(item.sender_id),
         plaintext: text,
         created_at: item.timestamp * 1000,
-        delivered: 1,
+        delivered: item.delivered != null ? (item.delivered ? 1 : 0) : 1,
+        read: item.read ? 1 : 0,
         client_msg_id: item.client_msg_id,
         reply_to_msg_id: item.reply_to_msg_id || null,
         edited_at: item.edited_at ? item.edited_at * 1000 : null,

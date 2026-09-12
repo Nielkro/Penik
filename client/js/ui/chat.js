@@ -799,8 +799,9 @@ export async function renderChat(container, userId) {
     if (isMine && !isSelfChat) {
       const hasServerId = (typeof msg.msg_id === "number") || (typeof msg.msg_id === "string" && /^\d+$/.test(msg.msg_id));
       const isPending = !hasServerId && (msg.pending === 1 || String(msg.msg_id).startsWith("tmp-") || !msg.server_acked);
-      const isDouble = Boolean(msg.read || (msg.delivered && msg.delivered > 0));
-      const isRead = Boolean(msg.read);
+      const isRead = Boolean(msg.read && Number(msg.read) > 0);
+      const isDelivered = Boolean(msg.delivered && Number(msg.delivered) > 0);
+      const isDouble = isRead || isDelivered;
       const statusClass = "msg-status-wrapper" + (isRead ? " msg-status-read" : "") + (isPending ? " msg-status-pending" : "");
       if (isPending) {
         statusEl = el("span", { class: statusClass, title: "Отправляется..." },
@@ -817,6 +818,9 @@ export async function renderChat(container, userId) {
         );
       }
       statusEl.dataset.msgId = msg.msg_id;
+      if (msg.client_msg_id) {
+        statusEl.dataset.clientMsgId = msg.client_msg_id;
+      }
     }
 
     const displayTime = ts;
@@ -1348,6 +1352,7 @@ export async function renderChat(container, userId) {
         plaintext: payloadStr,
         created_at: now,
         delivered: 0,
+        pending: 1,
         ciphertexts: ciphertexts,
         reply_to_msg_id: currentReply ? currentReply.msg_id : null
       };
@@ -1604,23 +1609,53 @@ export async function renderChat(container, userId) {
       else scrollDown.update();
     },
     (msgId, clientMsgId) => {
-      const targetId = clientMsgId || msgId;
-      const bubble = messagesEl.querySelector(`[data-msg-id="${targetId}"]`);
+      const ids = [clientMsgId, msgId].filter(Boolean);
+      let bubble = null;
+      for (const id of ids) {
+        const esc = CSS.escape(String(id));
+        bubble = messagesEl.querySelector(`[data-msg-id="${esc}"], [data-client-msg-id="${esc}"]`);
+        if (bubble) break;
+      }
       if (bubble) {
-        bubble.dataset.msgId = msgId;
+        if (msgId) bubble.dataset.msgId = msgId;
+        if (bubble._msg) {
+          bubble._msg.server_acked = true;
+          delete bubble._msg.pending;
+          if (msgId) bubble._msg.msg_id = msgId;
+        }
         const statusWrapper = bubble.querySelector(".msg-status-wrapper");
         if (statusWrapper) {
-          statusWrapper.dataset.msgId = msgId;
-          statusWrapper.className = "msg-status-wrapper";
-          statusWrapper.innerHTML = '<span class="chk chk-1">✓</span>';
+          if (msgId) statusWrapper.dataset.msgId = msgId;
+          if (!statusWrapper.classList.contains("msg-status-read") && statusWrapper.querySelectorAll(".chk").length < 2) {
+            statusWrapper.className = "msg-status-wrapper";
+            statusWrapper.innerHTML = '<span class="chk chk-1">✓</span>';
+          }
         }
       }
     },
-    (msgId, status) => {
-      const bubble = messagesEl.querySelector(`[data-msg-id="${msgId}"]`);
+    (msgId, status, clientMsgId) => {
+      const ids = [clientMsgId, msgId].filter(Boolean);
+      let bubble = null;
+      for (const id of ids) {
+        const esc = CSS.escape(String(id));
+        bubble = messagesEl.querySelector(`[data-msg-id="${esc}"], [data-client-msg-id="${esc}"]`);
+        if (bubble) break;
+      }
       if (bubble) {
+        if (msgId) bubble.dataset.msgId = msgId;
+        if (bubble._msg) {
+          if (status === "read") {
+            bubble._msg.read = 1;
+            bubble._msg.delivered = 1;
+          } else if (status === "delivered") {
+            bubble._msg.delivered = 1;
+          }
+          delete bubble._msg.pending;
+          bubble._msg.server_acked = true;
+        }
         const statusWrapper = bubble.querySelector(".msg-status-wrapper");
         if (statusWrapper) {
+          if (msgId) statusWrapper.dataset.msgId = msgId;
           statusWrapper.className = "msg-status-wrapper" + (status === "read" ? " msg-status-read" : "");
           statusWrapper.innerHTML = '<span class="chk chk-1">✓</span><span class="chk chk-2">✓</span>';
         }
@@ -1896,6 +1931,7 @@ export async function sendDirectMessageToUser(targetUserId, text) {
     plaintext: text,
     created_at: now,
     delivered: 0,
+    pending: 1,
     ciphertexts: ciphertexts
   };
   await saveMessage(storedMsg);
