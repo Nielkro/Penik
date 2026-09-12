@@ -418,3 +418,8 @@ pub unsafe extern "C" fn penik_zeroize(
     zeroize::Zeroize::zeroize(s);
     0
 }
+
+#[no_mangle]
+pub extern "C" fn penik_crypto_version() -> u32 {
+    crate::CRYPTO_CORE_VERSION
+}

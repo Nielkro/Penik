@@ -393,3 +393,11 @@ pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_gen
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_cryptoVersion<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jint {
+    crate::CRYPTO_CORE_VERSION as jint
+}

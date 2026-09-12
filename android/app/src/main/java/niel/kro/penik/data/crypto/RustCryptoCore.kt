@@ -2,17 +2,34 @@ package niel.kro.penik.data.crypto
 
 object RustCryptoCore {
     private var isLoaded = false
+    var coreVersion: Int = 0
+        private set
+
+    const val MIN_SUPPORTED_CORE_VERSION = 1
 
     init {
         try {
             System.loadLibrary("penik_crypto")
             isLoaded = true
+            try {
+                coreVersion = cryptoVersion()
+                android.util.Log.i("RustCryptoCore", "Loaded native penik_crypto (version: $coreVersion)")
+                if (coreVersion < MIN_SUPPORTED_CORE_VERSION) {
+                    android.util.Log.e("RustCryptoCore", "Outdated penik_crypto: version $coreVersion, expected >= $MIN_SUPPORTED_CORE_VERSION")
+                }
+            } catch (ve: UnsatisfiedLinkError) {
+                coreVersion = 0
+                android.util.Log.w("RustCryptoCore", "Native penik_crypto loaded but lacks cryptoVersion symbol (legacy/unversioned)")
+            }
         } catch (e: Throwable) {
             isLoaded = false
         }
     }
 
     fun isAvailable(): Boolean = isLoaded
+
+    @JvmStatic
+    external fun cryptoVersion(): Int
 
     @JvmStatic
     external fun generateKeyPair(): ByteArray?

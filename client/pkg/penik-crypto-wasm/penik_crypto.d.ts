@@ -138,6 +138,8 @@ export interface InitOutput {
     readonly __wbindgen_start: () => void;
 }
 
+export function penikCryptoVersion(): number;
+
 export type SyncInitInput = BufferSource | WebAssembly.Module;
 
 /**

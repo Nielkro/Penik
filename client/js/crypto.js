@@ -3,6 +3,9 @@ import initWasm, * as wasmCrypto from "../pkg/penik-crypto-wasm/penik_crypto.js"
 
 const subtle = crypto.subtle;
 
+export const MIN_CRYPTO_CORE_VERSION = 1;
+export let cryptoCoreVersion = 0;
+
 let _wasmReady = null;
 
 export async function getWasm() {
@@ -17,6 +20,21 @@ export async function getWasm() {
       } else {
         // Browser / Vite environment
         await initWasm();
+      }
+      try {
+        const getVer = wasmCrypto["penikCryptoVersion"];
+        if (typeof getVer === "function") {
+          cryptoCoreVersion = getVer();
+          console.info(`[crypto] penik-crypto WASM core initialized (version: ${cryptoCoreVersion})`);
+          if (cryptoCoreVersion < MIN_CRYPTO_CORE_VERSION) {
+            console.warn(`[crypto] Outdated penik-crypto WASM core: version ${cryptoCoreVersion}, expected >= ${MIN_CRYPTO_CORE_VERSION}`);
+          }
+        } else {
+          cryptoCoreVersion = 0;
+          console.warn("[crypto] penik-crypto WASM core initialized (legacy / unversioned)");
+        }
+      } catch (e) {
+        cryptoCoreVersion = 0;
       }
       return wasmCrypto;
     })();
