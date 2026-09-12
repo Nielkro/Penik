@@ -171,6 +171,9 @@ fun GroupChatScreen(
         }
         items
     }
+    val reversedTimelineItems = remember(timelineItems) {
+        timelineItems.asReversed()
+    }
     var inputText by remember { mutableStateOf("") }
     var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
 
@@ -236,51 +239,32 @@ fun GroupChatScreen(
         )
     }
 
-    // Show the button only when the last message is not visible.
+    // Show the button when not at the bottom (with reverseLayout=true, index 0 is bottom)
     val showScrollDown by remember {
         derivedStateOf {
-            val layoutInfo = listState.layoutInfo
-            val totalItems = layoutInfo.totalItemsCount
-            if (totalItems == 0) return@derivedStateOf false
-            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            lastVisibleIndex < totalItems - 1
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 20
         }
     }
 
     val myRole = members.find { it.userId == viewModel.myUserId }?.role ?: "member"
     val canManage = myRole in listOf("owner", "admin")
 
-    var previousSize by remember { mutableStateOf(0) }
-    var isInitialScrollDone by remember(groupId) { mutableStateOf(false) }
+    var previousFirstItemId by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            if (!isInitialScrollDone || previousSize == 0) {
-                listState.scrollToItem(messages.lastIndex)
-                isInitialScrollDone = true
-            } else if (messages.size > previousSize) {
-                val layoutInfo = listState.layoutInfo
-                val totalItems = layoutInfo.totalItemsCount
-                val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-                val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 5)
-                if (isNearBottom) {
-                    listState.animateScrollToItem(messages.lastIndex)
-                }
+    LaunchedEffect(reversedTimelineItems.firstOrNull()?.id) {
+        val newestId = reversedTimelineItems.firstOrNull()?.id
+        if (newestId != null && previousFirstItemId != null && newestId != previousFirstItemId) {
+            if (listState.firstVisibleItemIndex <= 2) {
+                listState.animateScrollToItem(0)
             }
-            previousSize = messages.size
         }
+        previousFirstItemId = newestId
     }
 
     val imeBottomPadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
     LaunchedEffect(imeBottomPadding) {
-        if (messages.isNotEmpty()) {
-            val layoutInfo = listState.layoutInfo
-            val totalItems = layoutInfo.totalItemsCount
-            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 3)
-            if (isNearBottom) {
-                listState.scrollToItem(messages.lastIndex)
-            }
+        if (reversedTimelineItems.isNotEmpty() && listState.firstVisibleItemIndex <= 1) {
+            listState.scrollToItem(0)
         }
     }
 
@@ -400,9 +384,9 @@ fun GroupChatScreen(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                    reverseLayout = false
+                    reverseLayout = true
                 ) {
-                    items(timelineItems, key = { it.id }) { item ->
+                    items(reversedTimelineItems, key = { it.id }) { item ->
                         when (item) {
                             is GroupTimelineItem.DateHeader -> {
                                 niel.kro.penik.ui.components.DateDivider(text = item.dateText)
@@ -456,7 +440,7 @@ fun GroupChatScreen(
                                         viewModel.startEditing(msg)
                                     },
                                     onReplyClick = { parentId ->
-                                        val index = timelineItems.indexOfFirst { it.id == parentId }
+                                        val index = reversedTimelineItems.indexOfFirst { it.id == parentId }
                                         if (index >= 0) {
                                             coroutineScope.launch {
                                                 listState.animateScrollToItem(index)
@@ -487,7 +471,7 @@ fun GroupChatScreen(
                     FloatingActionButton(
                         onClick = {
                             coroutineScope.launch {
-                                listState.animateScrollToItem(timelineItems.lastIndex)
+                                listState.animateScrollToItem(0)
                             }
                         },
                         containerColor = LocalAppColors.current.panel,
