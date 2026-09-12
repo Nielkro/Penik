@@ -32,5 +32,6 @@ type DeviceKeyBundle struct {
 	IKPub    []byte `msgpack:"ik_pub"`
 	SPKPub   []byte `msgpack:"spk_pub"`
 	SPKSig   []byte `msgpack:"spk_sig"`
-	OPKPub   []byte `msgpack:"opk_pub"` // may be nil if exhausted
+	OPKPub        []byte `msgpack:"opk_pub"` // may be nil if exhausted
+	CryptoVersion int    `msgpack:"crypto_version" json:"crypto_version"`
 }

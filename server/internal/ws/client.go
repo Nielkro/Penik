@@ -594,6 +594,7 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 				Salt:              dev.Salt,
 				Nonce:             dev.Nonce,
 				TS:                msgTS,
+				V:                 dev.V,
 			},
 		})
 	}
@@ -884,7 +885,7 @@ func (c *Client) handleKeyFetchReq(ctx context.Context, req *KeyFetchReq) error 
 	}
 	defer tx.Rollback()
 
-	query := `SELECT d.id, d.registration_id, ik.ik_pub, ik.spk_pub, ik.spk_sig
+	query := `SELECT d.id, d.registration_id, ik.ik_pub, ik.spk_pub, ik.spk_sig, d.crypto_version
 		 FROM devices d
 		 JOIN identity_keys ik ON ik.device_id = d.id
 		 WHERE d.user_id=?`
@@ -904,8 +905,11 @@ func (c *Client) handleKeyFetchReq(ctx context.Context, req *KeyFetchReq) error 
 	var bundles []DeviceKeyBundle
 	for rows.Next() {
 		var b DeviceKeyBundle
-		if err := rows.Scan(&b.DeviceID, &b.RegistrationID, &b.IKPub, &b.SPKPub, &b.SPKSig); err != nil {
+		if err := rows.Scan(&b.DeviceID, &b.RegistrationID, &b.IKPub, &b.SPKPub, &b.SPKSig, &b.CryptoVersion); err != nil {
 			continue
+		}
+		if b.CryptoVersion <= 0 {
+			b.CryptoVersion = 1
 		}
 		// Skip devices with malformed key material (legacy/corrupt rows). A valid
 		// curve25519 pubkey is 32 bytes or 33 with a 0x05 version prefix; an

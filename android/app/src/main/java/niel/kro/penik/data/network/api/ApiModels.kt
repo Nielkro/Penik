@@ -10,6 +10,7 @@ data class LoginRequestBody(
     @SerialName("device_name") val deviceName: String,
     val platform: String = "",
     val location: String = "",
+    @SerialName("crypto_version") val cryptoVersion: Int = 2,
     @SerialName("ik_pub") val ikPub: String? = null
 )
 
@@ -21,6 +22,7 @@ data class RegisterRequestBody(
     @SerialName("device_name") val deviceName: String,
     val platform: String = "",
     val location: String = "",
+    @SerialName("crypto_version") val cryptoVersion: Int = 2,
     @SerialName("ik_pub") val ikPub: String? = null
 )
 
@@ -72,7 +74,18 @@ data class ChangePasswordRequestBody(
 @Serializable
 data class DeviceBundle(
     @SerialName("device_id") val deviceId: Long,
-    @SerialName("identity_key") val identityKey: String
+    @SerialName("identity_key") val identityKey: String,
+    @SerialName("crypto_version") val cryptoVersion: Int = 1
+)
+
+@Serializable
+data class AppVersionInfo(
+    @SerialName("min_android_version_code") val minAndroidVersionCode: Int = 1,
+    @SerialName("latest_android_version_code") val latestAndroidVersionCode: Int = 1,
+    @SerialName("latest_android_version_name") val latestAndroidVersionName: String = "",
+    @SerialName("min_crypto_version") val minCryptoVersion: Int = 1,
+    @SerialName("apk_url") val apkUrl: String = "",
+    @SerialName("release_notes") val releaseNotes: String = ""
 )
 
 @Serializable

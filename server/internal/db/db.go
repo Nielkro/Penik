@@ -129,6 +129,11 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate group_message edited_at: %w", err)
 	}
 
+	if err := migrateCryptoVersion(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate crypto_version: %w", err)
+	}
+
 	// Indexes are created last: they reference columns the legacy migrations above
 	// may have only just added.
 	if err := createIndexes(sqlDB); err != nil {
@@ -838,6 +843,20 @@ func migrateFcmToken(database *sql.DB) error {
 	if !has {
 		if _, err := database.Exec("ALTER TABLE devices ADD COLUMN fcm_token TEXT NOT NULL DEFAULT ''"); err != nil {
 			return fmt.Errorf("add fcm_token to devices: %w", err)
+		}
+	}
+	return nil
+}
+
+// migrateCryptoVersion adds crypto_version column to devices table
+func migrateCryptoVersion(database *sql.DB) error {
+	has, err := tableHasColumn(database, "devices", "crypto_version")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := database.Exec("ALTER TABLE devices ADD COLUMN crypto_version INTEGER NOT NULL DEFAULT 1"); err != nil {
+			return fmt.Errorf("add crypto_version to devices: %w", err)
 		}
 	}
 	return nil

@@ -219,4 +219,7 @@ interface ApiService {
     suspend fun importTelegramStickerPack(
         @Body body: ImportTelegramStickersRequest
     ): Response<StickerPackResponse>
+
+    @GET("version")
+    suspend fun getVersion(): Response<AppVersionInfo>
 }
