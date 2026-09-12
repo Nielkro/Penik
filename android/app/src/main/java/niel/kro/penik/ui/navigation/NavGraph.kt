@@ -11,7 +11,8 @@ import androidx.navigation.navArgument
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import niel.kro.penik.ui.screen.auth.AuthScreen
@@ -21,6 +22,10 @@ import niel.kro.penik.ui.screen.groups.GroupSettingsScreen
 import niel.kro.penik.ui.screen.settings.SettingsScreen
 import niel.kro.penik.ui.screen.settings.DevicesScreen
 import niel.kro.penik.ui.viewmodel.StartupViewModel
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import niel.kro.penik.ui.theme.LocalAppColors
 import niel.kro.penik.ui.screen.pairing.PairingScannerScreen
 
 @Composable
@@ -52,29 +57,44 @@ fun NavGraph(
     NavHost(
         navController = navController,
         startDestination = startDestination,
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LocalAppColors.current.background),
         enterTransition = {
             slideInHorizontally(
                 initialOffsetX = { fullWidth -> fullWidth },
-                animationSpec = tween(300, easing = FastOutSlowInEasing)
-            ) + fadeIn(animationSpec = tween(200))
+                animationSpec = tween(280, easing = FastOutSlowInEasing)
+            ) + scaleIn(
+                initialScale = 0.90f,
+                animationSpec = tween(280, easing = FastOutSlowInEasing)
+            )
         },
         exitTransition = {
             slideOutHorizontally(
                 targetOffsetX = { fullWidth -> -fullWidth / 4 },
-                animationSpec = tween(300, easing = FastOutSlowInEasing)
-            ) + fadeOut(animationSpec = tween(200))
+                animationSpec = tween(280, easing = FastOutSlowInEasing)
+            ) + scaleOut(
+                targetScale = 0.94f,
+                animationSpec = tween(280, easing = FastOutSlowInEasing)
+            )
         },
         popEnterTransition = {
             slideInHorizontally(
                 initialOffsetX = { fullWidth -> -fullWidth / 4 },
-                animationSpec = tween(300, easing = FastOutSlowInEasing)
-            ) + fadeIn(animationSpec = tween(200))
+                animationSpec = tween(280, easing = FastOutSlowInEasing)
+            ) + scaleIn(
+                initialScale = 0.94f,
+                animationSpec = tween(280, easing = FastOutSlowInEasing)
+            )
         },
         popExitTransition = {
             slideOutHorizontally(
                 targetOffsetX = { fullWidth -> fullWidth },
-                animationSpec = tween(300, easing = FastOutSlowInEasing)
-            ) + fadeOut(animationSpec = tween(200))
+                animationSpec = tween(280, easing = FastOutSlowInEasing)
+            ) + scaleOut(
+                targetScale = 0.90f,
+                animationSpec = tween(280, easing = FastOutSlowInEasing)
+            )
         }
     ) {
         composable(Screen.Auth.route) {

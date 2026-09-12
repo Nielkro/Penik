@@ -57,8 +57,12 @@ fun PenikTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = appColors.background.toArgb()
+            val bgArgb = appColors.background.toArgb()
+            window.statusBarColor = bgArgb
+            window.navigationBarColor = bgArgb
+            window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(bgArgb))
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = isLight
+            WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = isLight
         }
     }
 

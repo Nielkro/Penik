@@ -1596,12 +1596,14 @@ export function formatPresence(presence) {
 
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today.getTime() - 86400000);
+  const dayBeforeYesterday = new Date(today.getTime() - 86400000 * 2);
   const seenDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
   if (seenDay.getTime() === today.getTime()) return `был(а) в ${time}`;
   if (seenDay.getTime() === yesterday.getTime()) return `был(а) вчера в ${time}`;
-  return `был(а) ${d.toLocaleDateString([], { day: "numeric", month: "long" })} в ${time}`;
+  if (seenDay.getTime() === dayBeforeYesterday.getTime()) return `был(а) позавчера в ${time}`;
+  return `был(а) ${d.toLocaleDateString("ru", { day: "numeric", month: "short" })} в ${time}`;
 }
 
 // Toast notifications

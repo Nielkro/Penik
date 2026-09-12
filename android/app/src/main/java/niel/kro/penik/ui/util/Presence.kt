@@ -19,8 +19,8 @@ fun formatPresence(online: Boolean, lastSeenUnixSeconds: Long): String {
     val now = Calendar.getInstance()
     val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(seenMillis))
 
-    val isToday = seen.get(Calendar.YEAR) == now.get(Calendar.YEAR) &&
-        seen.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)
+    val isSameYear = seen.get(Calendar.YEAR) == now.get(Calendar.YEAR)
+    val isToday = isSameYear && seen.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)
     if (isToday) return "был(а) в $time"
 
     val yesterday = (now.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
@@ -28,6 +28,16 @@ fun formatPresence(online: Boolean, lastSeenUnixSeconds: Long): String {
         seen.get(Calendar.DAY_OF_YEAR) == yesterday.get(Calendar.DAY_OF_YEAR)
     if (isYesterday) return "был(а) вчера в $time"
 
-    val date = SimpleDateFormat("d MMMM", Locale("ru")).format(Date(seenMillis))
+    val dayBeforeYesterday = (now.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -2) }
+    val isDayBeforeYesterday = seen.get(Calendar.YEAR) == dayBeforeYesterday.get(Calendar.YEAR) &&
+        seen.get(Calendar.DAY_OF_YEAR) == dayBeforeYesterday.get(Calendar.DAY_OF_YEAR)
+    if (isDayBeforeYesterday) return "был(а) позавчера в $time"
+
+    val ruLocale = Locale.forLanguageTag("ru")
+    val date = if (isSameYear) {
+        SimpleDateFormat("d MMM", ruLocale).format(Date(seenMillis))
+    } else {
+        SimpleDateFormat("d MMM yyyy", ruLocale).format(Date(seenMillis))
+    }
     return "был(а) $date в $time"
 }
