@@ -1,7 +1,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
-use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::{jbyteArray, jint, jlong, jobjectArray, jstring};
+use jni::objects::{JByteArray, JClass, JIntArray, JLongArray, JString};
+use jni::sys::{jboolean, jbyteArray, jint, jlong, jobjectArray, jstring};
 use jni::JNIEnv;
 use zeroize::Zeroize;
 
@@ -390,6 +390,308 @@ pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_gen
 
             array.into_raw()
         }
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_generateFileKeyAndNonce<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jbyteArray {
+    let (key, nonce) = cipher::generate_file_key_and_nonce();
+    let mut combined = Vec::with_capacity(32 + 12);
+    combined.extend_from_slice(&key);
+    combined.extend_from_slice(&nonce);
+    match env.byte_array_from_slice(&combined) {
+        Ok(arr) => arr.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_createChunkedFileHeader<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    base_nonce: JByteArray<'local>,
+    chunk_size: jint,
+) -> jbyteArray {
+    let nonce_bytes = match env.convert_byte_array(base_nonce) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    if nonce_bytes.len() != cipher::NONCE_SIZE {
+        return std::ptr::null_mut();
+    }
+    let mut bn = [0u8; 12];
+    bn.copy_from_slice(&nonce_bytes);
+    let header = cipher::create_chunked_file_header(&bn, chunk_size as u32);
+    match env.byte_array_from_slice(&header) {
+        Ok(arr) => arr.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_parseChunkedFileHeader<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    header: JByteArray<'local>,
+) -> jbyteArray {
+    let header_bytes = match env.convert_byte_array(header) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match cipher::parse_chunked_file_header(&header_bytes) {
+        Ok((base_nonce, chunk_size)) => {
+            let mut out = Vec::with_capacity(16);
+            out.extend_from_slice(&base_nonce);
+            out.extend_from_slice(&chunk_size.to_be_bytes());
+            match env.byte_array_from_slice(&out) {
+                Ok(arr) => arr.into_raw(),
+                Err(_) => std::ptr::null_mut(),
+            }
+        }
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_isChunkedFile<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    data: JByteArray<'local>,
+) -> jboolean {
+    let bytes = match env.convert_byte_array(data) {
+        Ok(b) => b,
+        Err(_) => return 0,
+    };
+    if cipher::is_chunked_file(&bytes) {
+        1
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_encryptFileChunk<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    key: JByteArray<'local>,
+    base_nonce: JByteArray<'local>,
+    chunk_index: jint,
+    is_last: jboolean,
+    chunk: JByteArray<'local>,
+) -> jbyteArray {
+    let key_bytes = match env.convert_byte_array(key) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let nonce_bytes = match env.convert_byte_array(base_nonce) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let chunk_bytes = match env.convert_byte_array(chunk) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match cipher::encrypt_file_chunk(
+        &key_bytes,
+        &nonce_bytes,
+        chunk_index as u32,
+        is_last != 0,
+        &chunk_bytes,
+    ) {
+        Ok(enc) => match env.byte_array_from_slice(&enc) {
+            Ok(arr) => arr.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_decryptFileChunk<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    key: JByteArray<'local>,
+    base_nonce: JByteArray<'local>,
+    chunk_index: jint,
+    is_last: jboolean,
+    encrypted_chunk: JByteArray<'local>,
+) -> jbyteArray {
+    let key_bytes = match env.convert_byte_array(key) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let nonce_bytes = match env.convert_byte_array(base_nonce) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let chunk_bytes = match env.convert_byte_array(encrypted_chunk) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match cipher::decrypt_file_chunk(
+        &key_bytes,
+        &nonce_bytes,
+        chunk_index as u32,
+        is_last != 0,
+        &chunk_bytes,
+    ) {
+        Ok(pt) => match env.byte_array_from_slice(&pt) {
+            Ok(arr) => arr.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_decryptFileChaCha20<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    encrypted_bytes: JByteArray<'local>,
+    key: JByteArray<'local>,
+) -> jbyteArray {
+    let enc = match env.convert_byte_array(encrypted_bytes) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let k = match env.convert_byte_array(key) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match cipher::decrypt_file(&enc, &k) {
+        Ok(pt) => match env.byte_array_from_slice(&pt) {
+            Ok(arr) => arr.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_encryptPairwiseBatch<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    sender_priv_key: JByteArray<'local>,
+    sender_user_id: jlong,
+    recipient_user_id: jlong,
+    client_msg_id: JString<'local>,
+    timestamp: jlong,
+    plaintext: JByteArray<'local>,
+    device_ids: JLongArray<'local>,
+    device_pub_keys: JByteArray<'local>,
+    device_crypto_versions: JIntArray<'local>,
+) -> jbyteArray {
+    let mut priv_bytes = match env.convert_byte_array(sender_priv_key) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    let msg_id_str: String = if client_msg_id.is_null() {
+        String::new()
+    } else {
+        env.get_string(&client_msg_id)
+            .map(|s| s.into())
+            .unwrap_or_default()
+    };
+
+    let pt_bytes = if plaintext.is_null() {
+        Vec::new()
+    } else {
+        env.convert_byte_array(plaintext).unwrap_or_default()
+    };
+
+    let dev_count = match env.get_array_length(&device_ids) {
+        Ok(l) => l as usize,
+        Err(_) => {
+            priv_bytes.zeroize();
+            return std::ptr::null_mut();
+        }
+    };
+
+    let mut ids = vec![0i64; dev_count];
+    if dev_count > 0 {
+        if env.get_long_array_region(&device_ids, 0, &mut ids).is_err() {
+            priv_bytes.zeroize();
+            return std::ptr::null_mut();
+        }
+    }
+
+    let mut vers = vec![0i32; dev_count];
+    if dev_count > 0 {
+        if env.get_int_array_region(&device_crypto_versions, 0, &mut vers).is_err() {
+            priv_bytes.zeroize();
+            return std::ptr::null_mut();
+        }
+    }
+
+    let all_keys = match env.convert_byte_array(device_pub_keys) {
+        Ok(k) => k,
+        Err(_) => {
+            priv_bytes.zeroize();
+            return std::ptr::null_mut();
+        }
+    };
+
+    if all_keys.len() != dev_count * 32 {
+        priv_bytes.zeroize();
+        return std::ptr::null_mut();
+    }
+
+    let mut recipients = Vec::with_capacity(dev_count);
+    for i in 0..dev_count {
+        let pk = &all_keys[i * 32..(i + 1) * 32];
+        recipients.push(cipher::DeviceRecipient {
+            device_id: ids[i],
+            public_key: pk,
+            crypto_version: vers[i].max(1) as u32,
+        });
+    }
+
+    let envelopes = match cipher::encrypt_pairwise_fanout(
+        &priv_bytes,
+        sender_user_id as u64,
+        recipient_user_id as u64,
+        &msg_id_str,
+        timestamp,
+        &pt_bytes,
+        &recipients,
+    ) {
+        Ok(e) => e,
+        Err(_) => {
+            priv_bytes.zeroize();
+            return std::ptr::null_mut();
+        }
+    };
+    priv_bytes.zeroize();
+
+    // Packed serialization:
+    // count: u32 BE
+    // for each envelope:
+    //   device_id: i64 BE (8 bytes)
+    //   version: u32 BE (4 bytes)
+    //   salt: [u8; 32] (32 bytes)
+    //   nonce: [u8; 12] (12 bytes)
+    //   ciphertext_len: u32 BE (4 bytes)
+    //   ciphertext: [u8; ct_len]
+    let count = envelopes.len() as u32;
+    let mut out = Vec::new();
+    out.extend_from_slice(&count.to_be_bytes());
+    for envlp in envelopes {
+        out.extend_from_slice(&envlp.device_id.to_be_bytes());
+        out.extend_from_slice(&envlp.version.to_be_bytes());
+        out.extend_from_slice(&envlp.salt);
+        out.extend_from_slice(&envlp.nonce);
+        let ct_len = envlp.ciphertext.len() as u32;
+        out.extend_from_slice(&ct_len.to_be_bytes());
+        out.extend_from_slice(&envlp.ciphertext);
+    }
+
+    match env.byte_array_from_slice(&out) {
+        Ok(arr) => arr.into_raw(),
         Err(_) => std::ptr::null_mut(),
     }
 }

@@ -304,6 +304,13 @@ export async function chacha20Poly1305Decrypt(keyBytes, nonceBytes, ciphertextAn
 
 export async function encryptFileChaCha20(fileBytes) {
   const wasm = await getWasm();
+  if (typeof wasm.encryptFileChunked === "function") {
+    const res = wasm.encryptFileChunked(fileBytes);
+    return {
+      encryptedBytes: res.encryptedBytes,
+      key: res.key
+    };
+  }
   const res = wasm.encryptFileChaCha20(fileBytes);
   return {
     encryptedBytes: res.encryptedBytes,
@@ -313,10 +320,271 @@ export async function encryptFileChaCha20(fileBytes) {
 
 export async function decryptFileChaCha20(encryptedBytes, keyBytes) {
   const wasm = await getWasm();
+  const key = requireBytes(keyBytes, 32, "keyBytes");
+
+  if (await isChunkedFile(encryptedBytes)) {
+    const { baseNonce, chunkSize } = await parseChunkedFileHeader(encryptedBytes);
+    const chunkPayloadMax = chunkSize + 16;
+    let cur = 20;
+    let chunkIndex = 0;
+    const chunks = [];
+    let totalLen = 0;
+
+    if (encryptedBytes.length === 20) {
+      throw new Error("Invalid encrypted chunked file: missing payload");
+    }
+
+    while (cur < encryptedBytes.length) {
+      const remaining = encryptedBytes.length - cur;
+      const currentChunkLen = Math.min(remaining, chunkPayloadMax);
+      const isLast = cur + currentChunkLen === encryptedBytes.length;
+      const chunkData = encryptedBytes.subarray(cur, cur + currentChunkLen);
+      const pt = await decryptFileChunk(key, baseNonce, chunkIndex, isLast, chunkData);
+      chunks.push(pt);
+      totalLen += pt.length;
+      cur += currentChunkLen;
+      chunkIndex++;
+    }
+
+    const out = new Uint8Array(totalLen);
+    let off = 0;
+    for (const c of chunks) {
+      out.set(c, off);
+      off += c.length;
+    }
+    return out;
+  }
+
   if (encryptedBytes.length < 12 + 16) {
     throw new Error("Invalid encrypted file format: missing nonce or auth tag");
   }
-  return wasm.decryptFileChaCha20(encryptedBytes, requireBytes(keyBytes, 32, "keyBytes"));
+  return wasm.decryptFileChaCha20(encryptedBytes, key);
+}
+
+export async function generateFileKeyAndNonce() {
+  const wasm = await getWasm();
+  if (typeof wasm.generateFileKeyAndNonce === "function") {
+    const res = wasm.generateFileKeyAndNonce();
+    return {
+      key: res.key,
+      baseNonce: res.baseNonce
+    };
+  }
+  const key = new Uint8Array(32);
+  const baseNonce = new Uint8Array(12);
+  crypto.getRandomValues(key);
+  crypto.getRandomValues(baseNonce);
+  return { key, baseNonce };
+}
+
+export async function createChunkedFileHeader(baseNonce, chunkSize = 65536) {
+  const wasm = await getWasm();
+  if (typeof wasm.createChunkedFileHeader === "function") {
+    return wasm.createChunkedFileHeader(requireBytes(baseNonce, 12, "baseNonce"), chunkSize);
+  }
+  const header = new Uint8Array(20);
+  header.set([0x50, 0x43, 0x4B, 0x31], 0); // "PCK1"
+  header.set(requireBytes(baseNonce, 12, "baseNonce"), 4);
+  const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+  view.setUint32(16, chunkSize, false);
+  return header;
+}
+
+export async function parseChunkedFileHeader(headerBytes) {
+  const wasm = await getWasm();
+  if (typeof wasm.parseChunkedFileHeader === "function") {
+    const parsed = wasm.parseChunkedFileHeader(headerBytes);
+    return {
+      baseNonce: parsed.baseNonce,
+      chunkSize: parsed.chunkSize
+    };
+  }
+  if (headerBytes.length < 20) throw new Error("Header too short");
+  const magic = String.fromCharCode(...headerBytes.slice(0, 4));
+  if (magic !== "PCK1") throw new Error("Invalid chunked file magic");
+  const baseNonce = headerBytes.slice(4, 16);
+  const view = new DataView(headerBytes.buffer, headerBytes.byteOffset, headerBytes.byteLength);
+  const chunkSize = view.getUint32(16, false);
+  return { baseNonce, chunkSize };
+}
+
+export async function isChunkedFile(data) {
+  if (!data || data.length < 20) return false;
+  const wasm = await getWasm();
+  if (typeof wasm.isChunkedFile === "function") {
+    return wasm.isChunkedFile(data);
+  }
+  return data[0] === 0x50 && data[1] === 0x43 && data[2] === 0x4B && data[3] === 0x31;
+}
+
+export async function encryptFileChunk(key, baseNonce, chunkIndex, isLast, chunk) {
+  const wasm = await getWasm();
+  if (typeof wasm.encryptFileChunk === "function") {
+    return wasm.encryptFileChunk(
+      requireBytes(key, 32, "key"),
+      requireBytes(baseNonce, 12, "baseNonce"),
+      chunkIndex,
+      Boolean(isLast),
+      chunk
+    );
+  }
+  const chunkNonce = new Uint8Array(baseNonce);
+  const idxBytes = new Uint8Array(4);
+  new DataView(idxBytes.buffer).setUint32(0, chunkIndex, false);
+  chunkNonce[8] ^= idxBytes[0];
+  chunkNonce[9] ^= idxBytes[1];
+  chunkNonce[10] ^= idxBytes[2];
+  chunkNonce[11] ^= idxBytes[3];
+  const aad = new Uint8Array([idxBytes[0], idxBytes[1], idxBytes[2], idxBytes[3], isLast ? 1 : 0]);
+  return chacha20Poly1305Encrypt(key, chunkNonce, chunk, aad);
+}
+
+export async function decryptFileChunk(key, baseNonce, chunkIndex, isLast, encryptedChunk) {
+  const wasm = await getWasm();
+  if (typeof wasm.decryptFileChunk === "function") {
+    return wasm.decryptFileChunk(
+      requireBytes(key, 32, "key"),
+      requireBytes(baseNonce, 12, "baseNonce"),
+      chunkIndex,
+      Boolean(isLast),
+      encryptedChunk
+    );
+  }
+  const chunkNonce = new Uint8Array(baseNonce);
+  const idxBytes = new Uint8Array(4);
+  new DataView(idxBytes.buffer).setUint32(0, chunkIndex, false);
+  chunkNonce[8] ^= idxBytes[0];
+  chunkNonce[9] ^= idxBytes[1];
+  chunkNonce[10] ^= idxBytes[2];
+  chunkNonce[11] ^= idxBytes[3];
+  const aad = new Uint8Array([idxBytes[0], idxBytes[1], idxBytes[2], idxBytes[3], isLast ? 1 : 0]);
+  return chacha20Poly1305Decrypt(key, chunkNonce, encryptedChunk, aad);
+}
+
+export async function encryptFileChunked(fileBytes) {
+  const wasm = await getWasm();
+  if (typeof wasm.encryptFileChunked === "function") {
+    const res = wasm.encryptFileChunked(fileBytes);
+    return {
+      encryptedBytes: res.encryptedBytes,
+      key: res.key
+    };
+  }
+  const { key, baseNonce } = await generateFileKeyAndNonce();
+  const chunkSize = 64 * 1024;
+  const header = await createChunkedFileHeader(baseNonce, chunkSize);
+  const chunks = [];
+  if (fileBytes.length === 0) {
+    const enc = await encryptFileChunk(key, baseNonce, 0, true, new Uint8Array(0));
+    chunks.push(enc);
+  } else {
+    const numChunks = Math.ceil(fileBytes.length / chunkSize);
+    for (let i = 0; i < numChunks; i++) {
+      const slice = fileBytes.subarray(i * chunkSize, Math.min(fileBytes.length, (i + 1) * chunkSize));
+      const isLast = i === numChunks - 1;
+      const enc = await encryptFileChunk(key, baseNonce, i, isLast, slice);
+      chunks.push(enc);
+    }
+  }
+  let totalLen = header.length;
+  for (const c of chunks) totalLen += c.length;
+  const out = new Uint8Array(totalLen);
+  out.set(header, 0);
+  let off = header.length;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.length;
+  }
+  return { encryptedBytes: out, key };
+}
+
+/**
+ * Encrypts a File or Blob chunk-by-chunk without loading the full file into RAM.
+ * Ideal for multi-megabyte / gigabyte video and audio files.
+ */
+export async function encryptBlobChunked(blob, onProgress) {
+  const chunkSize = 64 * 1024;
+  const totalSize = blob.size;
+  const { key, baseNonce } = await generateFileKeyAndNonce();
+  const header = await createChunkedFileHeader(baseNonce, chunkSize);
+  const parts = [header];
+
+  if (totalSize === 0) {
+    const enc = await encryptFileChunk(key, baseNonce, 0, true, new Uint8Array(0));
+    parts.push(enc);
+    return {
+      encryptedBlob: new Blob(parts, { type: "application/octet-stream" }),
+      key
+    };
+  }
+
+  const numChunks = Math.ceil(totalSize / chunkSize);
+  for (let i = 0; i < numChunks; i++) {
+    const start = i * chunkSize;
+    const end = Math.min(totalSize, start + chunkSize);
+    const sliceBlob = blob.slice(start, end);
+    const buf = new Uint8Array(await sliceBlob.arrayBuffer());
+    const isLast = i === numChunks - 1;
+    const enc = await encryptFileChunk(key, baseNonce, i, isLast, buf);
+    parts.push(enc);
+    if (onProgress) {
+      onProgress(end, totalSize);
+    }
+  }
+
+  const encryptedBlob = new Blob(parts, { type: "application/octet-stream" });
+  return { encryptedBlob, key };
+}
+
+/**
+ * Batch pairwise fan-out encryption across all recipient & sender devices in a single call.
+ */
+export async function encryptPairwiseBatch(
+  senderPrivKey,
+  senderUserId,
+  recipientUserId,
+  clientMsgId,
+  timestamp,
+  plaintext,
+  devices
+) {
+  const wasm = await getWasm();
+  const priv = requireBytes(senderPrivKey, 32, "senderPrivKey");
+  const ptBytes = typeof plaintext === "string" ? new TextEncoder().encode(plaintext) : plaintext;
+
+  if (typeof wasm.encryptPairwiseBatch === "function") {
+    const results = wasm.encryptPairwiseBatch(
+      priv,
+      BigInt(senderUserId),
+      BigInt(recipientUserId),
+      clientMsgId || "",
+      BigInt(timestamp || 0),
+      ptBytes,
+      devices
+    );
+    return results;
+  }
+
+  // Fallback for legacy WASM: loop over devices
+  const payloads = [];
+  for (const device of devices) {
+    const rawPk = device.identity_key || device.publicKey;
+    const recipientIKPub = typeof rawPk === "string" ? decodeKey(rawPk) : rawPk;
+    const isV2 = Number(device.crypto_version || 1) >= 2;
+    const deviceAad = isV2
+      ? buildPairwiseAADV2(senderUserId, recipientUserId, clientMsgId)
+      : buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId, timestamp);
+    const secret = await deriveSharedSecret(priv, recipientIKPub);
+    const { ciphertext, salt, nonce } = await e2eeEncrypt(ptBytes, secret, "penik-pairwise-message-v1", deviceAad);
+    payloads.push({
+      device_id: Number(device.device_id),
+      ciphertext,
+      salt,
+      nonce,
+      v: isV2 ? 2 : 1
+    });
+  }
+  return payloads;
 }
 
 export async function generateKeyPair() {

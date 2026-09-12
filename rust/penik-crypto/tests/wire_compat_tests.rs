@@ -189,3 +189,158 @@ fn test_hkdf_derive() {
     assert_eq!(okm.len(), 64);
 }
 
+#[test]
+fn test_chunked_file_encrypt_decrypt_roundtrip() {
+    use penik_crypto::{
+        decrypt_file, decrypt_file_chunk, encrypt_file, encrypt_file_chunk, encrypt_file_chunked,
+        generate_file_key_and_nonce, is_chunked_file, parse_chunked_file_header,
+        DEFAULT_CHUNK_SIZE,
+    };
+
+    // 1. Empty file
+    let empty_data = b"";
+    let (enc_empty, key_empty) = encrypt_file_chunked(empty_data).expect("encrypt empty");
+    assert!(is_chunked_file(&enc_empty));
+    let dec_empty = decrypt_file(&enc_empty, &key_empty).expect("decrypt empty");
+    assert_eq!(dec_empty, empty_data);
+
+    // 2. Small file (< 1 chunk)
+    let small_data = b"Streaming video chunk test in penik-crypto!";
+    let (enc_small, key_small) = encrypt_file_chunked(small_data).expect("encrypt small");
+    assert!(is_chunked_file(&enc_small));
+    let dec_small = decrypt_file(&enc_small, &key_small).expect("decrypt small");
+    assert_eq!(dec_small, small_data);
+
+    // 3. Multi-chunk file (150 KB > 2 chunks of 64 KB)
+    let mut large_data = vec![0u8; 150 * 1024];
+    for (i, b) in large_data.iter_mut().enumerate() {
+        *b = (i % 251) as u8;
+    }
+    let (enc_large, key_large) = encrypt_file_chunked(&large_data).expect("encrypt multi-chunk");
+    assert!(is_chunked_file(&enc_large));
+    let dec_large = decrypt_file(&enc_large, &key_large).expect("decrypt multi-chunk");
+    assert_eq!(dec_large, large_data);
+
+    // 4. Backward compatibility: legacy monolithic file decrypted by decrypt_file
+    let (enc_legacy, key_legacy) = encrypt_file(small_data).expect("encrypt legacy");
+    assert!(!is_chunked_file(&enc_legacy));
+    let dec_legacy = decrypt_file(&enc_legacy, &key_legacy).expect("decrypt legacy");
+    assert_eq!(dec_legacy, small_data);
+
+    // 5. Tampering: corrupting ciphertext in a chunk causes decryption failure
+    let mut tampered = enc_small.clone();
+    tampered[25] ^= 0xff;
+    assert!(decrypt_file(&tampered, &key_small).is_err(), "Tampered chunk must fail auth check");
+
+    // 6. Truncation: cutting off the last chunk must fail auth check
+    let (base_nonce, chunk_size) = parse_chunked_file_header(&enc_large).unwrap();
+    assert_eq!(chunk_size as usize, DEFAULT_CHUNK_SIZE);
+    assert_eq!(base_nonce.len(), 12);
+    let truncated = &enc_large[..enc_large.len() - 100];
+    assert!(decrypt_file(truncated, &key_large).is_err(), "Truncated file must fail auth check");
+
+    // 7. Direct low-level chunk API
+    let (key, nonce) = generate_file_key_and_nonce();
+    let chunk_pt = b"Low-level chunk 0 payload";
+    let enc_c0 = encrypt_file_chunk(&key, &nonce, 0, false, chunk_pt).unwrap();
+    let dec_c0 = decrypt_file_chunk(&key, &nonce, 0, false, &enc_c0).unwrap();
+    assert_eq!(dec_c0, chunk_pt);
+    // Wrong index fails
+    assert!(decrypt_file_chunk(&key, &nonce, 1, false, &enc_c0).is_err());
+    // Wrong is_last flag fails
+    assert!(decrypt_file_chunk(&key, &nonce, 0, true, &enc_c0).is_err());
+}
+
+#[test]
+fn test_pairwise_fanout_encryption() {
+    use penik_crypto::{
+        diffie_hellman, e2ee_decrypt, encrypt_pairwise_fanout, generate_key_pair,
+        DeviceRecipient, DEFAULT_PAIRWISE_INFO,
+    };
+
+    let sender = generate_key_pair();
+    let dev1 = generate_key_pair();
+    let dev2 = generate_key_pair();
+    let dev3 = generate_key_pair();
+
+    let recipients = vec![
+        DeviceRecipient {
+            device_id: 101,
+            public_key: &dev1.public_key,
+            crypto_version: 1, // Legacy AAD v1
+        },
+        DeviceRecipient {
+            device_id: 102,
+            public_key: &dev2.public_key,
+            crypto_version: 2, // Modern AAD v2
+        },
+        DeviceRecipient {
+            device_id: 103,
+            public_key: &dev3.public_key,
+            crypto_version: 3, // Future AAD v2+
+        },
+    ];
+
+    let plaintext = b"Pairwise fan-out batch message across multiple devices!";
+    let envelopes = encrypt_pairwise_fanout(
+        &sender.private_key,
+        1,
+        2,
+        "client-msg-batch-42",
+        1720000000,
+        plaintext,
+        &recipients,
+    )
+    .expect("batch fanout encryption succeeds");
+
+    assert_eq!(envelopes.len(), 3);
+    assert_eq!(envelopes[0].device_id, 101);
+    assert_eq!(envelopes[0].version, 1);
+    assert_eq!(envelopes[1].device_id, 102);
+    assert_eq!(envelopes[1].version, 2);
+    assert_eq!(envelopes[2].device_id, 103);
+    assert_eq!(envelopes[2].version, 2);
+
+    // Verify dev1 (v1) decrypts correctly
+    let shared1 = diffie_hellman(&dev1.private_key, &sender.public_key).unwrap();
+    let aad1 = penik_crypto::build_pairwise_aad(1, 2, "client-msg-batch-42", 1720000000);
+    let pt1 = e2ee_decrypt(
+        &envelopes[0].ciphertext,
+        &shared1,
+        &envelopes[0].salt,
+        &envelopes[0].nonce,
+        DEFAULT_PAIRWISE_INFO,
+        &aad1,
+    )
+    .expect("dev1 decrypt");
+    assert_eq!(pt1, plaintext);
+
+    // Verify dev2 (v2) decrypts correctly
+    let shared2 = diffie_hellman(&dev2.private_key, &sender.public_key).unwrap();
+    let aad2 = penik_crypto::build_pairwise_aad_v2(1, 2, "client-msg-batch-42");
+    let pt2 = e2ee_decrypt(
+        &envelopes[1].ciphertext,
+        &shared2,
+        &envelopes[1].salt,
+        &envelopes[1].nonce,
+        DEFAULT_PAIRWISE_INFO,
+        &aad2,
+    )
+    .expect("dev2 decrypt");
+    assert_eq!(pt2, plaintext);
+
+    // Verify dev3 (v2) decrypts correctly
+    let shared3 = diffie_hellman(&dev3.private_key, &sender.public_key).unwrap();
+    let aad3 = penik_crypto::build_pairwise_aad_v2(1, 2, "client-msg-batch-42");
+    let pt3 = e2ee_decrypt(
+        &envelopes[2].ciphertext,
+        &shared3,
+        &envelopes[2].salt,
+        &envelopes[2].nonce,
+        DEFAULT_PAIRWISE_INFO,
+        &aad3,
+    )
+    .expect("dev3 decrypt");
+    assert_eq!(pt3, plaintext);
+}
+

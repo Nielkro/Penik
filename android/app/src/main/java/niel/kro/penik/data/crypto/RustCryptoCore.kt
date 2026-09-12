@@ -74,6 +74,52 @@ object RustCryptoCore {
     ): ByteArray?
 
     @JvmStatic
+    external fun generateFileKeyAndNonce(): ByteArray?
+
+    @JvmStatic
+    external fun createChunkedFileHeader(baseNonce: ByteArray, chunkSize: Int): ByteArray?
+
+    @JvmStatic
+    external fun parseChunkedFileHeader(header: ByteArray): ByteArray?
+
+    @JvmStatic
+    external fun isChunkedFile(data: ByteArray): Boolean
+
+    @JvmStatic
+    external fun encryptFileChunk(
+        key: ByteArray,
+        baseNonce: ByteArray,
+        chunkIndex: Int,
+        isLast: Boolean,
+        chunk: ByteArray
+    ): ByteArray?
+
+    @JvmStatic
+    external fun decryptFileChunk(
+        key: ByteArray,
+        baseNonce: ByteArray,
+        chunkIndex: Int,
+        isLast: Boolean,
+        encryptedChunk: ByteArray
+    ): ByteArray?
+
+    @JvmStatic
+    external fun decryptFileChaCha20(encryptedBytes: ByteArray, key: ByteArray): ByteArray?
+
+    @JvmStatic
+    external fun encryptPairwiseBatch(
+        senderPrivateKey: ByteArray,
+        senderUserId: Long,
+        recipientUserId: Long,
+        clientMsgId: String,
+        timestamp: Long,
+        plaintext: ByteArray,
+        deviceIds: LongArray,
+        devicePublicKeys: ByteArray,
+        deviceCryptoVersions: IntArray
+    ): ByteArray?
+
+    @JvmStatic
     external fun computeSafetyNumber(ikA: ByteArray, ikB: ByteArray): String?
 
     @JvmStatic

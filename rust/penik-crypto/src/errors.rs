@@ -25,6 +25,9 @@ pub enum CryptoError {
 
     #[error("Random number generation failed: {0}")]
     RngError(String),
+
+    #[error("Invalid payload format: {0}")]
+    InvalidPayload(&'static str),
 }
 
 #[cfg(target_arch = "wasm32")]

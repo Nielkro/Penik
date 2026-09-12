@@ -4,7 +4,14 @@ import {
   e2eeEncrypt,
   e2eeDecrypt,
   buildPairwiseAAD,
-  buildPairwiseAADV2
+  buildPairwiseAADV2,
+  encryptFileChaCha20,
+  decryptFileChaCha20,
+  encryptFileChunked,
+  encryptBlobChunked,
+  encryptPairwiseBatch,
+  encodeKey,
+  isChunkedFile
 } from './crypto.js';
 
 // Setup global crypto for older Node versions if needed
@@ -195,6 +202,86 @@ async function runTests() {
     console.log("Test 6: Pairwise AAD v2 (clock-independent) passed.");
   } catch (e) {
     console.error("Test 6: Pairwise AAD v2 test failed:", e);
+    failed++;
+  }
+
+  // Test 7: Chunked File Encryption / Decryption
+  try {
+    const testData = new TextEncoder().encode("Chunked file streaming test with Penik PCK1 format!");
+    const { encryptedBytes, key } = await encryptFileChunked(testData);
+    assert(await isChunkedFile(encryptedBytes), "Encrypted file has PCK1 chunked header");
+    const decrypted = await decryptFileChaCha20(encryptedBytes, key);
+    assertArrayEquals(testData, decrypted, "Chunked encrypted file decrypted matches original");
+
+    // Test with Blob chunked streaming
+    const testBlob = new Blob([testData]);
+    const { encryptedBlob, key: blobKey } = await encryptBlobChunked(testBlob);
+    const blobEncBytes = new Uint8Array(await encryptedBlob.arrayBuffer());
+    assert(await isChunkedFile(blobEncBytes), "Blob chunked file has PCK1 header");
+    const blobDec = await decryptFileChaCha20(blobEncBytes, blobKey);
+    assertArrayEquals(testData, blobDec, "Blob chunked decrypted matches original");
+
+    console.log("Test 7: Chunked file encryption/decryption passed.");
+  } catch (e) {
+    console.error("Test 7: Chunked file test failed:", e);
+    failed++;
+  }
+
+  // Test 8: Pairwise Batch Fan-out Encryption
+  try {
+    const sender = await generateKeyPair();
+    const dev1 = await generateKeyPair();
+    const dev2 = await generateKeyPair();
+
+    const devices = [
+      {
+        device_id: 101,
+        identity_key: encodeKey(dev1.publicKey),
+        crypto_version: 1
+      },
+      {
+        device_id: 102,
+        identity_key: encodeKey(dev2.publicKey),
+        crypto_version: 2
+      }
+    ];
+
+    const messageText = "Fast fan-out batch message to multiple devices!";
+    const clientMsgId = "batch-test-msg-1";
+    const ts = 1720000000;
+
+    const envelopes = await encryptPairwiseBatch(
+      sender.privateKey,
+      1,
+      2,
+      clientMsgId,
+      ts,
+      messageText,
+      devices
+    );
+
+    assert(Array.isArray(envelopes), "Batch encryption returned array");
+    assert(envelopes.length === 2, "Batch encryption returned 2 envelopes");
+    assert(envelopes[0].device_id === 101, "Envelope 0 device_id is 101");
+    assert(envelopes[0].v === 1, "Envelope 0 version is 1");
+    assert(envelopes[1].device_id === 102, "Envelope 1 device_id is 102");
+    assert(envelopes[1].v === 2, "Envelope 1 version is 2");
+
+    // Verify dev1 decrypts with v1 AAD
+    const secret1 = await deriveSharedSecret(dev1.privateKey, sender.publicKey);
+    const aad1 = buildPairwiseAAD(1, 2, clientMsgId, ts);
+    const dec1 = await e2eeDecrypt(envelopes[0].ciphertext, secret1, envelopes[0].salt, envelopes[0].nonce, "penik-pairwise-message-v1", aad1);
+    assert(new TextDecoder().decode(dec1) === messageText, "Dev 1 decrypted correctly");
+
+    // Verify dev2 decrypts with v2 AAD
+    const secret2 = await deriveSharedSecret(dev2.privateKey, sender.publicKey);
+    const aad2 = buildPairwiseAADV2(1, 2, clientMsgId);
+    const dec2 = await e2eeDecrypt(envelopes[1].ciphertext, secret2, envelopes[1].salt, envelopes[1].nonce, "penik-pairwise-message-v1", aad2);
+    assert(new TextDecoder().decode(dec2) === messageText, "Dev 2 decrypted correctly");
+
+    console.log("Test 8: Pairwise batch fan-out encryption passed.");
+  } catch (e) {
+    console.error("Test 8: Pairwise batch fan-out test failed:", e);
     failed++;
   }
 
