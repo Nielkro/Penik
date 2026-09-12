@@ -444,6 +444,13 @@ class MessageRepository @Inject constructor(
     }
 
     suspend fun markMessageAsRead(serverId: Long) {
+        val existing = messageDao.findMessageByServerId(serverId)
+        if (existing != null) {
+            val isFailed = existing.text.startsWith("[Ошибка") ||
+                           existing.text.startsWith("[Сообщение не расшифровано") ||
+                           existing.text.startsWith("[Не удалось расшифровать")
+            if (isFailed) return
+        }
         messageDao.markRead(serverId)
         webSocketManager.sendRead(serverId)
     }
@@ -550,9 +557,9 @@ class MessageRepository @Inject constructor(
             if (decryptSuccess) {
                 val updated = existing.copy(text = decryptedText)
                 messageDao.insertMessage(updated)
-            }
-            if (!sentByMe) {
-                webSocketManager.sendDelivered(event.msgId)
+                if (!sentByMe) {
+                    webSocketManager.sendDelivered(event.msgId)
+                }
             }
             return Pair(decryptedText, !sentByMe)
         }
@@ -569,7 +576,7 @@ class MessageRepository @Inject constructor(
             replyToMsgId = event.replyToMsgId
         )
         messageDao.insertMessage(entity)
-        if (!sentByMe) {
+        if (!sentByMe && decryptSuccess) {
             webSocketManager.sendDelivered(event.msgId)
         }
         return Pair(decryptedText, !sentByMe)
@@ -693,9 +700,9 @@ class MessageRepository @Inject constructor(
             }
         }
         messageDao.insertMessages(entities)
-        // Send delivery receipts only for messages from other users.
+        // Send delivery receipts only for messages from other users that were successfully decrypted.
         event.msgs.forEach { msg ->
-            if (msg.fromUserId != myId) {
+            if (msg.fromUserId != myId && successMsgIds.contains(msg.msgId)) {
                 webSocketManager.sendDelivered(msg.msgId)
             }
         }

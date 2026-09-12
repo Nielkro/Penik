@@ -992,7 +992,7 @@ export async function renderChat(container, userId) {
       messagesEl.appendChild(bubble);
     }
     scrollDown.update();
-    if (!isMine && msg.msg_id) {
+    if (!isMine && msg.msg_id && !isFailed) {
       const socket = getWS();
       if (socket?.isConnected()) socket.send(0x18, { msg_id: Number(msg.msg_id) });
     }
