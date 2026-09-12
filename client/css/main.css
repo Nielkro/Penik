@@ -2432,6 +2432,12 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   overflow: visible !important;
 }
 
+.msg-bubble.msg-emoji-bubble .msg-single-line-row {
+  display: inline-block !important;
+  position: relative !important;
+  gap: 0 !important;
+}
+
 .msg-bubble.msg-emoji-bubble .msg-text {
   display: inline-block !important;
   line-height: 1.15 !important;
@@ -2439,45 +2445,61 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 }
 
 .msg-bubble.msg-emoji-1 .msg-text {
-  font-size: 52px !important;
-  padding-right: 20px;
-  padding-bottom: 6px;
+  font-size: 96px !important;
+  padding-right: 4px;
+  padding-bottom: 0;
 }
 
 .msg-bubble.msg-emoji-multi .msg-text {
-  font-size: 36px !important;
-  padding-right: 14px;
-  padding-bottom: 4px;
+  font-size: 64px !important;
+  padding-right: 4px;
+  padding-bottom: 0;
 }
 
 .msg-bubble.msg-emoji-bubble .msg-meta {
-  position: absolute;
-  bottom: 4px;
-  right: 4px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  padding: 2px 7px;
-  border-radius: 12px;
-  font-size: 11px;
-  backdrop-filter: blur(8px);
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+  position: absolute !important;
+  bottom: 2px !important;
+  right: 2px !important;
+  margin: 0 !important;
+  background: rgba(0, 0, 0, 0.45) !important;
+  color: #fff !important;
+  padding: 1px 4px !important;
+  border-radius: 6px !important;
+  font-size: 9px !important;
+  line-height: 1 !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 2px !important;
   pointer-events: none;
   z-index: 5;
+  white-space: nowrap;
 }
 
 .msg-bubble.msg-emoji-bubble .msg-meta .msg-time {
-  color: #fff;
-  font-size: 11px;
+  color: #fff !important;
+  font-size: 9px !important;
+  line-height: 1 !important;
 }
 
 .msg-bubble.msg-emoji-bubble .msg-meta .msg-status-wrapper {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(255, 255, 255, 0.8) !important;
+  font-size: 9px !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  transform: scale(0.85);
+  transform-origin: center;
+}
+
+.msg-bubble.msg-emoji-bubble .msg-meta .msg-status-wrapper .chk {
+  font-size: 9px !important;
+  letter-spacing: -2px;
 }
 
 .msg-bubble.msg-emoji-bubble .msg-meta .msg-status-wrapper.msg-status-read {
-  color: #5cdb95;
+  color: #5cdb95 !important;
 }
 
 
