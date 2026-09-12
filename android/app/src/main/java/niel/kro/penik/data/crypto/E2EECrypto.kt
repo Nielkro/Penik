@@ -16,7 +16,15 @@ import javax.crypto.spec.GCMParameterSpec
 import java.util.Base64
 import java.security.GeneralSecurityException
 import niel.kro.penik.data.network.websocket.E2EDevicePayload
-
+ 
+/**
+ * ARCHITECTURE NOTICE:
+ * This Kotlin crypto implementation is strictly FROZEN. Do NOT add new crypto algorithms,
+ * protocol versions, or cipher changes here.
+ * All new cryptographic features must strictly be implemented in the native
+ * Rust core (`rust/penik-crypto`) and exposed via RustCryptoCore (JNI).
+ * Existing Kotlin code is preserved solely as a legacy fallback for v1 compatibility.
+ */
 data class E2EEncrypted(
     val ciphertext: ByteArray,
     val salt: ByteArray,

@@ -1,3 +1,12 @@
+/**
+ * ARCHITECTURE NOTICE:
+ * This JavaScript crypto implementation is strictly FROZEN. Do NOT add new crypto algorithms,
+ * protocol versions, or cipher implementations here.
+ * All new cryptographic features must strictly be implemented in the Rust core
+ * (`rust/penik-crypto`) and compiled to WebAssembly (`penik_crypto.wasm`).
+ * Existing JS methods remain solely as legacy fallbacks for v1 backward compatibility.
+ */
+
 import { defaultWordCoder } from "./wordcoder.js";
 import initWasm, * as wasmCrypto from "../pkg/penik-crypto-wasm/penik_crypto.js";
 
