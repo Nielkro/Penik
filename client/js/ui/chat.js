@@ -1,12 +1,12 @@
 import { apiGet, apiDelete, uploadAttachment, listPeerCalls } from "../api.js";
-import { encryptFileChaCha20, encryptBlobChunked, encodeKey, computeSafetyNumber, computeSafetyFingerprint } from "../crypto.js";
+import { encryptFileChaCha20, encryptBlobChunked, encryptBlob, encodeKey, computeSafetyNumber, computeSafetyFingerprint } from "../crypto.js";
 import QRCode from "qrcode";
 import {
   saveMessage, getMessages, getMessage,
   updateMessageDelivered, updateMessageText, getContact, saveContact, getAllContacts,
   deleteChatData, deleteMessage, saveCachedMedia
 } from "../storage.js";
-import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload, syncMessageHistory, prefetchKeyBundle } from "../app.js";
+import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload, syncMessageHistory, prefetchKeyBundle, getCachedKeyBundle } from "../app.js";
 import { OP } from "../ws.js";
 import {
   avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon,
@@ -1237,8 +1237,27 @@ export async function renderChat(container, userId) {
     scrollDown.scrollToBottom();
 
     try {
+      // Adaptively select chunked vs monolithic encryption based on recipient & own device crypto_version
+      let useChunked = true;
+      try {
+        const bundle = await getCachedKeyBundle(userId);
+        const devices = bundle?.devices || [];
+        if (!devices.length || devices.some(d => Number(d.crypto_version || 1) < 2)) {
+          useChunked = false;
+        } else if (Number(userId) !== Number(myId)) {
+          const selfBundle = await getCachedKeyBundle(myId);
+          const selfDevices = selfBundle?.devices || [];
+          if (selfDevices.some(d => Number(d.crypto_version || 1) < 2)) {
+            useChunked = false;
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to check peer crypto version, falling back to monolithic", e);
+        useChunked = false;
+      }
+
       const localBlob = file;
-      const { encryptedBlob, key } = await encryptBlobChunked(file);
+      const { encryptedBlob, key } = await encryptBlob(file, null, useChunked);
 
       // 2. Upload to server with progress events
       const cdnUrl = await uploadAttachment(encryptedBlob, file.name, (loaded, total) => {

@@ -5,9 +5,9 @@ import {
   renameGroup, uploadGroupAvatar, rotateAndDistribute
 } from "../groups.js";
 import { apiGet, getUserById, uploadAttachment } from "../api.js";
-import { encryptFileChaCha20, encryptBlobChunked, encodeKey } from "../crypto.js";
+import { encryptFileChaCha20, encryptBlobChunked, encryptBlob, encodeKey } from "../crypto.js";
 import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessage, saveCachedMedia } from "../storage.js";
-import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
+import { navigate, getCurrentUser, triggerChatListUpdate, getCachedKeyBundle } from "../app.js";
 import {
   el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence,
   showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon, showConfirmModal, showPromptModal, showFullscreenImage, showForwardModal,
@@ -696,8 +696,33 @@ export async function renderGroup(container, groupId) {
     scrollDown.scrollToBottom();
 
     try {
+      // Adaptively select chunked vs monolithic encryption based on group members' crypto_versions
+      let useChunked = true;
+      try {
+        let members = await getGroupMembers(groupId).catch(() => []);
+        if (!members.length) {
+          members = await refreshMembers(groupId).catch(() => []);
+        }
+        if (!members.length) {
+          useChunked = false;
+        } else {
+          for (const m of members) {
+            const uid = m.user_id || m.id;
+            const bundle = await getCachedKeyBundle(uid);
+            const devices = bundle?.devices || [];
+            if (!devices.length || devices.some(d => Number(d.crypto_version || 1) < 2)) {
+              useChunked = false;
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to check group member crypto versions, falling back to monolithic", e);
+        useChunked = false;
+      }
+
       const localBlob = file;
-      const { encryptedBlob, key } = await encryptBlobChunked(file);
+      const { encryptedBlob, key } = await encryptBlob(file, null, useChunked);
 
       // 2. Upload to server with progress events
       const cdnUrl = await uploadAttachment(encryptedBlob, file.name, (loaded, total) => {

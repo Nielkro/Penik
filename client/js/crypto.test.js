@@ -9,6 +9,8 @@ import {
   decryptFileChaCha20,
   encryptFileChunked,
   encryptBlobChunked,
+  encryptFileMonolithic,
+  encryptBlob,
   encryptPairwiseBatch,
   encodeKey,
   isChunkedFile
@@ -222,8 +224,25 @@ async function runTests() {
     assertArrayEquals(testData, blobDec, "Blob chunked decrypted matches original");
 
     console.log("Test 7: Chunked file encryption/decryption passed.");
+    passed++;
   } catch (e) {
     console.error("Test 7: Chunked file test failed:", e);
+    failed++;
+  }
+
+  // Test 7b: Monolithic / Adaptive file encryption for legacy crypto_version 1
+  try {
+    const legacyData = new TextEncoder().encode("Legacy attachment compatibility test payload");
+    const { encryptedBlob, key: legacyKey } = await encryptBlob(new Blob([legacyData]), null, false);
+    const legacyEncBytes = new Uint8Array(await encryptedBlob.arrayBuffer());
+    assert(!(await isChunkedFile(legacyEncBytes)), "Monolithic encrypted file does NOT have PCK1 header");
+    const legacyDecrypted = await decryptFileChaCha20(legacyEncBytes, legacyKey);
+    assertArrayEquals(legacyData, legacyDecrypted, "Monolithic encrypted file decrypted matches original");
+
+    console.log("Test 7b: Legacy monolithic file encryption/decryption passed.");
+    passed++;
+  } catch (e) {
+    console.error("Test 7b: Legacy monolithic file test failed:", e);
     failed++;
   }
 
