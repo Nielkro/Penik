@@ -22,12 +22,16 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 FETCH_WASM=0
 FETCH_ANDROID=0
+FORCE=0
 WASM_DIR="${ROOT_DIR}/client/pkg/penik-crypto-wasm"
 ANDROID_DIR="${ROOT_DIR}/android/app/src/main/jniLibs"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -f|--force)
+      FORCE=1
+      ;;
     --wasm)
       FETCH_WASM=1
       if [[ $# -gt 1 && ! "$2" =~ ^-- ]]; then
@@ -47,7 +51,7 @@ while [[ $# -gt 0 ]]; do
       FETCH_ANDROID=1
       ;;
     -h|--help)
-      echo "Usage: $0 [--wasm [path]] [--android [path]] [--all]"
+      echo "Usage: $0 [--wasm [path]] [--android [path]] [--all] [--force]"
       exit 0
       ;;
     *)
@@ -112,8 +116,8 @@ download_release_file() {
 # ── Fetch WASM ──
 if [[ ${FETCH_WASM} -eq 1 ]]; then
   mkdir -p "${WASM_DIR}"
-  if [[ -f "${WASM_DIR}/penik_crypto_bg.wasm" && -s "${WASM_DIR}/penik_crypto_bg.wasm" ]]; then
-    info "WASM binary already exists at ${WASM_DIR}/penik_crypto_bg.wasm, skipping download."
+  if [[ ${FORCE} -eq 0 && -f "${WASM_DIR}/penik_crypto_bg.wasm" && -s "${WASM_DIR}/penik_crypto_bg.wasm" ]]; then
+    info "WASM binary already exists at ${WASM_DIR}/penik_crypto_bg.wasm, skipping download (use --force to overwrite)."
   else
     log "Fetching penik-crypto WASM package..."
     wasm_zip="${TMP_DIR}/wasm.zip"
@@ -147,8 +151,8 @@ fi
 # ── Fetch Android .so ──
 if [[ ${FETCH_ANDROID} -eq 1 ]]; then
   mkdir -p "${ANDROID_DIR}"
-  if [[ -f "${ANDROID_DIR}/arm64-v8a/libpenik_crypto.so" && -s "${ANDROID_DIR}/arm64-v8a/libpenik_crypto.so" ]]; then
-    info "Android JNI libraries already exist at ${ANDROID_DIR}, skipping download."
+  if [[ ${FORCE} -eq 0 && -f "${ANDROID_DIR}/arm64-v8a/libpenik_crypto.so" && -s "${ANDROID_DIR}/arm64-v8a/libpenik_crypto.so" ]]; then
+    info "Android JNI libraries already exist at ${ANDROID_DIR}, skipping download (use --force to overwrite)."
   else
     log "Fetching Android JNI libraries (.so)..."
     android_zip="${TMP_DIR}/android.zip"
