@@ -63,37 +63,31 @@ fun NavGraph(
         enterTransition = {
             slideInHorizontally(
                 initialOffsetX = { fullWidth -> fullWidth },
-                animationSpec = tween(280, easing = FastOutSlowInEasing)
-            ) + scaleIn(
-                initialScale = 0.90f,
-                animationSpec = tween(280, easing = FastOutSlowInEasing)
+                animationSpec = tween(220, easing = FastOutSlowInEasing)
             )
         },
         exitTransition = {
             slideOutHorizontally(
                 targetOffsetX = { fullWidth -> -fullWidth / 4 },
-                animationSpec = tween(280, easing = FastOutSlowInEasing)
-            ) + scaleOut(
-                targetScale = 0.94f,
-                animationSpec = tween(280, easing = FastOutSlowInEasing)
+                animationSpec = tween(220, easing = FastOutSlowInEasing)
             )
         },
         popEnterTransition = {
             slideInHorizontally(
                 initialOffsetX = { fullWidth -> -fullWidth / 4 },
-                animationSpec = tween(280, easing = FastOutSlowInEasing)
+                animationSpec = tween(240, easing = FastOutSlowInEasing)
             ) + scaleIn(
                 initialScale = 0.94f,
-                animationSpec = tween(280, easing = FastOutSlowInEasing)
+                animationSpec = tween(240, easing = FastOutSlowInEasing)
             )
         },
         popExitTransition = {
             slideOutHorizontally(
                 targetOffsetX = { fullWidth -> fullWidth },
-                animationSpec = tween(280, easing = FastOutSlowInEasing)
+                animationSpec = tween(240, easing = FastOutSlowInEasing)
             ) + scaleOut(
                 targetScale = 0.90f,
-                animationSpec = tween(280, easing = FastOutSlowInEasing)
+                animationSpec = tween(240, easing = FastOutSlowInEasing)
             )
         }
     ) {
