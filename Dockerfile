@@ -13,7 +13,7 @@ COPY client/ ./
 COPY scripts/fetch_crypto.sh /tmp/fetch_crypto.sh
 RUN chmod +x /tmp/fetch_crypto.sh && \
     GITHUB_REPO="${GITHUB_REPO}" GITHUB_TOKEN="${GITHUB_TOKEN}" \
-    /tmp/fetch_crypto.sh --wasm /app/client/pkg/penik-crypto-wasm
+    /tmp/fetch_crypto.sh --force --wasm /app/client/pkg/penik-crypto-wasm
 
 RUN npm run build
 
