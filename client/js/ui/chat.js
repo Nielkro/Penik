@@ -616,10 +616,34 @@ export async function renderChat(container, userId) {
   // divider can be inserted whenever the day changes.
   let lastRenderedDay = null;
 
+  function normalizeTs(raw) {
+    const n = Number(raw);
+    if (!n || isNaN(n)) return Date.now();
+    return n < 1e12 ? n * 1000 : n;
+  }
+
   function makeDateDivider(ts) {
     return el("div", { class: "msg-date-divider" },
       el("span", {}, formatDate(ts))
     );
+  }
+
+  function updateDateDividers() {
+    const bubbles = Array.from(messagesEl.querySelectorAll(".msg-bubble"));
+    messagesEl.querySelectorAll(".msg-date-divider").forEach(d => d.remove());
+
+    let currentDay = null;
+    for (const b of bubbles) {
+      const ts = Number(b.dataset.ts);
+      if (!ts) continue;
+      const day = formatDate(ts);
+      if (day && day !== currentDay) {
+        currentDay = day;
+        const divider = makeDateDivider(ts);
+        messagesEl.insertBefore(divider, b);
+      }
+    }
+    lastRenderedDay = currentDay;
   }
 
   function formatCallDuration(seconds) {
@@ -663,7 +687,7 @@ export async function renderChat(container, userId) {
         title = isOutgoing ? "Исходящий вызов" : "Входящий вызов";
     }
 
-    return { title, isOutgoing, isMissed, isVideo, icon: videoIcon, duration: call.duration, ts: (call.started_at || 0) * 1000 };
+    return { title, isOutgoing, isMissed, isVideo, icon: videoIcon, duration: call.duration, ts: normalizeTs(call.started_at) };
   }
 
   function makeCallBubble(call, myUserId, onCallback) {
@@ -701,7 +725,7 @@ export async function renderChat(container, userId) {
     const existing = messagesEl.querySelector(`[data-call-id="${CSS.escape(String(call.call_id))}"]`);
     if (existing) return;
 
-    const ts = (call.started_at || 0) * 1000;
+    const ts = normalizeTs(call.started_at);
     const bubble = makeCallBubble(call, myId, (isVideo) => {
       callManager.startCall(Number(userId), isVideo);
     });
@@ -786,13 +810,24 @@ export async function renderChat(container, userId) {
           showSafetyExplanationModal(msg.chat_id);
         });
       }
+      const ts = normalizeTs(msg.created_at || msg.timestamp);
+      bubble.dataset.ts = String(ts);
       bubble.dataset.msgId = msg.msg_id;
-      prepend ? messagesEl.prepend(bubble) : messagesEl.appendChild(bubble);
+      if (prepend) {
+        messagesEl.prepend(bubble);
+      } else {
+        const day = formatDate(ts);
+        if (day && day !== lastRenderedDay) {
+          messagesEl.appendChild(makeDateDivider(ts));
+          lastRenderedDay = day;
+        }
+        messagesEl.appendChild(bubble);
+      }
       return;
     }
 
     const isMine = String(msg.sender_id) === String(me && (me.id || me.user_id));
-    const ts = msg.created_at || Date.now();
+    const ts = normalizeTs(msg.created_at || msg.timestamp);
 
     const isSelfChat = Number(userId) === Number(myId);
     let statusEl = null;
@@ -914,6 +949,7 @@ export async function renderChat(container, userId) {
     );
     bubble._msg = msg;
     bubble.dataset.msgId = msg.msg_id;
+    bubble.dataset.ts = String(ts);
     if (msg.client_msg_id) {
       bubble.dataset.clientMsgId = msg.client_msg_id;
     }
@@ -934,6 +970,7 @@ export async function renderChat(container, userId) {
           const realMsgId = (bubble.dataset.msgId && !bubble.dataset.msgId.startsWith("tmp-")) ? bubble.dataset.msgId : (msg.client_msg_id || msg.msg_id || bubble.dataset.clientMsgId || bubble.dataset.msgId);
           await deleteMessage(realMsgId);
           bubble.remove();
+          updateDateDividers();
           triggerChatListUpdate();
           showToast("Сообщение удалено");
         } catch (err) {
@@ -948,6 +985,7 @@ export async function renderChat(container, userId) {
         const realMsgId = (bubble.dataset.msgId && !bubble.dataset.msgId.startsWith("tmp-")) ? bubble.dataset.msgId : (msg.client_msg_id || msg.msg_id || bubble.dataset.clientMsgId || bubble.dataset.msgId);
         await deleteMessage(realMsgId);
         bubble.remove();
+        updateDateDividers();
 
         if (deleteForEveryone) {
           getWS().send(OP.MSG_DELETE, {
@@ -980,6 +1018,7 @@ export async function renderChat(container, userId) {
           const realMsgId = (bubble.dataset.msgId && !bubble.dataset.msgId.startsWith("tmp-")) ? bubble.dataset.msgId : (msg.client_msg_id || msg.msg_id || bubble.dataset.clientMsgId || bubble.dataset.msgId);
           await deleteMessage(realMsgId);
           bubble.remove();
+          updateDateDividers();
           triggerChatListUpdate();
           showToast("Сообщение удалено");
         } catch (err) {
@@ -1007,8 +1046,8 @@ export async function renderChat(container, userId) {
   }
 
   const allTimelineItems = [
-    ...messages.map(m => ({ type: "message", data: m, ts: m.created_at || m.timestamp || 0 })),
-    ...calls.map(c => ({ type: "call", data: c, ts: (c.started_at || 0) * 1000 }))
+    ...messages.map(m => ({ type: "message", data: m, ts: normalizeTs(m.created_at || m.timestamp) })),
+    ...calls.map(c => ({ type: "call", data: c, ts: normalizeTs(c.started_at) }))
   ].sort((a, b) => a.ts - b.ts);
 
   allTimelineItems.forEach(item => {
@@ -1018,6 +1057,7 @@ export async function renderChat(container, userId) {
       appendCallLog(item.data);
     }
   });
+  updateDateDividers();
 
   requestAnimationFrame(() => {
     scrollDown.scrollToBottom();
@@ -1035,7 +1075,7 @@ export async function renderChat(container, userId) {
       isLoadingOlder = false;
       return;
     }
-    const oldestTs = oldest.created_at || Date.now();
+    const oldestTs = normalizeTs(oldest.created_at || oldest.timestamp);
     const oldestServerId = typeof oldest.msg_id === "number" ? oldest.msg_id : (oldest.server_id || null);
 
     // 1. Try local IndexedDB
@@ -1052,6 +1092,7 @@ export async function renderChat(container, userId) {
       
       messages = [...olderLocal, ...messages];
       olderLocal.slice().reverse().forEach(m => appendMessage(m, true));
+      updateDateDividers();
       
       messagesEl.scrollTop = messagesEl.scrollHeight - scrollHeightBefore + scrollTopBefore;
       isLoadingOlder = false;
@@ -1075,6 +1116,7 @@ export async function renderChat(container, userId) {
             const scrollTopBefore = messagesEl.scrollTop;
             messages = [...freshLocal, ...messages];
             freshLocal.slice().reverse().forEach(m => appendMessage(m, true));
+            updateDateDividers();
             messagesEl.scrollTop = messagesEl.scrollHeight - scrollHeightBefore + scrollTopBefore;
           } else {
             hasMoreOlder = false;
