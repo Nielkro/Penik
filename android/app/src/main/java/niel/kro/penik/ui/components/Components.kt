@@ -1882,6 +1882,85 @@ fun MessageTicks(
     }
 }
 
+fun isEmojiCodepoint(cp: Int): Boolean {
+    return (cp in 0x1F600..0x1F64F) || // Emoticons
+           (cp in 0x1F300..0x1F5FF) || // Misc Symbols and Pictographs
+           (cp in 0x1F680..0x1F6FF) || // Transport and Map
+           (cp in 0x1F700..0x1F77F) || // Alchemical Symbols
+           (cp in 0x1F780..0x1F7FF) || // Geometric Shapes Extended
+           (cp in 0x1F800..0x1F8FF) || // Supplemental Arrows-C
+           (cp in 0x1F900..0x1F9FF) || // Supplemental Symbols and Pictographs
+           (cp in 0x1FA00..0x1FA6F) || // Chess Symbols
+           (cp in 0x1FA70..0x1FAFF) || // Symbols and Pictographs Extended-A
+           (cp in 0x1F1E6..0x1F1FF) || // Regional Indicator Symbols (Flags)
+           (cp in 0x2600..0x27BF)   || // Misc Symbols and Dingbats
+           (cp in 0x2300..0x23FF)   || // Misc Technical
+           (cp in 0x2B00..0x2BFF)   || // Misc Symbols and Arrows
+           (cp in 0x2190..0x21FF)   || // Arrows
+           (cp in 0x25A0..0x25FF)   || // Geometric Shapes
+           (cp in 0x2934..0x2935)   || // Arrow curving up / down
+           (cp in 0x3297..0x3299)   || // Circled Ideographs
+           (cp == 0x3030 || cp == 0x303D) || // Wavy Dash, Part Alternation Mark
+           (cp == 0x00A9 || cp == 0x00AE || cp == 0x2122 || cp == 0x2139) || // ©, ®, ™, ℹ
+           (cp == 0x203C || cp == 0x2049) // ‼, ⁉
+}
+
+fun isEmojiModifierOrJoiner(cp: Int): Boolean {
+    return cp == 0x200D || // Zero Width Joiner (ZWJ)
+           cp == 0xFE0E || cp == 0xFE0F || // Variation Selectors
+           cp == 0x20E3 || // Combining Enclosing Keycap
+           (cp in 0x1F3FB..0x1F3FF) || // Fitzpatrick Skin Tone Modifiers
+           (cp in 0xE0020..0xE007F) // Tag characters for flags
+}
+
+fun getEmojiOnlyCount(text: String?): Int {
+    if (text.isNullOrBlank()) return 0
+    val trimmed = text.trim()
+    val it = java.text.BreakIterator.getCharacterInstance()
+    it.setText(trimmed)
+    var start = it.first()
+    var end = it.next()
+    var count = 0
+
+    while (end != java.text.BreakIterator.DONE) {
+        val cluster = trimmed.substring(start, end)
+        start = end
+        end = it.next()
+
+        if (cluster.all { Character.isWhitespace(it) }) continue
+
+        var hasEmoji = false
+        var hasInvalid = false
+        var i = 0
+        val len = cluster.length
+        while (i < len) {
+            val cp = cluster.codePointAt(i)
+            i += Character.charCount(cp)
+
+            if (isEmojiCodepoint(cp)) {
+                hasEmoji = true
+            } else if (isEmojiModifierOrJoiner(cp)) {
+                // Modifier or ZWJ
+            } else if ((cp in 0x30..0x39 || cp == 0x23 || cp == 0x2A) && cluster.contains('\u20E3')) {
+                // Keycap e.g. 1️⃣, #️⃣
+                hasEmoji = true
+            } else if (Character.isWhitespace(cp)) {
+                // Inner whitespace
+            } else {
+                hasInvalid = true
+                break
+            }
+        }
+
+        if (hasInvalid || !hasEmoji) {
+            return 0
+        }
+        count++
+    }
+
+    return count
+}
+
 @Composable
 fun MessageBubble(
     text: String,
@@ -1947,9 +2026,23 @@ fun MessageBubble(
     val isSticker = sticker != null && !isFailed
     val parsedText = if (attachment != null) attachment.caption else (fwdInfo?.text ?: text)
 
+    val emojiCount = remember(parsedText) {
+        if (attachment == null && sticker == null && !isFailed && fwdSenderName == null && replySender == null) {
+            getEmojiOnlyCount(parsedText)
+        } else {
+            0
+        }
+    }
+    val isEmojiOnly = emojiCount in 1..3
+    val emojiFontSize = when (emojiCount) {
+        1 -> 48.sp
+        2, 3 -> 34.sp
+        else -> 15.sp
+    }
+
     val bgColor = if (isFailed) {
         Color(0x26EF5350)
-    } else if (isSticker) {
+    } else if (isSticker || isEmojiOnly) {
         Color.Transparent
     } else if (isSentByMe) {
         LocalAppColors.current.sentMessageBg
@@ -1997,7 +2090,7 @@ fun MessageBubble(
     ) {
         val hasHeader = (!isSentByMe && senderName != null) || fwdSenderName != null || (replySender != null && replyText != null)
         val isMediaNoCaption = (attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/")) && attachment.caption.isNullOrBlank() && !hasHeader) || isSticker
-        val maxBubbleWidth = if (attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/"))) 300.dp else if (isSticker) 200.dp else 280.dp
+        val maxBubbleWidth = if (attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/"))) 300.dp else if (isSticker || isEmojiOnly) 200.dp else 280.dp
 
         Box(
             modifier = Modifier
@@ -2032,7 +2125,7 @@ fun MessageBubble(
                     )
                 }
                 .widthIn(max = maxBubbleWidth)
-                .clip(if (isSticker) RoundedCornerShape(12.dp) else BubbleShape(isSentByMe = isSentByMe))
+                .clip(if (isSticker || isEmojiOnly) RoundedCornerShape(12.dp) else BubbleShape(isSentByMe = isSentByMe))
                 .background(bgColor)
                 .combinedClickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -2044,10 +2137,10 @@ fun MessageBubble(
                     }
                 )
                 .padding(
-                    start = if (isMediaNoCaption || isSticker) 0.dp else 10.dp,
-                    end = if (isMediaNoCaption || isSticker) 0.dp else 10.dp,
-                    top = if (isMediaNoCaption || isSticker) 0.dp else 6.dp,
-                    bottom = if (isMediaNoCaption || isSticker) 0.dp else 6.dp
+                    start = if (isMediaNoCaption || isSticker || isEmojiOnly) 0.dp else 10.dp,
+                    end = if (isMediaNoCaption || isSticker || isEmojiOnly) 0.dp else 10.dp,
+                    top = if (isMediaNoCaption || isSticker || isEmojiOnly) 0.dp else 6.dp,
+                    bottom = if (isMediaNoCaption || isSticker || isEmojiOnly) 0.dp else 6.dp
                 )
         ) {
             DropdownMenu(
@@ -2293,6 +2386,52 @@ fun MessageBubble(
                                 .background(Color(0x73000000), shape = RoundedCornerShape(8.dp))
                                 .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
+                            Text(
+                                text = formatTime(timestamp),
+                                fontSize = 10.sp,
+                                color = Color.White
+                            )
+                            if (isSentByMe) {
+                                Spacer(modifier = Modifier.width(3.dp))
+                                MessageTicks(
+                                    delivered = delivered,
+                                    read = read,
+                                    isPending = isPending,
+                                    color = if (read) LocalAppColors.current.accent else Color.White.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+                    }
+                } else if (isEmojiOnly) {
+                    Box(
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = parsedText ?: "",
+                            fontSize = emojiFontSize,
+                            lineHeight = (emojiFontSize.value * 1.15f).sp,
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(
+                                    bottom = 4.dp,
+                                    end = if (emojiCount == 1) 24.dp else 12.dp
+                                )
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .background(Color(0x73000000), shape = RoundedCornerShape(8.dp))
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                        ) {
+                            if (editedAt != null && editedAt > 0L) {
+                                Text(
+                                    text = "ред.",
+                                    fontSize = 10.sp,
+                                    color = Color.White.copy(alpha = 0.7f),
+                                    modifier = Modifier.padding(end = 3.dp)
+                                )
+                            }
                             Text(
                                 text = formatTime(timestamp),
                                 fontSize = 10.sp,

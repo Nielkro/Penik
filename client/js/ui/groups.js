@@ -11,7 +11,7 @@ import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
 import {
   el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence,
   showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon, showConfirmModal, showPromptModal, showFullscreenImage, showForwardModal,
-  setMsgTextContent, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
+  setMsgTextContent, getEmojiOnlyCount, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
 import { onPresenceUpdate } from "../presence.js";
 import { getMessagePreview, getMessagePreviewInfo } from "./chat.js";
@@ -494,7 +494,11 @@ export async function renderGroup(container, groupId) {
       } catch (e) {}
     }
 
-    const bubble = el("div", { class: `msg-bubble ${mine ? "msg-out" : "msg-in"}${isMediaMsg ? " msg-media-bubble" : ""}${isStickerMsg ? " sticker-message msg-sticker-bubble" : ""}`, "data-mid": key },
+    const emojiCount = (!replyRefEl && !isMediaMsg && !isStickerMsg) ? getEmojiOnlyCount(msg.plaintext) : 0;
+    const isEmojiMsg = emojiCount >= 1 && emojiCount <= 3;
+    const emojiClass = isEmojiMsg ? (emojiCount === 1 ? " msg-emoji-bubble msg-emoji-1" : " msg-emoji-bubble msg-emoji-multi") : "";
+
+    const bubble = el("div", { class: `msg-bubble ${mine ? "msg-out" : "msg-in"}${isMediaMsg ? " msg-media-bubble" : ""}${isStickerMsg ? " sticker-message msg-sticker-bubble" : ""}${emojiClass}`, "data-mid": key },
       ...bubbleChildren
     );
     bubble._msg = msg;
@@ -545,6 +549,13 @@ export async function renderGroup(container, groupId) {
       const textEl = bubble.querySelector(".msg-text");
       if (textEl) {
         setMsgTextContent(textEl, newText);
+        bubble.classList.remove("msg-emoji-bubble", "msg-emoji-1", "msg-emoji-multi");
+        const count = getEmojiOnlyCount(newText);
+        if (count === 1) {
+          bubble.classList.add("msg-emoji-bubble", "msg-emoji-1");
+        } else if (count >= 2 && count <= 3) {
+          bubble.classList.add("msg-emoji-bubble", "msg-emoji-multi");
+        }
       }
       const metaEl = bubble.querySelector(".msg-meta");
       if (metaEl && !metaEl.querySelector(".msg-edited-badge")) {
