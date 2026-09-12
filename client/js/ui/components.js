@@ -3,7 +3,7 @@ import { getToken, BASE, getApiOrigin, getFullApiUrl } from "../api.js";
 import { getCachedMedia, saveCachedMedia, getAllContacts, getAllGroups } from "../storage.js";
 import { sendGroupMessage } from "../groups.js";
 import { sendDirectMessageToUser } from "./chat.js";
-import { showStickerPackModal, getLocalStickerBlobUrl } from "./stickers.js";
+import { showStickerPackModal, getLocalStickerBlobUrl, getLocalStickerEntry, preloadPackBundle } from "./stickers.js";
 
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -409,79 +409,122 @@ export function renderStickerContent(container, sticker) {
     ? `Стикер (${sticker.emoji}) — нажмите для полноэкранного просмотра, удерживайте для пака`
     : "Нажмите для полноэкранного просмотра, удерживайте для пака";
 
-  const localBlob = getLocalStickerBlobUrl(sticker.pack_id, sticker.file_name, sticker.id || sticker.sticker_id);
-  const isVideo = !localBlob && Boolean(
-    sticker.is_video ||
-    (sticker.file_name && sticker.file_name.endsWith(".webm")) ||
-    (sticker.url && sticker.url.endsWith(".webm"))
-  );
-  const url = localBlob || getFullApiUrl(sticker.url || `/api/v1/stickers/file/${sticker.pack_id}/${sticker.file_name || (sticker.id + (isVideo ? '.webm' : '.webp'))}`);
+  const packId = sticker.pack_id;
+  const fileName = sticker.file_name;
+  const stickerId = sticker.id || sticker.sticker_id;
 
-  if (isVideo) {
-    const video = document.createElement("video");
-    video.src = url;
-    video.autoplay = true;
-    video.loop = true;
-    video.muted = true;
-    video.defaultMuted = true;
-    video.playsInline = true;
-    video.controls = false;
-    video.disablePictureInPicture = true;
-    video.setAttribute("autoplay", "");
-    video.setAttribute("loop", "");
-    video.setAttribute("muted", "");
-    video.setAttribute("playsinline", "");
-    video.setAttribute("preload", "auto");
-    video.style.pointerEvents = "none";
-    video.className = "msg-sticker-media";
-    video.addEventListener("loadeddata", () => {
-      video.play().catch(() => {});
-    });
-    video.addEventListener("canplay", () => {
-      video.play().catch(() => {});
-    });
-    video.onerror = () => {
-      const fallbackImg = document.createElement("img");
-      fallbackImg.src = url;
-      fallbackImg.className = "msg-sticker-media";
-      fallbackImg.loading = "lazy";
-      fallbackImg.alt = sticker.emoji || "стикер";
-      fallbackImg.style.pointerEvents = "none";
-      video.replaceWith(fallbackImg);
-    };
-    wrapper.appendChild(video);
-    setTimeout(() => {
-      video.play().catch(() => {});
-    }, 50);
-  } else {
-    const img = document.createElement("img");
-    img.src = url;
-    img.className = "msg-sticker-media";
-    img.loading = "lazy";
-    img.alt = sticker.emoji || "стикер";
-    img.style.pointerEvents = "none";
-    img.onerror = () => {
-      const vid = document.createElement("video");
-      vid.src = url.replace(/\.[a-zA-Z0-9]+$/, '.webm');
-      vid.autoplay = true;
-      vid.loop = true;
-      vid.muted = true;
-      vid.defaultMuted = true;
-      vid.playsInline = true;
-      vid.controls = false;
-      vid.disablePictureInPicture = true;
-      vid.setAttribute("autoplay", "");
-      vid.setAttribute("loop", "");
-      vid.setAttribute("muted", "");
-      vid.setAttribute("playsinline", "");
-      vid.style.pointerEvents = "none";
-      vid.className = "msg-sticker-media";
-      vid.addEventListener("canplay", () => {
-        vid.play().catch(() => {});
+  function mountMedia(url, isVideo) {
+    wrapper.replaceChildren();
+    if (isVideo) {
+      const video = document.createElement("video");
+      video.src = url;
+      video.autoplay = true;
+      video.loop = true;
+      video.muted = true;
+      video.defaultMuted = true;
+      video.playsInline = true;
+      video.controls = false;
+      video.disablePictureInPicture = true;
+      video.setAttribute("autoplay", "");
+      video.setAttribute("loop", "");
+      video.setAttribute("muted", "");
+      video.setAttribute("playsinline", "");
+      video.setAttribute("preload", "auto");
+      video.style.pointerEvents = "none";
+      video.className = "msg-sticker-media";
+      video.addEventListener("loadeddata", () => {
+        video.play().catch(() => {});
       });
-      img.replaceWith(vid);
-    };
-    wrapper.appendChild(img);
+      video.addEventListener("canplay", () => {
+        video.play().catch(() => {});
+      });
+      video.onerror = () => {
+        const fallbackImg = document.createElement("img");
+        fallbackImg.src = url.replace(/\.[a-zA-Z0-9]+$/, '.webp');
+        fallbackImg.className = "msg-sticker-media";
+        fallbackImg.loading = "lazy";
+        fallbackImg.alt = sticker.emoji || "стикер";
+        fallbackImg.style.pointerEvents = "none";
+        video.replaceWith(fallbackImg);
+      };
+      wrapper.appendChild(video);
+      setTimeout(() => {
+        video.play().catch(() => {});
+      }, 50);
+    } else {
+      const img = document.createElement("img");
+      img.src = url;
+      img.className = "msg-sticker-media";
+      img.loading = "lazy";
+      img.alt = sticker.emoji || "стикер";
+      img.style.pointerEvents = "none";
+      img.onerror = () => {
+        const vid = document.createElement("video");
+        vid.src = url.replace(/\.[a-zA-Z0-9]+$/, '.webm');
+        vid.autoplay = true;
+        vid.loop = true;
+        vid.muted = true;
+        vid.defaultMuted = true;
+        vid.playsInline = true;
+        vid.controls = false;
+        vid.disablePictureInPicture = true;
+        vid.setAttribute("autoplay", "");
+        vid.setAttribute("loop", "");
+        vid.setAttribute("muted", "");
+        vid.setAttribute("playsinline", "");
+        vid.style.pointerEvents = "none";
+        vid.className = "msg-sticker-media";
+        vid.addEventListener("canplay", () => {
+          vid.play().catch(() => {});
+        });
+        img.replaceWith(vid);
+      };
+      wrapper.appendChild(img);
+    }
+  }
+
+  const localEntry = getLocalStickerEntry(packId, fileName, stickerId);
+  if (localEntry) {
+    mountMedia(localEntry.url, localEntry.isVideo);
+  } else if (packId) {
+    const placeholder = document.createElement("div");
+    placeholder.className = "msg-sticker-media";
+    placeholder.style.cssText = "display:flex;align-items:center;justify-content:center;font-size:42px;opacity:0.6;min-width:80px;min-height:80px;";
+    if (sticker.emoji) {
+      placeholder.textContent = sticker.emoji;
+    }
+    wrapper.appendChild(placeholder);
+
+    preloadPackBundle(packId).then(() => {
+      const resolved = getLocalStickerEntry(packId, fileName, stickerId);
+      if (resolved) {
+        mountMedia(resolved.url, resolved.isVideo);
+      } else {
+        const isVideo = Boolean(
+          sticker.is_video ||
+          (fileName && fileName.endsWith(".webm")) ||
+          (sticker.url && sticker.url.endsWith(".webm"))
+        );
+        const url = getFullApiUrl(sticker.url || `/api/v1/stickers/file/${packId}/${fileName || (stickerId + (isVideo ? '.webm' : '.webp'))}`);
+        mountMedia(url, isVideo);
+      }
+    }).catch(() => {
+      const isVideo = Boolean(
+        sticker.is_video ||
+        (fileName && fileName.endsWith(".webm")) ||
+        (sticker.url && sticker.url.endsWith(".webm"))
+      );
+      const url = getFullApiUrl(sticker.url || `/api/v1/stickers/file/${packId}/${fileName || (stickerId + (isVideo ? '.webm' : '.webp'))}`);
+      mountMedia(url, isVideo);
+    });
+  } else {
+    const isVideo = Boolean(
+      sticker.is_video ||
+      (fileName && fileName.endsWith(".webm")) ||
+      (sticker.url && sticker.url.endsWith(".webm"))
+    );
+    const url = getFullApiUrl(sticker.url || `/api/v1/stickers/file/${packId}/${fileName || (stickerId + (isVideo ? '.webm' : '.webp'))}`);
+    mountMedia(url, isVideo);
   }
 
   let longPressTimer = null;

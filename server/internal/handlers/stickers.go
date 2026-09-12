@@ -369,10 +369,19 @@ func buildStickerPackZip(packDir, zipPath string) error {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		base := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
 
-		// Only include lightweight displayable formats in bundle.zip (never raw webm)
+		// Only include lightweight displayable formats in bundle.zip.
+		// If webm has no webp equivalent on disk yet, package webm as fallback so no stickers are missing.
 		if ext != ".webp" && ext != ".tgs" && ext != ".png" {
-			continue
+			if ext == ".webm" {
+				webpPath := filepath.Join(packDir, base+".webp")
+				if _, err := os.Stat(webpPath); err == nil {
+					continue // webp exists, skip webm
+				}
+			} else {
+				continue
+			}
 		}
 
 		filePath := filepath.Join(packDir, entry.Name())
@@ -509,8 +518,11 @@ func HandleServeStickerFile(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		// If WebM requested by Firefox or image-accepting client, try serving/transcoding to universally compatible WebP
-		if strings.HasSuffix(fileName, ".webm") && (strings.Contains(r.Header.Get("User-Agent"), "Firefox") || strings.Contains(r.Header.Get("Accept"), "image/webp")) {
+		// If WebM requested by an <img> tag or image-only request (Accept contains image/* and NOT video/*),
+		// try serving/transcoding to universally compatible WebP so <img> can render it.
+		// Never do this for <video> elements or video player clients.
+		isImageOnlyRequest := strings.Contains(r.Header.Get("Accept"), "image/") && !strings.Contains(r.Header.Get("Accept"), "video/")
+		if strings.HasSuffix(fileName, ".webm") && isImageOnlyRequest {
 			base := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 			outWebp := filepath.Join(packDir, base+".webp")
 			if _, webpErr := os.Stat(outWebp); webpErr == nil {
