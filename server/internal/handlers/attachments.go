@@ -139,6 +139,30 @@ func GetAttachment(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		}
 
 		filePath := filepath.Join(cfg.UploadDir, "attachments", id+".bin")
+
+		// Offload file streaming to the reverse proxy (Caddy X-Accel-Redirect)
+		// when STATIC_OFFLOAD_BASE is configured. The proxy must expose an
+		// internal-only handler that maps that prefix to UploadDir on disk.
+		// We still stat the file so we can return 404 if it is missing.
+		if cfg.XAccelBase != "" {
+			if _, statErr := os.Stat(filePath); os.IsNotExist(statErr) {
+				http.Error(w, "attachment not found", http.StatusNotFound)
+				return
+			} else if statErr != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			accelURI := cfg.XAccelBase + "/upload/attachments/" + id + ".bin"
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+			w.Header().Set("Accept-Ranges", "bytes")
+			w.Header().Set("ETag", fmt.Sprintf(`"%s"`, id))
+			w.Header().Set("Content-Disposition", "attachment; filename="+id+".bin")
+			w.Header().Set("X-Accel-Redirect", accelURI)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		f, err := os.Open(filePath)
 		if err != nil {
 			if os.IsNotExist(err) {

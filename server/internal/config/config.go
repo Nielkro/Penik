@@ -23,6 +23,12 @@ type Config struct {
 	GeoIPPath          string // Path to GeoLite2-City.mmdb / dbip-city-lite.mmdb (optional)
 	TelegramBotToken   string
 	StickersDir        string
+	// XAccelBase is the internal URI prefix exposed by the reverse proxy
+	// (e.g. Caddy's `handle /static-internal/*` with `internal`) that maps
+	// directly to the on-disk data directory. When non-empty the server emits
+	// an X-Accel-Redirect header instead of streaming file bytes itself,
+	// offloading static file delivery to the proxy (STATIC_OFFLOAD_BASE env).
+	XAccelBase         string
 	LiveKitURL         string
 	LiveKitFallbackURL string
 	LiveKitAPIKey      string
@@ -104,6 +110,7 @@ func Load() *Config {
 		GeoIPPath:          getEnv("GEOIP_PATH", "./data/GeoLite2-City.mmdb"),
 		TelegramBotToken:   getEnv("TELEGRAM_BOT_TOKEN", ""),
 		StickersDir:        getEnv("STICKERS_DIR", "./data/stickers"),
+		XAccelBase:         getEnv("STATIC_OFFLOAD_BASE", ""),
 		LiveKitURL:         getEnv("LIVEKIT_URL", ""),
 		LiveKitFallbackURL: getEnv("LIVEKIT_FALLBACK_URL", ""),
 		LiveKitAPIKey:      getEnv("LIVEKIT_API_KEY", defaultLiveKitAPIKey),

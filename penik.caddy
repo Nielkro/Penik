@@ -18,7 +18,7 @@ penik.ru {
 
 # 2. Веб-клиент мессенджера (SPA)
 web.penik.ru {
-    # Проксирование API и WebSockets на бэкенд прямо с web.penik.ru
+    # Proxying API and WebSockets to the backend directly from web.penik.ru
     handle /api/* {
         reverse_proxy 127.0.0.1:8143 {
             header_up Host {host}
@@ -27,7 +27,7 @@ web.penik.ru {
         }
     }
 
-    # Статика веб-клиента и SPA роутинг
+    # Static SPA and SPA routing
     handle {
         root * /opt/penik/client/dist
         try_files {path} /index.html
@@ -35,7 +35,7 @@ web.penik.ru {
         encode gzip zstd
     }
 
-    # Кэширование статических файлов
+    # Cache static assets
     @static {
         path /assets/* /sw.js /favicon*
     }
@@ -49,15 +49,64 @@ web.penik.ru {
     }
 }
 
-# 3. Бэкенд API и WebSockets (проксирование в docker-контейнер на 127.0.0.1:8143)
+# 3. Backend API and WebSockets (reverse proxy to docker container at 127.0.0.1:8143)
 api.penik.ru {
-    reverse_proxy 127.0.0.1:8143 {
-        header_up Host {host}
-        header_up X-Real-IP {client_ip}
-        header_up X-Forwarded-Proto {scheme}
+    # ---------------------------------------------------------------------------
+    # Sticker static files — served directly from disk by Caddy, bypassing Go.
+    # The Go server only handles metadata/import/install API endpoints.
+    # Sticker files are written to disk during import; transcoding (webm→webp)
+    # is triggered by the import handler before responding, so files always exist
+    # by the time clients request them.
+    # ---------------------------------------------------------------------------
+    handle /api/v1/stickers/file/* {
+        # Strip the API prefix so the remaining path matches the on-disk layout:
+        #   /api/v1/stickers/file/{pack_id}/{filename}
+        #   → /opt/penik/data/stickers/{pack_id}/{filename}
+        uri strip_prefix /api/v1/stickers/file
+        root * /opt/penik/data/stickers
+        file_server {
+            hide bundle.zip *.tmp_*
+        }
+        header Cache-Control "public, max-age=86400"
     }
 
-    # Максимальный размер вложений (250MB)
+    # Bundle ZIP — same idea: serve the pre-built bundle.zip directly from disk.
+    # The Go import handler builds (and rebuilds) bundle.zip on disk, so Caddy
+    # just hands it over as a static file without touching Go at all.
+    handle /api/v1/stickers/pack/*/bundle.zip {
+        # Path after stripping prefix: /{pack_id}/bundle.zip
+        uri strip_prefix /api/v1/stickers/pack
+        root * /opt/penik/data/stickers
+        file_server
+        header Cache-Control "public, max-age=86400"
+    }
+
+    # ---------------------------------------------------------------------------
+    # Internal-only handler for X-Accel-Redirect (encrypted attachments).
+    # Go validates the ACL and then sets X-Accel-Redirect: /static-internal/...
+    # Caddy intercepts the header and serves the file from disk without another
+    # round-trip through the Go process. This path must NOT be routable from the
+    # outside — the `internal` directive blocks any direct client request to it.
+    # On-disk layout: /opt/penik/data/upload/attachments/{id}.bin
+    # Accel URI:      /static-internal/upload/attachments/{id}.bin
+    # ---------------------------------------------------------------------------
+    handle /static-internal/* {
+        internal
+        uri strip_prefix /static-internal
+        root * /opt/penik/data
+        file_server
+    }
+
+    # All other /api/* traffic → Go backend
+    handle {
+        reverse_proxy 127.0.0.1:8143 {
+            header_up Host {host}
+            header_up X-Real-IP {client_ip}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Max attachment upload size (250 MB)
     request_body {
         max_size 250MB
     }
