@@ -116,6 +116,21 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.filled.AttachFile
 
+sealed interface GroupTimelineItem {
+    val id: String
+    val timestamp: Long
+
+    data class Message(val msg: niel.kro.penik.data.local.entity.GroupMessageEntity) : GroupTimelineItem {
+        override val id: String get() = msg.messageId
+        override val timestamp: Long get() = msg.createdAt * 1000L
+    }
+
+    data class DateHeader(val dateText: String, val dayKey: Long) : GroupTimelineItem {
+        override val id: String get() = "date-$dayKey"
+        override val timestamp: Long get() = dayKey
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupChatScreen(
@@ -141,6 +156,20 @@ fun GroupChatScreen(
     val connectionState by viewModel.connectionState.collectAsState()
     val isUnauthorized = connectionState == niel.kro.penik.data.network.websocket.ConnectionState.UNAUTHORIZED
     val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
+    val timelineItems = remember(messages) {
+        val items = mutableListOf<GroupTimelineItem>()
+        var lastDayKey: Long? = null
+        for (msg in messages) {
+            val ts = msg.createdAt * 1000L
+            val dayKey = niel.kro.penik.ui.components.getDayKey(ts)
+            if (dayKey != lastDayKey) {
+                lastDayKey = dayKey
+                items.add(GroupTimelineItem.DateHeader(niel.kro.penik.ui.components.formatChatDate(ts), dayKey))
+            }
+            items.add(GroupTimelineItem.Message(msg))
+        }
+        items
+    }
     var inputText by remember { mutableStateOf("") }
     var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
 
@@ -368,69 +397,77 @@ fun GroupChatScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                     reverseLayout = false
                 ) {
-                    items(messages) { msg ->
-                        val isOwn = msg.sentByMe
-                        val senderMember = members.find { it.userId == msg.senderUserId }
-                        val displayName = senderMember?.let {
-                            it.name.ifEmpty { it.nickname.ifEmpty { "#${it.userId}" } }
-                        } ?: "#${msg.senderUserId}"
-                        
-                        val parentMsg = msg.replyToMsgId?.let { parentId ->
-                            messages.find { it.messageId == parentId }
-                        }
-                        val replyText = if (msg.replyToMsgId != null) {
-                            parentMsg?.let { if (it.text == "[DELETED]") "Сообщение удалено" else it.text } ?: "Сообщение удалено"
-                        } else null
-
-                        val replySender = if (msg.replyToMsgId != null) {
-                            parentMsg?.let {
-                                val parentSenderMember = members.find { m -> m.userId == it.senderUserId }
-                                parentSenderMember?.let { m ->
-                                    m.name.ifEmpty { m.nickname.ifEmpty { "#${m.userId}" } }
-                                } ?: "#${it.senderUserId}"
-                            } ?: "Сообщение"
-                        } else null
-
-                        MessageBubble(
-                            text = msg.text,
-                            isSentByMe = isOwn,
-                            // createdAt is stored in seconds (used as AAD in group crypto);
-                            // Date() expects milliseconds.
-                            timestamp = msg.createdAt * 1000,
-                            delivered = if (isOwn) msg.delivered else false,
-                            isPending = isOwn && (msg.serverId == 0L),
-                            senderName = displayName,
-                            senderUserId = msg.senderUserId,
-                            replyToMsgId = msg.replyToMsgId,
-                            replySender = replySender,
-                            replyText = replyText,
-                            editedAt = msg.editedAt,
-                            onReply = {
-                                activeReply = ReplyInfo(
-                                    msgId = msg.messageId,
-                                    text = msg.text,
-                                    sender = displayName
-                                )
-                            },
-                            onEdit = {
-                                viewModel.startEditing(msg)
-                            },
-                            onReplyClick = { parentId ->
-                                val index = messages.indexOfFirst { it.messageId == parentId }
-                                if (index >= 0) {
-                                    coroutineScope.launch {
-                                        listState.animateScrollToItem(index)
-                                    }
-                                }
-                            },
-                            onForward = {
-                                messageToForwardText = msg.text
-                                messageToForwardSender = displayName
-                            },
-                            onStickerClick = { packId ->
-                                selectedStickerPackId = packId
+                    items(timelineItems, key = { it.id }) { item ->
+                        when (item) {
+                            is GroupTimelineItem.DateHeader -> {
+                                niel.kro.penik.ui.components.DateDivider(text = item.dateText)
                             }
-                        )
+                            is GroupTimelineItem.Message -> {
+                                val msg = item.msg
+                                val isOwn = msg.sentByMe
+                                val senderMember = members.find { it.userId == msg.senderUserId }
+                                val displayName = senderMember?.let {
+                                    it.name.ifEmpty { it.nickname.ifEmpty { "#${it.userId}" } }
+                                } ?: "#${msg.senderUserId}"
+                                
+                                val parentMsg = msg.replyToMsgId?.let { parentId ->
+                                    messages.find { it.messageId == parentId }
+                                }
+                                val replyText = if (msg.replyToMsgId != null) {
+                                    parentMsg?.let { if (it.text == "[DELETED]") "Сообщение удалено" else it.text } ?: "Сообщение удалено"
+                                } else null
+
+                                val replySender = if (msg.replyToMsgId != null) {
+                                    parentMsg?.let {
+                                        val parentSenderMember = members.find { m -> m.userId == it.senderUserId }
+                                        parentSenderMember?.let { m ->
+                                            m.name.ifEmpty { m.nickname.ifEmpty { "#${m.userId}" } }
+                                        } ?: "#${it.senderUserId}"
+                                    } ?: "Сообщение"
+                                } else null
+
+                                MessageBubble(
+                                    text = msg.text,
+                                    isSentByMe = isOwn,
+                                    // createdAt is stored in seconds (used as AAD in group crypto);
+                                    // Date() expects milliseconds.
+                                    timestamp = msg.createdAt * 1000,
+                                    delivered = if (isOwn) msg.delivered else false,
+                                    isPending = isOwn && (msg.serverId == 0L),
+                                    senderName = displayName,
+                                    senderUserId = msg.senderUserId,
+                                    replyToMsgId = msg.replyToMsgId,
+                                    replySender = replySender,
+                                    replyText = replyText,
+                                    editedAt = msg.editedAt,
+                                    onReply = {
+                                        activeReply = ReplyInfo(
+                                            msgId = msg.messageId,
+                                            text = msg.text,
+                                            sender = displayName
+                                        )
+                                    },
+                                    onEdit = {
+                                        viewModel.startEditing(msg)
+                                    },
+                                    onReplyClick = { parentId ->
+                                        val index = timelineItems.indexOfFirst { it.id == parentId }
+                                        if (index >= 0) {
+                                            coroutineScope.launch {
+                                                listState.animateScrollToItem(index)
+                                            }
+                                        }
+                                    },
+                                    onForward = {
+                                        messageToForwardText = msg.text
+                                        messageToForwardSender = displayName
+                                    },
+                                    onStickerClick = { packId ->
+                                        selectedStickerPackId = packId
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -445,7 +482,7 @@ fun GroupChatScreen(
                     FloatingActionButton(
                         onClick = {
                             coroutineScope.launch {
-                                listState.animateScrollToItem(messages.lastIndex)
+                                listState.animateScrollToItem(timelineItems.lastIndex)
                             }
                         },
                         containerColor = LocalAppColors.current.panel,
