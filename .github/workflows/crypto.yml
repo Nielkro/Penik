@@ -1,0 +1,130 @@
+name: Build & Release Crypto
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'rust/penik-crypto/**'
+      - '.github/workflows/crypto.yml'
+      - 'scripts/build_rust.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build-wasm:
+    name: Build WASM (Web)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: |
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM package
+        run: |
+          cd rust/penik-crypto
+          wasm-pack build --target web --out-dir ../../client/pkg/penik-crypto-wasm
+
+      - name: Verify WASM binary
+        run: |
+          test -f client/pkg/penik-crypto-wasm/penik_crypto_bg.wasm
+          ls -lh client/pkg/penik-crypto-wasm/
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: penik-crypto-wasm
+          path: client/pkg/penik-crypto-wasm/
+          if-no-files-found: error
+          retention-days: 30
+
+  build-android-so:
+    name: Build Android Native (.so)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain & Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26b
+          add-to-path: true
+
+      - name: Build Android JNI libraries
+        run: |
+          cd rust/penik-crypto
+          mkdir -p jniLibs
+          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64 -o jniLibs build --release
+
+      - name: Verify .so libraries
+        run: |
+          find rust/penik-crypto/jniLibs/ -name "libpenik_crypto.so" -ls
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: penik-crypto-android
+          path: rust/penik-crypto/jniLibs/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: Publish Latest Crypto Release
+    needs: [build-wasm, build-android-so]
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download WASM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: penik-crypto-wasm
+          path: artifacts/wasm
+
+      - name: Download Android artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: penik-crypto-android
+          path: artifacts/android
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          cp artifacts/wasm/penik_crypto_bg.wasm release-assets/
+          (cd artifacts/wasm && zip -r ../../release-assets/penik-crypto-wasm.zip .)
+          (cd artifacts/android && zip -r ../../release-assets/penik-crypto-android.zip .)
+          ls -lh release-assets/
+
+      - name: Publish or update rolling release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create crypto-latest \
+            release-assets/penik_crypto_bg.wasm \
+            release-assets/penik-crypto-wasm.zip \
+            release-assets/penik-crypto-android.zip \
+            --title "Latest Crypto Binaries" \
+            --notes "Automated crypto binaries compiled from commit ${{ github.sha }}." \
+            --clobber
