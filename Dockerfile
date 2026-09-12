@@ -1,9 +1,20 @@
 # Stage 1: Build client frontend
 FROM node:20-alpine AS client-builder
 WORKDIR /app/client
+
+RUN apk add --no-cache bash curl unzip jq
+
+ARG GITHUB_REPO="Nielkro/Penik"
+ARG GITHUB_TOKEN=""
+
 COPY client/package*.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY client/ ./
+COPY scripts/fetch_crypto.sh /tmp/fetch_crypto.sh
+RUN chmod +x /tmp/fetch_crypto.sh && \
+    GITHUB_REPO="${GITHUB_REPO}" GITHUB_TOKEN="${GITHUB_TOKEN}" \
+    /tmp/fetch_crypto.sh --wasm /app/client/pkg/penik-crypto-wasm
+
 RUN npm run build
 
 # Stage 2: Build Go server with embedded frontend
