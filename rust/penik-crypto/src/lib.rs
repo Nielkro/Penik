@@ -14,7 +14,7 @@ pub mod jni;
 
 /// Current internal crypto core build/ABI version.
 /// Bump this integer when adding new exports, modifying signatures, or changing ABI.
-pub const CRYPTO_CORE_VERSION: u32 = 1;
+pub const CRYPTO_CORE_VERSION: u32 = 2;
 
 #[inline]
 pub fn crypto_core_version() -> u32 {
@@ -27,10 +27,14 @@ pub use aad::{
     GROUP_PROTOCOL_VERSION, PAIRWISE_PROTOCOL_VERSION, PAIRWISE_PROTOCOL_VERSION_V2,
 };
 pub use cipher::{
-    chacha20poly1305_decrypt, chacha20poly1305_encrypt, decrypt_file, e2ee_decrypt,
-    e2ee_encrypt, encrypt_file, group_decrypt, group_encrypt, unwrap_group_key,
-    wrap_group_key_for_device, E2EEEncrypted, DEFAULT_GROUP_INFO, DEFAULT_PAIRWISE_INFO,
-    GROUP_WRAP_INFO, KEY_SIZE, NONCE_SIZE, TAG_SIZE,
+    build_chunk_aad, chacha20poly1305_decrypt, chacha20poly1305_encrypt,
+    create_chunked_file_header, decrypt_file, decrypt_file_chunk, derive_chunk_nonce,
+    e2ee_decrypt, e2ee_encrypt, encrypt_file, encrypt_file_chunk, encrypt_file_chunked,
+    encrypt_pairwise_fanout, generate_file_key_and_nonce, group_decrypt, group_encrypt,
+    is_chunked_file, parse_chunked_file_header, unwrap_group_key, wrap_group_key_for_device,
+    DeviceCiphertextEnvelope, DeviceRecipient, E2EEEncrypted, CHUNK_HEADER_SIZE, CHUNK_MAGIC,
+    DEFAULT_CHUNK_SIZE, DEFAULT_GROUP_INFO, DEFAULT_PAIRWISE_INFO, GROUP_WRAP_INFO, KEY_SIZE,
+    NONCE_SIZE, TAG_SIZE,
 };
 pub use errors::CryptoError;
 pub use kdf::{hkdf_derive, pbkdf2_derive};

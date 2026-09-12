@@ -27,21 +27,24 @@
 ```
 Docs/            Подробная документация: REST API, WebSocket, Architecture, Calls
 server/          Go-бэкенд: REST + WebSocket, SQLite, встроенная раздача веб-клиента
-  cmd/server/    точка входа, embed собранного фронтенда
-  internal/      config, db, handlers (auth, stickers, attachments, time, ws, call), middleware, ws
+  cmd/server/    точка входа, embed собранного фронтенда (go generate)
+  internal/      config, db, handlers, middleware, ws, push (FCM), stickers
 rust/            Нативное ядро penik-crypto: X25519, ChaCha20-Poly1305, KDF, Zeroize, JNI, C-ABI, WASM
-scripts/         Скрипты сборки: build_rust.sh (NDK cross-compilation под arm64-v8a, armeabi-v7a, x86_64, x86)
-client/          Веб-клиент (Vite, WebCrypto, libsodium, WASM)
-  js/            api, ws, crypto, groups, pairing, presence, call, app + ui/ (chat, stickers, call_modal)
-  css/           стили
+scripts/         build_rust.sh (NDK cross-compilation под arm64-v8a, armeabi-v7a, x86_64, x86), fetch_crypto.sh (готовые .so/WASM из CI), run_e2e.py (запуск E2E)
+.github/         CI: crypto.yml (сборка WASM + .so под 4 ABI, релиз crypto-latest)
+client/          Веб-клиент (Vite, WebCrypto, WASM)
+  js/            api, ws, crypto, groups, pairing, presence, call, sounds, storage, vault, wordcoder, pinning, app + ui/
   sw.js          Service Worker: стриминг зашифрованной медиа через HTTP 206
+  scripts/       build-sw.js (штамп версии service worker)
 android/         Android-клиент (Gradle, Compose, JNI Rust Crypto)
-  data/          network (api, ws, time), crypto (JNI RustCryptoCore), repository, local (Room + SQLCipher)
-  ui/            screen (auth, chats, chatroom, groups, call, settings), theme (AppIconManager)
-tests/           E2E и кросс-языковые тесты верификации криптографии (Python, Rust, JS)
-plan/            Спецификации протоколов: api_protocol, e2ee_plan, groups_plan, android_client_plan
+  data/          network (api, ws, time), crypto (RustCryptoCore, E2EE, GroupCrypto), repository, local (Room + SQLCipher)
+  ui/            screen (auth, chats, chatroom, groups, calls, call overlay, settings, pairing), theme (AppIconManager)
+  jniLibs/       готовые libpenik_crypto.so (не в гите, через fetch_crypto.sh или build_rust.sh)
+landing/         Лендинг penik.ru
+Dockerfile / docker-compose.yml / penik.caddy  упаковка и деплой сервера
+tests/           E2E и кросс-языковые тесты криптографии (Python, Rust, JS)
+plan/            Спецификации протоколов: api_protocol, e2ee_plan, groups_plan, android_client_plan, micro_rust_core_plan, new_device_key_invalidation_plan
 PROJECT_MAP.md   Индекс файлов проекта с описанием назначения каждого
-AUDIT.md         Аудит криптографии клиента
 SECURITY_AUDIT.md Аудит безопасности с реестром находок
 ```
 
@@ -143,9 +146,10 @@ Android-клиент поддерживает переключение назв�
 
 ### Звонки 1:1 (LiveKit)
 
-Аудио- и видеозвонки со сквозной сигнализацией через WebSocket (опкоды `0x30`–`0x36`):
+Аудио- и видеозвонки со сквозной сигнализацией через WebSocket (опкоды `0x30`–`0x39`):
 - Звонок одновременно поступает на все активные устройства вызываемого пользователя (multi-device ring).
-- При ответе на одном устройстве остальные получают кадр `CALL_TAKEN` и прекращают звонить.
+- При ответе на одном устройстве остальные получают кадр `CALL_TAKEN` (`0x36`) и прекращают звонить.
+- `0x37` — запись в историю звонков, `0x38` — реплей состояния вернувшемуся устройству, `0x39` — состояние пира (обрыв/возврат связи).
 - Автоматический failover на резервный LiveKit сервер при сбоях связи.
 
 ### Транспорт
@@ -156,10 +160,10 @@ REST под `/api/v1/` — регистрация, профили, синхро�
 
 | Диапазон | Назначение |
 |----------|-----------|
-| `0x01`–`0x0b` | личные сообщения: отправка, доставка, ack, оффлайн-батч, ping/pong, удаление и очистка чата |
-| `0x10`–`0x1e` | ключи, retry, прочтения, pairing, статусы, аватары, presence, shutdown |
-| `0x20`–`0x28` | группы: сообщения, ack, доставка/прочтение, доступность ключа, смена состава, история, аватар |
-| `0x30`–`0x36` | звонки: offer, incoming, accept/accepted, reject, end, «принято на другом устройстве» |
+| `0x01`–`0x0e` | личные сообщения: отправка, доставка, ack, оффлайн-батч, ping/pong, удаление и очистка чата, правки, обновление профиля |
+| `0x10`–`0x1f` | ключи, retry, прочтения, pairing, статусы, аватары, presence, shutdown, typing |
+| `0x20`–`0x29` | группы: сообщения, ack, доставка/прочтение, доступность ключа, смена состава, история, аватар, правки |
+| `0x30`–`0x39` | звонки: offer, incoming, accept/accepted, reject, end, «принято на другом устройстве», log, state replay, peer state |
 
 Точные структуры — в `server/internal/ws/protocol.go`, описание протокола — в `plan/api_protocol.md` и `Docs/WEBSOCKET.md`.
 
@@ -197,8 +201,12 @@ cd rust/penik-crypto && cargo test
 # 3. Кросс-платформенная сверка криптографии (Rust ↔ Python стандарты RFC 7748 / 8439 / 2898)
 python3 tests/e2e/test_crypto_core.py
 
-# 4. Кросс-платформенные тесты криптографии веб-клиента (JS WebCrypto / libsodium)
+# 4. Кросс-платформенные тесты криптографии веб-клиента (JS + Rust WASM)
 node client/js/crypto.test.js
+node client/js/groups.crypto.test.js
+
+# 5. Полный E2E прогон (поднимает эфемерный сервер, 34 проверки)
+python3 scripts/run_e2e.py
 ```
 
 ## Статус безопасности
@@ -219,9 +227,8 @@ node client/js/crypto.test.js
 
 - [`Docs/README.md`](Docs/README.md) — Главный индекс и навигация по документации
 - [`Docs/REST_API.md`](Docs/REST_API.md) — Подробная спецификация REST API
-- [`Docs/WEBSOCKET.md`](Docs/WEBSOCKET.md) — Бинарный протокол WebSocket (опкоды 0x01–0x36)
+- [`Docs/WEBSOCKET.md`](Docs/WEBSOCKET.md) — Бинарный протокол WebSocket (опкоды 0x01–0x39)
 - [`Docs/CALLS.md`](Docs/CALLS.md) — Архитектура и сигнализация LiveKit звонков
 - [`Docs/ARCHITECTURE.md`](Docs/ARCHITECTURE.md) — Архитектура E2EE, группы, устройства, защищённые вложения и база данных
 - [`PROJECT_MAP.md`](PROJECT_MAP.md) — Индекс исходников с назначением каждого файла
 - [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md) — Аудит безопасности с реестром находок
-- [`AUDIT.md`](AUDIT.md) — Аудит криптографии клиента

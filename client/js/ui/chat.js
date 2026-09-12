@@ -1,5 +1,5 @@
 import { apiGet, apiDelete, uploadAttachment, listPeerCalls } from "../api.js";
-import { encryptFileChaCha20, encodeKey, computeSafetyNumber, computeSafetyFingerprint } from "../crypto.js";
+import { encryptFileChaCha20, encryptBlobChunked, encodeKey, computeSafetyNumber, computeSafetyFingerprint } from "../crypto.js";
 import QRCode from "qrcode";
 import {
   saveMessage, getMessages, getMessage,
@@ -1226,12 +1226,8 @@ export async function renderChat(container, userId) {
     scrollDown.scrollToBottom();
 
     try {
-      const fileBuffer = new Uint8Array(await file.arrayBuffer());
-
-      const localBlob = new Blob([fileBuffer], { type: file.type || "application/octet-stream" });
-
-      const { encryptedBytes, key } = await encryptFileChaCha20(fileBuffer);
-      const encryptedBlob = new Blob([encryptedBytes], { type: "application/octet-stream" });
+      const localBlob = file;
+      const { encryptedBlob, key } = await encryptBlobChunked(file);
 
       // 2. Upload to server with progress events
       const cdnUrl = await uploadAttachment(encryptedBlob, file.name, (loaded, total) => {

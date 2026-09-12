@@ -382,11 +382,14 @@ class MessageRepository @Inject constructor(
 
         val nowSec = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
 
-        val payloads = allDevices.map { device ->
+        val recipientInfos = ArrayList<E2EECrypto.DeviceRecipientInfo>(allDevices.size)
+        for (device in allDevices) {
             val recipientIKPub = java.util.Base64.getDecoder().decode(device.identityKey)
+
+            // TOFU verification: inspect and warn if the identity key has changed
             val targetUserId = deviceOwners[device.deviceId] ?: toUserId
             val pinResult = identityPins.verify(targetUserId, device.deviceId, recipientIKPub)
-            if (pinResult == niel.kro.penik.data.crypto.IdentityPinStore.Result.UPDATED) {
+            if (pinResult == IdentityPinStore.Result.UPDATED) {
                 val sysEntity = niel.kro.penik.data.local.entity.MessageEntity(
                     localId = "sys-keychange-${System.currentTimeMillis()}-$targetUserId",
                     chatUserId = targetUserId,
@@ -398,27 +401,25 @@ class MessageRepository @Inject constructor(
                 )
                 messageDao.insertMessage(sysEntity)
             }
-            
-            val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, recipientIKPub)
 
-            // Adaptive AAD: V2 for devices supporting crypto_version >= 2, legacy V1 for older devices
-            val isV2 = device.cryptoVersion >= 2
-            val deviceAad = if (isV2) {
-                e2eeCrypto.buildPairwiseAadV2(myId, toUserId, clientMsgId)
-            } else {
-                e2eeCrypto.buildPairwiseAad(myId, toUserId, clientMsgId, nowSec)
-            }
-
-            val encrypted = e2eeCrypto.encrypt(text.toByteArray(Charsets.UTF_8), secret, aad = deviceAad)
-
-            E2EDevicePayload(
-                deviceId = device.deviceId,
-                ciphertext = encrypted.ciphertext,
-                salt = encrypted.salt,
-                nonce = encrypted.nonce,
-                v = if (isV2) 2 else 1
+            recipientInfos.add(
+                E2EECrypto.DeviceRecipientInfo(
+                    deviceId = device.deviceId,
+                    publicKey = recipientIKPub,
+                    cryptoVersion = device.cryptoVersion
+                )
             )
         }
+
+        val payloads = e2eeCrypto.encryptPairwiseBatch(
+            senderPrivateKey = myPrivateIK,
+            senderUserId = myId,
+            recipientUserId = toUserId,
+            clientMsgId = clientMsgId,
+            timestamp = nowSec,
+            plaintext = text.toByteArray(Charsets.UTF_8),
+            recipients = recipientInfos
+        )
 
         webSocketManager.sendEncryptedMessage(toUserId, clientMsgId, payloads, resolvedReplyToMsgId, createdAt = nowSec)
         return clientMsgId
@@ -1209,25 +1210,27 @@ class MessageRepository @Inject constructor(
         }
 
         val myPrivateIK = tokenStorage.getPrivateKey() ?: return
-        val encryptedDevices = allDevices.mapNotNull { dev ->
+        val recipientInfos = allDevices.mapNotNull { dev ->
             try {
                 val peerIK = java.util.Base64.getDecoder().decode(dev.identityKey)
                 val targetUserId = if (peerDevices.any { it.deviceId == dev.deviceId }) chatUserId else myId
-                val pinResult = identityPins.verify(targetUserId, dev.deviceId, peerIK)
-                val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, peerIK)
-                val isV2 = dev.cryptoVersion >= 2
-                val aad = if (isV2) {
-                    e2eeCrypto.buildPairwiseAadV2(myId, chatUserId, clientMsgId)
-                } else {
-                    e2eeCrypto.buildPairwiseAad(myId, chatUserId, clientMsgId, nowSec)
-                }
-                val enc = e2eeCrypto.encrypt(newText.toByteArray(Charsets.UTF_8), secret, aad = aad)
-                E2EDevicePayload(dev.deviceId, enc.ciphertext, enc.salt, enc.nonce, v = if (isV2) 2 else 1)
+                identityPins.verify(targetUserId, dev.deviceId, peerIK)
+                E2EECrypto.DeviceRecipientInfo(dev.deviceId, peerIK, dev.cryptoVersion)
             } catch (e: Exception) {
-                Log.e("PenikMsg", "Failed to encrypt edit for device ${dev.deviceId}", e)
+                Log.e("PenikMsg", "Failed to prepare key for device ${dev.deviceId}", e)
                 null
             }
         }
+
+        val encryptedDevices = e2eeCrypto.encryptPairwiseBatch(
+            senderPrivateKey = myPrivateIK,
+            senderUserId = myId,
+            recipientUserId = chatUserId,
+            clientMsgId = clientMsgId,
+            timestamp = nowSec,
+            plaintext = newText.toByteArray(Charsets.UTF_8),
+            recipients = recipientInfos
+        )
 
         if (encryptedDevices.isNotEmpty()) {
             webSocketManager.sendEncryptedEdit(

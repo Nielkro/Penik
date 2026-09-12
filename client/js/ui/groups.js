@@ -5,7 +5,7 @@ import {
   renameGroup, uploadGroupAvatar, rotateAndDistribute
 } from "../groups.js";
 import { apiGet, getUserById, uploadAttachment } from "../api.js";
-import { encryptFileChaCha20, encodeKey } from "../crypto.js";
+import { encryptFileChaCha20, encryptBlobChunked, encodeKey } from "../crypto.js";
 import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessage, saveCachedMedia } from "../storage.js";
 import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
 import {
@@ -685,12 +685,8 @@ export async function renderGroup(container, groupId) {
     scrollDown.scrollToBottom();
 
     try {
-      const fileBuffer = new Uint8Array(await file.arrayBuffer());
-
-      const localBlob = new Blob([fileBuffer], { type: file.type || "application/octet-stream" });
-
-      const { encryptedBytes, key } = await encryptFileChaCha20(fileBuffer);
-      const encryptedBlob = new Blob([encryptedBytes], { type: "application/octet-stream" });
+      const localBlob = file;
+      const { encryptedBlob, key } = await encryptBlobChunked(file);
 
       // 2. Upload to server with progress events
       const cdnUrl = await uploadAttachment(encryptedBlob, file.name, (loaded, total) => {

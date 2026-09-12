@@ -19,7 +19,7 @@ import { renderSettings, renderDevices } from './ui/settings.js';
 import { initTheme } from './theme.js';
 import {
   deriveSharedSecret, e2eeEncrypt, e2eeDecrypt, buildPairwiseAAD, buildPairwiseAADV2,
-  encryptKeyBackup, decryptKeyBackup, derivePublicKey, generateKeyPair
+  encryptKeyBackup, decryptKeyBackup, derivePublicKey, generateKeyPair, encryptPairwiseBatch
 } from './crypto.js';
 import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
 import { verifyPeerIdentityKey } from './pinning.js';
@@ -1326,31 +1326,22 @@ export async function encryptMessagePayload(text, recipientUserId, clientMsgId =
     throw new Error("Private Identity Key not found");
   }
 
-  const payloads = [];
+  // TOFU pinning: verify and pin identity keys for all target devices
   for (const device of allDevices) {
     const recipientIKPub = new Uint8Array(atob(device.identity_key).split("").map(c => c.charCodeAt(0)));
-
-    // TOFU pinning: verify and pin identity key; displays warning on change.
     await verifyPeerIdentityKey(device.owner_user_id, device.device_id, recipientIKPub);
-
-    const isV2 = Number(device.crypto_version || 1) >= 2;
-    const deviceAad = isV2
-      ? buildPairwiseAADV2(myId, recipientUserId, clientMsgId)
-      : buildPairwiseAAD(myId, recipientUserId, clientMsgId, tsSec);
-
-    const secret = await deriveSharedSecret(myPrivateIK, recipientIKPub);
-    const { ciphertext, salt, nonce } = await e2eeEncrypt(text, secret, "penik-pairwise-message-v1", deviceAad);
-
-    payloads.push({
-      device_id: Number(device.device_id),
-      ciphertext: ciphertext,
-      salt: salt,
-      nonce: nonce,
-      v: isV2 ? 2 : 1
-    });
   }
 
-  return payloads;
+  // Fast native batch fan-out encryption across all recipient & sender devices
+  return encryptPairwiseBatch(
+    myPrivateIK,
+    myId,
+    recipientUserId,
+    clientMsgId,
+    tsSec,
+    text,
+    allDevices
+  );
 }
 
 export async function flushOutbox() {

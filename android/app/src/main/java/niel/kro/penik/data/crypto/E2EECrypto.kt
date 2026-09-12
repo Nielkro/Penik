@@ -15,6 +15,7 @@ import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
 import java.util.Base64
 import java.security.GeneralSecurityException
+import niel.kro.penik.data.network.websocket.E2EDevicePayload
 
 data class E2EEncrypted(
     val ciphertext: ByteArray,
@@ -234,10 +235,91 @@ class E2EECrypto {
         }
     }
 
-    /** Decrypts the browser attachment format: nonce (12 bytes) + ciphertext + Poly1305 tag. */
+    data class DeviceRecipientInfo(
+        val deviceId: Long,
+        val publicKey: ByteArray,
+        val cryptoVersion: Int = 1
+    )
+
+    fun encryptPairwiseBatch(
+        senderPrivateKey: ByteArray,
+        senderUserId: Long,
+        recipientUserId: Long,
+        clientMsgId: String,
+        timestamp: Long,
+        plaintext: ByteArray,
+        recipients: List<DeviceRecipientInfo>
+    ): List<E2EDevicePayload> {
+        if (recipients.isEmpty()) return emptyList()
+
+        if (RustCryptoCore.isAvailable()) {
+            val deviceIds = LongArray(recipients.size) { recipients[it].deviceId }
+            val versions = IntArray(recipients.size) { recipients[it].cryptoVersion }
+            val allKeys = ByteArray(recipients.size * 32)
+            for (i in recipients.indices) {
+                System.arraycopy(recipients[i].publicKey, 0, allKeys, i * 32, 32)
+            }
+            val packed = RustCryptoCore.encryptPairwiseBatch(
+                senderPrivateKey,
+                senderUserId,
+                recipientUserId,
+                clientMsgId,
+                timestamp,
+                plaintext,
+                deviceIds,
+                allKeys,
+                versions
+            )
+            if (packed != null && packed.size >= 4) {
+                val bb = java.nio.ByteBuffer.wrap(packed)
+                val count = bb.getInt()
+                val list = ArrayList<E2EDevicePayload>(count)
+                for (i in 0 until count) {
+                    val devId = bb.getLong()
+                    val ver = bb.getInt()
+                    val salt = ByteArray(32).also { bb.get(it) }
+                    val nonce = ByteArray(12).also { bb.get(it) }
+                    val ctLen = bb.getInt()
+                    val ct = ByteArray(ctLen).also { bb.get(it) }
+                    list.add(E2EDevicePayload(deviceId = devId, ciphertext = ct, salt = salt, nonce = nonce, v = ver))
+                }
+                return list
+            }
+        }
+
+        // Fallback: iterate over devices
+        return recipients.map { device ->
+            val isV2 = device.cryptoVersion >= 2
+            val deviceAad = if (isV2) {
+                buildPairwiseAadV2(senderUserId, recipientUserId, clientMsgId)
+            } else {
+                buildPairwiseAad(senderUserId, recipientUserId, clientMsgId, timestamp)
+            }
+            val secret = deriveSharedSecret(senderPrivateKey, device.publicKey)
+            val encrypted = encrypt(plaintext, secret, aad = deviceAad)
+            E2EDevicePayload(
+                deviceId = device.deviceId,
+                ciphertext = encrypted.ciphertext,
+                salt = encrypted.salt,
+                nonce = encrypted.nonce,
+                v = if (isV2) 2 else 1
+            )
+        }
+    }
+
+    /** Decrypts the attachment format: supports both PCK1 chunked files and legacy monolithic ChaCha20-Poly1305. */
     fun decryptFileChaCha20(encryptedBytes: ByteArray, keyBytes: ByteArray): ByteArray {
         require(keyBytes.size == 32) { "Invalid attachment key" }
         require(encryptedBytes.size >= 28) { "Invalid encrypted attachment" }
+
+        if (RustCryptoCore.isAvailable()) {
+            val pt = RustCryptoCore.decryptFileChaCha20(encryptedBytes, keyBytes)
+            if (pt != null) return pt
+        }
+
+        if (isChunkedFile(encryptedBytes)) {
+            return decryptFileChunkedFallback(encryptedBytes, keyBytes)
+        }
 
         val nonce = encryptedBytes.copyOfRange(0, 12)
         val ciphertextAndTag = encryptedBytes.copyOfRange(12, encryptedBytes.size)
@@ -250,8 +332,33 @@ class E2EECrypto {
         return cipher.doFinal(ciphertextAndTag)
     }
 
-    /** Encrypts file payload using ChaCha20-Poly1305 matching the browser format: nonce (12 bytes) + ciphertext + Poly1305 tag. */
+    /** Encrypts file payload using PCK1 chunked format with ChaCha20-Poly1305, falling back to monolithic format. */
     fun encryptFileChaCha20(plaintext: ByteArray): EncryptedFileResult {
+        if (RustCryptoCore.isAvailable()) {
+            val (keyBytes, baseNonce) = generateFileKeyAndNonce()
+            val chunkSize = 64 * 1024
+            val header = RustCryptoCore.createChunkedFileHeader(baseNonce, chunkSize)
+            if (header != null) {
+                val bos = java.io.ByteArrayOutputStream(header.size + plaintext.size + 32)
+                bos.write(header)
+                if (plaintext.isEmpty()) {
+                    val enc = RustCryptoCore.encryptFileChunk(keyBytes, baseNonce, 0, true, ByteArray(0))
+                    if (enc != null) bos.write(enc)
+                } else {
+                    val numChunks = (plaintext.size + chunkSize - 1) / chunkSize
+                    for (i in 0 until numChunks) {
+                        val start = i * chunkSize
+                        val end = minOf(plaintext.size, start + chunkSize)
+                        val slice = plaintext.copyOfRange(start, end)
+                        val isLast = i == numChunks - 1
+                        val enc = RustCryptoCore.encryptFileChunk(keyBytes, baseNonce, i, isLast, slice)
+                        if (enc != null) bos.write(enc)
+                    }
+                }
+                return EncryptedFileResult(bos.toByteArray(), keyBytes)
+            }
+        }
+
         val keyBytes = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
         val nonce = ByteArray(12).also { java.security.SecureRandom().nextBytes(it) }
         val cipher = try {
@@ -265,6 +372,179 @@ class E2EECrypto {
         System.arraycopy(nonce, 0, encryptedBytes, 0, 12)
         System.arraycopy(ciphertextAndTag, 0, encryptedBytes, 12, ciphertextAndTag.size)
         return EncryptedFileResult(encryptedBytes, keyBytes)
+    }
+
+    fun isChunkedFile(data: ByteArray): Boolean {
+        if (data.size < 20) return false
+        if (RustCryptoCore.isAvailable()) {
+            return RustCryptoCore.isChunkedFile(data)
+        }
+        return data[0] == 0x50.toByte() && data[1] == 0x43.toByte() &&
+               data[2] == 0x4B.toByte() && data[3] == 0x31.toByte()
+    }
+
+    fun generateFileKeyAndNonce(): Pair<ByteArray, ByteArray> {
+        if (RustCryptoCore.isAvailable()) {
+            val res = RustCryptoCore.generateFileKeyAndNonce()
+            if (res != null && res.size == 44) {
+                return Pair(res.copyOfRange(0, 32), res.copyOfRange(32, 44))
+            }
+        }
+        val key = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+        val nonce = ByteArray(12).also { java.security.SecureRandom().nextBytes(it) }
+        return Pair(key, nonce)
+    }
+
+    fun encryptFileChunk(key: ByteArray, baseNonce: ByteArray, chunkIndex: Int, isLast: Boolean, chunk: ByteArray): ByteArray {
+        if (RustCryptoCore.isAvailable()) {
+            val enc = RustCryptoCore.encryptFileChunk(key, baseNonce, chunkIndex, isLast, chunk)
+            if (enc != null) return enc
+        }
+        return encryptFileChunkFallback(key, baseNonce, chunkIndex, isLast, chunk)
+    }
+
+    fun decryptFileChunk(key: ByteArray, baseNonce: ByteArray, chunkIndex: Int, isLast: Boolean, encryptedChunk: ByteArray): ByteArray {
+        if (RustCryptoCore.isAvailable()) {
+            val pt = RustCryptoCore.decryptFileChunk(key, baseNonce, chunkIndex, isLast, encryptedChunk)
+            if (pt != null) return pt
+        }
+        return decryptFileChunkFallback(key, baseNonce, chunkIndex, isLast, encryptedChunk)
+    }
+
+    /**
+     * Streaming encryption: reads input in 64 KB chunks, encrypts via PCK1 format, and writes to output.
+     * Memory overhead is capped at 64 KB regardless of file size.
+     */
+    fun encryptFileStream(
+        input: java.io.InputStream,
+        output: java.io.OutputStream,
+        chunkSize: Int = 64 * 1024,
+        onProgress: ((loaded: Long, total: Long) -> Unit)? = null
+    ): ByteArray {
+        val (key, baseNonce) = generateFileKeyAndNonce()
+        val header = if (RustCryptoCore.isAvailable()) {
+            RustCryptoCore.createChunkedFileHeader(baseNonce, chunkSize)
+        } else {
+            createChunkedFileHeaderFallback(baseNonce, chunkSize)
+        } ?: createChunkedFileHeaderFallback(baseNonce, chunkSize)
+
+        output.write(header)
+
+        val buffer = ByteArray(chunkSize)
+        var chunkIndex = 0
+        var totalLoaded = 0L
+
+        var bytesRead = input.read(buffer)
+        if (bytesRead <= 0) {
+            val enc = encryptFileChunk(key, baseNonce, 0, true, ByteArray(0))
+            output.write(enc)
+            return key
+        }
+
+        while (bytesRead > 0) {
+            val nextBuffer = ByteArray(chunkSize)
+            val nextRead = input.read(nextBuffer)
+            val isLast = nextRead <= 0
+            val chunkSlice = if (bytesRead == chunkSize) buffer else buffer.copyOfRange(0, bytesRead)
+
+            val enc = encryptFileChunk(key, baseNonce, chunkIndex, isLast, chunkSlice)
+            output.write(enc)
+            totalLoaded += bytesRead
+            onProgress?.invoke(totalLoaded, -1L)
+
+            chunkIndex++
+            bytesRead = nextRead
+            if (nextRead > 0) {
+                System.arraycopy(nextBuffer, 0, buffer, 0, nextRead)
+            }
+        }
+
+        return key
+    }
+
+    private fun createChunkedFileHeaderFallback(baseNonce: ByteArray, chunkSize: Int): ByteArray {
+        val header = ByteArray(20)
+        header[0] = 0x50.toByte()
+        header[1] = 0x43.toByte()
+        header[2] = 0x4B.toByte()
+        header[3] = 0x31.toByte()
+        System.arraycopy(baseNonce, 0, header, 4, 12)
+        header[16] = (chunkSize ushr 24).toByte()
+        header[17] = (chunkSize ushr 16).toByte()
+        header[18] = (chunkSize ushr 8).toByte()
+        header[19] = chunkSize.toByte()
+        return header
+    }
+
+    private fun deriveChunkNonce(baseNonce: ByteArray, chunkIndex: Int): ByteArray {
+        val nonce = baseNonce.copyOf()
+        nonce[8] = (nonce[8].toInt() xor (chunkIndex ushr 24)).toByte()
+        nonce[9] = (nonce[9].toInt() xor (chunkIndex ushr 16)).toByte()
+        nonce[10] = (nonce[10].toInt() xor (chunkIndex ushr 8)).toByte()
+        nonce[11] = (nonce[11].toInt() xor chunkIndex).toByte()
+        return nonce
+    }
+
+    private fun buildChunkAad(chunkIndex: Int, isLast: Boolean): ByteArray {
+        return byteArrayOf(
+            (chunkIndex ushr 24).toByte(),
+            (chunkIndex ushr 16).toByte(),
+            (chunkIndex ushr 8).toByte(),
+            chunkIndex.toByte(),
+            if (isLast) 1 else 0
+        )
+    }
+
+    private fun encryptFileChunkFallback(key: ByteArray, baseNonce: ByteArray, chunkIndex: Int, isLast: Boolean, chunk: ByteArray): ByteArray {
+        val chunkNonce = deriveChunkNonce(baseNonce, chunkIndex)
+        val aad = buildChunkAad(chunkIndex, isLast)
+        val cipher = try {
+            Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
+        } catch (_: GeneralSecurityException) {
+            Cipher.getInstance("ChaCha20-Poly1305")
+        }
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "ChaCha20"), IvParameterSpec(chunkNonce))
+        cipher.updateAAD(aad)
+        return cipher.doFinal(chunk)
+    }
+
+    private fun decryptFileChunkFallback(key: ByteArray, baseNonce: ByteArray, chunkIndex: Int, isLast: Boolean, encryptedChunk: ByteArray): ByteArray {
+        val chunkNonce = deriveChunkNonce(baseNonce, chunkIndex)
+        val aad = buildChunkAad(chunkIndex, isLast)
+        val cipher = try {
+            Cipher.getInstance("ChaCha20/Poly1305/NoPadding")
+        } catch (_: GeneralSecurityException) {
+            Cipher.getInstance("ChaCha20-Poly1305")
+        }
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "ChaCha20"), IvParameterSpec(chunkNonce))
+        cipher.updateAAD(aad)
+        return cipher.doFinal(encryptedChunk)
+    }
+
+    private fun decryptFileChunkedFallback(encryptedBytes: ByteArray, keyBytes: ByteArray): ByteArray {
+        require(encryptedBytes.size > 20) { "Payload too short for chunked file" }
+        val baseNonce = encryptedBytes.copyOfRange(4, 16)
+        val chunkSize = ((encryptedBytes[16].toInt() and 0xFF) shl 24) or
+                        ((encryptedBytes[17].toInt() and 0xFF) shl 16) or
+                        ((encryptedBytes[18].toInt() and 0xFF) shl 8) or
+                        (encryptedBytes[19].toInt() and 0xFF)
+        val chunkPayloadMax = chunkSize + 16
+        var cur = 20
+        var chunkIndex = 0
+        val bos = java.io.ByteArrayOutputStream()
+
+        while (cur < encryptedBytes.size) {
+            val remaining = encryptedBytes.size - cur
+            val currentChunkLen = minOf(remaining, chunkPayloadMax)
+            val isLast = cur + currentChunkLen == encryptedBytes.size
+            val chunkData = encryptedBytes.copyOfRange(cur, cur + currentChunkLen)
+            val pt = decryptFileChunk(keyBytes, baseNonce, chunkIndex, isLast, chunkData)
+            bos.write(pt)
+            cur += currentChunkLen
+            chunkIndex++
+        }
+
+        return bos.toByteArray()
     }
 
     private fun hkdfDerive(salt: ByteArray, ikm: ByteArray, info: ByteArray, length: Int): ByteArray {
