@@ -910,15 +910,10 @@ export async function syncMessageHistory(options = {}) {
 
     history.sort((a, b) => a.timestamp - b.timestamp);
 
-    // Cache key bundles per sender within this sync pass so a chat with N
-    // messages from the same sender doesn't fire N identical bundle requests.
-    const bundleCache = new Map();
+    // Use global getCachedKeyBundle so concurrent prefetch or chat open
+    // deduplicates the in-flight network request.
     const getSenderBundle = async (senderId) => {
-      const key = String(senderId);
-      if (bundleCache.has(key)) return bundleCache.get(key);
-      const b = await apiGet(`/keys/bundle/${senderId}`);
-      bundleCache.set(key, b);
-      return b;
+      return getCachedKeyBundle(senderId);
     };
 
     for (const item of history) {

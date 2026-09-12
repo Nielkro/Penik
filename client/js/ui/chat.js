@@ -1718,8 +1718,8 @@ export async function renderChat(container, userId) {
 // hashing and formatting, which is how the codebase ended up with three variants
 // that could disagree.
 export async function calculateSafetyFingerprint(userId1, userId2) {
-  const bundle1 = await apiGet(`/keys/bundle/${userId1}`);
-  const bundle2 = await apiGet(`/keys/bundle/${userId2}`);
+  const bundle1 = await getCachedKeyBundle(userId1);
+  const bundle2 = await getCachedKeyBundle(userId2);
 
   if (!bundle1 || !bundle1.devices || bundle1.devices.length === 0) {
     throw new Error("Не удалось получить ключи пользователя 1");
