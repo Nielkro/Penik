@@ -3,13 +3,6 @@ export function getApiOrigin() {
     return window.__PENIK_API_ORIGIN__;
   }
   if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname.includes('dev')) {
-      return `${window.location.protocol}//${window.location.host}`;
-    }
-    if (hostname.startsWith('web.')) {
-      return `${window.location.protocol}//api.${hostname.slice(4)}`;
-    }
     return `${window.location.protocol}//${window.location.host}`;
   }
   return '';

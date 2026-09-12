@@ -23,6 +23,24 @@ web.penik.ru {
         respond 404
     }
 
+    # Sticker static files — served directly from disk by Caddy on web.penik.ru
+    handle /api/v1/stickers/file/* {
+        uri strip_prefix /api/v1/stickers/file
+        root * /opt/penik/data/stickers
+        file_server {
+            hide bundle.zip *.tmp_*
+        }
+        header Cache-Control "public, max-age=86400"
+    }
+
+    # Bundle ZIP — served directly from disk by Caddy on web.penik.ru
+    handle /api/v1/stickers/pack/*/bundle.zip {
+        uri strip_prefix /api/v1/stickers/pack
+        root * /opt/penik/data/stickers
+        file_server
+        header Cache-Control "public, max-age=86400"
+    }
+
     # Proxying API and WebSockets to the backend directly from web.penik.ru
     handle /api/* {
         reverse_proxy 127.0.0.1:8143 {
