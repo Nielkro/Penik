@@ -381,7 +381,6 @@ class MessageRepository @Inject constructor(
         }
 
         val nowSec = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
-        val aad = e2eeCrypto.buildPairwiseAadV2(myId, toUserId, clientMsgId)
 
         val payloads = allDevices.map { device ->
             val recipientIKPub = java.util.Base64.getDecoder().decode(device.identityKey)
@@ -402,13 +401,22 @@ class MessageRepository @Inject constructor(
             
             val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, recipientIKPub)
 
-            val encrypted = e2eeCrypto.encrypt(text.toByteArray(Charsets.UTF_8), secret, aad = aad)
+            // Adaptive AAD: V2 for devices supporting crypto_version >= 2, legacy V1 for older devices
+            val isV2 = device.cryptoVersion >= 2
+            val deviceAad = if (isV2) {
+                e2eeCrypto.buildPairwiseAadV2(myId, toUserId, clientMsgId)
+            } else {
+                e2eeCrypto.buildPairwiseAad(myId, toUserId, clientMsgId, nowSec)
+            }
+
+            val encrypted = e2eeCrypto.encrypt(text.toByteArray(Charsets.UTF_8), secret, aad = deviceAad)
 
             E2EDevicePayload(
                 deviceId = device.deviceId,
                 ciphertext = encrypted.ciphertext,
                 salt = encrypted.salt,
-                nonce = encrypted.nonce
+                nonce = encrypted.nonce,
+                v = if (isV2) 2 else 1
             )
         }
 
@@ -527,7 +535,8 @@ class MessageRepository @Inject constructor(
                 senderUserId = event.fromUserId,
                 recipientUserId = if (sentByMe) event.chatUserId else myId,
                 clientMsgId = event.clientMsgId ?: "",
-                timestamp = event.ts
+                timestamp = event.ts,
+                v = event.v
             )
         } catch (e: Exception) {
             decryptSuccess = false
@@ -932,7 +941,8 @@ class MessageRepository @Inject constructor(
         senderUserId: Long = 0L,
         recipientUserId: Long = 0L,
         clientMsgId: String = "",
-        timestamp: Long = 0L
+        timestamp: Long = 0L,
+        v: Int = 1
     ): String {
         val myPrivateIK = tokenStorage.getPrivateKey()
             ?: throw Exception("Identity Key private key not found locally")
@@ -1198,9 +1208,14 @@ class MessageRepository @Inject constructor(
                 val targetUserId = if (peerDevices.any { it.deviceId == dev.deviceId }) chatUserId else myId
                 val pinResult = identityPins.verify(targetUserId, dev.deviceId, peerIK)
                 val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, peerIK)
-                val aad = e2eeCrypto.buildPairwiseAadV2(myId, chatUserId, clientMsgId)
+                val isV2 = dev.cryptoVersion >= 2
+                val aad = if (isV2) {
+                    e2eeCrypto.buildPairwiseAadV2(myId, chatUserId, clientMsgId)
+                } else {
+                    e2eeCrypto.buildPairwiseAad(myId, chatUserId, clientMsgId, nowSec)
+                }
                 val enc = e2eeCrypto.encrypt(newText.toByteArray(Charsets.UTF_8), secret, aad = aad)
-                E2EDevicePayload(dev.deviceId, enc.ciphertext, enc.salt, enc.nonce)
+                E2EDevicePayload(dev.deviceId, enc.ciphertext, enc.salt, enc.nonce, v = if (isV2) 2 else 1)
             } catch (e: Exception) {
                 Log.e("PenikMsg", "Failed to encrypt edit for device ${dev.deviceId}", e)
                 null

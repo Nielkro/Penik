@@ -131,6 +131,7 @@ type DeviceKeyBundle struct {
 	IKPub          []byte `msgpack:"ik_pub"`
 	SPKPub         []byte `msgpack:"spk_pub"`
 	SPKSig         []byte `msgpack:"spk_sig"`
+	CryptoVersion  int    `msgpack:"crypto_version"`
 }
 
 // KeyFetchResp carries all devices' key bundles for a user.
@@ -143,6 +144,7 @@ type E2EPayload struct {
 	Ciphertext []byte `msgpack:"ciphertext"`
 	Salt       []byte `msgpack:"salt"`
 	Nonce      []byte `msgpack:"nonce"`
+	V          int    `msgpack:"v,omitempty"`
 }
 
 type MsgSendEncrypted struct {
@@ -166,6 +168,7 @@ type MsgRecvEncrypted struct {
 	Salt              []byte  `msgpack:"salt"`
 	Nonce             []byte  `msgpack:"nonce"`
 	TS                int64   `msgpack:"ts"`
+	V                 int     `msgpack:"v,omitempty"`
 }
 
 type MsgEditEncrypted struct {

@@ -148,12 +148,12 @@ export const apiDelete = del;
 
 /* ── Auth ── */
 
-export async function register({ username, password, name, ik_pub, spk_pub, spk_sig, opk_pubs }) {
-  return post('/register', { username, password, name, ik_pub, spk_pub, spk_sig, opk_pubs });
+export async function register({ username, password, name, ik_pub, spk_pub, spk_sig, opk_pubs, crypto_version = 2 }) {
+  return post('/register', { username, password, name, ik_pub, spk_pub, spk_sig, opk_pubs, crypto_version });
 }
 
-export async function login({ username, password }) {
-  return post('/login', { username, password });
+export async function login({ username, password, crypto_version = 2 }) {
+  return post('/login', { username, password, crypto_version });
 }
 
 /* ── Keys ── */

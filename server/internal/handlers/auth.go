@@ -26,6 +26,7 @@ type registerRequest struct {
 	Platform       string   `json:"platform"`
 	Location       string   `json:"location"`
 	RegistrationID int64    `json:"registration_id"`
+	CryptoVersion  int      `json:"crypto_version"`
 	IKPub          []byte   `json:"ik_pub"`
 	SPKPub         []byte   `json:"spk_pub"`
 	SPKSig         []byte   `json:"spk_sig"`
@@ -38,6 +39,7 @@ type loginRequest struct {
 	Platform       string   `json:"platform"`
 	Location       string   `json:"location"`
 	RegistrationID int64    `json:"registration_id"`
+	CryptoVersion  int      `json:"crypto_version"`
 	IKPub          []byte   `json:"ik_pub"`
 	SPKPub         []byte   `json:"spk_pub"`
 	SPKSig         []byte   `json:"spk_sig"`
@@ -127,9 +129,13 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		userID, _ := res.LastInsertId()
 
 		loc := resolveLocation(req.Location, r)
+		cryptoVer := req.CryptoVersion
+		if cryptoVer <= 0 {
+			cryptoVer = 1
+		}
 		devRes, err := tx.ExecContext(r.Context(),
-			`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen) VALUES(?,?,?,?,?,?,?)`,
-			userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now)
+			`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen,crypto_version) VALUES(?,?,?,?,?,?,?,?)`,
+			userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now, cryptoVer)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -268,10 +274,14 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		}
 		err = lookupErr
 		loc := resolveLocation(req.Location, r)
+		cryptoVer := req.CryptoVersion
+		if cryptoVer <= 0 {
+			cryptoVer = 1
+		}
 		if err == sql.ErrNoRows {
 			devRes, insertErr := tx.ExecContext(r.Context(),
-				`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen) VALUES(?,?,?,?,?,?,?)`,
-				userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now)
+				`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen,crypto_version) VALUES(?,?,?,?,?,?,?,?)`,
+				userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now, cryptoVer)
 			if insertErr != nil {
 				loginInternalError(w, "insert device", insertErr)
 				return
@@ -289,11 +299,13 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 				`UPDATE devices
 				 SET registration_id=?, last_seen=?,
 				     platform=CASE WHEN ?<>'' THEN ? ELSE platform END,
-				     location=CASE WHEN ?<>'' THEN ? ELSE location END
+				     location=CASE WHEN ?<>'' THEN ? ELSE location END,
+				     crypto_version=CASE WHEN ? > 0 THEN ? ELSE crypto_version END
 				 WHERE id=?`,
 				req.RegistrationID, now,
 				resolvePlatform(req.Platform, r), resolvePlatform(req.Platform, r),
 				loc, loc,
+				req.CryptoVersion, req.CryptoVersion,
 				deviceID)
 			if err != nil {
 				loginInternalError(w, "update device", err)

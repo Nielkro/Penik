@@ -52,7 +52,8 @@ sealed class WebSocketEvent {
         val salt: ByteArray,
         val nonce: ByteArray,
         val ts: Long,
-        val replyToMsgId: String? = null
+        val replyToMsgId: String? = null,
+        val v: Int = 1
     ) : WebSocketEvent()
 
     data class MsgAck(
@@ -1233,6 +1234,7 @@ class WebSocketManager @Inject constructor(
         var salt = ByteArray(0)
         var nonce = ByteArray(0)
         var ts = 0L
+        var v = 1
 
         var replyToMsgId: String? = null
 
@@ -1266,6 +1268,7 @@ class WebSocketManager @Inject constructor(
                     nonce = readPayload(len)
                 }
                 "ts" -> ts = unpackLong()
+                "v" -> v = unpackInt()
                 else -> unpackValue()
             }
         }
@@ -1281,7 +1284,8 @@ class WebSocketManager @Inject constructor(
             salt = salt,
             nonce = nonce,
             ts = ts * 1000,
-            replyToMsgId = replyToMsgId
+            replyToMsgId = replyToMsgId,
+            v = v
         )
     }
 
@@ -1307,9 +1311,14 @@ class WebSocketManager @Inject constructor(
         packer.packString("devices")
         packer.packArrayHeader(devices.size)
         for (dev in devices) {
-            packer.packMapHeader(4)
+            val devFields = if (dev.v > 1) 5 else 4
+            packer.packMapHeader(devFields)
             packer.packString("device_id")
             packer.packLong(dev.deviceId)
+            if (dev.v > 1) {
+                packer.packString("v")
+                packer.packInt(dev.v)
+            }
             packer.packString("ciphertext")
             packer.packBinaryHeader(dev.ciphertext.size)
             packer.addPayload(dev.ciphertext)
@@ -1439,9 +1448,14 @@ class WebSocketManager @Inject constructor(
         packer.packString("devices")
         packer.packArrayHeader(devices.size)
         for (dev in devices) {
-            packer.packMapHeader(4)
+            val devFields = if (dev.v > 1) 5 else 4
+            packer.packMapHeader(devFields)
             packer.packString("device_id")
             packer.packLong(dev.deviceId)
+            if (dev.v > 1) {
+                packer.packString("v")
+                packer.packInt(dev.v)
+            }
             packer.packString("ciphertext")
             packer.packBinaryHeader(dev.ciphertext.size)
             packer.addPayload(dev.ciphertext)
@@ -1491,5 +1505,6 @@ data class E2EDevicePayload(
     val deviceId: Long,
     val ciphertext: ByteArray,
     val salt: ByteArray,
-    val nonce: ByteArray
+    val nonce: ByteArray,
+    val v: Int = 1
 )

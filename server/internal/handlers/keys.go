@@ -21,6 +21,7 @@ type keysInitRequest struct {
 	SPKPub         []byte   `json:"spk_pub"`
 	SPKSig         []byte   `json:"spk_sig"`
 	RegistrationID int64    `json:"registration_id"`
+	CryptoVersion  int      `json:"crypto_version"`
 }
 
 // UploadIdentityKeys handles POST /api/v1/keys/init — upload new identity key and signed pre-key.
@@ -68,6 +69,16 @@ func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
 			}
 		}
 
+		if req.CryptoVersion > 0 {
+			_, err = tx.ExecContext(r.Context(),
+				`UPDATE devices SET crypto_version=? WHERE id=?`,
+				req.CryptoVersion, deviceID)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+		}
+
 		if err := tx.Commit(); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -78,8 +89,9 @@ func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
 }
 
 type DeviceBundle struct {
-	DeviceID    int64   `json:"device_id"`
-	IdentityKey []byte  `json:"identity_key"`
+	DeviceID      int64   `json:"device_id"`
+	IdentityKey   []byte  `json:"identity_key"`
+	CryptoVersion int     `json:"crypto_version"`
 }
 
 type KeyBundleResponse struct {
@@ -103,7 +115,7 @@ func GetKeyBundle(database *db.DB) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		rows, err := tx.QueryContext(r.Context(), `SELECT id FROM devices WHERE user_id=?`, userIDStr)
+		rows, err := tx.QueryContext(r.Context(), `SELECT id, crypto_version FROM devices WHERE user_id=?`, userIDStr)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -113,9 +125,13 @@ func GetKeyBundle(database *db.DB) http.HandlerFunc {
 		var devices []DeviceBundle
 		for rows.Next() {
 			var deviceID int64
-			if err := rows.Scan(&deviceID); err != nil {
+			var cryptoVersion int
+			if err := rows.Scan(&deviceID, &cryptoVersion); err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
+			}
+			if cryptoVersion <= 0 {
+				cryptoVersion = 1
 			}
 
 			var x25519Pub []byte
@@ -128,8 +144,9 @@ func GetKeyBundle(database *db.DB) http.HandlerFunc {
 			}
 
 			devices = append(devices, DeviceBundle{
-				DeviceID:    deviceID,
-				IdentityKey: x25519Pub,
+				DeviceID:      deviceID,
+				IdentityKey:   x25519Pub,
+				CryptoVersion: cryptoVersion,
 			})
 		}
 
