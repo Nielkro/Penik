@@ -99,13 +99,14 @@ class AttachmentManager(
         context: Context,
         info: LocalMediaInfo,
         clientMsgId: String,
-        textCaption: String = ""
+        textCaption: String = "",
+        useChunked: Boolean = true
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             UploadProgressBus.update(clientMsgId, 0, info.fileSize)
 
-            // 1. Encrypt raw file via ChaCha20-Poly1305
-            val encResult = e2eeCrypto.encryptFileChaCha20(info.rawBytes)
+            // 1. Encrypt raw file via ChaCha20-Poly1305 (PCK1 chunked or monolithic legacy)
+            val encResult = e2eeCrypto.encryptFileChaCha20(info.rawBytes, useChunked = useChunked)
 
             // 2. Upload ciphertext with chunked live progress tracking
             val progressBody = ProgressRequestBody(

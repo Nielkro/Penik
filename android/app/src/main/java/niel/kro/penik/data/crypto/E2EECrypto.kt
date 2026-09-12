@@ -346,9 +346,9 @@ class E2EECrypto {
         return cipher.doFinal(ciphertextAndTag)
     }
 
-    /** Encrypts file payload using PCK1 chunked format with ChaCha20-Poly1305, falling back to monolithic format. */
-    fun encryptFileChaCha20(plaintext: ByteArray): EncryptedFileResult {
-        if (RustCryptoCore.isAvailable()) {
+    /** Encrypts file payload using PCK1 chunked format with ChaCha20-Poly1305 (if useChunked=true and supported), falling back to monolithic format. */
+    fun encryptFileChaCha20(plaintext: ByteArray, useChunked: Boolean = true): EncryptedFileResult {
+        if (useChunked && RustCryptoCore.isAvailable()) {
             val (keyBytes, baseNonce) = generateFileKeyAndNonce()
             val chunkSize = 64 * 1024
             val header = RustCryptoCore.createChunkedFileHeader(baseNonce, chunkSize)

@@ -60,6 +60,24 @@ class MessageRepository @Inject constructor(
         return devices
     }
 
+    suspend fun isChunkedEncryptionSupported(peerUserId: Long): Boolean {
+        return try {
+            val myId = tokenStorage.getUserId()
+            val isSelfChat = peerUserId == myId
+            val recipientBundles = getKeyBundleCached(peerUserId, isSelf = isSelfChat)
+            if (recipientBundles.isEmpty()) return false
+            if (recipientBundles.any { it.cryptoVersion < 2 }) return false
+            if (!isSelfChat) {
+                val selfBundles = getKeyBundleCached(myId, isSelf = true)
+                if (selfBundles.any { it.cryptoVersion < 2 }) return false
+            }
+            true
+        } catch (e: Exception) {
+            Log.w("PenikMsg", "Failed to check crypto version support for user $peerUserId", e)
+            false
+        }
+    }
+
     suspend fun exportPairingHistory(secret: ByteArray): String {
         val myId = tokenStorage.getUserId()
         val messages = messageDao.getAllMessages().map { message ->

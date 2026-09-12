@@ -266,6 +266,31 @@ class GroupRepository @Inject constructor(
         return members
     }
 
+    suspend fun isChunkedEncryptionSupported(groupId: Long): Boolean {
+        return try {
+            var memberIds = dao.getMembers(groupId).map { it.userId }
+            if (memberIds.isEmpty()) {
+                refreshMembers(groupId)
+                memberIds = dao.getMembers(groupId).map { it.userId }
+            }
+            if (memberIds.isEmpty()) return false
+            val myId = myUserId()
+            for (uid in memberIds) {
+                val resp = runCatching {
+                    if (uid == myId) api.getKeyBundleSelf(uid) else api.getKeyBundle(uid)
+                }.getOrNull()
+                val devices = if (resp?.isSuccessful == true) resp.body()?.devices ?: emptyList() else emptyList()
+                if (devices.isEmpty() || devices.any { it.cryptoVersion < 2 }) {
+                    return false
+                }
+            }
+            true
+        } catch (e: Exception) {
+            android.util.Log.w("GroupRepo", "Failed to check chunked encryption support for group $groupId", e)
+            false
+        }
+    }
+
     suspend fun acceptInvitation(groupId: Long) {
         api.acceptGroupInvitation(groupId)
         refreshMembers(groupId)

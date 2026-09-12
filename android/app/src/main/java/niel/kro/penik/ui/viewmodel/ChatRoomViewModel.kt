@@ -279,8 +279,11 @@ class ChatRoomViewModel @Inject constructor(
             messageRepository.insertOptimisticMessage(chatUserId, clientMsgId, mediaInfo.optimisticPayload, null)
             chatRepository.updateLastMessage(chatUserId, mediaInfo.optimisticPayload, System.currentTimeMillis(), name = chatName)
 
-            // 2. Upload and send with progress
-            attachmentManager.uploadAndEncryptAttachment(context, mediaInfo, clientMsgId, caption)
+            // 2. Determine chunked encryption support based on recipient and own device crypto versions
+            val useChunked = messageRepository.isChunkedEncryptionSupported(chatUserId)
+
+            // 3. Upload and send with progress
+            attachmentManager.uploadAndEncryptAttachment(context, mediaInfo, clientMsgId, caption, useChunked = useChunked)
                 .onSuccess { finalJsonPayload ->
                     messageRepository.sendMessage(chatUserId, finalJsonPayload, null, existingClientMsgId = clientMsgId)
                     chatRepository.updateLastMessage(chatUserId, finalJsonPayload, System.currentTimeMillis(), name = chatName)

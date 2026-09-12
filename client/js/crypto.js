@@ -302,9 +302,9 @@ export async function chacha20Poly1305Decrypt(keyBytes, nonceBytes, ciphertextAn
   );
 }
 
-export async function encryptFileChaCha20(fileBytes) {
+export async function encryptFileChaCha20(fileBytes, useChunked = true) {
   const wasm = await getWasm();
-  if (typeof wasm.encryptFileChunked === "function") {
+  if (useChunked && typeof wasm.encryptFileChunked === "function") {
     const res = wasm.encryptFileChunked(fileBytes);
     return {
       encryptedBytes: res.encryptedBytes,
@@ -316,6 +316,46 @@ export async function encryptFileChaCha20(fileBytes) {
     encryptedBytes: res.encryptedBytes,
     key: res.key
   };
+}
+
+export async function encryptFileMonolithic(fileOrBlob) {
+  const wasm = await getWasm();
+  let fileBytes;
+  if (fileOrBlob instanceof Blob) {
+    fileBytes = new Uint8Array(await fileOrBlob.arrayBuffer());
+  } else {
+    fileBytes = fileOrBlob;
+  }
+  if (typeof wasm.encryptFileChaCha20 === "function") {
+    const res = wasm.encryptFileChaCha20(fileBytes);
+    return {
+      encryptedBlob: new Blob([res.encryptedBytes], { type: "application/octet-stream" }),
+      encryptedBytes: res.encryptedBytes,
+      key: res.key
+    };
+  }
+  const key = crypto.getRandomValues(new Uint8Array(32));
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertextAndTag = await chacha20Poly1305Encrypt(key, nonce, fileBytes, new Uint8Array(0));
+  const encryptedBytes = new Uint8Array(12 + ciphertextAndTag.length);
+  encryptedBytes.set(nonce, 0);
+  encryptedBytes.set(ciphertextAndTag, 12);
+  return {
+    encryptedBlob: new Blob([encryptedBytes], { type: "application/octet-stream" }),
+    encryptedBytes,
+    key
+  };
+}
+
+export async function encryptBlob(blob, onProgress, useChunked = true) {
+  if (useChunked) {
+    return encryptBlobChunked(blob, onProgress);
+  }
+  const res = await encryptFileMonolithic(blob);
+  if (onProgress) {
+    onProgress(blob.size, blob.size);
+  }
+  return res;
 }
 
 export async function decryptFileChaCha20(encryptedBytes, keyBytes) {
