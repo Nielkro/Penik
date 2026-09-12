@@ -323,6 +323,26 @@ export function formatFullTime(ts) {
 // Match http(s) and www. URLs; trailing punctuation is stripped from the href.
 const MSG_URL_RE = /(?:https?:\/\/|www\.)[^\s<>"']+/gi;
 
+export function getEmojiOnlyCount(str) {
+  if (!str || typeof str !== "string") return 0;
+  const trimmed = str.trim();
+  if (!trimmed || trimmed.startsWith("{")) return 0;
+
+  try {
+    const segmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
+    const segments = [...segmenter.segment(trimmed)].filter(s => s.segment.trim().length > 0);
+    if (segments.length === 0 || segments.length > 3) return 0;
+
+    const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Component})+$/u;
+    for (const s of segments) {
+      if (!emojiRegex.test(s.segment)) return 0;
+    }
+    return segments.length;
+  } catch (e) {
+    return 0;
+  }
+}
+
 /**
  * Fill a .msg-text element with plain text, turning http(s) and www. URLs into safe
  * <a class="msg-link"> anchors (no innerHTML — plaintext is never parsed as HTML).

@@ -2422,6 +2422,65 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   padding: 16px;
 }
 
+/* Emoji-only messages without bubble (Telegram style) */
+.msg-bubble.msg-emoji-bubble {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  position: relative !important;
+  overflow: visible !important;
+}
+
+.msg-bubble.msg-emoji-bubble .msg-text {
+  display: inline-block !important;
+  line-height: 1.15 !important;
+  user-select: text;
+}
+
+.msg-bubble.msg-emoji-1 .msg-text {
+  font-size: 52px !important;
+  padding-right: 20px;
+  padding-bottom: 6px;
+}
+
+.msg-bubble.msg-emoji-multi .msg-text {
+  font-size: 36px !important;
+  padding-right: 14px;
+  padding-bottom: 4px;
+}
+
+.msg-bubble.msg-emoji-bubble .msg-meta {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  padding: 2px 7px;
+  border-radius: 12px;
+  font-size: 11px;
+  backdrop-filter: blur(8px);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.msg-bubble.msg-emoji-bubble .msg-meta .msg-time {
+  color: #fff;
+  font-size: 11px;
+}
+
+.msg-bubble.msg-emoji-bubble .msg-meta .msg-status-wrapper {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.msg-bubble.msg-emoji-bubble .msg-meta .msg-status-wrapper.msg-status-read {
+  color: #5cdb95;
+}
+
+
 
 
 
