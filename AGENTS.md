@@ -31,3 +31,10 @@ chore: untrack uploaded files, ignore server/data/upload
 
 ## 4. Android Build Verification (Antigravity)
 - If the agent is **Antigravity**, always verify Android build changes by running `bash ./gradlew compileDebugKotlin` from the `android/` directory. Never invoke `./gradlew` directly without `bash` (to avoid permission/deny rules).
+
+## 5. Crypto Development Policy (Rust Core Only - CRITICAL)
+- **Kotlin and JavaScript crypto implementations are strictly FROZEN.**
+- Do NOT update, rewrite, or add new cryptographic algorithms/protocols to Kotlin (`E2EECrypto.kt`, `GroupCrypto.kt`) or JavaScript (`client/js/crypto.js`). They remain strictly as legacy, frozen fallbacks for v1 backward compatibility.
+- ALL new cryptographic features (ciphers, key exchanges, PQ keys, streaming, chunking, AAD formats, zeroization) MUST be implemented exclusively in the Rust core (`rust/penik-crypto`) and exposed via:
+  - Android JNI (`penik_crypto.so` via `RustCryptoCore`)
+  - WebAssembly (`penik_crypto.wasm` via `pkg/penik-crypto-wasm`)

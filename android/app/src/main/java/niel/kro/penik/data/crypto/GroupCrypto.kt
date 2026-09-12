@@ -8,6 +8,11 @@ import javax.crypto.spec.SecretKeySpec
 /**
  * Group E2EE crypto, mirroring the web client's groups.js.
  *
+ * ARCHITECTURE NOTICE:
+ * This Kotlin crypto implementation is strictly FROZEN. Do NOT add new crypto algorithms
+ * or protocol features here. All future cryptographic extensions must be implemented
+ * exclusively in the native Rust core (`rust/penik-crypto`).
+ *
  * A group epoch has a 32-byte group key. Each message derives its own message key
  * via HKDF-SHA256 with a random 32-byte salt, so message keys never repeat even
  * if a nonce collides. Message authentication binds an immutable header via AAD.
