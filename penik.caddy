@@ -18,12 +18,26 @@ penik.ru {
 
 # 2. Веб-клиент мессенджера (SPA)
 web.penik.ru {
+    # Block direct external requests to /static-internal/* at Caddy level.
+    handle /static-internal/* {
+        respond 404
+    }
+
     # Proxying API and WebSockets to the backend directly from web.penik.ru
     handle /api/* {
         reverse_proxy 127.0.0.1:8143 {
             header_up Host {host}
             header_up X-Real-IP {client_ip}
             header_up X-Forwarded-Proto {scheme}
+
+            # Intercept X-Accel-Redirect for attachment file downloads
+            @accel header X-Accel-Redirect *
+            handle_response @accel {
+                rewrite * {rp.header.X-Accel-Redirect}
+                uri strip_prefix /static-internal
+                root * /opt/penik/data
+                file_server
+            }
         }
     }
 

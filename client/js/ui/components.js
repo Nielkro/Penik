@@ -1047,6 +1047,9 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
         }
         const encryptedBuf = await resp.arrayBuffer();
         const encryptedBytes = new Uint8Array(encryptedBuf);
+        if (encryptedBytes.length === 0) {
+          throw new AttachmentError("Сервер вернул пустой файл (0 байт)");
+        }
 
         const keyBytes = decodeKey(fileInfo.key);
         const decryptedBytes = await decryptFileChaCha20(encryptedBytes, keyBytes);
