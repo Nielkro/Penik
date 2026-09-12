@@ -62,12 +62,19 @@ api.penik.ru {
         # Strip the API prefix so the remaining path matches the on-disk layout:
         #   /api/v1/stickers/file/{pack_id}/{filename}
         #   → /opt/penik/data/stickers/{pack_id}/{filename}
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+        header Cache-Control "public, max-age=86400"
+
+        # file_server returns 405 for OPTIONS; answer preflight here instead.
+        @options method OPTIONS
+        respond @options 204
+
         uri strip_prefix /api/v1/stickers/file
         root * /opt/penik/data/stickers
         file_server {
             hide bundle.zip *.tmp_*
         }
-        header Cache-Control "public, max-age=86400"
     }
 
     # Bundle ZIP — same idea: serve the pre-built bundle.zip directly from disk.
@@ -75,10 +82,17 @@ api.penik.ru {
     # just hands it over as a static file without touching Go at all.
     handle /api/v1/stickers/pack/*/bundle.zip {
         # Path after stripping prefix: /{pack_id}/bundle.zip
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+        header Cache-Control "public, max-age=86400"
+
+        # file_server returns 405 for OPTIONS; answer preflight here instead.
+        @options method OPTIONS
+        respond @options 204
+
         uri strip_prefix /api/v1/stickers/pack
         root * /opt/penik/data/stickers
         file_server
-        header Cache-Control "public, max-age=86400"
     }
 
     # ---------------------------------------------------------------------------
