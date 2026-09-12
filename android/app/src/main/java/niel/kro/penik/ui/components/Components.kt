@@ -2818,3 +2818,61 @@ fun ForwardTargetDialog(
         }
     }
 }
+
+@Composable
+fun DateDivider(
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.Black.copy(alpha = 0.35f))
+                .padding(horizontal = 12.dp, vertical = 3.dp)
+        ) {
+            Text(
+                text = text,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White.copy(alpha = 0.9f)
+            )
+        }
+    }
+}
+
+fun formatChatDate(timestamp: Long): String {
+    if (timestamp <= 0L) return ""
+    val msgCal = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
+    val nowCal = java.util.Calendar.getInstance()
+
+    val isSameYear = msgCal.get(java.util.Calendar.YEAR) == nowCal.get(java.util.Calendar.YEAR)
+    val isToday = isSameYear && msgCal.get(java.util.Calendar.DAY_OF_YEAR) == nowCal.get(java.util.Calendar.DAY_OF_YEAR)
+
+    val yesterdayCal = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -1) }
+    val isYesterday = msgCal.get(java.util.Calendar.YEAR) == yesterdayCal.get(java.util.Calendar.YEAR) &&
+            msgCal.get(java.util.Calendar.DAY_OF_YEAR) == yesterdayCal.get(java.util.Calendar.DAY_OF_YEAR)
+
+    return when {
+        isToday -> "Сегодня"
+        isYesterday -> "Вчера"
+        isSameYear -> java.text.SimpleDateFormat("d MMMM", java.util.Locale("ru")).format(java.util.Date(timestamp))
+        else -> java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale("ru")).format(java.util.Date(timestamp))
+    }
+}
+
+fun getDayKey(timestamp: Long): Long {
+    val cal = java.util.Calendar.getInstance().apply {
+        timeInMillis = timestamp
+        set(java.util.Calendar.HOUR_OF_DAY, 0)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }
+    return cal.timeInMillis
+}

@@ -143,6 +143,11 @@ sealed interface ChatTimelineItem {
         override val id: String get() = call.callId
         override val timestamp: Long get() = call.startedAt * 1000L
     }
+
+    data class DateHeader(val dateText: String, val dayKey: Long) : ChatTimelineItem {
+        override val id: String get() = "date-$dayKey"
+        override val timestamp: Long get() = dayKey
+    }
 }
 
 @Composable
@@ -244,10 +249,21 @@ fun ChatRoomScreen(
     val peerCalls by viewModel.peerCalls.collectAsState()
 
     val timelineItems = remember(messages, peerCalls) {
+        val rawItems = mutableListOf<ChatTimelineItem>()
+        messages.forEach { rawItems.add(ChatTimelineItem.Message(it)) }
+        peerCalls.forEach { rawItems.add(ChatTimelineItem.Call(it)) }
+        rawItems.sortBy { it.timestamp }
+
         val items = mutableListOf<ChatTimelineItem>()
-        messages.forEach { items.add(ChatTimelineItem.Message(it)) }
-        peerCalls.forEach { items.add(ChatTimelineItem.Call(it)) }
-        items.sortBy { it.timestamp }
+        var lastDayKey: Long? = null
+        for (item in rawItems) {
+            val dayKey = niel.kro.penik.ui.components.getDayKey(item.timestamp)
+            if (dayKey != lastDayKey) {
+                lastDayKey = dayKey
+                items.add(ChatTimelineItem.DateHeader(niel.kro.penik.ui.components.formatChatDate(item.timestamp), dayKey))
+            }
+            items.add(item)
+        }
         items
     }
     var inputText by remember { mutableStateOf("") }
@@ -1168,6 +1184,9 @@ fun ChatRoomScreen(
                 ) {
                     items(timelineItems, key = { it.id }) { item ->
                         when (item) {
+                            is ChatTimelineItem.DateHeader -> {
+                                niel.kro.penik.ui.components.DateDivider(text = item.dateText)
+                            }
                             is ChatTimelineItem.Call -> {
                                 CallLogCard(
                                     call = item.call,

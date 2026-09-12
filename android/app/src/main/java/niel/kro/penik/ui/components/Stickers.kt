@@ -88,6 +88,9 @@ import niel.kro.penik.data.network.api.StickerItemResponse
 import niel.kro.penik.data.network.api.StickerPackResponse
 import niel.kro.penik.data.repository.StickerRepository
 import niel.kro.penik.ui.theme.LocalAppColors
+import android.view.LayoutInflater
+import android.view.TextureView
+import niel.kro.penik.R
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -247,13 +250,21 @@ fun StickerMediaView(
             if (!hasPlayerError) {
                 AndroidView(
                     factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            player = exoPlayer
-                            useController = false
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        val view = LayoutInflater.from(ctx).inflate(
+                            R.layout.view_sticker_player,
+                            null,
+                            false
+                        ) as PlayerView
+                        view.player = exoPlayer
+                        view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        (view.videoSurfaceView as? TextureView)?.isOpaque = false
+                        view
+                    },
+                    update = { view ->
+                        if (view.player != exoPlayer) {
+                            view.player = exoPlayer
                         }
+                        (view.videoSurfaceView as? TextureView)?.isOpaque = false
                     },
                     modifier = modifier
                 )
