@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Penik" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Penik" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0F0F12</item>
+        <item name="android:colorBackground">#0F0F12</item>
+    </style>
 </resources>

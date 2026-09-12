@@ -228,9 +228,15 @@ fun StickerMediaView(
                 ExoPlayer.Builder(context).build().apply {
                     val mediaItem = MediaItem.fromUri(Uri.fromFile(cachedFile))
                     setMediaItem(mediaItem)
-                    repeatMode = Player.REPEAT_MODE_ALL
+                    repeatMode = Player.REPEAT_MODE_ONE
                     volume = 0f
                     addListener(object : Player.Listener {
+                        override fun onPlaybackStateChanged(playbackState: Int) {
+                            if (playbackState == Player.STATE_ENDED) {
+                                seekTo(0)
+                                play()
+                            }
+                        }
                         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                             Log.w("StickerMedia", "ExoPlayer failed for $fullUrl: ${error.message}")
                             hasPlayerError = true
@@ -256,7 +262,9 @@ fun StickerMediaView(
                             false
                         ) as PlayerView
                         view.player = exoPlayer
+                        view.setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
                         view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        view.findViewById<android.view.View>(androidx.media3.ui.R.id.exo_shutter)?.visibility = android.view.View.GONE
                         (view.videoSurfaceView as? TextureView)?.isOpaque = false
                         view
                     },
@@ -264,6 +272,7 @@ fun StickerMediaView(
                         if (view.player != exoPlayer) {
                             view.player = exoPlayer
                         }
+                        view.findViewById<android.view.View>(androidx.media3.ui.R.id.exo_shutter)?.visibility = android.view.View.GONE
                         (view.videoSurfaceView as? TextureView)?.isOpaque = false
                     },
                     modifier = modifier

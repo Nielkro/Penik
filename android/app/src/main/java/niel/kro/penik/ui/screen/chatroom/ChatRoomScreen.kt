@@ -11,6 +11,7 @@ import android.util.Base64
 import niel.kro.penik.ui.components.parseReplyContent
 import niel.kro.penik.ui.components.ReplyParsedInfo
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1021,7 +1022,10 @@ fun ChatRoomScreen(
     }
 
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .shadow(elevation = 16.dp, shape = RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(20.dp)),
         containerColor = LocalAppColors.current.background,
         topBar = {
             TopAppBar(

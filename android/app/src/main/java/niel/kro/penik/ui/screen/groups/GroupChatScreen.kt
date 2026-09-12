@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.Button
+import androidx.compose.ui.draw.shadow
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.size
@@ -295,6 +296,10 @@ fun GroupChatScreen(
     }
 
     Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .shadow(elevation = 16.dp, shape = RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(20.dp)),
         containerColor = LocalAppColors.current.background,
         topBar = {
             TopAppBar(
