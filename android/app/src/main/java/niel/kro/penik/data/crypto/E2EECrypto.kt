@@ -88,7 +88,7 @@ class E2EECrypto {
         return deriveSharedSecret(privateKey, basepoint)
     }
 
-    fun deriveSharedSecret(myPrivateKey: ByteArray, theirPublicKey: ByteArray): ByteArray {
+    fun normalizePublicKey(theirPublicKey: ByteArray): ByteArray {
         var cleanPublicKey = theirPublicKey
         if (cleanPublicKey.size == 44) {
             try {
@@ -105,6 +105,11 @@ class E2EECrypto {
         if (cleanPublicKey.size == 33 && cleanPublicKey[0] == 0x05.toByte()) {
             cleanPublicKey = cleanPublicKey.copyOfRange(1, 33)
         }
+        return cleanPublicKey
+    }
+
+    fun deriveSharedSecret(myPrivateKey: ByteArray, theirPublicKey: ByteArray): ByteArray {
+        val cleanPublicKey = normalizePublicKey(theirPublicKey)
 
         if (RustCryptoCore.isAvailable()) {
             val shared = RustCryptoCore.diffieHellman(myPrivateKey, cleanPublicKey)
@@ -256,34 +261,43 @@ class E2EECrypto {
             val deviceIds = LongArray(recipients.size) { recipients[it].deviceId }
             val versions = IntArray(recipients.size) { recipients[it].cryptoVersion }
             val allKeys = ByteArray(recipients.size * 32)
+            var keysValid = true
             for (i in recipients.indices) {
-                System.arraycopy(recipients[i].publicKey, 0, allKeys, i * 32, 32)
-            }
-            val packed = RustCryptoCore.encryptPairwiseBatch(
-                senderPrivateKey,
-                senderUserId,
-                recipientUserId,
-                clientMsgId,
-                timestamp,
-                plaintext,
-                deviceIds,
-                allKeys,
-                versions
-            )
-            if (packed != null && packed.size >= 4) {
-                val bb = java.nio.ByteBuffer.wrap(packed)
-                val count = bb.getInt()
-                val list = ArrayList<E2EDevicePayload>(count)
-                for (i in 0 until count) {
-                    val devId = bb.getLong()
-                    val ver = bb.getInt()
-                    val salt = ByteArray(32).also { bb.get(it) }
-                    val nonce = ByteArray(12).also { bb.get(it) }
-                    val ctLen = bb.getInt()
-                    val ct = ByteArray(ctLen).also { bb.get(it) }
-                    list.add(E2EDevicePayload(deviceId = devId, ciphertext = ct, salt = salt, nonce = nonce, v = ver))
+                val cleanKey = normalizePublicKey(recipients[i].publicKey)
+                if (cleanKey.size == 32) {
+                    System.arraycopy(cleanKey, 0, allKeys, i * 32, 32)
+                } else {
+                    keysValid = false
+                    break
                 }
-                return list
+            }
+            if (keysValid) {
+                val packed = RustCryptoCore.encryptPairwiseBatch(
+                    senderPrivateKey,
+                    senderUserId,
+                    recipientUserId,
+                    clientMsgId,
+                    timestamp,
+                    plaintext,
+                    deviceIds,
+                    allKeys,
+                    versions
+                )
+                if (packed != null && packed.size >= 4) {
+                    val bb = java.nio.ByteBuffer.wrap(packed)
+                    val count = bb.getInt()
+                    val list = ArrayList<E2EDevicePayload>(count)
+                    for (i in 0 until count) {
+                        val devId = bb.getLong()
+                        val ver = bb.getInt()
+                        val salt = ByteArray(32).also { bb.get(it) }
+                        val nonce = ByteArray(12).also { bb.get(it) }
+                        val ctLen = bb.getInt()
+                        val ct = ByteArray(ctLen).also { bb.get(it) }
+                        list.add(E2EDevicePayload(deviceId = devId, ciphertext = ct, salt = salt, nonce = nonce, v = ver))
+                    }
+                    return list
+                }
             }
         }
 
