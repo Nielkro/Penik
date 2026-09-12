@@ -86,12 +86,16 @@ api.penik.ru {
     # Go validates the ACL and then sets X-Accel-Redirect: /static-internal/...
     # Caddy intercepts the header and serves the file from disk without another
     # round-trip through the Go process. This path must NOT be routable from the
-    # outside — the `internal` directive blocks any direct client request to it.
+    # outside — `internal` at site level blocks any direct external request.
     # On-disk layout: /opt/penik/data/upload/attachments/{id}.bin
     # Accel URI:      /static-internal/upload/attachments/{id}.bin
     # ---------------------------------------------------------------------------
+
+    # `internal` is a site-level directive; it cannot be nested inside handle.
+    # Placing it here blocks external clients from reaching /static-internal/*.
+    internal /static-internal/*
+
     handle /static-internal/* {
-        internal
         uri strip_prefix /static-internal
         root * /opt/penik/data
         file_server
