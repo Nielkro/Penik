@@ -39,9 +39,13 @@ func Auth(database *db.DB) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Touch last_seen.
-			_, _ = database.ExecContext(r.Context(),
-				`UPDATE devices SET last_seen=? WHERE id=?`, time.Now().Unix(), deviceID)
+			// Touch last_seen asynchronously — this write must not hold the
+			// single SQLite connection and delay the actual response handler.
+			// A missed update is harmless: last_seen is informational only.
+			go func() {
+				_, _ = database.Exec(
+					`UPDATE devices SET last_seen=? WHERE id=?`, time.Now().Unix(), deviceID)
+			}()
 
 			ctx := context.WithValue(r.Context(), ContextUserID, userID)
 			ctx = context.WithValue(ctx, ContextDeviceID, deviceID)
