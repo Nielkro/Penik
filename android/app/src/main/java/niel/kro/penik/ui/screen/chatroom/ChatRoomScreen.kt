@@ -267,6 +267,9 @@ fun ChatRoomScreen(
         }
         items
     }
+    val reversedTimelineItems = remember(timelineItems) {
+        timelineItems.asReversed()
+    }
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -420,48 +423,30 @@ fun ChatRoomScreen(
         }
     }
 
-    // Show the button when the last message is not fully visible.
+    // Show the button when not at the bottom (with reverseLayout=true, index 0 is bottom)
     val showScrollDown by remember {
         derivedStateOf {
-            val layoutInfo = listState.layoutInfo
-            val totalItems = layoutInfo.totalItemsCount
-            if (totalItems == 0) return@derivedStateOf false
-            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            lastVisibleIndex < totalItems - 1
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 20
         }
     }
 
-    var previousSize by remember { mutableStateOf(0) }
-    var isInitialScrollDone by remember(chatUserId) { mutableStateOf(false) }
+    var previousFirstItemId by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(timelineItems.size) {
-        if (timelineItems.isNotEmpty()) {
-            if (!isInitialScrollDone || previousSize == 0) {
-                listState.scrollToItem(timelineItems.lastIndex)
-                isInitialScrollDone = true
-            } else if (timelineItems.size > previousSize) {
-                val layoutInfo = listState.layoutInfo
-                val totalItems = layoutInfo.totalItemsCount
-                val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-                val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 5)
-                if (isNearBottom) {
-                    listState.animateScrollToItem(timelineItems.lastIndex)
-                }
+    LaunchedEffect(reversedTimelineItems.firstOrNull()?.id) {
+        val newestId = reversedTimelineItems.firstOrNull()?.id
+        if (newestId != null && previousFirstItemId != null && newestId != previousFirstItemId) {
+            // A new message arrived while chat is open
+            if (listState.firstVisibleItemIndex <= 2) {
+                listState.animateScrollToItem(0)
             }
-            previousSize = timelineItems.size
         }
+        previousFirstItemId = newestId
     }
 
     val imeBottomPadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
     LaunchedEffect(imeBottomPadding) {
-        if (timelineItems.isNotEmpty()) {
-            val layoutInfo = listState.layoutInfo
-            val totalItems = layoutInfo.totalItemsCount
-            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            val isNearBottom = totalItems > 0 && (totalItems - 1 - lastVisibleIndex <= 3)
-            if (isNearBottom) {
-                listState.scrollToItem(timelineItems.lastIndex)
-            }
+        if (reversedTimelineItems.isNotEmpty() && listState.firstVisibleItemIndex <= 1) {
+            listState.scrollToItem(0)
         }
     }
 
@@ -1184,9 +1169,9 @@ fun ChatRoomScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 4.dp),
-                    verticalArrangement = Arrangement.Bottom
+                    reverseLayout = true
                 ) {
-                    items(timelineItems, key = { it.id }) { item ->
+                    items(reversedTimelineItems, key = { it.id }) { item ->
                         when (item) {
                             is ChatTimelineItem.DateHeader -> {
                                 niel.kro.penik.ui.components.DateDivider(text = item.dateText)
@@ -1240,7 +1225,7 @@ fun ChatRoomScreen(
                                         viewModel.startEditing(message)
                                     },
                                     onReplyClick = { parentId ->
-                                        val index = timelineItems.indexOfFirst { it.id == parentId }
+                                        val index = reversedTimelineItems.indexOfFirst { it.id == parentId }
                                         if (index >= 0) {
                                             coroutineScope.launch {
                                                 listState.animateScrollToItem(index)
@@ -1281,7 +1266,7 @@ fun ChatRoomScreen(
                     FloatingActionButton(
                         onClick = {
                             coroutineScope.launch {
-                                listState.animateScrollToItem(timelineItems.lastIndex)
+                                listState.animateScrollToItem(0)
                             }
                         },
                         containerColor = LocalAppColors.current.panel,
