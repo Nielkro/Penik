@@ -375,8 +375,17 @@ export async function renderGroup(container, groupId) {
         if (txt && msg.plaintext) {
           setMsgTextContent(txt, msg.plaintext);
         }
-        const st = existing.querySelector(".msg-status");
-        if (st) st.textContent = msg.delivered ? "✓" : "…";
+        const st = existing.querySelector(".msg-status-wrapper, .msg-status");
+        if (st) {
+          if (msg.delivered) {
+            st.className = "msg-status-wrapper";
+            st.innerHTML = '<span class="chk chk-1">✓</span><span class="chk chk-2">✓</span>';
+          } else {
+            st.className = "msg-status-wrapper msg-status-pending";
+            st.title = "Отправляется...";
+            st.replaceChildren(clockIcon(12, "currentColor"));
+          }
+        }
       }
       return;
     }
@@ -454,7 +463,10 @@ export async function renderGroup(container, groupId) {
     const metaEl = el("div", { class: "msg-meta" },
       editedBadge,
       timeEl,
-      mine ? (msg.delivered ? el("span", { class: "msg-status" }, "✓") : el("span", { class: "msg-status msg-status-pending", title: "Отправляется..." }, clockIcon(12, "currentColor"))) : null,
+      mine ? (msg.delivered ? el("span", { class: "msg-status-wrapper" },
+        el("span", { class: "chk chk-1" }, "✓"),
+        el("span", { class: "chk chk-2" }, "✓")
+      ) : el("span", { class: "msg-status-wrapper msg-status-pending", title: "Отправляется..." }, clockIcon(12, "currentColor"))) : null,
     );
 
     const bubbleChildren = [];
