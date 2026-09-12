@@ -64,6 +64,9 @@ api.penik.ru {
         #   → /opt/penik/data/stickers/{pack_id}/{filename}
         header Access-Control-Allow-Origin "*"
         header Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+        # Authorization is a non-simple CORS header; must be explicitly allowed
+        # or the browser blocks the actual GET after a successful preflight.
+        header Access-Control-Allow-Headers "Authorization"
         header Cache-Control "public, max-age=86400"
 
         # file_server returns 405 for OPTIONS; answer preflight here instead.
@@ -84,6 +87,9 @@ api.penik.ru {
         # Path after stripping prefix: /{pack_id}/bundle.zip
         header Access-Control-Allow-Origin "*"
         header Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+        # Authorization is a non-simple CORS header; must be explicitly allowed
+        # or the browser blocks the actual GET after a successful preflight.
+        header Access-Control-Allow-Headers "Authorization"
         header Cache-Control "public, max-age=86400"
 
         # file_server returns 405 for OPTIONS; answer preflight here instead.
