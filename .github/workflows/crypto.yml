@@ -121,10 +121,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create crypto-latest \
-            release-assets/penik_crypto_bg.wasm \
-            release-assets/penik-crypto-wasm.zip \
-            release-assets/penik-crypto-android.zip \
-            --title "Latest Crypto Binaries" \
-            --notes "Automated crypto binaries compiled from commit ${{ github.sha }}." \
-            --clobber
+          if gh release view crypto-latest >/dev/null 2>&1; then
+            gh release edit crypto-latest --notes "Automated crypto binaries compiled from commit ${{ github.sha }}."
+          else
+            gh release create crypto-latest --title "Latest Crypto Binaries" --notes "Automated crypto binaries compiled from commit ${{ github.sha }}."
+          fi
+          gh release upload crypto-latest release-assets/* --clobber
