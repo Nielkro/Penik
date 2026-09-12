@@ -82,31 +82,37 @@ api.penik.ru {
     }
 
     # ---------------------------------------------------------------------------
-    # Internal-only handler for X-Accel-Redirect (encrypted attachments).
-    # Go validates the ACL and then sets X-Accel-Redirect: /static-internal/...
-    # Caddy intercepts the header and serves the file from disk without another
-    # round-trip through the Go process. This path must NOT be routable from the
-    # outside — `internal` at site level blocks any direct external request.
+    # X-Accel-Redirect — encrypted attachment offload.
+    # Go validates auth/ACL, then sets X-Accel-Redirect: /static-internal/...
+    # Caddy's handle_response intercepts that header and serves the file from
+    # disk directly, skipping a second Go round-trip.
     # On-disk layout: /opt/penik/data/upload/attachments/{id}.bin
     # Accel URI:      /static-internal/upload/attachments/{id}.bin
+    #
+    # NOTE: `internal` does not exist in Caddy v2. The correct approach is
+    # handle_response inside reverse_proxy — Caddy only follows the accel path
+    # when the upstream sets X-Accel-Redirect, so external clients cannot
+    # trigger file serving directly (Go never sets that header for them).
     # ---------------------------------------------------------------------------
 
-    # `internal` is a site-level directive; it cannot be nested inside handle.
-    # Placing it here blocks external clients from reaching /static-internal/*.
-    internal /static-internal/*
-
-    handle /static-internal/* {
-        uri strip_prefix /static-internal
-        root * /opt/penik/data
-        file_server
-    }
-
-    # All other /api/* traffic → Go backend
+    # All traffic → Go backend; intercept X-Accel-Redirect responses.
     handle {
         reverse_proxy 127.0.0.1:8143 {
             header_up Host {host}
             header_up X-Real-IP {client_ip}
             header_up X-Forwarded-Proto {scheme}
+
+            # When Go sets X-Accel-Redirect, serve the file from disk instead
+            # of forwarding the upstream response body to the client.
+            @accel header X-Accel-Redirect *
+            handle_response @accel {
+                # Rewrite request path to the accel URI, strip the /static-internal
+                # prefix so the remainder maps directly under /opt/penik/data.
+                rewrite * {rp.header.X-Accel-Redirect}
+                uri strip_prefix /static-internal
+                root * /opt/penik/data
+                file_server
+            }
         }
     }
 
