@@ -20,6 +20,10 @@ services:
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-your_livekit_api_secret}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TRUSTED_PROXIES=127.0.0.1/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      # When Caddy is the reverse proxy, attachment file bytes are served by Caddy
+      # directly via X-Accel-Redirect. Go only performs the ACL check and then
+      # sets the redirect header. Set to empty string to disable and let Go stream.
+      - STATIC_OFFLOAD_BASE=/static-internal
     volumes:
       - ./data:/app/data
       - ./firebase-service-account.json:/app/firebase-service-account.json:ro
