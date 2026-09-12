@@ -151,7 +151,12 @@ class ChatRoomViewModel @Inject constructor(
             messages.collect { list ->
                 android.util.Log.d("PenikChatRoom", "ChatRoom(chatUserId=$chatUserId) emitted ${list.size} messages: ${list.map { "id=${it.localId}, sId=${it.serverId}, txt='${it.text}'" }}")
                 clearUnread()
-                val unreadIncoming = list.filter { !it.sentByMe && !it.read && it.serverId != null }
+                val unreadIncoming = list.filter { 
+                    !it.sentByMe && !it.read && it.serverId != null &&
+                    !it.text.startsWith("[Ошибка") &&
+                    !it.text.startsWith("[Сообщение не расшифровано") &&
+                    !it.text.startsWith("[Не удалось расшифровать")
+                }
                 if (unreadIncoming.isNotEmpty()) {
                     unreadIncoming.forEach { msg ->
                         messageRepository.markMessageAsRead(msg.serverId!!)

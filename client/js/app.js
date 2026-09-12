@@ -684,7 +684,7 @@ async function onMsgRecvGlobal(payload) {
 
   if (_activeChatCallback && String(_activeChatCallback.userId) === String(chatPartnerId)) {
     _activeChatCallback.fn(inMsg);
-    if (ws && payload.msg_id && !isMine) {
+    if (ws && payload.msg_id && !isMine && decryptSuccess) {
       ws.send(0x18, { msg_id: Number(payload.msg_id) });
     }
   }
