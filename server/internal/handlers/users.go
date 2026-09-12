@@ -379,15 +379,6 @@ func GetAvatar(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		// Check if user exists first to return proper 404
-		var exists int
-		err = database.QueryRowContext(r.Context(),
-			`SELECT 1 FROM users WHERE id=?`, id).Scan(&exists)
-		if err != nil {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-
 		filePath := filepath.Join(cfg.UploadDir, fmt.Sprintf("%d.webp", id))
 		avatar, err := os.ReadFile(filePath)
 		if err != nil {

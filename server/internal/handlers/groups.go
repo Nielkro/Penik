@@ -809,15 +809,6 @@ func GetGroupAvatar(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		// Check if group exists and not deleted
-		var exists int
-		err := database.QueryRowContext(r.Context(),
-			`SELECT 1 FROM groups WHERE id=? AND deleted_at IS NULL`, groupID).Scan(&exists)
-		if err != nil {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-
 		filePath := filepath.Join(cfg.UploadDir, fmt.Sprintf("group_%d.webp", groupID))
 		avatar, err := os.ReadFile(filePath)
 		if err != nil {
