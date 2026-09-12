@@ -115,5 +115,5 @@ Penik Messenger — это кроссплатформенный мессендж
 
 ### 6.3. Веб-клиент (Browser)
 - **Хранилище:** IndexedDB с запечатыванием приватных ключей через WebCrypto non-extractable master key (vault).
-- **Криптография:** Web Crypto API + WebAssembly (`libsodium`).
+- **Криптография:** Web Crypto API + WebAssembly (Rust `penik-crypto` core).
 

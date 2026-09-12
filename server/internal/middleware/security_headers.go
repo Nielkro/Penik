@@ -9,7 +9,7 @@ import "net/http"
 // removing it requires per-build nonces/hashes on the static bundle. The policy
 // contentSecurityPolicy locks down resource loading to mitigate XSS.
 //
-// 'unsafe-eval' is eliminated. 'wasm-unsafe-eval' is kept for WebAssembly (libsodium).
+// 'unsafe-eval' is eliminated. 'wasm-unsafe-eval' is kept for WebAssembly (penik-crypto WASM).
 // connect-src is locked down to 'self', secure wss: and https: endpoints.
 const contentSecurityPolicy = "default-src 'self'; " +
 	"script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; " +

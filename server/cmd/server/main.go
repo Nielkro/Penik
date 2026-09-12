@@ -234,7 +234,7 @@ func main() {
 	}
 	fileServer := http.FileServer(http.FS(distFS))
 	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Vite assets are hashed (e.g. /assets/libsodium-wrappers-XXX.js), cache forever (1 year)
+		// Vite assets are hashed (e.g. /assets/penik_crypto_bg-XXX.wasm), cache forever (1 year)
 		if strings.HasPrefix(r.URL.Path, "/assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, ".html") || r.URL.Path == "/sw.js" {
