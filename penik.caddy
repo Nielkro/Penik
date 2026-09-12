@@ -95,6 +95,13 @@ api.penik.ru {
     # trigger file serving directly (Go never sets that header for them).
     # ---------------------------------------------------------------------------
 
+    # Block direct external requests to /static-internal/* at Caddy level.
+    # Go sets X-Accel-Redirect to this prefix only internally (via handle_response
+    # below); a direct client request must never reach the backend.
+    handle /static-internal/* {
+        respond 404
+    }
+
     # All traffic → Go backend; intercept X-Accel-Redirect responses.
     handle {
         reverse_proxy 127.0.0.1:8143 {
