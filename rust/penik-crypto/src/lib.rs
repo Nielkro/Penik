@@ -12,6 +12,15 @@ pub mod wasm;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod jni;
 
+/// Current internal crypto core build/ABI version.
+/// Bump this integer when adding new exports, modifying signatures, or changing ABI.
+pub const CRYPTO_CORE_VERSION: u32 = 1;
+
+#[inline]
+pub fn crypto_core_version() -> u32 {
+    CRYPTO_CORE_VERSION
+}
+
 // Re-export common types and functions for easy use
 pub use aad::{
     build_group_aad, build_group_aad_v1, build_pairwise_aad, build_pairwise_aad_v2,

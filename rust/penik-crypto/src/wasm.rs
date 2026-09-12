@@ -444,3 +444,8 @@ pub fn wasm_decode_key(b64: &str) -> Result<js_sys::Uint8Array, JsValue> {
     let bytes = keys::decode_key(b64)?;
     Ok(js_sys::Uint8Array::from(&bytes[..]))
 }
+
+#[wasm_bindgen(js_name = penikCryptoVersion)]
+pub fn wasm_penik_crypto_version() -> u32 {
+    crate::CRYPTO_CORE_VERSION
+}

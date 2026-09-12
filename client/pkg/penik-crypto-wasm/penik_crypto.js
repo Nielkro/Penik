@@ -603,6 +603,14 @@ export function wrapGroupKeyForDevice(group_key, shared_secret, group_id, key_ve
     }
     return JsGroupKeyWrapped.__wrap(ret[0]);
 }
+
+/**
+ * @returns {number}
+ */
+export function penikCryptoVersion() {
+    return wasm.penikCryptoVersion ? wasm.penikCryptoVersion() : 1;
+}
+
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
