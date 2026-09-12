@@ -1840,6 +1840,7 @@ fun MessageTicks(
     read: Boolean,
     color: Color,
     isPending: Boolean = false,
+    fontSize: TextUnit = 10.sp,
     modifier: Modifier = Modifier
 ) {
     if (isPending) {
@@ -1847,34 +1848,36 @@ fun MessageTicks(
             imageVector = Icons.Default.Schedule,
             contentDescription = "Отправляется...",
             tint = color.copy(alpha = 0.85f),
-            modifier = modifier.size(11.dp)
+            modifier = modifier.size(if (fontSize <= 9.sp) 9.dp else 11.dp)
         )
         return
     }
     val isDouble = delivered || read
+    val boxWidth = if (fontSize <= 9.sp) 10.dp else 13.dp
+    val tickOffset = if (fontSize <= 9.sp) 2.5.dp else 3.5.dp
     if (isDouble) {
         Box(
-            modifier = modifier.width(13.dp),
+            modifier = modifier.width(boxWidth),
             contentAlignment = Alignment.CenterStart
         ) {
             Text(
                 text = "✓",
-                fontSize = 10.sp,
+                fontSize = fontSize,
                 fontWeight = FontWeight.Bold,
                 color = color
             )
             Text(
                 text = "✓",
-                fontSize = 10.sp,
+                fontSize = fontSize,
                 fontWeight = FontWeight.Bold,
                 color = color,
-                modifier = Modifier.offset(x = 3.5.dp)
+                modifier = Modifier.offset(x = tickOffset)
             )
         }
     } else {
         Text(
             text = "✓",
-            fontSize = 10.sp,
+            fontSize = fontSize,
             fontWeight = FontWeight.Bold,
             color = color,
             modifier = modifier
@@ -2035,8 +2038,8 @@ fun MessageBubble(
     }
     val isEmojiOnly = emojiCount in 1..3
     val emojiFontSize = when (emojiCount) {
-        1 -> 48.sp
-        2, 3 -> 34.sp
+        1 -> 96.sp
+        2, 3 -> 64.sp
         else -> 15.sp
     }
 
@@ -2090,7 +2093,7 @@ fun MessageBubble(
     ) {
         val hasHeader = (!isSentByMe && senderName != null) || fwdSenderName != null || (replySender != null && replyText != null)
         val isMediaNoCaption = (attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/")) && attachment.caption.isNullOrBlank() && !hasHeader) || isSticker
-        val maxBubbleWidth = if (attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/"))) 300.dp else if (isSticker || isEmojiOnly) 200.dp else 280.dp
+        val maxBubbleWidth = if (attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/"))) 300.dp else if (isSticker) 200.dp else if (isEmojiOnly) 320.dp else 280.dp
 
         Box(
             modifier = Modifier
@@ -2404,7 +2407,7 @@ fun MessageBubble(
                     }
                 } else if (isEmojiOnly) {
                     Box(
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        modifier = Modifier.padding(horizontal = 2.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = parsedText ?: "",
@@ -2413,36 +2416,37 @@ fun MessageBubble(
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
                                 .padding(
-                                    bottom = 4.dp,
-                                    end = if (emojiCount == 1) 24.dp else 12.dp
+                                    bottom = 2.dp,
+                                    end = 4.dp
                                 )
                         )
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .background(Color(0x73000000), shape = RoundedCornerShape(8.dp))
-                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                                .background(Color(0x59000000), shape = RoundedCornerShape(6.dp))
+                                .padding(horizontal = 3.5.dp, vertical = 1.dp)
                         ) {
                             if (editedAt != null && editedAt > 0L) {
                                 Text(
                                     text = "ред.",
-                                    fontSize = 10.sp,
+                                    fontSize = 8.sp,
                                     color = Color.White.copy(alpha = 0.7f),
-                                    modifier = Modifier.padding(end = 3.dp)
+                                    modifier = Modifier.padding(end = 2.dp)
                                 )
                             }
                             Text(
                                 text = formatTime(timestamp),
-                                fontSize = 10.sp,
+                                fontSize = 9.sp,
                                 color = Color.White
                             )
                             if (isSentByMe) {
-                                Spacer(modifier = Modifier.width(3.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
                                 MessageTicks(
                                     delivered = delivered,
                                     read = read,
                                     isPending = isPending,
+                                    fontSize = 9.sp,
                                     color = if (read) LocalAppColors.current.accent else Color.White.copy(alpha = 0.8f)
                                 )
                             }
