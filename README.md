@@ -18,7 +18,7 @@
 |-------|-----------|
 | Сервер | Go 1.22, SQLite (`modernc.org/sqlite`, pure Go без CGo), `nhooyr.io/websocket`, MessagePack, Argon2id, GeoIP (MaxMind .mmdb), LiveKit Server SDK |
 | Нативное криптоядро | Rust 2021 (`penik-crypto`), JNI FFI (`jni` crate), C-ABI exports, WebAssembly (`wasm-bindgen`), Zeroize (secure RAM wipe) |
-| Веб-клиент | Vanilla JS (ES-модули), Vite 8, libsodium-wrappers, WebCrypto, IndexedDB, Service Worker (HTTP 206 streaming), LiveKit Client SDK |
+| Веб-клиент | Vanilla JS (ES-модули), Vite 8, penik-crypto (WASM), WebCrypto, IndexedDB, Service Worker (HTTP 206 streaming), LiveKit Client SDK |
 | Android | Kotlin 2.2, Compose (Material 3), Hilt, Room + SQLCipher, JNI Rust Crypto Core, Retrofit, OkHttp WebSocket, msgpack-core, Coil, Media3 ExoPlayer, LiveKit Android SDK |
 | Криптография | X25519, HKDF, ChaCha20-Poly1305, AES-GCM, PBKDF2 (600k итераций в Rust), Zeroize очистка RAM, TOFU Key Pinning, Pairwise AAD v2 |
 
