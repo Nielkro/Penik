@@ -343,9 +343,22 @@ export function getEmojiOnlyCount(str) {
   }
 }
 
+export function isDirectImageUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const full = url.toLowerCase().startsWith("www.") ? "https://" + url : url;
+    const parsed = new URL(full, window.location.origin);
+    const pathname = parsed.pathname.toLowerCase();
+    return /\.(webp|gif|png|jpe?g|svg|avif|bmp)$/i.test(pathname);
+  } catch (e) {
+    return false;
+  }
+}
+
 /**
  * Fill a .msg-text element with plain text, turning http(s) and www. URLs into safe
  * <a class="msg-link"> anchors (no innerHTML — plaintext is never parsed as HTML).
+ * Also embeds direct image/gif/webp URLs inline for instant preview and animation.
  */
 export function setMsgTextContent(el, text) {
   el.replaceChildren();
@@ -389,9 +402,57 @@ export function setMsgTextContent(el, text) {
     }
   }
 
+  // Check if entire message is single direct image/gif URL
+  const singleUrlMatch = s.match(/^(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)$/i);
+  if (singleUrlMatch && isDirectImageUrl(singleUrlMatch[1])) {
+    let rawUrl = singleUrlMatch[1];
+    let trail = "";
+    while (rawUrl.length && /[.,;:!?)]+$/.test(rawUrl)) {
+      trail = rawUrl.slice(-1) + trail;
+      rawUrl = rawUrl.slice(0, -1);
+    }
+    if (isDirectImageUrl(rawUrl)) {
+      const href = rawUrl.toLowerCase().startsWith("www.") ? "https://" + rawUrl : rawUrl;
+      const card = document.createElement("div");
+      card.className = "msg-direct-image-card";
+
+      const img = document.createElement("img");
+      img.className = "msg-direct-image";
+      img.src = href;
+      img.alt = "Изображение";
+      img.loading = "lazy";
+      img.addEventListener("click", (e) => {
+        e.stopPropagation();
+        showFullscreenImage(href);
+      });
+
+      // If external image fails to load, gracefully fallback to text link
+      img.onerror = () => {
+        if (card.contains(img)) {
+          card.replaceChildren();
+          const fallbackA = document.createElement("a");
+          fallbackA.className = "msg-link";
+          fallbackA.href = href;
+          fallbackA.target = "_blank";
+          fallbackA.rel = "noopener noreferrer";
+          fallbackA.textContent = rawUrl;
+          fallbackA.addEventListener("click", (ev) => ev.stopPropagation());
+          card.appendChild(fallbackA);
+          if (trail) card.appendChild(document.createTextNode(trail));
+        }
+      };
+
+      card.appendChild(img);
+      el.appendChild(card);
+      return;
+    }
+  }
+
   let last = 0;
   MSG_URL_RE.lastIndex = 0;
   let m;
+  const directImageUrls = [];
+
   while ((m = MSG_URL_RE.exec(s)) !== null) {
     if (m.index > last) {
       el.appendChild(document.createTextNode(s.slice(last, m.index)));
@@ -412,12 +473,37 @@ export function setMsgTextContent(el, text) {
       a.textContent = url;
       a.addEventListener("click", (e) => e.stopPropagation());
       el.appendChild(a);
+
+      if (isDirectImageUrl(url) && directImageUrls.length < 3) {
+        directImageUrls.push(href);
+      }
     }
     if (trail) el.appendChild(document.createTextNode(trail));
     last = m.index + m[0].length;
   }
   if (last < s.length) {
     el.appendChild(document.createTextNode(s.slice(last)));
+  }
+
+  if (directImageUrls.length > 0) {
+    for (const imgUrl of directImageUrls) {
+      const previewCard = document.createElement("div");
+      previewCard.className = "msg-image-preview-card";
+      const previewImg = document.createElement("img");
+      previewImg.className = "msg-image-preview";
+      previewImg.src = imgUrl;
+      previewImg.alt = "Изображение";
+      previewImg.loading = "lazy";
+      previewImg.addEventListener("click", (e) => {
+        e.stopPropagation();
+        showFullscreenImage(imgUrl);
+      });
+      previewImg.onerror = () => {
+        previewCard.remove();
+      };
+      previewCard.appendChild(previewImg);
+      el.appendChild(previewCard);
+    }
   }
 }
 

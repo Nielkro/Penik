@@ -11,7 +11,7 @@ import { OP } from "../ws.js";
 import {
   avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon,
   showDeleteChatConfirmModal, showFullscreenImage, showConfirmModal, showForwardModal,
-  setMsgTextContent, getEmojiOnlyCount, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
+  setMsgTextContent, getEmojiOnlyCount, isDirectImageUrl, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
 import { syncGroups, getAllGroups, getGroupMessages, onGroupUpdate } from "../groups.js";
 import { buildGroupListItem, showCreateGroupModal } from "./groups.js";
@@ -917,7 +917,7 @@ export async function renderChat(container, userId) {
     }
 
     const isStructuredPayload = typeof msg.plaintext === "string" && msg.plaintext.trim().startsWith("{");
-    const isSingleLine = !isFailed && !isStructuredPayload && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 35;
+    const isSingleLine = !isFailed && !isStructuredPayload && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 35 && !isDirectImageUrl(typeof msg.plaintext === "string" ? msg.plaintext.trim() : "");
     const bubbleChildren = [];
     if (replyRefEl) bubbleChildren.push(replyRefEl);
     if (isSingleLine) {
