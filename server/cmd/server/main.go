@@ -37,6 +37,7 @@ func main() {
 		log.Fatalf("open db: %v", err)
 	}
 	defer database.Close()
+	database.Prewarm()
 
 	if err := handlers.InitGeoIP(cfg.GeoIPPath); err != nil {
 		log.Printf("geoip init warning (falling back to external resolver): %v", err)
