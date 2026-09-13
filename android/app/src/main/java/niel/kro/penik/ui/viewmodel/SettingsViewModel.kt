@@ -12,8 +12,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import niel.kro.penik.data.update.AppUpdateManager
+import niel.kro.penik.data.update.DownloadState
 import niel.kro.penik.data.update.UpdateCheckResult
 import niel.kro.penik.data.update.UpdateStatus
+import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
@@ -22,6 +24,7 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
 
     val updateStatus: StateFlow<UpdateStatus> = appUpdateManager.updateStatus
+    val downloadState: StateFlow<DownloadState> = appUpdateManager.downloadState
 
     private val _isChecking = MutableStateFlow(false)
     val isChecking: StateFlow<Boolean> = _isChecking.asStateFlow()
@@ -42,6 +45,15 @@ class SettingsViewModel @Inject constructor(
 
     fun dismissSoftUpdate() {
         appUpdateManager.dismissSoftUpdate()
+        appUpdateManager.resetDownloadState()
+    }
+
+    fun startDownload(context: Context, url: String) {
+        appUpdateManager.startDownload(context, url)
+    }
+
+    fun installDownloadedApk(context: Context, apkFile: File) {
+        appUpdateManager.installDownloadedApk(context, apkFile)
     }
 
     fun openDownloadUrl(context: Context, url: String) {

@@ -68,6 +68,7 @@ fun SettingsScreen(
     val currentVariant by AppIconManager.currentVariant.collectAsState()
     val isChecking by viewModel.isChecking.collectAsState()
     val updateStatus by viewModel.updateStatus.collectAsState()
+    val downloadState by viewModel.downloadState.collectAsState()
     var showVariantDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -94,8 +95,11 @@ fun SettingsScreen(
 
     UpdateDialog(
         status = updateStatus,
+        downloadState = downloadState,
         onDismiss = { viewModel.dismissSoftUpdate() },
-        onDownload = { url -> viewModel.openDownloadUrl(context, url) }
+        onDownload = { url -> viewModel.startDownload(context, url) },
+        onInstall = { file -> viewModel.installDownloadedApk(context, file) },
+        onOpenBrowser = { url -> viewModel.openDownloadUrl(context, url) }
     )
 
     Scaffold(
