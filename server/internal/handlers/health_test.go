@@ -10,7 +10,6 @@ import (
 
 	"messenger/server/internal/config"
 	"messenger/server/internal/db"
-	"messenger/server/internal/ws"
 )
 
 func TestReadinessCheckSuccess(t *testing.T) {
@@ -30,9 +29,8 @@ func TestReadinessCheckSuccess(t *testing.T) {
 	cfg := &config.Config{
 		UploadDir: uploadDir,
 	}
-	hub := ws.NewHub()
 
-	handler := ReadinessCheck(database, cfg, hub)
+	handler := ReadinessCheck(database, cfg)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	rr := httptest.NewRecorder()
 
@@ -46,25 +44,26 @@ func TestReadinessCheckSuccess(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp.Status != "ok" || resp.DB != "ok" || resp.Storage != "ok" || resp.WS != "ok" {
+	if resp.Status != "ok" || resp.DB != "ok" || resp.Storage != "ok" {
 		t.Fatalf("expected all ok, got %+v", resp)
 	}
 }
 
-func TestReadinessCheckNilHub(t *testing.T) {
+func TestReadinessCheckDBClosed(t *testing.T) {
 	tempDir := t.TempDir()
-	database, err := db.Open(filepath.Join(tempDir, "health.db"))
+	dbPath := filepath.Join(tempDir, "health.db")
+	database, err := db.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	_ = database.Close() // closed DB will fail QueryRowContext
 
 	uploadDir := filepath.Join(tempDir, "upload")
 	_ = os.MkdirAll(uploadDir, 0755)
 
 	cfg := &config.Config{UploadDir: uploadDir}
 
-	handler := ReadinessCheck(database, cfg, nil)
+	handler := ReadinessCheck(database, cfg)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	rr := httptest.NewRecorder()
 
@@ -76,8 +75,8 @@ func TestReadinessCheckNilHub(t *testing.T) {
 
 	var resp ReadinessResponse
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-	if resp.Status != "fail" || resp.WS != "fail" {
-		t.Fatalf("expected ws fail, got %+v", resp)
+	if resp.Status != "fail" || resp.DB != "fail" {
+		t.Fatalf("expected db fail, got %+v", resp)
 	}
 }
 
@@ -91,9 +90,8 @@ func TestReadinessCheckNonWritableStorage(t *testing.T) {
 
 	uploadDir := filepath.Join(tempDir, "non_existent_subdir", "upload")
 	cfg := &config.Config{UploadDir: uploadDir}
-	hub := ws.NewHub()
 
-	handler := ReadinessCheck(database, cfg, hub)
+	handler := ReadinessCheck(database, cfg)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	rr := httptest.NewRecorder()
 

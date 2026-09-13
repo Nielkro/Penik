@@ -124,20 +124,29 @@ jobs:
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.5
+        env:
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
+          envs: TARGET_SHA
           script: |
             cd ${{ secrets.SERVER_WORKDIR || '/opt/penik' }}
             git pull
 
-            # Save the currently running image ID for rollback in case new image fails
-            PREV_IMAGE=$(docker compose images -q penik-server || true)
+            TARGET_TAG="sha-${TARGET_SHA:0:7}"
+            if [ -z "$TARGET_SHA" ]; then
+              TARGET_TAG="latest"
+            fi
 
-            docker compose pull
-            docker compose up -d
+            PREV_TAG=$(cat .current_version 2>/dev/null || echo "")
+
+            echo "Deploying target tag: $TARGET_TAG (previous version: ${PREV_TAG:-none})"
+
+            PENIK_IMAGE_TAG="$TARGET_TAG" docker compose pull penik-server
+            PENIK_IMAGE_TAG="$TARGET_TAG" docker compose up -d penik-server
 
             echo "Verifying server readiness..."
             HEALTHY=0
@@ -152,13 +161,19 @@ jobs:
             done
 
             if [ "$HEALTHY" -ne 1 ]; then
-              echo "❌ Healthcheck failed! Container logs:"
+              echo "❌ Healthcheck failed for $TARGET_TAG! Container logs:"
               docker compose logs --tail=50 penik-server
-              if [ -n "$PREV_IMAGE" ]; then
-                echo "⚠️ Rolling back to previous container image: $PREV_IMAGE"
-                docker tag "$PREV_IMAGE" ghcr.io/nielkro/penik-server:latest || true
-                docker compose up -d
+              if [ -n "$PREV_TAG" ]; then
+                echo "⚠️ Rolling back to previous healthy version: $PREV_TAG"
+                PENIK_IMAGE_TAG="$PREV_TAG" docker compose pull penik-server || true
+                PENIK_IMAGE_TAG="$PREV_TAG" docker compose up -d penik-server
+                echo "Rolled back to $PREV_TAG"
+              else
+                echo "⚠️ No previous version in .current_version to roll back to."
               fi
               exit 1
             fi
-            echo "🚀 Deployment successfully verified and healthy."
+
+            # Record successful version on server
+            echo "$TARGET_TAG" > .current_version
+            echo "🚀 Deployment of $TARGET_TAG successfully verified and recorded."
