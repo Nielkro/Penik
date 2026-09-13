@@ -42,6 +42,14 @@ def cleanup_test_db(db_path: str = "/tmp/penik_test.db"):
 def build_server_binary() -> str:
     binary_path = os.path.join(REPO_ROOT, "penik-server")
     print("\033[93m[build] Compiling ./penik-server binary...\033[0m")
+    # Ensure server/cmd/server/dist exists with a stub index.html so //go:embed succeeds in headless test runs
+    dist_dir = os.path.join(REPO_ROOT, "server", "cmd", "server", "dist")
+    os.makedirs(dist_dir, exist_ok=True)
+    stub_index = os.path.join(dist_dir, "index.html")
+    if not os.path.exists(stub_index):
+        with open(stub_index, "w") as f:
+            f.write("<!DOCTYPE html><html><body>Penik Headless Test</body></html>\n")
+
     server_dir = os.path.join(REPO_ROOT, "server")
     res = subprocess.run(
         ["go", "build", "-o", binary_path, "cmd/server/main.go"],

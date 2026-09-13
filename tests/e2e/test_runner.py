@@ -744,6 +744,12 @@ def main():
             repo_root = Path(__file__).resolve().parent.parent.parent
             binary_path = repo_root / "penik-server"
             if not binary_path.exists() or not args.no_build:
+                dist_dir = repo_root / "server" / "cmd" / "server" / "dist"
+                dist_dir.mkdir(parents=True, exist_ok=True)
+                stub_index = dist_dir / "index.html"
+                if not stub_index.exists():
+                    stub_index.write_text("<!DOCTYPE html><html><body>Penik Headless Test</body></html>\n")
+
                 print(f"{YELLOW}[build] Compiling ./penik-server binary...{RESET}")
                 res = subprocess.run(
                     ["go", "build", "-o", str(binary_path), "cmd/server/main.go"],

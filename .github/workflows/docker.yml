@@ -159,6 +159,8 @@ jobs:
 
       - name: Run full E2E test suite
         run: |
+          mkdir -p server/cmd/server/dist
+          touch server/cmd/server/dist/index.html
           python3 scripts/run_e2e.py
 
   deploy:
