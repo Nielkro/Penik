@@ -52,6 +52,10 @@ func SendMessage(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 			http.Error(w, "to_user_id, msg_id and devices are required", http.StatusBadRequest)
 			return
 		}
+		if len(req.Devices) > 50 {
+			http.Error(w, "too many recipient devices (max 50)", http.StatusBadRequest)
+			return
+		}
 
 		ctx := r.Context()
 		now := time.Now().Unix()
@@ -124,6 +128,14 @@ func SendMessage(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 				http.Error(w, "invalid base64 in device payload", http.StatusBadRequest)
 				return
 			}
+			if len(ciphertext) == 0 || len(ciphertext) > 128*1024 {
+				http.Error(w, "ciphertext exceeds maximum allowed size (128 KiB)", http.StatusBadRequest)
+				return
+			}
+			if len(salt) > 32 || len(nonce) > 24 {
+				http.Error(w, "invalid salt or nonce length", http.StatusBadRequest)
+				return
+			}
 
 			var ownerID int64
 			if err := tx.QueryRowContext(ctx, `SELECT user_id FROM devices WHERE id=?`, dev.DeviceID).Scan(&ownerID); err != nil {
@@ -194,36 +206,26 @@ func SendMessage(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 		if senderName == "" {
 			senderName = "Пользователь"
 		}
-		for _, dev := range req.Devices {
+		for _, d := range deliveries {
 			var devOwnerID int64
-			_ = database.QueryRowContext(ctx, "SELECT user_id FROM devices WHERE id=?", dev.DeviceID).Scan(&devOwnerID)
-			if devOwnerID == senderUserID {
+			_ = database.QueryRowContext(ctx, "SELECT user_id FROM devices WHERE id=?", d.deviceID).Scan(&devOwnerID)
+			if devOwnerID != req.ToUserID {
 				continue
 			}
-			if hub.IsOnline(dev.DeviceID) {
+			if hub.IsOnline(d.deviceID) {
 				continue
 			}
 			var fcmToken string
-			_ = database.QueryRowContext(ctx, "SELECT fcm_token FROM devices WHERE id=?", dev.DeviceID).Scan(&fcmToken)
+			_ = database.QueryRowContext(ctx, "SELECT fcm_token FROM devices WHERE id=?", d.deviceID).Scan(&fcmToken)
 			if fcmToken == "" {
 				continue
-			}
-			// Pointer only, exactly like the WebSocket send path: the ciphertext
-			// does not fit in FCM's ~4 KB data budget, so the device resolves the
-			// envelope over REST by msg_id.
-			var pushMsgID int64
-			for _, d := range deliveries {
-				if d.deviceID == dev.DeviceID {
-					pushMsgID = d.msgRecv.MsgID
-					break
-				}
 			}
 			push.SendDevicePush(fcmToken, map[string]string{
 				"type":           "direct",
 				"chat_user_id":   fmt.Sprintf("%d", senderUserID),
 				"sender_name":    senderName,
 				"text":           "Новое сообщение",
-				"msg_id":         fmt.Sprintf("%d", pushMsgID),
+				"msg_id":         fmt.Sprintf("%d", d.msgRecv.MsgID),
 				"timestamp":      fmt.Sprintf("%d", now*1000),
 				"sender_user_id": fmt.Sprintf("%d", senderUserID),
 			})

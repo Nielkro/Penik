@@ -440,8 +440,12 @@ class WebSocketManager @Inject constructor(
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    Log.d("WS", "Closed: $reason")
-                    handleDisconnect()
+                    Log.d("WS", "Closed: $reason, code: $code")
+                    if (code == 1008) {
+                        handleUnauthorized()
+                    } else {
+                        handleDisconnect()
+                    }
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {

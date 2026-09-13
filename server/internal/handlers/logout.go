@@ -9,6 +9,7 @@ import (
 
 	"messenger/server/internal/db"
 	"messenger/server/internal/middleware"
+	"messenger/server/internal/ws"
 )
 
 // oneDaySeconds is the age threshold above which the requesting session is
@@ -17,7 +18,7 @@ const oneDaySeconds int64 = 24 * 60 * 60
 
 // Logout revokes the session token used for the current request, so a stolen
 // token stops working immediately instead of waiting for the TTL to lapse.
-func Logout(database *db.DB) http.HandlerFunc {
+func Logout(database *db.DB, hubs ...*ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := middleware.TokenFromCtx(r.Context())
 		if token == "" {
@@ -29,6 +30,11 @@ func Logout(database *db.DB) http.HandlerFunc {
 			`DELETE FROM sessions WHERE token=?`, tokenHash); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
+		}
+		for _, hub := range hubs {
+			if hub != nil {
+				hub.CloseSession(tokenHash)
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -60,7 +66,7 @@ func revokeOtherSessions(ctx context.Context, database *db.DB, userID int64, tok
 // requesting session. It is allowed only if the requesting session has been
 // active for more than a day; a fresher token is rejected without changing
 // anything, since it may have just been obtained by an attacker.
-func LogoutAll(database *db.DB) http.HandlerFunc {
+func LogoutAll(database *db.DB, hubs ...*ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
 		token := middleware.TokenFromCtx(r.Context())
@@ -82,6 +88,12 @@ func LogoutAll(database *db.DB) http.HandlerFunc {
 			// Session too young to authorize a mass revocation; nothing changed.
 			http.Error(w, "session too recent to revoke others", http.StatusForbidden)
 			return
+		}
+		tokenHash := db.HashSessionToken(token)
+		for _, hub := range hubs {
+			if hub != nil {
+				hub.CloseUserSessionsExcept(userID, tokenHash)
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

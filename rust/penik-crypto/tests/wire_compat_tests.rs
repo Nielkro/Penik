@@ -344,3 +344,13 @@ fn test_pairwise_fanout_encryption() {
     assert_eq!(pt3, plaintext);
 }
 
+#[test]
+fn test_reject_low_order_public_keys() {
+    use penik_crypto::{diffie_hellman, generate_key_pair, CryptoError};
+
+    let kp = generate_key_pair();
+    let zero_pub = [0u8; 32];
+    let res = diffie_hellman(&kp.private_key, &zero_pub);
+    assert_eq!(res, Err(CryptoError::InvalidKey));
+}
+

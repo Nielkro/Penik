@@ -43,21 +43,26 @@ type frameRateCounter struct {
 
 // Client represents a single connected WebSocket session.
 type Client struct {
-	hub      *Hub
-	conn     *websocket.Conn
-	userID   int64
-	deviceID int64
-	db       *db.DB
-	cfg      *config.Config
-	send     chan []byte
-	done     chan struct{}
-	rateMu   sync.Mutex
-	rate     map[Opcode]*frameRateCounter
+	hub       *Hub
+	conn      *websocket.Conn
+	userID    int64
+	deviceID  int64
+	tokenHash string
+	expiresAt int64
+	db        *db.DB
+	cfg       *config.Config
+	send      chan []byte
+	done      chan struct{}
+	rateMu    sync.Mutex
+	rate      map[Opcode]*frameRateCounter
 }
 
 // NewClient creates a new Client. Called from handlers package.
-func NewClient(h *Hub, conn *websocket.Conn, userID, deviceID int64, database *db.DB, cfgs ...*config.Config) *Client {
-	return newClient(h, conn, userID, deviceID, database, cfgs...)
+func NewClient(h *Hub, conn *websocket.Conn, userID, deviceID int64, tokenHash string, expiresAt int64, database *db.DB, cfgs ...*config.Config) *Client {
+	c := newClient(h, conn, userID, deviceID, database, cfgs...)
+	c.tokenHash = tokenHash
+	c.expiresAt = expiresAt
+	return c
 }
 
 func newClient(h *Hub, conn *websocket.Conn, userID, deviceID int64, database *db.DB, cfgs ...*config.Config) *Client {
@@ -81,6 +86,22 @@ func newClient(h *Hub, conn *websocket.Conn, userID, deviceID int64, database *d
 // Run starts the read and write pumps, registers with the hub, sends offline
 // batch, and waits until the connection closes.
 func (c *Client) Run(ctx context.Context) {
+	if c.expiresAt > 0 {
+		remaining := time.Until(time.Unix(c.expiresAt, 0))
+		if remaining <= 0 {
+			if c.conn != nil {
+				_ = c.conn.Close(websocket.StatusPolicyViolation, "session expired")
+			}
+			return
+		}
+		expiryTimer := time.AfterFunc(remaining, func() {
+			if c.conn != nil {
+				_ = c.conn.Close(websocket.StatusPolicyViolation, "session expired")
+			}
+		})
+		defer expiryTimer.Stop()
+	}
+
 	c.conn.SetReadLimit(512 * 1024) // 512 KB max WebSocket frame limit
 	c.hub.register <- c
 	// A device that dropped mid-call gets its call back instead of finding it
@@ -616,27 +637,23 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 		senderName = "Пользователь"
 	}
 
-	for _, dev := range msg.Devices {
-		var ownerID int64
-		_ = c.db.QueryRowContext(ctx, "SELECT user_id FROM devices WHERE id=?", dev.DeviceID).Scan(&ownerID)
-		if ownerID == senderUserID {
+	for _, d := range deliveries {
+		var devOwnerID int64
+		_ = c.db.QueryRowContext(ctx, "SELECT user_id FROM devices WHERE id=?", d.deviceID).Scan(&devOwnerID)
+		if devOwnerID != recipientUserID {
+			continue
+		}
+
+		if c.hub.IsOnline(d.deviceID) {
 			continue
 		}
 
 		var fcmToken string
-		_ = c.db.QueryRowContext(ctx, "SELECT fcm_token FROM devices WHERE id=?", dev.DeviceID).Scan(&fcmToken)
+		_ = c.db.QueryRowContext(ctx, "SELECT fcm_token FROM devices WHERE id=?", d.deviceID).Scan(&fcmToken)
 		if fcmToken == "" {
 			continue
 		}
 
-		if c.hub.IsOnline(dev.DeviceID) {
-			continue
-		}
-
-		// The push carries a pointer, not the payload. FCM caps a data message at
-		// ~4 KB, so an ordinary attachment or a long message would be dropped by
-		// Google without any error the user could see; the device fetches the
-		// envelope over REST by msg_id instead.
 		push.SendDevicePush(fcmToken, map[string]string{
 			"type":           "direct",
 			"chat_user_id":   fmt.Sprintf("%d", senderUserID),
@@ -644,14 +661,7 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 			"text":           "Новое сообщение",
 			"timestamp":      fmt.Sprintf("%d", now*1000),
 			"sender_user_id": fmt.Sprintf("%d", senderUserID),
-			"msg_id": func() string {
-				for _, d := range deliveries {
-					if d.deviceID == dev.DeviceID {
-						return fmt.Sprintf("%d", d.msgRecv.MsgID)
-					}
-				}
-				return ""
-			}(),
+			"msg_id":         fmt.Sprintf("%d", d.msgRecv.MsgID),
 		})
 	}
 

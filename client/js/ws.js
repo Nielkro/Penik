@@ -82,6 +82,7 @@ class WSManager {
     this._connected = false;
     this._connectListeners = [];
     this._disconnectListeners = [];
+    this._unauthorizedListeners = [];
     this._queue = [];
     this._requestQueue = Promise.resolve();
     this._lastConnectTime = 0;
@@ -191,6 +192,14 @@ class WSManager {
     return () => {
       const i = this._disconnectListeners.indexOf(fn);
       if (i !== -1) this._disconnectListeners.splice(i, 1);
+    };
+  }
+
+  onUnauthorized(fn) {
+    this._unauthorizedListeners.push(fn);
+    return () => {
+      const i = this._unauthorizedListeners.indexOf(fn);
+      if (i !== -1) this._unauthorizedListeners.splice(i, 1);
     };
   }
 
@@ -328,6 +337,10 @@ class WSManager {
       this._clearTimers();
       this._queue = [];
       this._disconnectListeners.forEach(fn => fn());
+      if (ev.code === 1008) {
+        this._unauthorizedListeners.forEach(fn => fn());
+        return;
+      }
       if (!this._manualClose) this._scheduleReconnect();
     };
   }

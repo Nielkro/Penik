@@ -40,6 +40,12 @@ func WebSocketHandler(hub *ws.Hub, database *db.DB, cfg *config.Config) http.Han
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
 		deviceID := middleware.DeviceIDFromCtx(r.Context())
+		token := middleware.TokenFromCtx(r.Context())
+		expiresAt := middleware.TokenExpiresAtFromCtx(r.Context())
+		tokenHash := ""
+		if token != "" {
+			tokenHash = db.HashSessionToken(token)
+		}
 
 		opts := &websocket.AcceptOptions{
 			Subprotocols:   []string{"access_token"},
@@ -59,7 +65,7 @@ func WebSocketHandler(hub *ws.Hub, database *db.DB, cfg *config.Config) http.Han
 			return
 		}
 
-		client := ws.NewClient(hub, conn, userID, deviceID, database, cfg)
+		client := ws.NewClient(hub, conn, userID, deviceID, tokenHash, expiresAt, database, cfg)
 		if loc := resolveLocation("", r); loc != "" {
 			_, _ = database.ExecContext(r.Context(),
 				`UPDATE devices SET location=? WHERE id=?`,

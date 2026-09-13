@@ -6,7 +6,7 @@ require (
 	github.com/chai2010/webp v1.4.0
 	github.com/livekit/protocol v1.50.4
 	github.com/oschwald/geoip2-golang v1.13.0
-	github.com/shamaton/msgpack/v2 v2.2.0
+	github.com/shamaton/msgpack/v2 v2.4.2
 	golang.org/x/crypto v0.52.0
 	golang.org/x/image v0.15.0
 	modernc.org/sqlite v1.29.5

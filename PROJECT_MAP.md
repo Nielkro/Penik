@@ -9,10 +9,10 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/cmd/server/main.go` — Server entry point: loads config, opens DB, registers REST/WebSocket routes, attaches middleware, and serves the embedded web client.
 - `server/internal/config/config.go` — Loads runtime configuration from environment variables: port, SQLite path, session TTL, size limits, CORS, upload directory, MaxMind GeoIP database path, and primary/fallback LiveKit URLs.
 - `server/internal/handlers/auth.go` — REST handlers for registration and login; validates credentials and key material, hashes passwords, and creates devices/sessions.
-- `server/internal/handlers/logout.go` — REST handlers revoking the current session token (`/logout`) or the user's other sessions (`/logout/all`); `/logout/all` is rejected with 403 unless the requesting session is older than a day.
+- `server/internal/handlers/logout.go` — REST handlers revoking the current session token (`/logout`) or the user's other sessions (`/logout/all`), terminating associated active WebSockets via the hub; `/logout/all` is rejected with 403 unless the requesting session is older than a day.
 - `server/internal/handlers/devices.go` — REST handler `GET /api/v1/devices` listing the authenticated user's devices, flagging the current device and whether each has an active session.
 - `server/internal/handlers/deviceinfo.go` — Helpers deriving a device's platform label, originating IP, and IP-based geolocation resolution (MaxMind GeoLite2/DB-IP Lite .mmdb reader with cached fallback).
-- `server/internal/handlers/users.go` — Handlers for user profiles, searching users, changing name/nickname, and avatar operations.
+- `server/internal/handlers/users.go` — Handlers for user profiles, searching users, changing name/nickname, avatar operations, and password updates (optionally revoking other active sessions).
 - `server/internal/handlers/messages.go` — REST access to direct message history, single-message resolution by id (push notifications carry only an id), delivery/read receipts, and chat deletion operations.
 - `server/internal/handlers/groups.go` — REST lifecycle of groups: creation, retrieval, renaming, deletion, and membership management.
 - `server/internal/handlers/group_keys.go` — REST operations for group key versions and encrypted key envelopes for devices.
@@ -25,11 +25,11 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/handlers/calls.go` — REST handlers for listing user call history (`GET /api/v1/calls`) and peer-to-peer call logs (`GET /api/v1/calls/peer/:user_id`).
 - `server/internal/handlers/stickers.go` — REST handlers for sticker packs: listing installed packs, pack metadata, install/uninstall, Telegram sticker pack import, and static file serving.
 - `server/internal/stickers/models.go` — Data models for sticker packs and individual stickers.
-- `server/internal/handlers/attachments.go` — Self-hosted encrypted attachment handlers: multipart upload (`POST /api/v1/attachments/upload`), relation-based ACL checks, and streaming file download (`GET /api/v1/attachments/file/:id`) with HTTP Range requests support.
+- `server/internal/handlers/attachments.go` — Self-hosted encrypted attachment handlers: streaming multipart upload (`POST /api/v1/attachments/upload`), relation-based ACL checks, and streaming file download (`GET /api/v1/attachments/file/:id`) with HTTP Range requests support.
 - `server/internal/handlers/ws.go` — Authorizes WebSocket upgrades and creates server-side client sessions for real-time event exchange.
-- `server/internal/ws/client.go` — Implements the WebSocket client read/write pump, handling direct messages, key requests, receipt events, offline batching, and presence.
+- `server/internal/ws/client.go` — Implements the WebSocket client read/write pump, handling direct messages, key requests, receipt events, offline batching, session TTL enforcement, and presence.
 - `server/internal/ws/group.go` — Receives and routes encrypted group messages, receipts, and offline delivery across group members.
-- `server/internal/ws/hub.go` — Manages the registry of connected devices, broadcasting pre-encoded frames, presence, and shutdown events; also answers which devices a user has connected and whether a device was taken over by a newer connection.
+- `server/internal/ws/hub.go` — Manages the registry of connected devices, broadcasting pre-encoded frames, presence, and shutdown events; terminates connections for revoked or expired sessions; also answers which devices a user has connected and whether a device was taken over by a newer connection.
 - `server/internal/ws/call.go` — Manages LiveKit 1:1 call signaling, per-device ring state (an incoming call rings every device of the callee and only the device that answered owns the call), a reconnect grace period that keeps an accepted call alive across a network switch and replays its state to the returning device, and JWT access token generation.
 - `server/internal/ws/protocol.go` — Defines binary opcodes and MsgPack structures for direct/group messages, keys, pairing, presence, statuses, and call signaling (0x30-0x39, including call state replay and peer link state).
 - `server/internal/push/fcm.go` — Handles JWT credentials signing and FCM HTTP v1 background push notifications delivery.

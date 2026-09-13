@@ -12,9 +12,10 @@ import (
 type contextKey string
 
 const (
-	ContextUserID   contextKey = "userID"
-	ContextDeviceID contextKey = "deviceID"
-	ContextToken    contextKey = "token"
+	ContextUserID         contextKey = "userID"
+	ContextDeviceID       contextKey = "deviceID"
+	ContextToken          contextKey = "token"
+	ContextTokenExpiresAt contextKey = "tokenExpiresAt"
 )
 
 // Auth validates the Bearer token (or ?token= query param) and injects
@@ -50,6 +51,7 @@ func Auth(database *db.DB) func(http.Handler) http.Handler {
 			ctx := context.WithValue(r.Context(), ContextUserID, userID)
 			ctx = context.WithValue(ctx, ContextDeviceID, deviceID)
 			ctx = context.WithValue(ctx, ContextToken, token)
+			ctx = context.WithValue(ctx, ContextTokenExpiresAt, expiresAt)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -95,5 +97,11 @@ func DeviceIDFromCtx(ctx context.Context) int64 {
 // TokenFromCtx retrieves the session token used to authenticate the request.
 func TokenFromCtx(ctx context.Context) string {
 	v, _ := ctx.Value(ContextToken).(string)
+	return v
+}
+
+// TokenExpiresAtFromCtx retrieves the session expiration timestamp from the context.
+func TokenExpiresAtFromCtx(ctx context.Context) int64 {
+	v, _ := ctx.Value(ContextTokenExpiresAt).(int64)
 	return v
 }

@@ -258,7 +258,7 @@ func (c *Client) sendGroupOfflineEditBatch(ctx context.Context) error {
 		`SELECT gm.group_id, gm.message_id, gm.sender_user_id, gm.sender_device_id,
 		        gm.key_version, gm.ciphertext, gm.encryption_salt, gm.encryption_nonce, gm.edited_at
 		 FROM group_messages gm
-		 JOIN group_members mem ON gm.group_id = mem.group_id AND mem.user_id = ?
+		 JOIN group_members mem ON gm.group_id = mem.group_id AND mem.user_id = ? AND mem.status = 'active'
 		 WHERE gm.edited_at IS NOT NULL AND gm.edited_at > ?
 		 ORDER BY gm.edited_at ASC`, c.userID, threshold)
 	if err != nil {
@@ -294,12 +294,14 @@ func (c *Client) handleGroupMessageEdit(ctx context.Context, msg *GroupMessageEd
 		}
 	}
 
-	// Verify caller is the author of the group message
+	// Verify caller is the author of the group message AND is an active member
 	var msgID int64
 	var keyVersion int64
 	err := c.db.QueryRowContext(ctx,
-		`SELECT id, key_version FROM group_messages 
-		 WHERE group_id=? AND message_id=? AND sender_user_id=?`,
+		`SELECT gm.id, gm.key_version 
+		 FROM group_messages gm
+		 JOIN group_members mem ON mem.group_id = gm.group_id AND mem.user_id = gm.sender_user_id
+		 WHERE gm.group_id=? AND gm.message_id=? AND gm.sender_user_id=? AND mem.status='active'`,
 		msg.GroupID, msg.MessageID, c.userID).Scan(&msgID, &keyVersion)
 	if err != nil {
 		return fmt.Errorf("group message not found or unauthorized to edit")
