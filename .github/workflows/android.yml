@@ -6,6 +6,7 @@ on:
       - master
     paths:
       - 'android/**'
+      - 'version.json'
       - '.github/workflows/android.yml'
   workflow_dispatch:
 
@@ -36,6 +37,17 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
 
+      - name: Decode Google Services config
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > android/app/google-services.json
+          else
+            echo "::error::Secret GOOGLE_SERVICES_JSON_BASE64 is not set in repository settings."
+            exit 1
+          fi
+
       - name: Build Debug APK
         working-directory: android
         run: bash ./gradlew assembleDebug --no-daemon --stacktrace
@@ -53,14 +65,26 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish or update Android rolling release
+      - name: Publish Android immutable version release
         if: github.ref == 'refs/heads/master'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view android-latest >/dev/null 2>&1; then
-            gh release edit android-latest --prerelease --notes "Automated Android debug build from commit ${{ github.sha }}."
-          else
-            gh release create android-latest --prerelease --title "Latest Android Build" --notes "Automated Android debug build from commit ${{ github.sha }}."
+          VERSION_NAME=$(jq -r '.latest_android_version_name' version.json)
+          if [ -z "$VERSION_NAME" ] || [ "$VERSION_NAME" = "null" ]; then
+            echo "Error: latest_android_version_name not found in version.json"
+            exit 1
           fi
-          gh release upload android-latest android/app/build/outputs/apk/debug/app-debug.apk --clobber
+          TAG="android-v${VERSION_NAME}"
+          echo "Target immutable release tag: $TAG"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists and is immutable. Skipping upload to preserve release integrity."
+          else
+            echo "Creating new immutable release $TAG..."
+            gh release create "$TAG" \
+              --title "Android Release v${VERSION_NAME}" \
+              --notes "Android build for version v${VERSION_NAME} (commit ${{ github.sha }})." \
+              android/app/build/outputs/apk/debug/app-debug.apk
+            echo "Release $TAG published successfully."
+          fi
