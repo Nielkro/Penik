@@ -619,7 +619,7 @@ func detectStickerContentType(filePath, fileName string) string {
 }
 
 var (
-	transcodeSem     = make(chan struct{}, 2)
+	transcodeSem     = make(chan struct{}, 1)
 	transcodeMu      sync.Mutex
 	activeTranscodes = make(map[string]chan struct{})
 )
@@ -662,15 +662,15 @@ func transcodeOnDemand(srcPath, dstPath, format string) bool {
 	var cmd *exec.Cmd
 	if format == "webp" {
 		// Stage 1: Optimized lossy animated WebP with 256px scaling & 15fps (~60-100KB per sticker)
-		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vf", "scale=256:256:force_original_aspect_ratio=decrease,fps=15,format=rgba", "-c:v", "libwebp", "-lossless", "0", "-q:v", "35", "-compression_level", "6", "-loop", "0", "-an", "-f", "webp", tmpPath)
+		cmd = exec.CommandContext(ctx, "nice", "-n", "19", "ffmpeg", "-threads", "1", "-y", "-i", srcPath, "-vf", "scale=256:256:force_original_aspect_ratio=decrease,fps=15,format=rgba", "-c:v", "libwebp", "-lossless", "0", "-q:v", "35", "-compression_level", "6", "-loop", "0", "-an", "-f", "webp", tmpPath)
 		if _, err := cmd.CombinedOutput(); err != nil || !validNonEmptyFile(tmpPath) {
 			_ = os.Remove(tmpPath)
 			// Stage 2: Direct lossy animated WebP
-			cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libwebp", "-lossless", "0", "-q:v", "35", "-compression_level", "6", "-loop", "0", "-an", "-f", "webp", tmpPath)
+			cmd = exec.CommandContext(ctx, "nice", "-n", "19", "ffmpeg", "-threads", "1", "-y", "-i", srcPath, "-c:v", "libwebp", "-lossless", "0", "-q:v", "35", "-compression_level", "6", "-loop", "0", "-an", "-f", "webp", tmpPath)
 			if _, err2 := cmd.CombinedOutput(); err2 != nil || !validNonEmptyFile(tmpPath) {
 				_ = os.Remove(tmpPath)
 				// Stage 3: Guaranteed single-frame snapshot
-				cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-vframes", "1", "-c:v", "libwebp", "-q:v", "60", "-f", "webp", tmpPath)
+				cmd = exec.CommandContext(ctx, "nice", "-n", "19", "ffmpeg", "-threads", "1", "-y", "-i", srcPath, "-vframes", "1", "-c:v", "libwebp", "-q:v", "60", "-f", "webp", tmpPath)
 				if out3, err3 := cmd.CombinedOutput(); err3 != nil || !validNonEmptyFile(tmpPath) {
 					_ = os.Remove(tmpPath)
 					log.Printf("[Stickers] ffmpeg webp transcode failed for %s -> %s: %v, out: %s", srcPath, dstPath, err3, string(out3))
@@ -679,7 +679,7 @@ func transcodeOnDemand(srcPath, dstPath, format string) bool {
 			}
 		}
 	} else if format == "mp4" {
-		cmd = exec.CommandContext(ctx, "ffmpeg", "-y", "-i", srcPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", "-f", "mp4", tmpPath)
+		cmd = exec.CommandContext(ctx, "nice", "-n", "19", "ffmpeg", "-threads", "1", "-y", "-i", srcPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", "-f", "mp4", tmpPath)
 		if out, err := cmd.CombinedOutput(); err != nil || !validNonEmptyFile(tmpPath) {
 			_ = os.Remove(tmpPath)
 			log.Printf("[Stickers] ffmpeg mp4 transcode failed for %s -> %s: %v, out: %s", srcPath, dstPath, err, string(out))
