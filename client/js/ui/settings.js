@@ -689,9 +689,11 @@ export function renderDevices(container) {
       );
       const meta = el("div", { style: "font-size:12px;color:var(--text-muted);margin-top:4px;" },
         `Активно: ${formatFullTime(d.last_seen * 1000)}`,
-        d.has_session
+        d.is_online
           ? el("span", { style: "margin-left:8px;color:var(--success);" }, "в сети")
-          : el("span", { style: "margin-left:8px;color:var(--text-muted);" }, "нет активной сессии")
+          : (d.has_session
+              ? el("span", { style: "margin-left:8px;color:var(--text-muted);" }, "не в сети")
+              : el("span", { style: "margin-left:8px;color:var(--text-muted);" }, "нет активной сессии"))
       );
       list.appendChild(el("div", {
         style: "padding:14px 18px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);"

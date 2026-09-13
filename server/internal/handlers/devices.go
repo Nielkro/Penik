@@ -6,6 +6,7 @@ import (
 
 	"messenger/server/internal/db"
 	"messenger/server/internal/middleware"
+	"messenger/server/internal/ws"
 )
 
 type deviceResponse struct {
@@ -18,11 +19,13 @@ type deviceResponse struct {
 	IsCurrent   bool   `json:"is_current"`
 	HasSession  bool   `json:"has_session"`
 	SessionsCnt int    `json:"sessions_count"`
+	IsOnline    bool   `json:"is_online"`
 }
 
 // ListDevices returns every device belonging to the authenticated user, marking
-// which one issued the current request so the client can show "this device".
-func ListDevices(database *db.DB) http.HandlerFunc {
+// which one issued the current request so the client can show "this device",
+// its session state, and whether it is actively connected to the hub.
+func ListDevices(database *db.DB, hubs ...*ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
 		currentDeviceID := middleware.DeviceIDFromCtx(r.Context())
@@ -54,6 +57,9 @@ func ListDevices(database *db.DB) http.HandlerFunc {
 			}
 			d.IsCurrent = d.ID == currentDeviceID
 			d.HasSession = d.SessionsCnt > 0
+			if len(hubs) > 0 && hubs[0] != nil {
+				d.IsOnline = hubs[0].IsOnline(d.ID)
+			}
 			list = append(list, d)
 		}
 		if err := rows.Err(); err != nil {
