@@ -44,4 +44,20 @@ if echo "$STAGED_FILES" | grep -qE '^rust/penik-crypto/.*(\.rs|Cargo\.(toml|lock
   fi
 fi
 
+# 5. Caddy verification: validate Caddyfile syntax if penik.caddy changed
+if echo "$STAGED_FILES" | grep -q 'penik\.caddy$'; then
+  echo "🔍 [pre-commit] Validating penik.caddy syntax..."
+  if command -v caddy >/dev/null 2>&1; then
+    if ! caddy validate --config penik.caddy --adapter caddyfile; then
+      echo "❌ [pre-commit] Invalid penik.caddy syntax. Commit blocked."
+      exit 1
+    fi
+  elif command -v docker >/dev/null 2>&1; then
+    if ! docker run --rm -v "$PWD:/work" caddy:2 caddy validate --config /work/penik.caddy --adapter caddyfile; then
+      echo "❌ [pre-commit] Invalid penik.caddy syntax via docker. Commit blocked."
+      exit 1
+    fi
+  fi
+fi
+
 exit 0
