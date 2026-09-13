@@ -24,6 +24,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -52,8 +53,13 @@ sealed interface UpdateCheckResult {
 
 @Singleton
 class AppUpdateManager @Inject constructor(
-    private val apiService: ApiService
+    private val apiService: ApiService,
+    @ApplicationContext private val context: Context
 ) {
+    private val prefs by lazy {
+        context.getSharedPreferences("penik_app_update_prefs", Context.MODE_PRIVATE)
+    }
+
     private val _updateStatus = MutableStateFlow<UpdateStatus>(UpdateStatus.UpToDate)
     val updateStatus: StateFlow<UpdateStatus> = _updateStatus.asStateFlow()
 
@@ -71,6 +77,16 @@ class AppUpdateManager @Inject constructor(
             .build()
     }
 
+    private fun getVersionKey(info: AppVersionInfo): String {
+        return "${info.latestAndroidVersionCode}_${info.latestAndroidVersionName}"
+    }
+
+    private fun markForcePromptHandled(versionKey: String) {
+        if (versionKey.isNotBlank()) {
+            prefs.edit().putString("last_handled_force_version", versionKey).apply()
+        }
+    }
+
     suspend fun checkForUpdates(): UpdateCheckResult {
         return try {
             val response = apiService.getVersion()
@@ -80,12 +96,17 @@ class AppUpdateManager @Inject constructor(
             }
             val info = response.body()!!
             val currentCode = BuildConfig.VERSION_CODE
+            val lastHandledForceVersion = prefs.getString("last_handled_force_version", null)
+            val currentTargetKey = getVersionKey(info)
+
+            val isNewVersion = currentCode < info.latestAndroidVersionCode
+            val isPendingForcePrompt = info.forcePrompt && (lastHandledForceVersion != currentTargetKey)
 
             val (status, result) = when {
                 currentCode < info.minAndroidVersionCode -> {
                     UpdateStatus.ForceUpdateRequired(info) to UpdateCheckResult.Available(info, isForce = true)
                 }
-                currentCode < info.latestAndroidVersionCode || info.forcePrompt -> {
+                isNewVersion || isPendingForcePrompt -> {
                     UpdateStatus.SoftUpdateAvailable(info) to UpdateCheckResult.Available(info, isForce = false)
                 }
                 else -> {
@@ -101,7 +122,9 @@ class AppUpdateManager @Inject constructor(
     }
 
     fun dismissSoftUpdate() {
-        if (_updateStatus.value is UpdateStatus.SoftUpdateAvailable) {
+        val current = _updateStatus.value
+        if (current is UpdateStatus.SoftUpdateAvailable) {
+            markForcePromptHandled(getVersionKey(current.versionInfo))
             _updateStatus.value = UpdateStatus.UpToDate
         }
     }
@@ -112,6 +135,10 @@ class AppUpdateManager @Inject constructor(
 
     fun startDownload(context: Context, url: String) {
         if (_downloadState.value is DownloadState.Downloading) return
+        val current = _updateStatus.value
+        if (current is UpdateStatus.SoftUpdateAvailable) {
+            markForcePromptHandled(getVersionKey(current.versionInfo))
+        }
         val targetUrl = url.ifBlank { "https://penik.ru" }
         _downloadState.value = DownloadState.Downloading(0f, 0L, 0L)
 
@@ -204,6 +231,10 @@ class AppUpdateManager @Inject constructor(
     }
 
     fun openDownloadUrl(context: Context, url: String) {
+        val current = _updateStatus.value
+        if (current is UpdateStatus.SoftUpdateAvailable) {
+            markForcePromptHandled(getVersionKey(current.versionInfo))
+        }
         val target = url.ifBlank { "https://penik.ru" }
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(target)).apply {
