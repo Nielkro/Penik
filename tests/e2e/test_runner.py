@@ -775,20 +775,31 @@ def main():
             env["PORT"] = str(test_port)
             env["ENV"] = "development"
             env["ALLOWED_ORIGINS"] = f"http://localhost:{test_port},http://127.0.0.1:{test_port},https://web.penik.ru,https://penik.ru"
+            env["LIVEKIT_URL"] = env.get("LIVEKIT_URL", "wss://test-livekit.local")
+            env["LIVEKIT_FALLBACK_URL"] = env.get("LIVEKIT_FALLBACK_URL", "wss://test-livekit-fallback.local")
 
             print(f"{CYAN}[server] Starting ephemeral test server on {base_url} (DB: {test_db_path})...{RESET}")
+            server_log = tempfile.NamedTemporaryFile(mode="w+", delete=False, prefix="penik_runner_", suffix=".log")
             server_proc = subprocess.Popen(
                 [str(binary_path)],
                 cwd=str(repo_root),
                 env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=server_log,
+                stderr=server_log,
             )
 
             if not _wait_for_server(base_url):
                 print(f"{RED}[error] Ephemeral test server failed to start on {base_url}{RESET}")
                 if server_proc:
                     server_proc.kill()
+                try:
+                    server_log.seek(0)
+                    err_output = server_log.read()
+                    if err_output:
+                        print(f"{RED}[server output]\n{err_output}{RESET}")
+                    os.remove(server_log.name)
+                except Exception:
+                    pass
                 _cleanup_db(test_db_path)
                 sys.exit(1)
             print(f"{GREEN}[server] Test server is healthy and responding.{RESET}")
