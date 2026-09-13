@@ -137,6 +137,15 @@ jobs:
           go-version-file: 'server/go.mod'
           cache-dependency-path: 'server/go.sum'
 
+      - name: Cache Go build cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: ${{ runner.os }}-go-build-${{ hashFiles('server/go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-go-build-${{ hashFiles('server/go.sum') }}-
+            ${{ runner.os }}-go-build-
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -149,19 +158,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r tests/e2e/requirements.txt
 
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            rust/penik-crypto/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/penik-crypto/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Build Rust crypto micro-core
         run: |
           cargo build --release --manifest-path rust/penik-crypto/Cargo.toml
 
       - name: Run crypto core verification
         run: |
-          python3 tests/e2e/test_crypto_core.py
+          python3 -u tests/e2e/test_crypto_core.py
 
       - name: Run full E2E test suite
+        env:
+          PYTHONUNBUFFERED: "1"
         run: |
           mkdir -p server/cmd/server/dist
           touch server/cmd/server/dist/index.html
-          python3 scripts/run_e2e.py
+          python3 -u scripts/run_e2e.py
 
   deploy:
     name: Deploy to Server

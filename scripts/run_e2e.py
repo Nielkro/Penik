@@ -42,7 +42,7 @@ def cleanup_test_db(db_path: str = "/tmp/penik_test.db"):
 
 def build_server_binary() -> str:
     binary_path = os.path.join(REPO_ROOT, "penik-server")
-    print("\033[93m[build] Compiling ./penik-server binary...\033[0m")
+    print("\033[93m[build] Compiling ./penik-server binary...\033[0m", flush=True)
     # Ensure server/cmd/server/dist exists with a stub index.html so //go:embed succeeds in headless test runs
     dist_dir = os.path.join(REPO_ROOT, "server", "cmd", "server", "dist")
     os.makedirs(dist_dir, exist_ok=True)
@@ -59,9 +59,9 @@ def build_server_binary() -> str:
         text=True,
     )
     if res.returncode != 0:
-        print(f"\033[91m[build failed]\n{res.stderr}\033[0m")
+        print(f"\033[91m[build failed]\n{res.stderr}\033[0m", flush=True)
         sys.exit(1)
-    print("\033[92m[build] ./penik-server ready.\033[0m")
+    print("\033[92m[build] ./penik-server ready.\033[0m", flush=True)
     return binary_path
 
 
@@ -99,8 +99,9 @@ def main():
         if is_port_in_use(test_port):
             test_port = 8146
 
-        binary = os.path.join(REPO_ROOT, "penik-server")
-        if not os.path.exists(binary) or not args.no_build:
+        if args.no_build and os.path.exists(os.path.join(REPO_ROOT, "penik-server")):
+            binary = os.path.join(REPO_ROOT, "penik-server")
+        else:
             binary = build_server_binary()
 
         cleanup_test_db(test_db_path)
@@ -116,7 +117,7 @@ def main():
         env["LIVEKIT_URL"] = env.get("LIVEKIT_URL", "wss://test-livekit.local")
         env["LIVEKIT_FALLBACK_URL"] = env.get("LIVEKIT_FALLBACK_URL", "wss://test-livekit-fallback.local")
 
-        print(f"\033[96m[server] Starting ephemeral test server on {base_url} (DB: {test_db_path})...\033[0m")
+        print(f"\033[96m[server] Starting ephemeral test server on {base_url} (DB: {test_db_path})...\033[0m", flush=True)
         server_log = tempfile.NamedTemporaryFile(mode="w+", delete=False, prefix="penik_server_", suffix=".log")
         server_proc = subprocess.Popen(
             [binary],
@@ -127,35 +128,35 @@ def main():
         )
 
         if not wait_for_server(base_url):
-            print(f"\033[91m[error] Ephemeral test server failed to start on {base_url}\033[0m")
+            print(f"\033[91m[error] Ephemeral test server failed to start on {base_url}\033[0m", flush=True)
             if server_proc:
                 server_proc.kill()
             try:
                 server_log.seek(0)
                 err_output = server_log.read()
                 if err_output:
-                    print(f"\033[91m[server output]\n{err_output}\033[0m")
+                    print(f"\033[91m[server output]\n{err_output}\033[0m", flush=True)
                 os.remove(server_log.name)
             except Exception:
                 pass
             cleanup_test_db(test_db_path)
             sys.exit(1)
 
-        print(f"\033[92m[server] Test server is healthy and responding.\033[0m")
+        print(f"\033[92m[server] Test server is healthy and responding.\033[0m", flush=True)
 
     try:
         suite = E2ETestSuite(base_url=base_url, ws_url=ws_url)
         exit_code = asyncio.run(suite.run_all())
     finally:
         if server_proc:
-            print("\n\033[93m[server] Stopping ephemeral test server...\033[0m")
+            print("\n\033[93m[server] Stopping ephemeral test server...\033[0m", flush=True)
             server_proc.send_signal(signal.SIGTERM)
             try:
                 server_proc.wait(timeout=3.0)
             except subprocess.TimeoutExpired:
                 server_proc.kill()
             cleanup_test_db(test_db_path)
-            print("\033[92m[server] Ephemeral test database cleaned up.\033[0m")
+            print("\033[92m[server] Ephemeral test database cleaned up.\033[0m", flush=True)
 
     sys.exit(exit_code)
 
