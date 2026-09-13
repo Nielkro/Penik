@@ -74,7 +74,10 @@ fun GroupsListScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Группы", color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.SemiBold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = LocalAppColors.current.panel)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = LocalAppColors.current.background,
+                    titleContentColor = LocalAppColors.current.textPrimary
+                )
             )
         },
         floatingActionButton = {

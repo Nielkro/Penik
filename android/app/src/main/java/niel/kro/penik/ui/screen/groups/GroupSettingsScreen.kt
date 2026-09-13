@@ -150,7 +150,10 @@ fun GroupSettingsScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад", tint = LocalAppColors.current.textPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = LocalAppColors.current.panel)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = LocalAppColors.current.background,
+                    titleContentColor = LocalAppColors.current.textPrimary
+                )
             )
         }
     ) { padding ->

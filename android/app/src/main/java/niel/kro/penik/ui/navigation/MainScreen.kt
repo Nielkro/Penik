@@ -19,10 +19,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -217,13 +222,25 @@ fun MainScreen(
                                 size = 64.dp,
                                 avatarKey = userAvatarKeys[profileViewModel.userId]
                             )
+                            var themeButtonCenter by remember { mutableStateOf(Offset.Unspecified) }
                             IconButton(
-                                onClick = { ThemeManager.toggle() },
-                                modifier = Modifier.size(40.dp)
+                                onClick = { ThemeManager.toggle(origin = themeButtonCenter) },
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .onGloballyPositioned { coordinates ->
+                                        val pos = coordinates.positionInWindow()
+                                        val sz = coordinates.size
+                                        themeButtonCenter = Offset(
+                                            pos.x + sz.width / 2f,
+                                            pos.y + sz.height / 2f
+                                        )
+                                    }
                             ) {
-                                Text(
-                                    text = if (isLight) "☀️" else "🌙",
-                                    fontSize = 22.sp
+                                Icon(
+                                    imageVector = if (isLight) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                    contentDescription = "Тема",
+                                    tint = colors.textPrimary,
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }

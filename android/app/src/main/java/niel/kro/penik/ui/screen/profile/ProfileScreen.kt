@@ -100,7 +100,7 @@ fun ProfileScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = LocalAppColors.current.panel,
+                    containerColor = LocalAppColors.current.background,
                     titleContentColor = LocalAppColors.current.textPrimary
                 )
             )

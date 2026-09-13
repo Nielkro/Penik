@@ -18,6 +18,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -132,11 +137,20 @@ fun SettingsScreen(
                 .padding(16.dp)
         ) {
             // Theme toggle row: tapping anywhere switches between light and dark.
+            var themeRowCenter by remember { mutableStateOf(Offset.Unspecified) }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .clickable { ThemeManager.toggle() }
+                    .onGloballyPositioned { coordinates ->
+                        val pos = coordinates.positionInWindow()
+                        val sz = coordinates.size
+                        themeRowCenter = Offset(
+                            pos.x + sz.width - 24.dp.value,
+                            pos.y + sz.height / 2f
+                        )
+                    }
+                    .clickable { ThemeManager.toggle(origin = themeRowCenter) }
                     .padding(vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -149,9 +163,11 @@ fun SettingsScreen(
                         fontSize = 13.sp
                     )
                 }
-                Text(
-                    text = if (isLight) "☀️" else "🌙",
-                    fontSize = 22.sp
+                Icon(
+                    imageVector = if (isLight) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    contentDescription = "Тема",
+                    tint = colors.accent,
+                    modifier = Modifier.size(24.dp)
                 )
             }
 
