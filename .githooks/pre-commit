@@ -1,15 +1,47 @@
 #!/bin/sh
-# gitleaks pre-commit hook. Blocks the commit if a secret is found in staged changes.
 set -e
 
-if ! command -v gitleaks >/dev/null 2>&1; then
-  echo "gitleaks not installed. Skipping secret scan."
-  echo "Install: sudo pacman -S gitleaks"
+# 1. Gitleaks scan for secrets in staged changes
+if command -v gitleaks >/dev/null 2>&1; then
+  if ! gitleaks protect --staged --no-banner --no-color; then
+    echo "❌ gitleaks found staged secrets. Commit blocked."
+    echo "If this is a false positive, add a rule to .gitleaks.toml or an entry to .gitleaksignore."
+    exit 1
+  fi
+fi
+
+# Get list of staged files
+STAGED_FILES=$(git diff --cached --name-only)
+
+if [ -z "$STAGED_FILES" ]; then
   exit 0
 fi
 
-if ! gitleaks protect --staged --no-banner --no-color; then
-  echo "gitleaks found staged secrets. Commit blocked."
-  echo "If this is a false positive, add a rule to .gitleaks.toml or an entry to .gitleaksignore."
-  exit 1
+# 2. Server verification: run go test if server Go files or modules changed
+if echo "$STAGED_FILES" | grep -qE '^server/.*(\.go|go\.mod|go\.sum)$'; then
+  echo "🔍 [pre-commit] Running Go server tests..."
+  if ! (cd server && go test ./...); then
+    echo "❌ [pre-commit] Go server tests failed. Commit blocked."
+    exit 1
+  fi
 fi
+
+# 3. Client verification: run tsc typecheck if client JS/TS files changed
+if echo "$STAGED_FILES" | grep -qE '^client/.*(\.js|\.ts|tsconfig.*\.json|package.*\.json)$'; then
+  echo "🔍 [pre-commit] Checking web client TypeScript types..."
+  if ! (cd client && npm run typecheck); then
+    echo "❌ [pre-commit] Client typecheck failed. Commit blocked."
+    exit 1
+  fi
+fi
+
+# 4. Rust crypto verification: run cargo check if rust/penik-crypto changed
+if echo "$STAGED_FILES" | grep -qE '^rust/penik-crypto/.*(\.rs|Cargo\.(toml|lock))$'; then
+  echo "🔍 [pre-commit] Checking Rust crypto core..."
+  if ! cargo check --manifest-path rust/penik-crypto/Cargo.toml --quiet; then
+    echo "❌ [pre-commit] Rust cargo check failed. Commit blocked."
+    exit 1
+  fi
+fi
+
+exit 0
