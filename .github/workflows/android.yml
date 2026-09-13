@@ -79,17 +79,14 @@ jobs:
           SHA256=$(awk '{print $1}' android/app/build/outputs/apk/debug/app-debug.apk.sha256)
           echo "Publishing rolling release $TAG with sha256: $SHA256..."
 
+          NOTES=$(printf "Latest rolling build from commit %s (%s).\n\n**SHA-256 Checksum:**\n\`\`\`\n%s  app-debug.apk\n\`\`\`\n" "${{ github.sha }}" "${{ github.ref_name }}" "$SHA256")
+
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Updating existing release $TAG..."
             gh release edit "$TAG" \
               --prerelease \
               --title "Android Latest (Rolling Build)" \
-              --notes "Latest rolling build from commit ${{ github.sha }} (${{ github.ref_name }}).
-
-**SHA-256 Checksum:**
-\`\`\`
-${SHA256}  app-debug.apk
-\`\`\`"
+              --notes "$NOTES"
             gh release upload "$TAG" \
               android/app/build/outputs/apk/debug/app-debug.apk \
               android/app/build/outputs/apk/debug/app-debug.apk.sha256 \
@@ -99,12 +96,7 @@ ${SHA256}  app-debug.apk
             gh release create "$TAG" \
               --prerelease \
               --title "Android Latest (Rolling Build)" \
-              --notes "Latest rolling build from commit ${{ github.sha }} (${{ github.ref_name }}).
-
-**SHA-256 Checksum:**
-\`\`\`
-${SHA256}  app-debug.apk
-\`\`\`" \
+              --notes "$NOTES" \
               android/app/build/outputs/apk/debug/app-debug.apk \
               android/app/build/outputs/apk/debug/app-debug.apk.sha256
           fi
@@ -131,14 +123,10 @@ ${SHA256}  app-debug.apk
             if [ -z "$RELEASE_NOTES" ]; then
               RELEASE_NOTES="Android release v${VERSION_NAME} (commit ${{ github.sha }})."
             fi
+            NOTES=$(printf "%s\n\n**SHA-256 Checksum:**\n\`\`\`\n%s  app-debug.apk\n\`\`\`\n" "$RELEASE_NOTES" "$SHA256")
             gh release create "$TAG" \
               --title "Android Release v${VERSION_NAME}" \
-              --notes "$RELEASE_NOTES
-
-**SHA-256 Checksum:**
-\`\`\`
-${SHA256}  app-debug.apk
-\`\`\`" \
+              --notes "$NOTES" \
               android/app/build/outputs/apk/debug/app-debug.apk \
               android/app/build/outputs/apk/debug/app-debug.apk.sha256
             echo "Release $TAG published successfully."
