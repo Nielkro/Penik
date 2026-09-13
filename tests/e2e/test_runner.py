@@ -63,19 +63,19 @@ RESET = "\033[0m"
 
 
 def log_step(name: str):
-    print(f"\n{BOLD}{CYAN}=== [TEST STEP] {name} ==={RESET}")
+    print(f"\n{BOLD}{CYAN}=== [TEST STEP] {name} ==={RESET}", flush=True)
 
 
 def log_pass(msg: str):
-    print(f"  {GREEN}✔ [PASS]{RESET} {msg}")
+    print(f"  {GREEN}✔ [PASS]{RESET} {msg}", flush=True)
 
 
 def log_fail(msg: str):
-    print(f"  {RED}✖ [FAIL]{RESET} {msg}")
+    print(f"  {RED}✖ [FAIL]{RESET} {msg}", flush=True)
 
 
 def log_info(msg: str):
-    print(f"  {YELLOW}ℹ{RESET} {msg}")
+    print(f"  {YELLOW}ℹ{RESET} {msg}", flush=True)
 
 
 class E2ETestSuite:
@@ -99,7 +99,7 @@ class E2ETestSuite:
 
     async def run_all(self):
         start_time = time.time()
-        print(f"{BOLD}Starting Penik E2E Test Suite on {self.base_url}...{RESET}")
+        print(f"{BOLD}Starting Penik E2E Test Suite on {self.base_url}...{RESET}", flush=True)
 
         try:
             await self.test_registration_and_profiles()
@@ -116,16 +116,16 @@ class E2ETestSuite:
             await self.test_r1_logout_kills_ws()
 
             elapsed = time.time() - start_time
-            print(f"\n{BOLD}{GREEN}------------------------------------------------------------{RESET}")
-            print(f"{BOLD}{GREEN}ALL {self.passed_tests} E2E TESTS PASSED SUCCESSFULLY! ({elapsed:.2f}s){RESET}")
-            print(f"{BOLD}{GREEN}------------------------------------------------------------{RESET}")
+            print(f"\n{BOLD}{GREEN}------------------------------------------------------------{RESET}", flush=True)
+            print(f"{BOLD}{GREEN}ALL {self.passed_tests} E2E TESTS PASSED SUCCESSFULLY! ({elapsed:.2f}s){RESET}", flush=True)
+            print(f"{BOLD}{GREEN}------------------------------------------------------------{RESET}", flush=True)
             return 0
         except Exception as e:
             elapsed = time.time() - start_time
-            print(f"\n{BOLD}{RED}------------------------------------------------------------{RESET}")
-            print(f"{BOLD}{RED}TEST RUN ABORTED WITH ERROR after {elapsed:.2f}s: {e}{RESET}")
-            print(f"Passed: {self.passed_tests}, Failed: {self.failed_tests + 1}")
-            print(f"{BOLD}{RED}------------------------------------------------------------{RESET}")
+            print(f"\n{BOLD}{RED}------------------------------------------------------------{RESET}", flush=True)
+            print(f"{BOLD}{RED}TEST RUN ABORTED WITH ERROR after {elapsed:.2f}s: {e}{RESET}", flush=True)
+            print(f"Passed: {self.passed_tests}, Failed: {self.failed_tests + 1}", flush=True)
+            print(f"{BOLD}{RED}------------------------------------------------------------{RESET}", flush=True)
             return 1
         finally:
             await self.cleanup()
