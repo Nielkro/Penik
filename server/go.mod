@@ -1,6 +1,6 @@
 module messenger/server
 
-go 1.26
+go 1.27
 
 require (
 	github.com/chai2010/webp v1.4.0

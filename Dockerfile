@@ -18,7 +18,7 @@ RUN chmod +x /tmp/fetch_crypto.sh && \
 RUN npm run build
 
 # Stage 2: Build Go server with embedded frontend
-FROM golang:1.26-alpine AS server-builder
+FROM golang:1.27-alpine AS server-builder
 WORKDIR /app
 RUN apk add --no-cache git gcc musl-dev
 COPY server/go.mod ./server/
