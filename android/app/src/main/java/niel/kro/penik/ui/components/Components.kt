@@ -143,7 +143,10 @@ import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private fun initialsColor(id: Long, name: String): Color {
+fun initialsColor(id: Long, name: String): Color {
+    if (name.contains("Избранное")) {
+        return Color(0xFF5FA8DF)
+    }
     val hue = if (id != 0L) {
         (id * 137) % 360
     } else {
@@ -481,7 +484,7 @@ fun ChatListItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = name,
-                    color = LocalAppColors.current.textPrimary,
+                    color = initialsColor(userId, name),
                     fontWeight = FontWeight.Medium,
                     fontSize = 16.sp,
                     maxLines = 1,
@@ -541,9 +544,10 @@ fun SearchUserItem(
         Spacer(modifier = Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
+            val displayName = name.ifBlank { nickname }
             Text(
-                text = name.ifBlank { nickname },
-                color = LocalAppColors.current.textPrimary,
+                text = displayName,
+                color = initialsColor(userId, displayName),
                 fontWeight = FontWeight.Medium,
                 fontSize = 16.sp,
                 maxLines = 1,
@@ -2251,8 +2255,7 @@ fun MessageBubble(
                     }
                 }
                 if (!isSentByMe && senderName != null) {
-                    val hue = if (senderUserId != null && senderUserId > 0) (senderUserId * 137) % 360 else 0L
-                    val nameColor = Color.hsl(hue.toFloat(), 0.65f, 0.65f)
+                    val nameColor = initialsColor(senderUserId ?: 0L, senderName)
                     Text(
                         text = senderName,
                         fontSize = 12.sp,
@@ -2948,7 +2951,7 @@ fun ForwardTargetDialog(
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 text = item.name,
-                                color = LocalAppColors.current.textPrimary,
+                                color = initialsColor(item.id, item.name),
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 15.sp,
                                 maxLines = 1,

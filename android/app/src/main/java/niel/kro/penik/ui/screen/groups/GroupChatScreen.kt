@@ -873,7 +873,7 @@ fun GroupChatScreen(
                                         "member" -> "участник"
                                         else -> member.role
                                     } + if (member.status == "pending") " · приглашён" else ""
-                                    Text(displayNameWithMe, color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.Medium)
+                                    Text(displayNameWithMe, color = niel.kro.penik.ui.components.initialsColor(member.userId, displayName), fontWeight = FontWeight.Medium)
                                     Text(roleRu, color = LocalAppColors.current.textMuted, fontSize = 12.sp)
                                 }
                             }
@@ -914,7 +914,10 @@ fun GroupChatScreen(
             onDismissRequest = { selectedMemberForActions = null },
             containerColor = LocalAppColors.current.panel,
             titleContentColor = LocalAppColors.current.textPrimary,
-            title = { Text(member.name.ifEmpty { member.nickname.ifEmpty { "#${member.userId}" } }) },
+            title = {
+                val memberName = member.name.ifEmpty { member.nickname.ifEmpty { "#${member.userId}" } }
+                Text(memberName, color = niel.kro.penik.ui.components.initialsColor(member.userId, memberName), fontWeight = FontWeight.Bold)
+            },
             text = {
                 Column {
                     if (canManageRow) {

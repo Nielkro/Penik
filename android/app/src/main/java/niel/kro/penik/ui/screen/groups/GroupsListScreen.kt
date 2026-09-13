@@ -132,7 +132,7 @@ fun GroupsListScreen(
                                 )
                             }
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(group.name, color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                                Text(group.name, color = niel.kro.penik.ui.components.initialsColor(group.id, group.name), fontWeight = FontWeight.Medium, fontSize = 16.sp)
                                 Text(
                                     if (isPending) "Приглашение в группу" else "Группа",
                                     color = LocalAppColors.current.textMuted,
