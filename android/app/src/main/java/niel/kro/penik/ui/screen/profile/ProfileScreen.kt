@@ -16,6 +16,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,6 +48,7 @@ import niel.kro.penik.ui.viewmodel.ProfileViewModel
 fun ProfileScreen(
     onLogout: () -> Unit = {},
     onPairingScanner: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -78,11 +84,29 @@ fun ProfileScreen(
 
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
+            .fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(24.dp))
+        if (onBack != null) {
+            TopAppBar(
+                title = { Text("Профиль", fontWeight = FontWeight.Bold, fontSize = 22.sp) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Назад",
+                            tint = LocalAppColors.current.textPrimary
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = LocalAppColors.current.panel,
+                    titleContentColor = LocalAppColors.current.textPrimary
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(if (onBack != null) 16.dp else 40.dp))
 
         Box(
             modifier = Modifier

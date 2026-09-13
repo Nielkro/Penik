@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,6 +55,7 @@ fun ChatsListContent(
     onChatClick: (Long, String) -> Unit,
     onGroupClick: (Long, String) -> Unit,
     onSettings: () -> Unit = {},
+    onOpenDrawer: (() -> Unit)? = null,
     viewModel: ChatsListViewModel = hiltViewModel()
 ) {
     val feed by viewModel.feed.collectAsState()
@@ -131,6 +133,14 @@ fun ChatsListContent(
                             tint = LocalAppColors.current.textPrimary
                         )
                     }
+                } else if (onOpenDrawer != null) {
+                    IconButton(onClick = onOpenDrawer) {
+                        Icon(
+                            Icons.Default.Menu,
+                            contentDescription = "Меню",
+                            tint = LocalAppColors.current.textPrimary
+                        )
+                    }
                 }
             },
             actions = {
@@ -142,12 +152,14 @@ fun ChatsListContent(
                             tint = LocalAppColors.current.textPrimary
                         )
                     }
-                    IconButton(onClick = onSettings) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Настройки",
-                            tint = LocalAppColors.current.textPrimary
-                        )
+                    if (onOpenDrawer == null) {
+                        IconButton(onClick = onSettings) {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = "Настройки",
+                                tint = LocalAppColors.current.textPrimary
+                            )
+                        }
                     }
                 }
             },

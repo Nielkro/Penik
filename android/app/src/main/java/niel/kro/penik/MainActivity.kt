@@ -71,6 +71,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         ThemeManager.init(this)
         AppIconManager.init(this)
+        niel.kro.penik.ui.theme.NavigationStyleManager.init(this)
         enableEdgeToEdge()
         extractNavigationRoute(intent)
 
