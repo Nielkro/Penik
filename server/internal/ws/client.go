@@ -755,6 +755,9 @@ func (c *Client) handleMsgDelivered(ctx context.Context, msg *MsgDelivered) erro
 		return nil
 	}
 
+	if clientMsgID.Valid && clientMsgID.String != "" {
+		_, _ = c.db.ExecContext(ctx, `UPDATE messages SET delivered=1, delivered_at=COALESCE(delivered_at, ?) WHERE client_msg_id=? AND sender_user_id=?`, now, clientMsgID.String, senderUserID)
+	}
 	// Fan-out creates a separate row per device. Notify each sender device using its own row ID.
 	if clientMsgID.Valid {
 		rows, err := c.db.QueryContext(ctx, `
@@ -824,6 +827,9 @@ func (c *Client) handleMsgRead(ctx context.Context, msg *MsgRead) error {
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return nil
+	}
+	if clientMsgID.Valid && clientMsgID.String != "" {
+		_, _ = c.db.ExecContext(ctx, `UPDATE messages SET read=1, delivered=1 WHERE client_msg_id=? AND sender_user_id=?`, clientMsgID.String, senderUserID)
 	}
 	// Fan-out creates a separate row per device. Notify each sender device using its own row ID.
 	if clientMsgID.Valid {
