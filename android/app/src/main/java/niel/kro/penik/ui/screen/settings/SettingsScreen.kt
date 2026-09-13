@@ -66,10 +66,12 @@ fun SettingsScreen(
     val context = LocalContext.current
     val isLight by ThemeManager.isLight.collectAsState()
     val currentVariant by AppIconManager.currentVariant.collectAsState()
+    val currentNavStyle by niel.kro.penik.ui.theme.NavigationStyleManager.navigationStyle.collectAsState()
     val isChecking by viewModel.isChecking.collectAsState()
     val updateStatus by viewModel.updateStatus.collectAsState()
     val downloadState by viewModel.downloadState.collectAsState()
     var showVariantDialog by remember { mutableStateOf(false) }
+    var showNavStyleDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.manualCheckResult.collect { result ->
@@ -189,6 +191,29 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // Navigation style chooser row (Bottom Bar vs Telegram Drawer)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { showNavStyleDialog = true }
+                    .padding(vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Стиль навигации", color = colors.textPrimary, fontSize = 16.sp)
+                    Text(
+                        text = currentNavStyle.displayName,
+                        color = colors.textMuted,
+                        fontSize = 13.sp
+                    )
+                }
+                Text("›", color = colors.textMuted, fontSize = 20.sp)
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Devices navigation row
             Row(
                 modifier = Modifier
@@ -301,6 +326,65 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showVariantDialog = false }) {
+                    Text("Закрыть", color = colors.accent)
+                }
+            },
+            containerColor = colors.panel
+        )
+    }
+
+    if (showNavStyleDialog) {
+        AlertDialog(
+            onDismissRequest = { showNavStyleDialog = false },
+            title = {
+                Text("Стиль навигации", color = colors.textPrimary, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    niel.kro.penik.ui.theme.NavigationStyle.entries.forEach { style ->
+                        val isSelected = style == currentNavStyle
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    niel.kro.penik.ui.theme.NavigationStyleManager.setStyle(style)
+                                    showNavStyleDialog = false
+                                }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    niel.kro.penik.ui.theme.NavigationStyleManager.setStyle(style)
+                                    showNavStyleDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = colors.accent,
+                                    unselectedColor = colors.textMuted
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = style.displayName,
+                                    color = colors.textPrimary,
+                                    fontSize = 16.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                                Text(
+                                    text = style.description,
+                                    color = colors.textMuted,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showNavStyleDialog = false }) {
                     Text("Закрыть", color = colors.accent)
                 }
             },

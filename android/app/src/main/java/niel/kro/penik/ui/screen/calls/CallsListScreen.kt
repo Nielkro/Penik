@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.PhoneCallback
 import androidx.compose.material.icons.filled.PhoneForwarded
@@ -57,6 +58,7 @@ import java.util.Locale
 @Composable
 fun CallsListScreen(
     onChatClick: (Long, String) -> Unit,
+    onBack: (() -> Unit)? = null,
     viewModel: CallsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -103,6 +105,17 @@ fun CallsListScreen(
                     fontWeight = FontWeight.Bold,
                     fontSize = 22.sp
                 )
+            },
+            navigationIcon = {
+                if (onBack != null) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Назад",
+                            tint = LocalAppColors.current.textPrimary
+                        )
+                    }
+                }
             },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = LocalAppColors.current.panel,
