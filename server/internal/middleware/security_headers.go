@@ -14,8 +14,8 @@ import "net/http"
 const contentSecurityPolicy = "default-src 'self'; " +
 	"script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; " +
 	"style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data: blob:; " +
-	"media-src 'self' blob:; " +
+	"img-src 'self' data: blob: https: http:; " +
+	"media-src 'self' blob: https: http:; " +
 	"font-src 'self' data:; " +
 	"connect-src 'self' wss: https:; " +
 	"object-src 'none'; " +

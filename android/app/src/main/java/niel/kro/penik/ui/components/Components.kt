@@ -2450,7 +2450,7 @@ fun MessageBubble(
                                     read = read,
                                     isPending = isPending,
                                     fontSize = 9.sp,
-                                    color = if (read) LocalAppColors.current.accent else Color.White.copy(alpha = 0.8f)
+                                    color = if (read) Color(0xFF409CFF) else Color.White.copy(alpha = 0.8f)
                                 )
                             }
                         }
@@ -2528,7 +2528,7 @@ fun MessageBubble(
                                     delivered = delivered,
                                     read = read,
                                     isPending = isPending,
-                                    color = if (read) LocalAppColors.current.accent else LocalAppColors.current.textMuted
+                                    color = if (read) Color(0xFF409CFF) else if (isSentByMe) LocalAppColors.current.sentMessageText.copy(alpha = 0.7f) else LocalAppColors.current.textMuted
                                 )
                             }
                         }

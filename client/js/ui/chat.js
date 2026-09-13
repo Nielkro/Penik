@@ -607,6 +607,15 @@ export async function renderChat(container, userId) {
     ]);
     messages = (msgs || []).filter(m => m.plaintext !== "[DELETED]");
     calls = peerCalls || [];
+    const socket = getWS();
+    for (const m of messages) {
+      if (m.msg_id && !m.read && String(m.sender_id) === String(userId)) {
+        m.read = 1;
+        if (socket) {
+          socket.send(OP.MSG_READ, { msg_id: Number(m.msg_id) });
+        }
+      }
+    }
   } catch {
     messages = [];
     calls = [];
