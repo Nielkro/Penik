@@ -31,11 +31,24 @@ from .client import (
     OP_MSG_DELIVERED,
     OP_OFFLINE_BATCH,
     OP_MSG_READ,
+    OP_MSG_DELETE,
+    OP_MSG_DELETE_NOTIFY,
+    OP_MSG_EDIT,
+    OP_MSG_EDIT_NOTIFY,
+    OP_MSG_RETRY_REQ,
+    OP_MSG_RETRY_RESP,
+    OP_GROUP_MSG_SEND,
+    OP_GROUP_MSG_RECV,
+    OP_GROUP_MSG_ACK,
+    OP_GROUP_MESSAGE_EDIT,
+    OP_GROUP_MESSAGE_EDIT_NOTIFY,
 )
 from .crypto_utils import (
     encrypt_file,
     decrypt_file,
     compute_safety_fingerprint,
+    build_pairwise_aad,
+    e2ee_encrypt,
 )
 
 
@@ -70,6 +83,7 @@ class E2ETestSuite:
         self.ws_url = ws_url
         self.alice: PenikClient = PenikClient(base_url, ws_url)
         self.bob: PenikClient = PenikClient(base_url, ws_url)
+        self.extra_clients: List[PenikClient] = []
         self.passed_tests = 0
         self.failed_tests = 0
 
@@ -90,10 +104,15 @@ class E2ETestSuite:
             await self.test_registration_and_profiles()
             await self.test_key_bundle_exchange()
             await self.test_live_e2ee_messaging()
+            await self.test_edit_and_delete_messaging()
+            await self.test_retry_flow()
             await self.test_offline_messaging()
             await self.test_encrypted_file_attachments()
             await self.test_safety_numbers()
             await self.test_group_lifecycle()
+            await self.test_group_kick_and_rotation()
+            await self.test_limits_and_spoofing()
+            await self.test_r1_logout_kills_ws()
 
             elapsed = time.time() - start_time
             print(f"\n{BOLD}{GREEN}------------------------------------------------------------{RESET}")
@@ -234,8 +253,113 @@ class E2ETestSuite:
         alice_decrypted = await self.alice.decrypt_received_message(reply_recv_payload, self.bob.public_key_bytes)
         self.assert_true(alice_decrypted == reply_text, f"Alice decrypted Bob's reply: '{alice_decrypted}'")
 
+    async def test_edit_and_delete_messaging(self):
+        log_step("4. Message Edit & Delete for Everyone (0x0d / 0x0a)")
+
+        # Alice sends initial message to Bob
+        orig_text = "Message to be edited and deleted"
+        client_msg_id = str(uuid.uuid4())
+        await self.alice.send_e2ee_direct_message(
+            recipient_user_id=self.bob.user_id,
+            recipient_device_id=self.bob.device_id,
+            recipient_pub_bytes=self.bob.public_key_bytes,
+            plaintext=orig_text,
+            client_msg_id=client_msg_id
+        )
+
+        # Alice gets ACK
+        await self.alice.wait_for_frame(OP_MSG_ACK, timeout=5.0)
+
+        # Bob receives initial message
+        _, recv_payload = await self.bob.wait_for_frame(OP_MSG_RECV, timeout=5.0)
+        bob_decrypted = await self.bob.decrypt_received_message(recv_payload, self.alice.public_key_bytes)
+        self.assert_true(bob_decrypted == orig_text, "Bob decrypted original message before edit")
+
+        # Alice edits the message
+        edited_text = "Message successfully updated! [EDITED]"
+        await self.alice.edit_e2ee_direct_message(
+            recipient_user_id=self.bob.user_id,
+            recipient_device_id=self.bob.device_id,
+            recipient_pub_bytes=self.bob.public_key_bytes,
+            client_msg_id=client_msg_id,
+            new_plaintext=edited_text
+        )
+
+        # Bob receives OP_MSG_EDIT_NOTIFY (0x0e)
+        edit_op, edit_payload = await self.bob.wait_for_frame(OP_MSG_EDIT_NOTIFY, timeout=5.0)
+        self.assert_true(edit_op == OP_MSG_EDIT_NOTIFY, "Bob received OpMsgEditNotify (0x0e)")
+        self.assert_true(edit_payload.get("client_msg_id") == client_msg_id, "Edit notification matches client_msg_id")
+
+        bob_decrypted_edit = await self.bob.decrypt_received_message(edit_payload, self.alice.public_key_bytes)
+        self.assert_true(bob_decrypted_edit == edited_text, f"Bob decrypted edited message: '{bob_decrypted_edit}'")
+
+        # Alice deletes the message for everyone
+        await self.alice.delete_message(
+            client_msg_id=client_msg_id,
+            chat_id=self.bob.user_id,
+            delete_for_everyone=True
+        )
+
+        # Bob receives OP_MSG_DELETE_NOTIFY (0x0b)
+        del_op, del_payload = await self.bob.wait_for_frame(OP_MSG_DELETE_NOTIFY, timeout=5.0)
+        self.assert_true(del_op == OP_MSG_DELETE_NOTIFY, "Bob received OpMsgDeleteNotify (0x0b)")
+        self.assert_true(del_payload.get("msg_id") == client_msg_id, "Delete notification matches msg_id")
+        self.assert_true(bool(del_payload.get("delete_for_everyone")), "Delete notification has delete_for_everyone=True")
+
+    async def test_retry_flow(self):
+        log_step("5. Pairwise Key/Decryption Retry Flow (0x16 MsgRetryReq -> 0x17 MsgRetryResp)")
+
+        # Alice sends a message to Bob
+        msg_text = "Important message testing retry flow"
+        client_msg_id = str(uuid.uuid4())
+        await self.alice.send_e2ee_direct_message(
+            recipient_user_id=self.bob.user_id,
+            recipient_device_id=self.bob.device_id,
+            recipient_pub_bytes=self.bob.public_key_bytes,
+            plaintext=msg_text,
+            client_msg_id=client_msg_id
+        )
+
+        ack_op, ack_payload = await self.alice.wait_for_frame(OP_MSG_ACK, timeout=5.0)
+        server_msg_id = ack_payload["msg_id"]
+
+        # Bob receives the initial message
+        recv_op, recv_payload = await self.bob.wait_for_frame(OP_MSG_RECV, timeout=5.0)
+
+        # Bob sends OpMsgRetryReq asking Alice's device to re-encrypt
+        await self.bob.request_message_retry(
+            sender_device_id=self.alice.device_id,
+            server_msg_id=server_msg_id
+        )
+
+        # Alice receives OpMsgRetryReq on her WS
+        retry_req_op, retry_req_payload = await self.alice.wait_for_frame(OP_MSG_RETRY_REQ, timeout=5.0)
+        self.assert_true(retry_req_op == OP_MSG_RETRY_REQ, "Alice received OpMsgRetryReq (0x16)")
+        self.assert_true(retry_req_payload.get("msg_id") == server_msg_id, "Retry request matches server_msg_id")
+
+        # Alice re-encrypts the plaintext with fresh salt/nonce and responds with OpMsgRetryResp
+        shared_secret = self.alice.get_shared_secret(self.bob.public_key_bytes)
+        re_ts = recv_payload.get("ts", 0)
+        re_aad = build_pairwise_aad(self.alice.user_id, self.bob.user_id, client_msg_id, re_ts)
+        re_enc = e2ee_encrypt(msg_text, shared_secret, aad=re_aad)
+
+        await self.alice.send_message_retry_resp(
+            server_msg_id=server_msg_id,
+            ciphertext=re_enc["ciphertext"],
+            salt=re_enc["salt"],
+            nonce=re_enc["nonce"]
+        )
+
+        # Bob receives the re-delivered OpMsgRecv
+        re_recv_op, re_recv_payload = await self.bob.wait_for_frame(OP_MSG_RECV, timeout=5.0)
+        self.assert_true(re_recv_op == OP_MSG_RECV, "Bob received re-encrypted OpMsgRecv")
+        self.assert_true(re_recv_payload.get("msg_id") == server_msg_id, "Re-delivered message matches server_msg_id")
+
+        bob_decrypted = await self.bob.decrypt_received_message(re_recv_payload, self.alice.public_key_bytes)
+        self.assert_true(bob_decrypted == msg_text, f"Bob decrypted retry message successfully: '{bob_decrypted}'")
+
     async def test_offline_messaging(self):
-        log_step("4. Offline Message Queuing & Reconnect Batch Delivery")
+        log_step("6. Offline Message Queuing & Reconnect Batch Delivery")
 
         # Bob goes offline
         log_info("Bob is disconnecting from WebSocket...")
@@ -289,7 +413,7 @@ class E2ETestSuite:
         self.assert_true(queued_found, "Bob received and decrypted the queued offline message")
 
     async def test_encrypted_file_attachments(self):
-        log_step("5. Encrypted File Attachments (ChaCha20-Poly1305 + Upload + Download)")
+        log_step("7. Encrypted File Attachments (ChaCha20-Poly1305 + Upload + Download)")
 
         # Generate sample binary payload (e.g., simulated image or document)
         sample_file_data = b"PENIK_TEST_FILE_CONTENT_" + os.urandom(16 * 1024)
@@ -315,7 +439,7 @@ class E2ETestSuite:
         self.assert_true(bob_hash == original_hash, f"Decrypted file SHA-256 matches perfectly ({bob_hash[:16]}...)")
 
     async def test_safety_numbers(self):
-        log_step("6. Safety Number Verification (Fingerprint Parity)")
+        log_step("8. Safety Number Verification (Fingerprint Parity)")
 
         # Alice computes fingerprint for (Alice, Bob)
         alice_view = compute_safety_fingerprint(
@@ -337,7 +461,7 @@ class E2ETestSuite:
         self.assert_true(bob_view["qr_payload"].startswith(f"penik://safety?fp={bob_view['hex']}&uid={self.bob.user_id}"), "Bob QR payload contains fp and uid")
 
     async def test_group_lifecycle(self):
-        log_step("7. Group Chat Creation & Membership Verification")
+        log_step("9. Group Chat Creation & Membership Verification")
 
         group_name = "Penik Security Team"
         create_res = self.alice.create_group(name=group_name, member_user_ids=[self.bob.user_id])
@@ -352,13 +476,222 @@ class E2ETestSuite:
         bob_has_group = any(g.get("name") == group_name for g in bob_groups)
         self.assert_true(bob_has_group, "Bob lists the created group as member")
 
+    async def test_group_kick_and_rotation(self):
+        log_step("10. Group Member Kick & Epoch Rotation (R5 Security)")
+
+        group_name = "Security Audit Group"
+        create_res = self.alice.create_group(name=group_name, member_user_ids=[self.bob.user_id])
+        group_id = create_res.get("id") or create_res.get("group_id")
+        self.assert_true(bool(group_id), f"Created group with id={group_id}")
+
+        # Bob accepts invitation to become active member
+        accept_res = self.bob.accept_group_invitation(group_id)
+        self.assert_true(accept_res.status_code in (200, 204), f"Bob accepted group invitation [{accept_res.status_code}]")
+
+        # Bob sends a message in the group
+        group_msg_id = str(uuid.uuid4())
+        sample_ct = b"sample_group_ciphertext"
+        sample_salt = b"salt_16_bytes___"
+        sample_nonce = b"nonce_12_byt"
+
+        await self.bob.send_group_message(
+            group_id=group_id,
+            message_id=group_msg_id,
+            key_version=1,
+            ciphertext=sample_ct,
+            salt=sample_salt,
+            nonce=sample_nonce
+        )
+
+        # Bob receives ACK
+        ack_op, ack_payload = await self.bob.wait_for_frame(OP_GROUP_MSG_ACK, timeout=5.0)
+        self.assert_true(ack_op == OP_GROUP_MSG_ACK, "Bob received OpGroupMessageAck (0x22)")
+        self.assert_true(ack_payload.get("message_id") == group_msg_id, "Group Ack message_id matches")
+
+        # Alice receives Bob's group message
+        recv_op, recv_payload = await self.alice.wait_for_frame(OP_GROUP_MSG_RECV, timeout=5.0)
+        self.assert_true(recv_op == OP_GROUP_MSG_RECV, "Alice received OpGroupMessageRecv (0x21)")
+        self.assert_true(recv_payload.get("message_id") == group_msg_id, "Group message_id matches")
+
+        # Alice kicks Bob from group
+        kick_res = self.alice.remove_group_member(group_id, self.bob.user_id)
+        self.assert_true(kick_res.status_code == 204, f"Alice kicked Bob from group [status={kick_res.status_code}]")
+
+        # Alice rotates group key
+        rotate_res = self.alice.rotate_group_key(group_id)
+        self.assert_true(rotate_res.get("key_version") == 2, f"Group key rotated to version {rotate_res.get('key_version')}")
+        active_devices = rotate_res.get("devices", [])
+        bob_in_rotation = any(d.get("user_id") == self.bob.user_id for d in active_devices)
+        self.assert_true(not bob_in_rotation, "Kicked member (Bob) excluded from new group epoch recipients")
+
+        # Kicked Bob attempts to edit his previous message
+        await self.bob.edit_group_message(
+            group_id=group_id,
+            message_id=group_msg_id,
+            key_version=1,
+            ciphertext=b"unauthorized_edit_ct",
+            salt=sample_salt,
+            nonce=sample_nonce
+        )
+
+        # Verify Alice does NOT receive any edit notification from kicked Bob
+        alice_got_edit = False
+        try:
+            op, _ = await self.alice.recv_frame(timeout=1.0)
+            if op == OP_GROUP_MESSAGE_EDIT_NOTIFY:
+                alice_got_edit = True
+        except asyncio.TimeoutError:
+            pass
+        self.assert_true(not alice_got_edit, "Server rejected group message edit from kicked member (R5 verified)")
+
+    async def test_limits_and_spoofing(self):
+        log_step("11. Limits & Third-Party Device Spoofing Prevention (R4 Security)")
+
+        # 1. REST limit: ciphertext > 128 KiB
+        oversized_ct = base64.b64encode(b"X" * (129 * 1024)).decode("ascii")
+        dummy_salt = base64.b64encode(b"S" * 16).decode("ascii")
+        dummy_nonce = base64.b64encode(b"N" * 12).decode("ascii")
+
+        oversized_payload = [
+            {
+                "device_id": self.bob.device_id,
+                "ciphertext": oversized_ct,
+                "salt": dummy_salt,
+                "nonce": dummy_nonce,
+            }
+        ]
+        res_ct = self.alice.send_message_rest(
+            to_user_id=self.bob.user_id,
+            msg_id=str(uuid.uuid4()),
+            devices=oversized_payload
+        )
+        self.assert_true(res_ct.status_code == 400, f"REST rejected >128 KiB ciphertext [status={res_ct.status_code}]")
+
+        # 2. REST limit: > 50 devices
+        fifty_one_devices = [
+            {
+                "device_id": self.bob.device_id + i,
+                "ciphertext": base64.b64encode(b"hello").decode("ascii"),
+                "salt": dummy_salt,
+                "nonce": dummy_nonce,
+            }
+            for i in range(51)
+        ]
+        res_dev = self.alice.send_message_rest(
+            to_user_id=self.bob.user_id,
+            msg_id=str(uuid.uuid4()),
+            devices=fifty_one_devices
+        )
+        self.assert_true(res_dev.status_code == 400, f"REST rejected >50 devices [status={res_dev.status_code}]")
+
+        # 3. WS limit: ciphertext > 128 KiB
+        oversized_raw = b"W" * (129 * 1024)
+        oversized_frame = {
+            "to_user_id": self.bob.user_id,
+            "msg_id": str(uuid.uuid4()),
+            "devices": [
+                {
+                    "device_id": self.bob.device_id,
+                    "ciphertext": oversized_raw,
+                    "salt": b"S" * 16,
+                    "nonce": b"N" * 12,
+                }
+            ]
+        }
+        await self.alice.send_frame(OP_MSG_SEND, oversized_frame)
+        ws_rejected = False
+        try:
+            await self.alice.recv_frame(timeout=0.8)
+        except asyncio.TimeoutError:
+            ws_rejected = True
+        self.assert_true(ws_rejected, "WS dropped frame with >128 KiB ciphertext (no ACK)")
+
+        # 4. Third-party device ID spoofing
+        charlie = PenikClient(self.base_url, self.ws_url)
+        self.extra_clients.append(charlie)
+        charlie_nick = f"charlie_{uuid.uuid4().hex[:8]}"
+        charlie.register(nickname=charlie_nick, name="Charlie Brown", device_name="Charlie-Phone")
+        await charlie.connect_ws()
+
+        spoofed_devices = [
+            {
+                "device_id": self.bob.device_id,
+                "ciphertext": base64.b64encode(b"for_bob").decode("ascii"),
+                "salt": dummy_salt,
+                "nonce": dummy_nonce,
+            },
+            {
+                "device_id": charlie.device_id,
+                "ciphertext": base64.b64encode(b"spoofed_for_charlie").decode("ascii"),
+                "salt": dummy_salt,
+                "nonce": dummy_nonce,
+            }
+        ]
+        spoofed_msg_id = str(uuid.uuid4())
+        res_spoof = self.alice.send_message_rest(
+            to_user_id=self.bob.user_id,
+            msg_id=spoofed_msg_id,
+            devices=spoofed_devices
+        )
+        self.assert_true(res_spoof.status_code in (200, 201), f"Message sent to Bob with stranger device [status={res_spoof.status_code}]")
+
+        bob_got_msg = False
+        try:
+            _, p = await self.bob.wait_for_frame(OP_MSG_RECV, timeout=3.0)
+            if p.get("client_msg_id") == spoofed_msg_id:
+                bob_got_msg = True
+        except asyncio.TimeoutError:
+            pass
+        self.assert_true(bob_got_msg, "Bob received legitimate message")
+
+        charlie_got_leak = False
+        try:
+            await charlie.recv_frame(timeout=1.0)
+            charlie_got_leak = True
+        except asyncio.TimeoutError:
+            pass
+        self.assert_true(not charlie_got_leak, "Stranger device (Charlie) did not receive leaked ciphertext (R4 verified)")
+
+    async def test_r1_logout_kills_ws(self):
+        log_step("12. Session Logout Terminates Active WebSocket (R1 Security)")
+
+        eve = PenikClient(self.base_url, self.ws_url)
+        self.extra_clients.append(eve)
+        eve_nick = f"eve_{uuid.uuid4().hex[:8]}"
+        eve.register(nickname=eve_nick, name="Eve Auditor", device_name="Eve-Device")
+        await eve.connect_ws()
+        self.assert_true(eve.ws is not None and getattr(eve.ws.state, "name", "") == "OPEN", "Eve connected to WebSocket")
+
+        logout_res = eve.logout()
+        self.assert_true(logout_res.status_code == 204, f"Eve logout succeeded [status={logout_res.status_code}]")
+
+        ws_closed = False
+        close_code = None
+        try:
+            await asyncio.wait_for(eve.ws.wait_closed(), timeout=3.0)
+            ws_closed = (getattr(eve.ws.state, "name", "") == "CLOSED")
+            close_code = eve.ws.close_code
+        except Exception:
+            ws_closed = (getattr(eve.ws.state, "name", "") == "CLOSED")
+            close_code = eve.ws.close_code
+
+        self.assert_true(ws_closed, "WebSocket terminated immediately upon REST logout")
+        self.assert_true(close_code == 1008, f"WebSocket closed with PolicyViolation code 1008 (got {close_code})")
+
+        try:
+            eve.get_me()
+            token_rejected = False
+        except RuntimeError:
+            token_rejected = True
+        self.assert_true(token_rejected, "Revoked session token cannot access REST endpoints (401)")
+
     async def cleanup(self):
         log_info("Cleaning up WebSocket connections...")
-        try:
-            await self.alice.close_ws()
-            await self.bob.close_ws()
-        except Exception:
-            pass
+        for c in [self.alice, self.bob] + self.extra_clients:
+            try:
+                await c.close_ws()
+            except Exception:
+                pass
 
 
 def _is_port_in_use(port: int) -> bool:

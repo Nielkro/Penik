@@ -32,12 +32,20 @@ OP_MSG_DELIVERED = 0x04
 OP_OFFLINE_BATCH = 0x05
 OP_PING = 0x06
 OP_PONG = 0x07
+OP_MSG_DELETE = 0x0a
+OP_MSG_DELETE_NOTIFY = 0x0b
+OP_MSG_EDIT = 0x0d
+OP_MSG_EDIT_NOTIFY = 0x0e
 OP_KEY_FETCH_REQ = 0x10
 OP_KEY_FETCH_RESP = 0x11
+OP_MSG_RETRY_REQ = 0x16
+OP_MSG_RETRY_RESP = 0x17
 OP_MSG_READ = 0x18
 OP_GROUP_MSG_SEND = 0x20
 OP_GROUP_MSG_RECV = 0x21
 OP_GROUP_MSG_ACK = 0x22
+OP_GROUP_MESSAGE_EDIT = 0x29
+OP_GROUP_MESSAGE_EDIT_NOTIFY = 0x2a
 
 
 class PenikClient:
@@ -184,6 +192,47 @@ class PenikClient:
             return data.get("groups", [])
         return data
 
+    def logout(self) -> requests.Response:
+        """Revokes the active session token via REST."""
+        url = f"{self.base_url}/api/v1/logout"
+        res = self.session.post(url, headers=self._auth_headers())
+        return res
+
+    def send_message_rest(
+        self,
+        to_user_id: int,
+        msg_id: str,
+        devices: List[Dict[str, Any]],
+        reply_to_msg_id: Optional[str] = None
+    ) -> requests.Response:
+        """Sends an encrypted message via REST POST /api/v1/messages/send."""
+        url = f"{self.base_url}/api/v1/messages/send"
+        payload = {
+            "to_user_id": to_user_id,
+            "msg_id": msg_id,
+            "reply_to_msg_id": reply_to_msg_id,
+            "devices": devices,
+        }
+        return self.session.post(url, json=payload, headers=self._auth_headers())
+
+    def remove_group_member(self, group_id: int, user_id: int) -> requests.Response:
+        """Removes a user from a group via REST DELETE /api/v1/groups/{group_id}/members/{user_id}."""
+        url = f"{self.base_url}/api/v1/groups/{group_id}/members/{user_id}"
+        return self.session.delete(url, headers=self._auth_headers())
+
+    def rotate_group_key(self, group_id: int) -> Dict[str, Any]:
+        """Rotates group key version via REST POST /api/v1/groups/{group_id}/keys/rotate."""
+        url = f"{self.base_url}/api/v1/groups/{group_id}/keys/rotate"
+        res = self.session.post(url, headers=self._auth_headers())
+        if res.status_code not in (200, 201):
+            raise RuntimeError(f"rotate_group_key failed [{res.status_code}]: {res.text}")
+        return res.json()
+
+    def accept_group_invitation(self, group_id: int) -> requests.Response:
+        """Accepts a group invitation via REST POST /api/v1/groups/{group_id}/accept."""
+        url = f"{self.base_url}/api/v1/groups/{group_id}/accept"
+        return self.session.post(url, headers=self._auth_headers())
+
     # ── WebSocket ──
 
     async def connect_ws(self):
@@ -302,7 +351,7 @@ class PenikClient:
         """
         sender_id = recv_payload["from_user_id"]
         client_msg_id = recv_payload["client_msg_id"]
-        ts = recv_payload["ts"]
+        ts = recv_payload.get("ts") or recv_payload.get("edited_at") or 0
         ciphertext = recv_payload["ciphertext"]
         salt = recv_payload["salt"]
         nonce = recv_payload["nonce"]
@@ -325,4 +374,104 @@ class PenikClient:
         await self.send_frame(OP_MSG_READ, {
             "msg_id": server_msg_id,
             "chat_user_id": sender_user_id,
+        })
+
+    async def edit_e2ee_direct_message(
+        self,
+        recipient_user_id: int,
+        recipient_device_id: int,
+        recipient_pub_bytes: bytes,
+        client_msg_id: str,
+        new_plaintext: str
+    ) -> None:
+        """Encrypts and sends an OpMsgEdit frame for an existing message."""
+        now = int(time.time())
+        shared_secret = self.get_shared_secret(recipient_pub_bytes)
+        aad = build_pairwise_aad(self.user_id, recipient_user_id, client_msg_id, now)
+        enc = e2ee_encrypt(new_plaintext, shared_secret, aad=aad)
+
+        devices_payload = [
+            {
+                "device_id": recipient_device_id,
+                "ciphertext": enc["ciphertext"],
+                "salt": enc["salt"],
+                "nonce": enc["nonce"],
+            }
+        ]
+
+        frame_payload = {
+            "to_user_id": recipient_user_id,
+            "msg_id": client_msg_id,
+            "edited_at": now,
+            "devices": devices_payload,
+        }
+        await self.send_frame(OP_MSG_EDIT, frame_payload)
+
+    async def delete_message(self, client_msg_id: str, chat_id: int, delete_for_everyone: bool = True) -> None:
+        """Sends an OpMsgDelete frame to delete a message."""
+        await self.send_frame(OP_MSG_DELETE, {
+            "msg_id": client_msg_id,
+            "chat_id": chat_id,
+            "delete_for_everyone": delete_for_everyone,
+        })
+
+    async def request_message_retry(self, sender_device_id: int, server_msg_id: int) -> None:
+        """Sends OpMsgRetryReq to ask sender device to re-encrypt."""
+        await self.send_frame(OP_MSG_RETRY_REQ, {
+            "sender_device_id": sender_device_id,
+            "requester_device_id": self.device_id,
+            "msg_id": server_msg_id,
+        })
+
+    async def send_message_retry_resp(self, server_msg_id: int, ciphertext: bytes, salt: bytes, nonce: bytes) -> None:
+        """Sends OpMsgRetryResp with newly encrypted payload."""
+        await self.send_frame(OP_MSG_RETRY_RESP, {
+            "msg_id": server_msg_id,
+            "ciphertext": ciphertext,
+            "salt": salt,
+            "nonce": nonce,
+        })
+
+    async def send_group_message(
+        self,
+        group_id: int,
+        message_id: str,
+        key_version: int,
+        ciphertext: bytes,
+        salt: bytes,
+        nonce: bytes,
+        reply_to_msg_id: Optional[str] = None
+    ) -> None:
+        """Sends OpGroupMessageSend frame."""
+        now = int(time.time())
+        await self.send_frame(OP_GROUP_MSG_SEND, {
+            "group_id": group_id,
+            "message_id": message_id,
+            "reply_to_msg_id": reply_to_msg_id,
+            "key_version": key_version,
+            "ciphertext": ciphertext,
+            "salt": salt,
+            "nonce": nonce,
+            "created_at": now,
+        })
+
+    async def edit_group_message(
+        self,
+        group_id: int,
+        message_id: str,
+        key_version: int,
+        ciphertext: bytes,
+        salt: bytes,
+        nonce: bytes
+    ) -> None:
+        """Sends OpGroupMessageEdit frame."""
+        now = int(time.time())
+        await self.send_frame(OP_GROUP_MESSAGE_EDIT, {
+            "group_id": group_id,
+            "message_id": message_id,
+            "key_version": key_version,
+            "ciphertext": ciphertext,
+            "salt": salt,
+            "nonce": nonce,
+            "edited_at": now,
         })
