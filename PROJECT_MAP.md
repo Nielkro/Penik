@@ -64,6 +64,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiModels.kt` — Kotlin data models for Retrofit API requests and responses.
 - `android/app/src/main/java/niel/kro/penik/data/network/websocket/WebSocketManager.kt` — Maintains the OkHttp WebSocket connection, binary MsgPack protocol, reconnects, ping/pong, and flow of typed events, including call signaling frames (0x30-0x39).
 - `android/app/src/main/java/niel/kro/penik/data/network/TimeSyncManager.kt` — Calibrates client-server clock offset via `/api/v1/time` to eliminate future message timestamps and skew.
+- `android/app/src/main/java/niel/kro/penik/data/update/AppUpdateManager.kt` — Evaluates client version against `/api/v1/version` policy, determines update necessity (soft vs force update), and opens APK download links.
 - `android/app/src/main/java/niel/kro/penik/domain/call/CallManager.kt` — Singleton 1:1 call state machine (idle/dialing/incoming/connecting/active): LiveKit room connect with primary/fallback failover, mic/camera toggles, ringtone and vibration, ring timeout, call timer resumed from the server answer time, call_id matching with `CALL_TAKEN` handling for calls answered on another device, track resync and camera restore after a LiveKit reconnect, and cleanup on all exit paths.
 - `android/app/src/main/java/niel/kro/penik/data/repository/SecureTokenStorage.kt` — Stores tokens, user/device IDs, and cryptographic keys in secure local storage.
 
@@ -111,7 +112,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupSettingsScreen.kt` — Group settings screen: member list, roles, invitations, and key rotation.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/profile/ProfileScreen.kt` — Profile UI, name/password changes, avatar management, and key backup.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/pairing/PairingScannerScreen.kt` — Screen for scanning and processing QR pairing sessions for new devices.
-- `android/app/src/main/java/niel/kro/penik/ui/screen/settings/SettingsScreen.kt` — Settings screen with a light/dark theme switch and navigation to the devices screen.
+- `android/app/src/main/java/niel/kro/penik/ui/screen/settings/SettingsScreen.kt` — Settings screen with light/dark theme switch, app icon/variant chooser, device list navigation, app version display, and manual update checks.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/settings/DevicesScreen.kt` — Separate screen listing the user's own devices.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/AuthViewModel.kt` — Manages login/registration state and actions.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ChatRoomViewModel.kt` — Subscribes the chat room to messages, handles sending, and processes statuses.
@@ -120,8 +121,10 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/GroupsViewModel.kt` — Manages the group list, synchronization, and group-level actions.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/GroupSettingsViewModel.kt` — Manages changes to group composition, roles, names, and keys.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ProfileViewModel.kt` — Manages profile data, avatars, passwords, key backups, and the user's device list.
-- `android/app/src/main/java/niel/kro/penik/ui/viewmodel/StartupViewModel.kt` — Determines the initial navigation route based on authorization state.
+- `android/app/src/main/java/niel/kro/penik/ui/viewmodel/SettingsViewModel.kt` — Manages manual update checks, version status, and download links for the settings screen.
+- `android/app/src/main/java/niel/kro/penik/ui/viewmodel/StartupViewModel.kt` — Determines the initial navigation route based on authorization state and triggers automatic startup update checks.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/DevicesViewModel.kt` — Loads the user's own device list for the devices screen.
+- `android/app/src/main/java/niel/kro/penik/ui/components/UpdateDialog.kt` — Reusable update prompt dialog supporting dismissible soft updates and non-dismissible force updates with release notes display.
 - `android/app/src/main/java/niel/kro/penik/ui/components/Components.kt` — Reusable Compose UI components, including parsing and rendering encrypted file-message payloads as local images with a zoomable full-screen viewer, aspect-ratio-aware inline Media3 video players without attachment labels, downloadable file attachments, Telegram-style large emoji-only messages (1-3 emojis scaled up without a background bubble and with an overlaid timestamp pill), plus a custom measuring layout that hangs the message meta block (edit mark, time, ticks) off the last text line without ever letting it collapse or wrap.
 - `android/app/src/main/java/niel/kro/penik/ui/components/Stickers.kt` — Sticker picker bottom sheet with tabs and recents, Telegram sticker pack import dialog, sticker pack detail modal, and seamless sticker message rendering.
 - `android/app/src/main/java/niel/kro/penik/ui/util/QrCodeGenerator.kt` — Encodes string payloads (such as E2EE safety fingerprint URLs) into QR code Bitmaps using ZXing.

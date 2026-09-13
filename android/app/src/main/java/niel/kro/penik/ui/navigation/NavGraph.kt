@@ -25,7 +25,10 @@ import niel.kro.penik.ui.viewmodel.StartupViewModel
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import niel.kro.penik.ui.theme.LocalAppColors
+import niel.kro.penik.ui.components.UpdateDialog
 import niel.kro.penik.ui.screen.pairing.PairingScannerScreen
 
 @Composable
@@ -34,6 +37,17 @@ fun NavGraph(
     startupViewModel: StartupViewModel = hiltViewModel()
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val updateStatus by startupViewModel.updateStatus.collectAsState()
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        startupViewModel.checkForUpdates()
+    }
+
+    UpdateDialog(
+        status = updateStatus,
+        onDismiss = { startupViewModel.dismissSoftUpdate() },
+        onDownload = { url -> startupViewModel.openDownloadUrl(context, url) }
+    )
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
         startupViewModel.unauthorizedEvents.collect {
