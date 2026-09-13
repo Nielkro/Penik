@@ -335,12 +335,12 @@ func ImportTelegramPack(botToken string, stickersDir string, rawPackName string,
 			targetWebpPath := filepath.Join(packDir, fmt.Sprintf("%s.webp", s.FileUniqueID))
 			targetMp4Path := filepath.Join(packDir, fmt.Sprintf("%s.mp4", s.FileUniqueID))
 			if _, statErr := os.Stat(targetWebpPath); os.IsNotExist(statErr) {
-				if err := exec.Command("ffmpeg", "-y", "-i", targetPath, "-vf", "scale=256:256:force_original_aspect_ratio=decrease,fps=15,format=rgba", "-c:v", "libwebp", "-lossless", "0", "-q:v", "35", "-compression_level", "6", "-loop", "0", "-an", "-f", "webp", targetWebpPath).Run(); err != nil {
-					_ = exec.Command("ffmpeg", "-y", "-i", targetPath, "-c:v", "libwebp", "-lossless", "0", "-q:v", "35", "-compression_level", "6", "-loop", "0", "-an", "-f", "webp", targetWebpPath).Run()
+				if err := exec.Command("nice", "-n", "19", "ffmpeg", "-threads", "1", "-y", "-i", targetPath, "-vf", "scale=256:256:force_original_aspect_ratio=decrease,fps=15,format=rgba", "-c:v", "libwebp", "-lossless", "0", "-q:v", "35", "-compression_level", "6", "-loop", "0", "-an", "-f", "webp", targetWebpPath).Run(); err != nil {
+					_ = exec.Command("nice", "-n", "19", "ffmpeg", "-threads", "1", "-y", "-i", targetPath, "-c:v", "libwebp", "-lossless", "0", "-q:v", "35", "-compression_level", "6", "-loop", "0", "-an", "-f", "webp", targetWebpPath).Run()
 				}
 			}
 			if _, statErr := os.Stat(targetMp4Path); os.IsNotExist(statErr) {
-				_ = exec.Command("ffmpeg", "-y", "-i", targetPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", targetMp4Path).Run()
+				_ = exec.Command("nice", "-n", "19", "ffmpeg", "-threads", "1", "-y", "-i", targetPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", targetMp4Path).Run()
 			}
 		} else if ext == ".tgs" {
 			targetThumbPath := filepath.Join(packDir, fmt.Sprintf("%s.webp", s.FileUniqueID))
