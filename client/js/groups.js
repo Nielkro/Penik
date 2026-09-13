@@ -44,7 +44,8 @@ import {
   saveGroupMessage, getGroupMessage, getGroupMessages, updateGroupMessageText,
 } from './storage.js';
 import { ws, OP } from './ws.js';
-import { loadPrivateIK } from './app.js';
+import { loadPrivateIK, showDesktopNotification } from './app.js';
+import { appSounds } from './sounds.js';
 import { verifyPeerIdentityKey } from './pinning.js';
 import { groupAvatarUpdateTimestamps } from './ui/components.js';
 
@@ -716,7 +717,20 @@ function emit(evt) {
 export function registerGroupWSListeners() {
   ws.on(OP.GROUP_MESSAGE_RECV, async (frame) => {
     const record = await decryptIncoming(frame);
-    if (record) emit({ type: 'message', groupId: record.group_id, message: record });
+    if (record) {
+      const myId = localStorage.getItem("user_id");
+      if (String(record.sender_user_id || record.sender_id) !== String(myId)) {
+        appSounds.playMessageReceived();
+        const g = await dbGetGroup(record.group_id);
+        const title = g?.name || 'Группа';
+        const sender = record.sender_name ? `${record.sender_name}: ` : '';
+        showDesktopNotification(title, sender + (record.text || ''), `group_${record.group_id}`, () => {
+          window.focus();
+          location.hash = `#/group/${record.group_id}`;
+        });
+      }
+      emit({ type: 'message', groupId: record.group_id, message: record });
+    }
   });
 
   ws.on(OP.GROUP_MESSAGE_ACK, async (frame) => {

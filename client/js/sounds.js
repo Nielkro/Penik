@@ -250,6 +250,66 @@ class CallSoundEffects {
       osc.stop(now + offset + 0.26);
     }
   }
+
+  /**
+   * Play a clean, pleasant bell chime for incoming messages.
+   */
+  playMessageReceived() {
+    const ctx = this._getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    const notes = [
+      [880.0, 0.0, 0.18, 0.12],
+      [1318.5, 0.04, 0.22, 0.09]
+    ];
+
+    notes.forEach(([freq, offset, dur, volume]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + offset);
+
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(volume, now + offset + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + dur);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now + offset);
+      osc.stop(now + offset + dur);
+    });
+  }
+
+  /**
+   * Play a subtle pop sound when a message is sent.
+   */
+  playMessageSent() {
+    const ctx = this._getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(587.33, now);
+    osc.frequency.exponentialRampToValueAtTime(880.0, now + 0.06);
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.09);
+  }
 }
 
 export const callSounds = new CallSoundEffects();
+export const appSounds = callSounds;
+

@@ -17,6 +17,8 @@ import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
 import { renderSettings, renderDevices } from './ui/settings.js';
 import { initTheme } from './theme.js';
+import { appSounds } from './sounds.js';
+import { getMessagePreview } from './ui/chat.js';
 import {
   deriveSharedSecret, e2eeEncrypt, e2eeDecrypt, buildPairwiseAAD, buildPairwiseAADV2,
   encryptKeyBackup, decryptKeyBackup, derivePublicKey, generateKeyPair, encryptPairwiseBatch
@@ -703,6 +705,17 @@ async function onMsgRecvGlobal(payload) {
     }
   }
 
+  if (!isMine && decryptSuccess) {
+    appSounds.playMessageReceived();
+    const isCurrentChatOpen = _activeChatCallback && String(_activeChatCallback.userId) === String(chatPartnerId) && !document.hidden;
+    if (!isCurrentChatOpen) {
+      showDesktopNotification(contact?.name || "Пользователь", plaintext, `chat_${chatPartnerId}`, () => {
+        window.focus();
+        location.hash = `#/chat/${chatPartnerId}`;
+      });
+    }
+  }
+
   if (_activeChatCallback && String(_activeChatCallback.userId) === String(chatPartnerId)) {
     _activeChatCallback.fn(inMsg);
     if (ws && payload.msg_id && !isMine && decryptSuccess) {
@@ -712,6 +725,36 @@ async function onMsgRecvGlobal(payload) {
 
   if (_chatListUpdateCallback) {
     _chatListUpdateCallback();
+  }
+}
+
+export function showDesktopNotification(title, body, tag, onClick) {
+  if (!("Notification" in window) || Notification.permission !== "granted") {
+    return;
+  }
+  try {
+    const textPreview = getMessagePreview(body) || body;
+    const notification = new Notification(title, {
+      body: textPreview,
+      icon: '/img/logo.png',
+      tag: tag || 'penik_msg',
+      badge: '/img/logo.png',
+      silent: true
+    });
+    if (onClick) {
+      notification.onclick = () => {
+        onClick();
+        notification.close();
+      };
+    }
+  } catch (err) {
+    console.warn("[notification] showDesktopNotification error:", err);
+  }
+}
+
+export function requestNotificationPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission().catch(() => {});
   }
 }
 

@@ -12,6 +12,8 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -116,12 +118,19 @@ class AppNotificationManager @Inject constructor(
 
     fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            val audioAttributes = AudioAttributes.Builder()
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_COMMUNICATION_INSTANT)
+                .build()
+
             val channel = NotificationChannel(
                 CHANNEL_ID_MESSAGES,
                 "Сообщения",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Уведомления о входящих личных и групповых сообщениях"
+                setSound(soundUri, audioAttributes)
                 enableLights(true)
                 lightColor = 0xFF409CFF.toInt()
                 enableVibration(true)
@@ -360,6 +369,7 @@ class AppNotificationManager @Inject constructor(
         val alertKey = "direct_$chatUserId"
         val isAlertable = shouldAlert(alertKey)
 
+        val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_MESSAGES)
             .setSmallIcon(R.drawable.ic_notification)
             .setLargeIcon(senderAvatarBitmap)
@@ -370,6 +380,7 @@ class AppNotificationManager @Inject constructor(
             .addAction(replyAction)
             .addAction(readAction)
             .setAutoCancel(true)
+            .setSound(soundUri)
             .setGroup(GROUP_KEY_MESSAGES)
             .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
             .setOnlyAlertOnce(!isAlertable)
@@ -481,6 +492,7 @@ class AppNotificationManager @Inject constructor(
         val alertKey = "group_$groupId"
         val isAlertable = shouldAlert(alertKey)
 
+        val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_MESSAGES)
             .setSmallIcon(R.drawable.ic_notification)
             .setLargeIcon(senderAvatarBitmap)
@@ -489,6 +501,7 @@ class AppNotificationManager @Inject constructor(
             .addPerson(senderPerson)
             .setContentIntent(contentPendingIntent)
             .setAutoCancel(true)
+            .setSound(soundUri)
             .setGroup(GROUP_KEY_MESSAGES)
             .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
             .setOnlyAlertOnce(!isAlertable)

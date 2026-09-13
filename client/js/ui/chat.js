@@ -18,6 +18,7 @@ import { buildGroupListItem, showCreateGroupModal } from "./groups.js";
 import { onPresenceUpdate, onTypingUpdate } from "../presence.js";
 import { callManager } from "../call.js";
 import { createStickerPicker } from "./stickers.js";
+import { appSounds } from "../sounds.js";
 
 
 
@@ -1281,6 +1282,7 @@ export async function renderChat(container, userId) {
       pending: 1
     });
     scrollDown.scrollToBottom();
+    appSounds.playMessageSent();
 
     try {
       // Adaptively select chunked vs monolithic encryption based on recipient & own device crypto_version
@@ -1517,6 +1519,7 @@ export async function renderChat(container, userId) {
       reply_to_msg_id: currentReply ? currentReply.msg_id : null
     });
     scrollDown.scrollToBottom();
+    appSounds.playMessageSent();
 
     let ciphertexts = null;
     try {
