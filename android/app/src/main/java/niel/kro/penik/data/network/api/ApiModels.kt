@@ -308,7 +308,8 @@ data class DeviceResponse(
     @SerialName("last_seen") val lastSeen: Long,
     @SerialName("is_current") val isCurrent: Boolean = false,
     @SerialName("has_session") val hasSession: Boolean = false,
-    @SerialName("sessions_count") val sessionsCount: Int = 0
+    @SerialName("sessions_count") val sessionsCount: Int = 0,
+    @SerialName("is_online") val isOnline: Boolean = false
 )
 
 @Serializable

@@ -122,9 +122,18 @@ fun DevicesScreen(
                                     color = colors.textMuted,
                                     fontSize = 12.sp
                                 )
+                                val statusText = when {
+                                    device.isOnline -> "в сети"
+                                    device.hasSession -> {
+                                        val formatted = niel.kro.penik.ui.util.formatPresence(false, device.lastSeen)
+                                        if (formatted.isNotBlank()) formatted else "не в сети"
+                                    }
+                                    else -> "нет активной сессии"
+                                }
+                                val statusColor = if (device.isOnline) colors.accent else colors.textMuted
                                 Text(
-                                    text = if (device.hasSession) "в сети" else "нет активной сессии",
-                                    color = if (device.hasSession) colors.accent else colors.textMuted,
+                                    text = statusText,
+                                    color = statusColor,
                                     fontSize = 12.sp
                                 )
                             }

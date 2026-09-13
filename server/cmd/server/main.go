@@ -118,7 +118,7 @@ func main() {
 	mux.Handle("POST /api/v1/logout/all",
 		authMW(http.HandlerFunc(handlers.LogoutAll(database, hub))))
 	mux.Handle("GET /api/v1/devices",
-		authMW(http.HandlerFunc(handlers.ListDevices(database))))
+		authMW(http.HandlerFunc(handlers.ListDevices(database, hub))))
 	mux.Handle("PUT /api/v1/devices/me/fcm",
 		authMW(http.HandlerFunc(handlers.UpdateFCMToken(database))))
 
