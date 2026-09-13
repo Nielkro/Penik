@@ -42,6 +42,7 @@ import niel.kro.penik.ui.components.ChatListItem
 import niel.kro.penik.ui.components.ConnectionStatusBar
 import niel.kro.penik.ui.components.FullscreenImageViewer
 import niel.kro.penik.ui.components.SearchUserItem
+import niel.kro.penik.ui.theme.AppIconManager
 import niel.kro.penik.ui.viewmodel.ChatsListViewModel
 
 import niel.kro.penik.ui.viewmodel.FeedItem
@@ -90,6 +91,7 @@ fun ChatsListContent(
     }
 
     val isSearching = searchQuery.isNotBlank()
+    val currentVariant by AppIconManager.currentVariant.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
@@ -114,7 +116,7 @@ fun ChatsListContent(
                     )
                 } else {
                     Text(
-                        text = "Чаты и группы",
+                        text = currentVariant.displayName,
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp
                     )

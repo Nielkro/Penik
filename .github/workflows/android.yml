@@ -9,6 +9,12 @@ on:
       - 'version.json'
       - '.github/workflows/android.yml'
   workflow_dispatch:
+    inputs:
+      force_overwrite_version_release:
+        description: 'Force overwrite/re-upload immutable version release (e.g. android-v1.0.4)'
+        type: boolean
+        default: false
+        required: false
 
 concurrency:
   group: android-${{ github.ref }}
@@ -105,6 +111,7 @@ jobs:
         if: github.ref == 'refs/heads/master'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_OVERWRITE: ${{ inputs.force_overwrite_version_release || github.event.inputs.force_overwrite_version_release || 'false' }}
         run: |
           VERSION_NAME=$(jq -r '.latest_android_version_name' version.json)
           if [ -z "$VERSION_NAME" ] || [ "$VERSION_NAME" = "null" ]; then
@@ -113,17 +120,30 @@ jobs:
           fi
           TAG="android-v${VERSION_NAME}"
           SHA256=$(awk '{print $1}' android/app/build/outputs/apk/debug/app-debug.apk.sha256)
-          echo "Target immutable release tag: $TAG"
+          echo "Target immutable release tag: $TAG (force overwrite: $FORCE_OVERWRITE)"
+
+          RELEASE_NOTES=$(jq -r '.release_notes // empty' version.json)
+          if [ -z "$RELEASE_NOTES" ]; then
+            RELEASE_NOTES="Android release v${VERSION_NAME} (commit ${{ github.sha }})."
+          fi
+          NOTES=$(printf "%s\n\n**SHA-256 Checksum:**\n\`\`\`\n%s  app-debug.apk\n\`\`\`\n" "$RELEASE_NOTES" "$SHA256")
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists and is immutable. Skipping upload to preserve release integrity."
+            if [ "$FORCE_OVERWRITE" = "true" ]; then
+              echo "Force overwrite requested. Updating existing release $TAG..."
+              gh release edit "$TAG" \
+                --title "Android Release v${VERSION_NAME}" \
+                --notes "$NOTES"
+              gh release upload "$TAG" \
+                android/app/build/outputs/apk/debug/app-debug.apk \
+                android/app/build/outputs/apk/debug/app-debug.apk.sha256 \
+                --clobber
+              echo "Release $TAG forcibly updated successfully."
+            else
+              echo "Release $TAG already exists and is immutable. Skipping upload to preserve release integrity."
+            fi
           else
             echo "Creating new immutable release $TAG..."
-            RELEASE_NOTES=$(jq -r '.release_notes // empty' version.json)
-            if [ -z "$RELEASE_NOTES" ]; then
-              RELEASE_NOTES="Android release v${VERSION_NAME} (commit ${{ github.sha }})."
-            fi
-            NOTES=$(printf "%s\n\n**SHA-256 Checksum:**\n\`\`\`\n%s  app-debug.apk\n\`\`\`\n" "$RELEASE_NOTES" "$SHA256")
             gh release create "$TAG" \
               --title "Android Release v${VERSION_NAME}" \
               --notes "$NOTES" \
