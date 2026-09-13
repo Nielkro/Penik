@@ -192,6 +192,7 @@ class E2ETestSuite:
         log_pass("Alice connected to WebSocket")
         await self.bob.connect_ws()
         log_pass("Bob connected to WebSocket")
+        await asyncio.sleep(0.05)
 
         test_message_text = "Hello Bob! Secret meeting at 14:00. [Penik E2EE Protocol]"
         client_msg_id = str(uuid.uuid4())
@@ -207,13 +208,13 @@ class E2ETestSuite:
         )
 
         # Alice should receive OpMsgAck
-        ack_opcode, ack_payload = await self.alice.recv_frame(timeout=5.0)
+        ack_opcode, ack_payload = await self.alice.wait_for_frame(OP_MSG_ACK, timeout=5.0)
         self.assert_true(ack_opcode == OP_MSG_ACK, f"Alice received OpMsgAck (opcode=0x{ack_opcode:02x})")
         self.assert_true(ack_payload.get("client_msg_id") == client_msg_id, "Ack client_msg_id matches")
         server_msg_id = ack_payload["msg_id"]
 
         # Bob should receive OpMsgRecv
-        recv_opcode, recv_payload = await self.bob.recv_frame(timeout=5.0)
+        recv_opcode, recv_payload = await self.bob.wait_for_frame(OP_MSG_RECV, timeout=5.0)
         self.assert_true(recv_opcode == OP_MSG_RECV, f"Bob received OpMsgRecv (opcode=0x{recv_opcode:02x})")
         self.assert_true(recv_payload.get("from_user_id") == self.alice.user_id, "Recv from_user_id matches Alice")
         self.assert_true(recv_payload.get("client_msg_id") == client_msg_id, "Recv client_msg_id matches Alice's message")

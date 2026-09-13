@@ -282,16 +282,24 @@ class PenikClient:
         return opcode, payload
 
     async def wait_for_frame(self, expected_opcodes: int | Tuple[int, ...], timeout: float = 5.0) -> Tuple[int, Any]:
-        """Waits for a frame matching one of the expected opcodes, ignoring background frames like receipts/ping."""
+        """Waits for a frame matching one of the expected opcodes, ignoring background frames like receipts/ping/presence."""
         if isinstance(expected_opcodes, int):
             expected_opcodes = (expected_opcodes,)
 
         deadline = time.time() + timeout
         while time.time() < deadline:
             remaining = max(0.1, deadline - time.time())
-            opcode, payload = await self.recv_frame(timeout=remaining)
+            try:
+                opcode, payload = await self.recv_frame(timeout=remaining)
+            except asyncio.TimeoutError:
+                break
             if opcode in expected_opcodes:
                 return opcode, payload
+            # If expecting OP_MSG_RECV, but message was delivered in OP_OFFLINE_BATCH (0x05)
+            if OP_MSG_RECV in expected_opcodes and opcode == OP_OFFLINE_BATCH:
+                msgs = payload.get("msgs", []) or payload.get("Msgs", [])
+                if msgs:
+                    return OP_MSG_RECV, msgs[0]
         raise asyncio.TimeoutError(f"Timed out waiting for frame with opcodes {expected_opcodes}")
 
     def get_shared_secret(self, peer_pub_bytes: bytes) -> bytes:
