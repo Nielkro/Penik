@@ -617,6 +617,13 @@ export async function renderChat(container, userId) {
   let lastRenderedDay = null;
 
   function normalizeTs(raw) {
+    if (!raw) return Date.now();
+    if (typeof raw === "string") {
+      const parsed = Date.parse(raw);
+      if (!isNaN(parsed) && isNaN(Number(raw))) {
+        return parsed;
+      }
+    }
     const n = Number(raw);
     if (!n || isNaN(n)) return Date.now();
     return n < 1e12 ? n * 1000 : n;
@@ -644,6 +651,16 @@ export async function renderChat(container, userId) {
       }
     }
     lastRenderedDay = currentDay;
+  }
+
+  function insertBubbleInOrder(bubble, ts) {
+    const bubbles = Array.from(messagesEl.querySelectorAll(".msg-bubble"));
+    const successor = bubbles.find(b => Number(b.dataset.ts || 0) > ts);
+    if (successor) {
+      messagesEl.insertBefore(bubble, successor);
+    } else {
+      messagesEl.appendChild(bubble);
+    }
   }
 
   function formatCallDuration(seconds) {
@@ -733,13 +750,9 @@ export async function renderChat(container, userId) {
     if (prepend) {
       messagesEl.prepend(bubble);
     } else {
-      const day = formatDate(ts);
-      if (day && day !== lastRenderedDay) {
-        messagesEl.appendChild(makeDateDivider(ts));
-        lastRenderedDay = day;
-      }
-      messagesEl.appendChild(bubble);
+      insertBubbleInOrder(bubble, ts);
     }
+    updateDateDividers();
     scrollDown.update();
   }
 
@@ -813,16 +826,8 @@ export async function renderChat(container, userId) {
       const ts = normalizeTs(msg.created_at || msg.timestamp);
       bubble.dataset.ts = String(ts);
       bubble.dataset.msgId = msg.msg_id;
-      if (prepend) {
-        messagesEl.prepend(bubble);
-      } else {
-        const day = formatDate(ts);
-        if (day && day !== lastRenderedDay) {
-          messagesEl.appendChild(makeDateDivider(ts));
-          lastRenderedDay = day;
-        }
-        messagesEl.appendChild(bubble);
-      }
+      insertBubbleInOrder(bubble, ts);
+      updateDateDividers();
       return;
     }
 
@@ -1028,16 +1033,8 @@ export async function renderChat(container, userId) {
       bubble.appendChild(delBtn);
     }
 
-    if (prepend) {
-      messagesEl.prepend(bubble);
-    } else {
-      const day = formatDate(ts);
-      if (day && day !== lastRenderedDay) {
-        messagesEl.appendChild(makeDateDivider(ts));
-        lastRenderedDay = day;
-      }
-      messagesEl.appendChild(bubble);
-    }
+    insertBubbleInOrder(bubble, ts);
+    updateDateDividers();
     scrollDown.update();
     if (!isMine && msg.msg_id && !isFailed) {
       const socket = getWS();
@@ -1045,9 +1042,16 @@ export async function renderChat(container, userId) {
     }
   }
 
+  const minMsgTs = messages.length > 0
+    ? Math.min(...messages.map(m => normalizeTs(m.created_at || m.timestamp)))
+    : 0;
+  const relevantCalls = (messages.length >= 50)
+    ? (calls || []).filter(c => normalizeTs(c.started_at) >= minMsgTs)
+    : (calls || []);
+
   const allTimelineItems = [
     ...messages.map(m => ({ type: "message", data: m, ts: normalizeTs(m.created_at || m.timestamp) })),
-    ...calls.map(c => ({ type: "call", data: c, ts: normalizeTs(c.started_at) }))
+    ...relevantCalls.map(c => ({ type: "call", data: c, ts: normalizeTs(c.started_at) }))
   ].sort((a, b) => a.ts - b.ts);
 
   allTimelineItems.forEach(item => {
@@ -1091,7 +1095,7 @@ export async function renderChat(container, userId) {
       const scrollTopBefore = messagesEl.scrollTop;
       
       messages = [...olderLocal, ...messages];
-      olderLocal.slice().reverse().forEach(m => appendMessage(m, true));
+      olderLocal.forEach(m => appendMessage(m));
       updateDateDividers();
       
       messagesEl.scrollTop = messagesEl.scrollHeight - scrollHeightBefore + scrollTopBefore;
@@ -1115,7 +1119,7 @@ export async function renderChat(container, userId) {
             const scrollHeightBefore = messagesEl.scrollHeight;
             const scrollTopBefore = messagesEl.scrollTop;
             messages = [...freshLocal, ...messages];
-            freshLocal.slice().reverse().forEach(m => appendMessage(m, true));
+            freshLocal.forEach(m => appendMessage(m));
             updateDateDividers();
             messagesEl.scrollTop = messagesEl.scrollHeight - scrollHeightBefore + scrollTopBefore;
           } else {

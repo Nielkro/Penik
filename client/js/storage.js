@@ -241,8 +241,16 @@ export async function getMessages(chatId, limit = 50, before = null) {
     const numId = Number(chatId);
     const beforeTime = before == null ? null : (typeof before === "number" ? before : Number(before));
 
+    const getMsgTs = (m) => {
+      if (!m) return 0;
+      const ts = m.created_at != null ? m.created_at : m.timestamp;
+      const n = Number(ts);
+      if (!n || isNaN(n)) return 0;
+      return n < 1e12 ? n * 1000 : n;
+    };
+
     const finalize = async () => {
-      list.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+      list.sort((a, b) => getMsgTs(a) - getMsgTs(b));
       const sliced = list.slice(-limit);
       const unsealed = await Promise.all(sliced.map(m => unsealMessageRecord(m)));
       resolve(unsealed);
@@ -257,7 +265,8 @@ export async function getMessages(chatId, limit = 50, before = null) {
           const msgKey = msg.msg_id != null ? String(msg.msg_id) : (msg.client_msg_id || String(cursor.key));
           if (!seen.has(msgKey)) {
             seen.add(msgKey);
-            if (beforeTime == null || msg.created_at < beforeTime) {
+            const msgTs = getMsgTs(msg);
+            if (beforeTime == null || msgTs < beforeTime) {
               list.push(msg);
             }
           }

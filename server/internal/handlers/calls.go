@@ -116,15 +116,18 @@ func ListPeerCalls(database *db.DB) http.HandlerFunc {
 		}
 
 		rows, err := database.QueryContext(r.Context(), `
-			SELECT
-				c.id, c.call_id, c.caller_id, c.callee_id, c.is_video, c.status,
-				c.started_at, c.answered_at, c.ended_at, c.duration,
-				u.name, u.nickname
-			FROM calls c
-			JOIN users u ON u.id = ?
-			WHERE (c.caller_id = ? AND c.callee_id = ?) OR (c.caller_id = ? AND c.callee_id = ?)
-			ORDER BY c.started_at ASC
-			LIMIT ?
+			SELECT * FROM (
+				SELECT
+					c.id, c.call_id, c.caller_id, c.callee_id, c.is_video, c.status,
+					c.started_at, c.answered_at, c.ended_at, c.duration,
+					u.name, u.nickname
+				FROM calls c
+				JOIN users u ON u.id = ?
+				WHERE (c.caller_id = ? AND c.callee_id = ?) OR (c.caller_id = ? AND c.callee_id = ?)
+				ORDER BY c.started_at DESC
+				LIMIT ?
+			) sub
+			ORDER BY sub.started_at ASC
 		`, peerID, userID, peerID, peerID, userID, limit)
 		if err != nil {
 			http.Error(w, `{"error":"failed to query peer calls"}`, http.StatusInternalServerError)
