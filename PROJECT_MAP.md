@@ -40,7 +40,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/middleware/security_headers.go` — Sets Content-Security-Policy and defensive response headers (nosniff, frame-deny, referrer policy) on every response.
 - `Dockerfile` — Multi-stage Docker build packaging Node.js client build and Go server into a single lightweight Alpine runtime image.
 - `docker-compose.yml` — Docker Compose configuration running standalone `penik-server` container on port 8143 with volume persistence.
-- `.github/workflows/docker.yml` — GitHub Actions workflow building and publishing `penik-server` container image to GitHub Container Registry (`ghcr.io`).
+- `.github/workflows/docker.yml` — GitHub Actions workflow building and publishing `penik-server` container image to GitHub Container Registry (`ghcr.io`), coordinated with crypto releases via `workflow_run`.
 - `penik.caddy` — Caddy site config for `/etc/caddy/sites-enabled/penik.caddy` routing `penik.ru` (landing), `web.penik.ru` (SPA web client), and `api.penik.ru` (reverse proxy to 127.0.0.1:8143).
 - `landing/index.html` — Standalone landing page promoting the messenger, providing web client entry and Android APK download links.
 

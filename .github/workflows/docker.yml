@@ -7,10 +7,15 @@ on:
     paths:
       - 'server/**'
       - 'client/**'
-      - 'rust/penik-crypto/**'
       - 'Dockerfile'
       - 'scripts/fetch_crypto.sh'
       - '.github/workflows/docker.yml'
+  workflow_run:
+    workflows: ["Build & Release Crypto"]
+    types:
+      - completed
+    branches:
+      - master
   workflow_dispatch:
 
 concurrency:
@@ -22,12 +27,61 @@ permissions:
   packages: write
 
 jobs:
+  check:
+    name: Check Trigger
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Evaluate trigger
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
+              echo "Crypto workflow did not succeed (${{ github.event.workflow_run.conclusion }}). Skipping."
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Triggered by successful crypto release."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manually triggered."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+      - name: Checkout for diff check
+        if: github.event_name == 'push'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Check changed files on push
+        if: github.event_name == 'push'
+        run: |
+          if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+            if git diff --name-only HEAD~1 HEAD | grep -q '^rust/penik-crypto/'; then
+              echo "Push touches rust/penik-crypto. Crypto workflow is running and will trigger Docker build on completion. Skipping duplicate push build."
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "Push does not touch rust/penik-crypto. Proceeding with immediate Docker build."
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+
   build-and-push:
     name: Build & Push Docker Image
+    needs: check
+    if: needs.check.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -45,7 +99,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/penik-server
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'master') }}
+            type=raw,value=latest,enable=${{ (github.ref == 'refs/heads/master') || (github.event.workflow_run.head_branch == 'master') }}
             type=sha,format=short
 
       - name: Build and push Docker image
@@ -65,7 +119,7 @@ jobs:
   deploy:
     name: Deploy to Server
     needs: build-and-push
-    if: github.ref == 'refs/heads/master'
+    if: (github.ref == 'refs/heads/master') || (github.event.workflow_run.head_branch == 'master')
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
