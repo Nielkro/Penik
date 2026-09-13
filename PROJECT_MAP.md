@@ -21,6 +21,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/handlers/keys.go` — REST handlers for publishing identity/key material, retrieving key bundles, and key backups.
 - `server/internal/handlers/presence.go` — Serves and broadcasts user presence states and active device information.
 - `server/internal/handlers/time.go` — REST handler `GET /api/v1/time` serving current server timestamp and millisecond precision for client clock calibration.
+- `server/internal/handlers/health.go` — REST handler `GET /api/v1/health` and `/healthz` performing readiness checks on core local subsystems (SQLite SELECT 1, upload directory stat/writeability, WebSocket hub pointer) without external dependencies.
 - `server/internal/handlers/version.go` — REST handler `GET /api/v1/version` serving client update policy and minimum crypto version requirements.
 - `server/internal/handlers/calls.go` — REST handlers for listing user call history (`GET /api/v1/calls`) and peer-to-peer call logs (`GET /api/v1/calls/peer/:user_id`).
 - `server/internal/handlers/stickers.go` — REST handlers for sticker packs: listing installed packs, pack metadata, install/uninstall, Telegram sticker pack import, and static file serving.
@@ -38,9 +39,10 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/middleware/rate_limit.go` — Provides IP- and user-based rate limiting for public and sensitive operations.
 - `server/internal/middleware/limit.go` — Limits the maximum HTTP request body size.
 - `server/internal/middleware/security_headers.go` — Sets Content-Security-Policy and defensive response headers (nosniff, frame-deny, referrer policy) on every response.
-- `Dockerfile` — Multi-stage Docker build packaging Node.js client build and Go server into a single lightweight Alpine runtime image.
-- `docker-compose.yml` — Docker Compose configuration running standalone `penik-server` container on port 8143 with volume persistence.
-- `.github/workflows/docker.yml` — GitHub Actions workflow building and publishing `penik-server` container image to GitHub Container Registry (`ghcr.io`), coordinated with crypto releases via `workflow_run`.
+- `Dockerfile` — Multi-stage Docker build packaging Node.js client build and Go server into a single lightweight Alpine runtime image with built-in HTTP healthcheck.
+- `docker-compose.yml` — Docker Compose configuration running standalone `penik-server` container on port 8143 with volume persistence and automated healthcheck.
+- `.github/workflows/docker.yml` — GitHub Actions workflow building and publishing `penik-server` container image to GitHub Container Registry (`ghcr.io`), coordinated with crypto releases via `workflow_run`, with post-deployment health verification and automatic rollback.
+- `.github/workflows/security.yml` — GitHub Actions workflow running scheduled and push-triggered `govulncheck` vulnerability audits for Go dependencies.
 - `penik.caddy` — Caddy site config for `/etc/caddy/sites-enabled/penik.caddy` routing `penik.ru` (landing), `web.penik.ru` (SPA web client), and `api.penik.ru` (reverse proxy to 127.0.0.1:8143).
 - `landing/index.html` — Standalone landing page promoting the messenger, providing web client entry and Android APK download links.
 

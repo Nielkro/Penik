@@ -104,6 +104,8 @@ func main() {
 	mux.Handle("GET /api/v1/users/{nickname}/profile", nicknameLookupLimiter.Limit(http.HandlerFunc(handlers.GetUserByNicknameProfile(database))))
 	mux.HandleFunc("GET /api/v1/time", handlers.GetServerTime())
 	mux.HandleFunc("GET /api/v1/version", handlers.GetVersion())
+	mux.HandleFunc("GET /api/v1/health", handlers.ReadinessCheck(database, cfg, hub))
+	mux.HandleFunc("GET /healthz", handlers.ReadinessCheck(database, cfg, hub))
 
 	// Avatar (GET is public, PUT requires auth).
 	mux.HandleFunc("GET /api/v1/avatar/{user_id}", handlers.GetAvatar(database, cfg))
