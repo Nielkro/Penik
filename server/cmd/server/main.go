@@ -103,7 +103,7 @@ func main() {
 	mux.Handle("GET /api/v1/users/check", nicknameLookupLimiter.Limit(http.HandlerFunc(handlers.CheckNickname(database))))
 	mux.Handle("GET /api/v1/users/{nickname}/profile", nicknameLookupLimiter.Limit(http.HandlerFunc(handlers.GetUserByNicknameProfile(database))))
 	mux.HandleFunc("GET /api/v1/time", handlers.GetServerTime())
-	mux.HandleFunc("GET /api/v1/version", handlers.GetVersion())
+	mux.HandleFunc("GET /api/v1/version", handlers.GetVersion(cfg.VersionSourceURL))
 	mux.HandleFunc("GET /api/v1/health", handlers.ReadinessCheck(database, cfg))
 	mux.HandleFunc("GET /healthz", handlers.ReadinessCheck(database, cfg))
 

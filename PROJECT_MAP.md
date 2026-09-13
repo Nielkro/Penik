@@ -22,7 +22,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/handlers/presence.go` — Serves and broadcasts user presence states and active device information.
 - `server/internal/handlers/time.go` — REST handler `GET /api/v1/time` serving current server timestamp and millisecond precision for client clock calibration.
 - `server/internal/handlers/health.go` — REST handler `GET /api/v1/health` and `/healthz` performing readiness checks on core local subsystems (SQLite SELECT 1, upload directory stat and writeability) without external dependencies.
-- `server/internal/handlers/version.go` — REST handler `GET /api/v1/version` serving client update policy and minimum crypto version requirements.
+- `server/internal/handlers/version.go` — REST handler `GET /api/v1/version` serving client update policy and minimum crypto version requirements, supporting thread-safe caching and background refresh from remote GitHub Gist or raw repository URLs with local fallback.
 - `server/internal/handlers/calls.go` — REST handlers for listing user call history (`GET /api/v1/calls`) and peer-to-peer call logs (`GET /api/v1/calls/peer/:user_id`).
 - `server/internal/handlers/stickers.go` — REST handlers for sticker packs: listing installed packs, pack metadata, install/uninstall, Telegram sticker pack import, and static file serving.
 - `server/internal/stickers/models.go` — Data models for sticker packs and individual stickers.
@@ -45,6 +45,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `.github/workflows/security.yml` — GitHub Actions workflow running scheduled and push-triggered `govulncheck` vulnerability audits for Go dependencies.
 - `penik.caddy` — Caddy site config for `/etc/caddy/sites-enabled/penik.caddy` routing `penik.ru` (landing), `web.penik.ru` (SPA web client), and `api.penik.ru` (reverse proxy to 127.0.0.1:8143).
 - `landing/index.html` — Standalone landing page promoting the messenger, providing web client entry and Android APK download links.
+- `version.json` — Canonical version policy JSON template specifying minimum/latest Android version codes, crypto version requirement, APK download URL, and release notes.
 
 ### Browser client transport
 

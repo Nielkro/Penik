@@ -4,6 +4,15 @@
 
 # 1. Главный домен — Лендинг и загрузка APK
 penik.ru {
+    # Proxy API so landing page can fetch /api/v1/version directly with same-origin
+    handle /api/* {
+        reverse_proxy 127.0.0.1:8143 {
+            header_up Host {host}
+            header_up X-Real-IP {client_ip}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
     root * /opt/penik/landing
     file_server
     encode gzip zstd
