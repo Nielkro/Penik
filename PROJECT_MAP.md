@@ -176,7 +176,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ### Server persistence and domain data
 
 - `server/internal/db/schema.sql` — Canonical SQLite schema for users, devices, chats, messages, sessions, pairing, groups, key envelopes, and group history.
-- `server/internal/db/db.go` — Opens SQLite with WAL/foreign keys, applies the schema, and runs legacy structure migrations.
+- `server/internal/db/db.go` — Opens SQLite with WAL/foreign keys, applies the schema, manages pool prewarming, debounced device last_seen updates, and runs legacy structure migrations.
 - `server/internal/db/relations.go` — Answers whether two users share a 1:1 chat or a group; the ACL behind presence, typing disclosure, and attachment downloads.
 - `server/internal/models/user.go` — Models for users and public server profiles.
 - `server/internal/models/device.go` — Models for user devices and runtime metadata.

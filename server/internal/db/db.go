@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -20,6 +22,67 @@ var schemaFS embed.FS
 // DB wraps a *sql.DB with the messenger schema applied.
 type DB struct {
 	*sql.DB
+}
+
+var lastSeenDebounce sync.Map // map[int64]int64 (deviceID -> lastRecordedUnixTimestamp)
+
+// TouchDeviceLastSeen throttles last_seen updates for a device to at most once
+// every 60 seconds, eliminating lock contention and disk I/O on frequent HTTP requests.
+func (d *DB) TouchDeviceLastSeen(deviceID int64) {
+	if deviceID <= 0 {
+		return
+	}
+	now := time.Now().Unix()
+	if val, ok := lastSeenDebounce.Load(deviceID); ok {
+		if lastUpdated, ok := val.(int64); ok && now-lastUpdated < 60 {
+			return
+		}
+	}
+	lastSeenDebounce.Store(deviceID, now)
+	go func() {
+		_, _ = d.Exec(`UPDATE devices SET last_seen=? WHERE id=?`, now, deviceID)
+	}()
+}
+
+// Prewarm instantiates and preheats idle connections in the pool by querying
+// core schema tables so OS page caches and SQLite internal VDBE structures
+// are warm from server start.
+func (d *DB) Prewarm() {
+	const poolSize = 8
+	conns := make([]*sql.Conn, 0, poolSize)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	for i := 0; i < poolSize; i++ {
+		conn, err := d.Conn(ctx)
+		if err != nil {
+			break
+		}
+		conns = append(conns, conn)
+	}
+
+	var wg sync.WaitGroup
+	for _, conn := range conns {
+		c := conn
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = c.ExecContext(ctx, `
+				SELECT count(*) FROM sqlite_schema;
+				SELECT count(*) FROM users;
+				SELECT count(*) FROM sessions;
+				SELECT count(*) FROM devices;
+				SELECT count(*) FROM chats;
+				SELECT count(*) FROM messages;
+				SELECT count(*) FROM group_members;
+			`)
+		}()
+	}
+	wg.Wait()
+
+	for _, conn := range conns {
+		_ = conn.Close()
+	}
 }
 
 // Open opens (or creates) the SQLite database at path and runs migrations.
@@ -38,8 +101,8 @@ func Open(path string) (*DB, error) {
 	if maxConns < 4 {
 		maxConns = 4
 	}
-	if maxConns > 32 {
-		maxConns = 32
+	if maxConns > 8 {
+		maxConns = 8
 	}
 	sqlDB.SetMaxOpenConns(maxConns)
 	sqlDB.SetMaxIdleConns(maxConns)
