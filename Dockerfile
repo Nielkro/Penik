@@ -1,5 +1,5 @@
 # Stage 1: Build client frontend
-FROM node:20-alpine AS client-builder
+FROM node:22-alpine AS client-builder
 WORKDIR /app/client
 
 RUN apk add --no-cache bash curl unzip jq
@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o /app/bin/penik-server ./cmd/server
 
 # Stage 3: Production runtime image
-FROM alpine:3.20
+FROM alpine:3.24
 WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata ffmpeg
 RUN mkdir -p /app/data /app/data/upload /app/data/stickers
