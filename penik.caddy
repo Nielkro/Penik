@@ -76,11 +76,17 @@ web.penik.ru {
         encode gzip zstd
     }
 
-    # Cache static assets
+    # Cache static assets (hashed Vite assets and favicons)
     @static {
-        path /assets/* /sw.js /favicon*
+        path /assets/* /favicon*
     }
     header @static Cache-Control "public, max-age=31536000, immutable"
+
+    # Always revalidate service worker and root html so clients get fresh code
+    @revalidate {
+        path / /index.html /sw.js
+    }
+    header @revalidate Cache-Control "no-cache, must-revalidate"
 
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"

@@ -37,6 +37,7 @@ WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata ffmpeg
 RUN mkdir -p /app/data /app/data/upload /app/data/stickers
 COPY --from=server-builder /app/bin/penik-server /app/penik-server
+COPY --from=client-builder /app/client/dist /app/client/dist
 
 ENV PORT=8143
 ENV DB_PATH=/app/data/messenger.db
