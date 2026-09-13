@@ -29,7 +29,7 @@ var defaultVersionInfo = VersionInfo{
 	LatestAndroidVersionCode: 1,
 	LatestAndroidVersionName: "1.0.0",
 	MinCryptoVersion:         1,
-	ApkURL:                   "https://github.com/Nielkro/Penik/releases/latest/download/app-release.apk",
+	ApkURL:                   "https://github.com/Nielkro/Penik/releases/download/android-v1.0.0/app-debug.apk",
 	ReleaseNotes:             "Релиз Penik Messenger с поддержкой E2EE (X25519 + ***REDACTED-BY-FILTER-REPO***) и звонков.",
 }
 
