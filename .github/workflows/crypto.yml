@@ -122,8 +122,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view crypto-latest >/dev/null 2>&1; then
-            gh release edit crypto-latest --notes "Automated crypto binaries compiled from commit ${{ github.sha }}."
+            gh release edit crypto-latest --prerelease --notes "Automated crypto binaries compiled from commit ${{ github.sha }}."
           else
-            gh release create crypto-latest --title "Latest Crypto Binaries" --notes "Automated crypto binaries compiled from commit ${{ github.sha }}."
+            gh release create crypto-latest --prerelease --title "Latest Crypto Binaries" --notes "Automated crypto binaries compiled from commit ${{ github.sha }}."
           fi
           gh release upload crypto-latest release-assets/* --clobber
