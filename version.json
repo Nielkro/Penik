@@ -1,9 +1,9 @@
 {
   "min_android_version_code": 1,
-  "latest_android_version_code": 5,
-  "latest_android_version_name": "1.0.4",
+  "latest_android_version_code": 6,
+  "latest_android_version_name": "1.0.5",
   "min_crypto_version": 1,
   "force_prompt": false,
-  "apk_url": "https://github.com/Nielkro/Penik/releases/download/android-v1.0.4/app-debug.apk",
-  "release_notes": "Добавлено боковое меню (шторка в стиле Telegram) с возможностью выбора в настройках, профилем, быстрым созданием групп, историей звонков и переключением темы."
+  "apk_url": "https://github.com/Nielkro/Penik/releases/download/android-v1.0.5/app-debug.apk",
+  "release_notes": "Цветные имена пользователей и групп по цвету аватарок, Telegram-анимация переключения темы (Circular Reveal), улучшенная стабильность звонков и обновлений."
 }

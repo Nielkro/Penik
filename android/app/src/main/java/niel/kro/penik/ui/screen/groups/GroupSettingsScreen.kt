@@ -314,7 +314,7 @@ fun GroupSettingsScreen(
                         Column {
                             val displayNameWithMe = displayName + if (isMe) " (вы)" else ""
                             val roleRu = roleLabel(member.role) + if (member.status == "pending") " · приглашён" else ""
-                            Text(displayNameWithMe, color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.Medium)
+                            Text(displayNameWithMe, color = niel.kro.penik.ui.components.initialsColor(member.userId, displayName), fontWeight = FontWeight.Medium)
                             Text(roleRu, color = LocalAppColors.current.textMuted, fontSize = 12.sp)
                         }
                     }
@@ -392,7 +392,7 @@ fun GroupSettingsScreen(
                 ) {
                     UserAvatar(userId = member.userId, name = displayName, size = 96.dp)
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text(displayName, color = LocalAppColors.current.textPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(displayName, color = niel.kro.penik.ui.components.initialsColor(member.userId, displayName), fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     if (member.nickname.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(2.dp))
                         Text("@${member.nickname}", color = LocalAppColors.current.textMuted, fontSize = 14.sp)
