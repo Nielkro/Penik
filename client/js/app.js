@@ -567,6 +567,27 @@ async function onMsgRecvGlobal(payload) {
   const existingByServer = payload.msg_id ? await getMessage(payload.msg_id) : null;
   if (existingByServer) return;
 
+  if (payload.client_msg_id) {
+    const existingByClient = await getMessageByClientId(payload.client_msg_id);
+    if (existingByClient) {
+      if (payload.msg_id && String(existingByClient.msg_id) !== String(payload.msg_id)) {
+        await updateMsgIdAndDelivered(existingByClient.msg_id, payload.msg_id, 1);
+        if (_activeChatCallback) {
+          const bubble = /** @type {HTMLElement} */ (
+            document.querySelector(`[data-msg-id="${CSS.escape(String(existingByClient.msg_id))}"]`) ||
+            document.querySelector(`[data-client-msg-id="${CSS.escape(String(payload.client_msg_id))}"]`)
+          );
+          if (bubble) {
+            bubble.dataset.msgId = String(payload.msg_id);
+            const statusEl = /** @type {HTMLElement} */ (bubble.querySelector(".msg-status, .msg-status-wrapper"));
+            if (statusEl) statusEl.dataset.msgId = String(payload.msg_id);
+          }
+        }
+      }
+      return;
+    }
+  }
+
   if (isMine) {
     const chatPartnerId = payload.chat_user_id || fromUserId;
     const resolvedOldId = await findAndResolvePendingSentMessage(chatPartnerId, payload.ts * 1000, payload.msg_id, payload.client_msg_id);
