@@ -84,6 +84,7 @@ data class AppVersionInfo(
     @SerialName("latest_android_version_code") val latestAndroidVersionCode: Int = 1,
     @SerialName("latest_android_version_name") val latestAndroidVersionName: String = "",
     @SerialName("min_crypto_version") val minCryptoVersion: Int = 1,
+    @SerialName("force_prompt") val forcePrompt: Boolean = false,
     @SerialName("apk_url") val apkUrl: String = "",
     @SerialName("release_notes") val releaseNotes: String = ""
 )
