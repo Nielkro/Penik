@@ -65,6 +65,50 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Generate APK SHA256 Checksum
+        run: |
+          sha256sum android/app/build/outputs/apk/debug/app-debug.apk > android/app/build/outputs/apk/debug/app-debug.apk.sha256
+          cat android/app/build/outputs/apk/debug/app-debug.apk.sha256
+
+      - name: Publish Android rolling prerelease (android-latest)
+        if: github.ref == 'refs/heads/master'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="android-latest"
+          SHA256=$(awk '{print $1}' android/app/build/outputs/apk/debug/app-debug.apk.sha256)
+          echo "Publishing rolling release $TAG with sha256: $SHA256..."
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Updating existing release $TAG..."
+            gh release edit "$TAG" \
+              --prerelease \
+              --title "Android Latest (Rolling Build)" \
+              --notes "Latest rolling build from commit ${{ github.sha }} (${{ github.ref_name }}).
+
+**SHA-256 Checksum:**
+\`\`\`
+${SHA256}  app-debug.apk
+\`\`\`"
+            gh release upload "$TAG" \
+              android/app/build/outputs/apk/debug/app-debug.apk \
+              android/app/build/outputs/apk/debug/app-debug.apk.sha256 \
+              --clobber
+          else
+            echo "Creating new rolling release $TAG..."
+            gh release create "$TAG" \
+              --prerelease \
+              --title "Android Latest (Rolling Build)" \
+              --notes "Latest rolling build from commit ${{ github.sha }} (${{ github.ref_name }}).
+
+**SHA-256 Checksum:**
+\`\`\`
+${SHA256}  app-debug.apk
+\`\`\`" \
+              android/app/build/outputs/apk/debug/app-debug.apk \
+              android/app/build/outputs/apk/debug/app-debug.apk.sha256
+          fi
+
       - name: Publish Android immutable version release
         if: github.ref == 'refs/heads/master'
         env:
@@ -76,15 +120,26 @@ jobs:
             exit 1
           fi
           TAG="android-v${VERSION_NAME}"
+          SHA256=$(awk '{print $1}' android/app/build/outputs/apk/debug/app-debug.apk.sha256)
           echo "Target immutable release tag: $TAG"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists and is immutable. Skipping upload to preserve release integrity."
           else
             echo "Creating new immutable release $TAG..."
+            RELEASE_NOTES=$(jq -r '.release_notes // empty' version.json)
+            if [ -z "$RELEASE_NOTES" ]; then
+              RELEASE_NOTES="Android release v${VERSION_NAME} (commit ${{ github.sha }})."
+            fi
             gh release create "$TAG" \
               --title "Android Release v${VERSION_NAME}" \
-              --notes "Android build for version v${VERSION_NAME} (commit ${{ github.sha }})." \
-              android/app/build/outputs/apk/debug/app-debug.apk
+              --notes "$RELEASE_NOTES
+
+**SHA-256 Checksum:**
+\`\`\`
+${SHA256}  app-debug.apk
+\`\`\`" \
+              android/app/build/outputs/apk/debug/app-debug.apk \
+              android/app/build/outputs/apk/debug/app-debug.apk.sha256
             echo "Release $TAG published successfully."
           fi

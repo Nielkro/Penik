@@ -341,7 +341,7 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
     </div>
     <div class="nav-cta">
       <a class="btn btn-outline btn-sm" href="https://web.penik.ru" target="_blank" rel="noopener">Веб-версия</a>
-      <a class="btn btn-primary btn-sm" href="/penik.apk" download>Скачать APK</a>
+      <a class="btn btn-primary btn-sm" href="https://github.com/Nielkro/Penik/releases/download/android-latest/app-debug.apk" download>Скачать APK</a>
     </div>
     <button class="burger" id="burger" aria-label="Меню"><span></span><span></span><span></span></button>
   </div>
@@ -356,7 +356,7 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
       <h1>Свой мессенджер.<br><span class="grad">Свои правила.</span></h1>
       <p><b>Penik Messenger</b> — приватный мессенджер со сквозным шифрованием. Сообщения шифруются прямо на устройстве, так что даже наш сервер не знает, о чём вы пишете. В отличие от Телеграма. И тем более МАКС.</p>
       <div class="hero-btns">
-        <a class="btn btn-primary btn-lg" href="/penik.apk" download>Скачать APK (Android)&nbsp;↓</a>
+        <a class="btn btn-primary btn-lg" href="https://github.com/Nielkro/Penik/releases/download/android-latest/app-debug.apk" download>Скачать APK (latest)&nbsp;↓</a>
         <a class="btn btn-outline btn-lg" href="https://web.penik.ru" target="_blank" rel="noopener">Открыть веб-версию&nbsp;→</a>
       </div>
       <div class="hero-meta">Android 8.0+ · v1.3.7 · бесплатно и без рекламы</div>
@@ -587,7 +587,8 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
         <div class="dl-icon">🤖</div>
         <h3>Android · APK</h3>
         <p class="dl-desc">Полноценный клиент: фоновые уведомления, шифрование на устройстве, работа на любом интернете.</p>
-        <a class="btn btn-primary btn-lg" href="/penik.apk" download style="width:100%">Скачать APK (Android)&nbsp;↓</a>
+        <a class="btn btn-primary btn-lg" href="https://github.com/Nielkro/Penik/releases/download/android-latest/app-debug.apk" download style="width:100%">Скачать APK (latest)&nbsp;↓</a>
+        <div style="margin-top:14px;font-size:13px;color:var(--muted);"><a id="stableDownloadLink" href="https://github.com/Nielkro/Penik/releases/download/android-v1.0.3/app-debug.apk" download style="text-decoration:underline;color:var(--acc);">Стабильная версия (v1.0.3)</a> · <a href="https://github.com/Nielkro/Penik/releases/tag/android-latest" target="_blank" rel="noopener" style="text-decoration:underline;color:var(--muted);">Ночнушка (rolling)</a></div>
       </div>
       <div class="dl-card web reveal" style="--d:.14s">
         <div class="dl-icon">🌐</div>
@@ -661,7 +662,7 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
       </div>
       <div class="foot-col">
         <h4>Продукт</h4>
-        <a href="#download">Скачать APK</a>
+        <a href="https://github.com/Nielkro/Penik/releases/download/android-latest/app-debug.apk">Скачать APK</a>
         <a href="https://web.penik.ru" target="_blank" rel="noopener">Веб-версия</a>
         <a href="#features">Возможности</a>
         <a href="https://github.com/Nielkro/Penik" target="_blank" rel="noopener">GitHub</a>
@@ -910,9 +911,13 @@ window.addEventListener('load', () => setTimeout(handleHashFAQ, 300));
   function applyVersion(data) {
     if (!data) return;
     if (data.apk_url) {
-      document.querySelectorAll('a[href="/penik.apk"]').forEach(link => {
-        link.href = data.apk_url;
-      });
+      const stableLink = document.getElementById('stableDownloadLink');
+      if (stableLink) {
+        stableLink.href = data.apk_url;
+        if (data.latest_android_version_name) {
+          stableLink.textContent = `Стабильная версия (v${data.latest_android_version_name})`;
+        }
+      }
     }
     if (data.latest_android_version_name) {
       const meta = document.querySelector('.hero-meta');
