@@ -1485,6 +1485,10 @@ function setupGlobalWSListeners() {
     if (_pendingAckSweepTimer.unref) _pendingAckSweepTimer.unref();
   }
   ws.onDisconnect(() => clearPendingAcks());
+  ws.onUnauthorized(() => {
+    console.warn('[ws] Session revoked or expired by server');
+    logout();
+  });
 
   ws.onConnect(async () => {
     // Publish current local public identity key

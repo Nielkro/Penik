@@ -112,9 +112,9 @@ func main() {
 	authMW := middleware.Auth(database)
 
 	mux.Handle("POST /api/v1/logout",
-		authMW(http.HandlerFunc(handlers.Logout(database))))
+		authMW(http.HandlerFunc(handlers.Logout(database, hub))))
 	mux.Handle("POST /api/v1/logout/all",
-		authMW(http.HandlerFunc(handlers.LogoutAll(database))))
+		authMW(http.HandlerFunc(handlers.LogoutAll(database, hub))))
 	mux.Handle("GET /api/v1/devices",
 		authMW(http.HandlerFunc(handlers.ListDevices(database))))
 	mux.Handle("PUT /api/v1/devices/me/fcm",
@@ -129,7 +129,7 @@ func main() {
 	mux.Handle("PUT /api/v1/users/me/nickname",
 		authMW(http.HandlerFunc(handlers.UpdateNickname(database))))
 	mux.Handle("PATCH /api/v1/users/me/password",
-		authMW(http.HandlerFunc(handlers.UpdatePassword(database))))
+		authMW(http.HandlerFunc(handlers.UpdatePassword(database, hub))))
 	mux.Handle("PUT /api/v1/avatar",
 		authMW(http.HandlerFunc(handlers.UploadAvatar(database, cfg, hub))))
 	mux.Handle("POST /api/v1/attachments/upload",

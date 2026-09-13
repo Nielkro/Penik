@@ -1,6 +1,10 @@
 package ws
 
-import "sync"
+import (
+	"sync"
+
+	"nhooyr.io/websocket"
+)
 
 // Hub manages all connected clients and routes messages between them.
 type Hub struct {
@@ -198,3 +202,47 @@ func (h *Hub) BroadcastServerShutdown() {
 		}
 	}
 }
+
+// CloseSession terminates the WebSocket connection associated with the given session token hash.
+func (h *Hub) CloseSession(tokenHash string) {
+	if h == nil || tokenHash == "" {
+		return
+	}
+	h.mu.RLock()
+	var toClose []*Client
+	for _, c := range h.clients {
+		if c.tokenHash == tokenHash {
+			toClose = append(toClose, c)
+		}
+	}
+	h.mu.RUnlock()
+
+	for _, c := range toClose {
+		if c.conn != nil {
+			_ = c.conn.Close(websocket.StatusPolicyViolation, "session revoked")
+		}
+	}
+}
+
+// CloseUserSessionsExcept terminates all WebSocket connections for the user except
+// the one associated with keepTokenHash (if non-empty).
+func (h *Hub) CloseUserSessionsExcept(userID int64, keepTokenHash string) {
+	if h == nil || userID == 0 {
+		return
+	}
+	h.mu.RLock()
+	var toClose []*Client
+	for _, c := range h.clients {
+		if c.userID == userID && (keepTokenHash == "" || c.tokenHash != keepTokenHash) {
+			toClose = append(toClose, c)
+		}
+	}
+	h.mu.RUnlock()
+
+	for _, c := range toClose {
+		if c.conn != nil {
+			_ = c.conn.Close(websocket.StatusPolicyViolation, "session revoked")
+		}
+	}
+}
+

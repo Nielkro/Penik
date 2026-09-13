@@ -91,6 +91,9 @@ pub fn diffie_hellman(private_key: &[u8], peer_public_key: &[u8]) -> Result<[u8;
     priv_arr.zeroize();
     let public = PublicKey::from(clean_public);
     let shared = secret.diffie_hellman(&public);
+    if !shared.was_contributory() {
+        return Err(CryptoError::InvalidKey);
+    }
     Ok(shared.to_bytes())
 }
 

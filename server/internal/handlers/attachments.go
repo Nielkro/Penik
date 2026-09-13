@@ -34,13 +34,30 @@ func UploadAttachment(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		if err := r.ParseMultipartForm(cfg.MaxUploadSize); err != nil {
+		mr, err := r.MultipartReader()
+		if err != nil {
 			http.Error(w, "multipart parse error", http.StatusBadRequest)
 			return
 		}
 
-		file, _, err := r.FormFile("file")
-		if err != nil {
+		var file io.ReadCloser
+		for {
+			part, err := mr.NextPart()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				http.Error(w, "multipart stream error", http.StatusBadRequest)
+				return
+			}
+			if part.FormName() == "file" {
+				file = part
+				break
+			}
+			_ = part.Close()
+		}
+
+		if file == nil {
 			http.Error(w, "file field required", http.StatusBadRequest)
 			return
 		}

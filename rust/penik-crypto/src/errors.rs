@@ -28,6 +28,9 @@ pub enum CryptoError {
 
     #[error("Invalid payload format: {0}")]
     InvalidPayload(&'static str),
+
+    #[error("Invalid or low-order public key")]
+    InvalidKey,
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -427,7 +427,7 @@ type updatePasswordResponse struct {
 }
 
 // UpdatePassword handles PUT /api/v1/users/me/password.
-func UpdatePassword(database *db.DB) http.HandlerFunc {
+func UpdatePassword(database *db.DB, hubs ...*ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
 
@@ -486,6 +486,12 @@ func UpdatePassword(database *db.DB) http.HandlerFunc {
 			resp.RevokeSkippedReason = "session_too_recent"
 		} else {
 			resp.RevokedOtherSessions = true
+			tokenHash := db.HashSessionToken(token)
+			for _, hub := range hubs {
+				if hub != nil {
+					hub.CloseUserSessionsExcept(userID, tokenHash)
+				}
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
