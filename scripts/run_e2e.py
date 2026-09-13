@@ -16,6 +16,7 @@ import signal
 import socket
 import argparse
 import subprocess
+import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
@@ -112,20 +113,31 @@ def main():
         env["PORT"] = str(test_port)
         env["ENV"] = "development"
         env["ALLOWED_ORIGINS"] = f"http://localhost:{test_port},http://127.0.0.1:{test_port},https://web.penik.ru,https://penik.ru"
+        env["LIVEKIT_URL"] = env.get("LIVEKIT_URL", "wss://test-livekit.local")
+        env["LIVEKIT_FALLBACK_URL"] = env.get("LIVEKIT_FALLBACK_URL", "wss://test-livekit-fallback.local")
 
         print(f"\033[96m[server] Starting ephemeral test server on {base_url} (DB: {test_db_path})...\033[0m")
+        server_log = tempfile.NamedTemporaryFile(mode="w+", delete=False, prefix="penik_server_", suffix=".log")
         server_proc = subprocess.Popen(
             [binary],
             cwd=REPO_ROOT,
             env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=server_log,
+            stderr=server_log,
         )
 
         if not wait_for_server(base_url):
             print(f"\033[91m[error] Ephemeral test server failed to start on {base_url}\033[0m")
             if server_proc:
                 server_proc.kill()
+            try:
+                server_log.seek(0)
+                err_output = server_log.read()
+                if err_output:
+                    print(f"\033[91m[server output]\n{err_output}\033[0m")
+                os.remove(server_log.name)
+            except Exception:
+                pass
             cleanup_test_db(test_db_path)
             sys.exit(1)
 
