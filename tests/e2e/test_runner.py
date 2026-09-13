@@ -192,7 +192,6 @@ class E2ETestSuite:
         log_pass("Alice connected to WebSocket")
         await self.bob.connect_ws()
         log_pass("Bob connected to WebSocket")
-        await asyncio.sleep(0.05)
 
         test_message_text = "Hello Bob! Secret meeting at 14:00. [Penik E2EE Protocol]"
         client_msg_id = str(uuid.uuid4())
