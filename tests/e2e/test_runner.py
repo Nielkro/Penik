@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 import requests
+import websockets
 
 from .client import (
     PenikClient,
@@ -668,12 +669,22 @@ class E2ETestSuite:
         ws_closed = False
         close_code = None
         try:
-            await asyncio.wait_for(eve.ws.wait_closed(), timeout=3.0)
-            ws_closed = (getattr(eve.ws.state, "name", "") == "CLOSED")
-            close_code = eve.ws.close_code
+            # Active read triggers the websockets state machine to process incoming server close frame
+            await eve.recv_frame(timeout=3.0)
+        except websockets.exceptions.ConnectionClosed as e:
+            ws_closed = True
+            close_code = getattr(e.rcvd, "code", None) or getattr(eve.ws, "close_code", None)
         except Exception:
-            ws_closed = (getattr(eve.ws.state, "name", "") == "CLOSED")
-            close_code = eve.ws.close_code
+            pass
+
+        if not ws_closed:
+            try:
+                await asyncio.wait_for(eve.ws.wait_closed(), timeout=2.0)
+                ws_closed = (getattr(eve.ws.state, "name", "") == "CLOSED")
+                close_code = getattr(eve.ws, "close_code", None)
+            except Exception:
+                ws_closed = (getattr(eve.ws.state, "name", "") == "CLOSED")
+                close_code = getattr(eve.ws, "close_code", None)
 
         self.assert_true(ws_closed, "WebSocket terminated immediately upon REST logout")
         self.assert_true(close_code == 1008, f"WebSocket closed with PolicyViolation code 1008 (got {close_code})")
