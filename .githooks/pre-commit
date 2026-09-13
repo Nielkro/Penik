@@ -14,7 +14,31 @@ fi
 STAGED_FILES=$(git diff --cached --name-only)
 
 if [ -z "$STAGED_FILES" ]; then
-  exit 0
+# 6. GitHub workflows verification: validate YAML syntax of staged workflows
+if echo "$STAGED_FILES" | grep -qE '^\.github/workflows/.*\.ya?ml$'; then
+  echo "🔍 [pre-commit] Validating GitHub workflows..."
+  for f in $STAGED_FILES; do
+    case "$f" in
+      .github/workflows/*.yml|.github/workflows/*.yaml)
+        if command -v actionlint >/dev/null 2>&1; then
+          if ! actionlint "$f"; then
+            echo "❌ [pre-commit] actionlint failed for $f. Commit blocked."
+            exit 1
+          fi
+        else
+          # Fallback to strict YAML parsing when actionlint is unavailable.
+          if ! python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1], encoding="utf-8"))' "$f"; then
+            echo "❌ [pre-commit] Invalid YAML syntax in $f. Commit blocked."
+            echo "Install actionlint for deeper GitHub Actions validation."
+            exit 1
+          fi
+        fi
+        ;;
+    esac
+  done
+fi
+
+exit 0
 fi
 
 # 2. Server verification: run go test if server Go files or modules changed
