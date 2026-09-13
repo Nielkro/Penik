@@ -11,7 +11,7 @@ import { navigate, getCurrentUser, triggerChatListUpdate, getCachedKeyBundle } f
 import {
   el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence,
   showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon, showConfirmModal, showPromptModal, showFullscreenImage, showForwardModal,
-  setMsgTextContent, getEmojiOnlyCount, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
+  setMsgTextContent, getEmojiOnlyCount, isDirectImageUrl, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
 import { onPresenceUpdate } from "../presence.js";
 import { getMessagePreview, getMessagePreviewInfo } from "./chat.js";
@@ -457,7 +457,7 @@ export async function renderGroup(container, groupId) {
     wireMsgTime(timeEl, msg.created_at);
 
     const isStructuredPayload = typeof msg.plaintext === "string" && msg.plaintext.trim().startsWith("{");
-    const isSingleLine = !isStructuredPayload && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 35;
+    const isSingleLine = !isStructuredPayload && !(msg.plaintext || "").includes("\n") && (msg.plaintext || "").length <= 35 && !isDirectImageUrl(typeof msg.plaintext === "string" ? msg.plaintext.trim() : "");
 
     const editedBadge = (msg.edited_at || msg.is_edited) ? el("span", { class: "msg-edited-badge", style: "font-size:10px;opacity:0.6;margin-right:3px;" }, "ред.") : null;
     const metaEl = el("div", { class: "msg-meta" },
