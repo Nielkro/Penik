@@ -221,6 +221,12 @@ jobs:
               exit 1
             fi
 
+            # Sync built web client static assets to host disk for Caddy
+            echo "Syncing web client static assets to host for Caddy..."
+            mkdir -p ./client/dist
+            docker cp "$(docker compose ps -q penik-server):/app/client/dist/." ./client/dist/
+            chmod -R a+rX ./client/dist
+
             # Record successful version on server
             echo "$TARGET_TAG" > .current_version
             echo "🚀 Deployment of $TARGET_TAG successfully verified and recorded."
