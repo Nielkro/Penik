@@ -3,6 +3,7 @@
   "latest_android_version_code": 5,
   "latest_android_version_name": "1.0.4",
   "min_crypto_version": 1,
+  "force_prompt": true,
   "apk_url": "https://github.com/Nielkro/Penik/releases/download/android-v1.0.4/app-debug.apk",
   "release_notes": "Добавлено боковое меню (шторка в стиле Telegram) с возможностью выбора в настройках, профилем, быстрым созданием групп, историей звонков и переключением темы."
 }

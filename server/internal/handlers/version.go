@@ -14,6 +14,7 @@ type VersionInfo struct {
 	LatestAndroidVersionCode int    `json:"latest_android_version_code"`
 	LatestAndroidVersionName string `json:"latest_android_version_name"`
 	MinCryptoVersion         int    `json:"min_crypto_version"`
+	ForcePrompt              bool   `json:"force_prompt,omitempty"`
 	ApkURL                   string `json:"apk_url"`
 	ReleaseNotes             string `json:"release_notes"`
 }

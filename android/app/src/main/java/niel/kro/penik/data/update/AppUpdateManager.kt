@@ -85,7 +85,7 @@ class AppUpdateManager @Inject constructor(
                 currentCode < info.minAndroidVersionCode -> {
                     UpdateStatus.ForceUpdateRequired(info) to UpdateCheckResult.Available(info, isForce = true)
                 }
-                currentCode < info.latestAndroidVersionCode -> {
+                currentCode < info.latestAndroidVersionCode || info.forcePrompt -> {
                     UpdateStatus.SoftUpdateAvailable(info) to UpdateCheckResult.Available(info, isForce = false)
                 }
                 else -> {
