@@ -308,6 +308,8 @@ class WebSocketManager @Inject constructor(
     @Volatile
     private var webSocket: WebSocket? = null
     private val client = OkHttpClient.Builder()
+        .pingInterval(15, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
@@ -492,7 +494,7 @@ class WebSocketManager @Inject constructor(
         pingJob?.cancel()
         pingJob = scope.launch {
             while (true) {
-                delay(5_000)
+                delay(15_000)
                 sendPing()
             }
         }

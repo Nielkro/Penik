@@ -897,33 +897,39 @@ class MessageRepository @Inject constructor(
                 // Ensure all contacts exist in chat list
                 val allChatUserIds = messages.map { it.chatUserId }.distinct()
                 for (peerId in allChatUserIds) {
-                    val profile = try {
-                        apiService.getUserProfile(peerId).body()
-                    } catch (_: Exception) {
-                        null
-                    }
+                    val existing = chatRepository.getChat(peerId)
+                    val profile = if (existing == null || existing.name.isBlank()) {
+                        try {
+                            apiService.getUserProfile(peerId).body()
+                        } catch (_: Exception) {
+                            null
+                        }
+                    } else null
                     chatRepository.upsertContact(
                         userId = peerId,
-                        nickname = profile?.nickname.orEmpty(),
-                        name = profile?.name.orEmpty(),
-                        avatarUrl = null
+                        nickname = profile?.nickname ?: existing?.nickname.orEmpty(),
+                        name = profile?.name ?: existing?.name.orEmpty(),
+                        avatarUrl = existing?.avatarUrl
                     )
                 }
 
                 newMessages.groupBy { it.chatUserId }.forEach { (chatUserId, chatMessages) ->
                     val latest = chatMessages.maxByOrNull { it.createdAt }
                     if (latest != null && !latest.text.startsWith("[Ошибка") && !latest.text.startsWith("[Сообщение не расшифровано")) {
-                        val profile = try {
-                            apiService.getUserProfile(chatUserId).body()
-                        } catch (_: Exception) {
-                            null
-                        }
+                        val existing = chatRepository.getChat(chatUserId)
+                        val profile = if (existing == null || existing.name.isBlank()) {
+                            try {
+                                apiService.getUserProfile(chatUserId).body()
+                            } catch (_: Exception) {
+                                null
+                            }
+                        } else null
                         chatRepository.updateLastMessage(
                             userId = chatUserId,
                             text = latest.text,
                             timestamp = latest.createdAt,
-                            name = profile?.name.orEmpty(),
-                            nickname = profile?.nickname.orEmpty()
+                            name = profile?.name ?: existing?.name.orEmpty(),
+                            nickname = profile?.nickname ?: existing?.nickname.orEmpty()
                         )
                     }
                 }
@@ -938,9 +944,11 @@ class MessageRepository @Inject constructor(
                     val existingChat = chatRepository.getChat(chatUserId)
                     val latestMsg = msgs.filter { it.text != "[DELETED]" }.maxByOrNull { it.timestamp }
                     if (latestMsg != null) {
-                        val profile = try {
-                            apiService.getUserProfile(chatUserId).body()
-                        } catch (_: Exception) { null }
+                        val profile = if (existingChat == null || existingChat.name.isBlank()) {
+                            try {
+                                apiService.getUserProfile(chatUserId).body()
+                            } catch (_: Exception) { null }
+                        } else null
                         val name = profile?.name?.ifBlank { profile.nickname } ?: existingChat?.name?.takeIf { it.isNotBlank() } ?: "Пользователь $chatUserId"
                         val nickname = profile?.nickname ?: existingChat?.nickname.orEmpty()
                         chatRepository.updateLastMessage(

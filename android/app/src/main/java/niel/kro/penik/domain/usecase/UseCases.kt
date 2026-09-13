@@ -92,6 +92,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
     private val appNotificationManager: niel.kro.penik.ui.notification.AppNotificationManager,
     private val callManager: niel.kro.penik.domain.call.CallManager
 ) {
+    @Volatile
+    private var lastFullSyncTime = 0L
+
     suspend operator fun invoke(event: WebSocketEvent) {
         when (event) {
             is WebSocketEvent.MsgRecv -> {
@@ -229,13 +232,17 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 niel.kro.penik.data.repository.PresenceBus.update(event.userId, event.online, event.lastSeen)
             }
             is WebSocketEvent.Connected -> {
-                // Sync direct message history and group history/metadata on connection
-                runCatching { messageRepository.syncHistory() }
-                runCatching {
-                    val groups = groupRepository.syncGroups()
-                    for (g in groups) {
-                        if (g.status == "pending") continue
-                        runCatching { groupRepository.syncHistory(g.id) }
+                val now = System.currentTimeMillis()
+                if (now - lastFullSyncTime > 15_000L) {
+                    lastFullSyncTime = now
+                    // Sync direct message history and group history/metadata on connection
+                    runCatching { messageRepository.syncHistory() }
+                    runCatching {
+                        val groups = groupRepository.syncGroups()
+                        for (g in groups) {
+                            if (g.status == "pending") continue
+                            runCatching { groupRepository.syncHistory(g.id) }
+                        }
                     }
                 }
             }
