@@ -38,6 +38,7 @@ fun NavGraph(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val updateStatus by startupViewModel.updateStatus.collectAsState()
+    val downloadState by startupViewModel.downloadState.collectAsState()
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
         startupViewModel.checkForUpdates()
@@ -45,8 +46,11 @@ fun NavGraph(
 
     UpdateDialog(
         status = updateStatus,
+        downloadState = downloadState,
         onDismiss = { startupViewModel.dismissSoftUpdate() },
-        onDownload = { url -> startupViewModel.openDownloadUrl(context, url) }
+        onDownload = { url -> startupViewModel.startDownload(context, url) },
+        onInstall = { file -> startupViewModel.installDownloadedApk(context, file) },
+        onOpenBrowser = { url -> startupViewModel.openDownloadUrl(context, url) }
     )
 
     androidx.compose.runtime.LaunchedEffect(Unit) {

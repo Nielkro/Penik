@@ -12,7 +12,9 @@ import niel.kro.penik.data.network.websocket.WebSocketEvent
 import niel.kro.penik.data.network.websocket.WebSocketManager
 import niel.kro.penik.data.repository.AuthRepository
 import niel.kro.penik.data.update.AppUpdateManager
+import niel.kro.penik.data.update.DownloadState
 import niel.kro.penik.data.update.UpdateStatus
+import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
@@ -26,6 +28,7 @@ class StartupViewModel @Inject constructor(
         webSocketManager.events.filterIsInstance<WebSocketEvent.Unauthorized>()
 
     val updateStatus: StateFlow<UpdateStatus> = appUpdateManager.updateStatus
+    val downloadState: StateFlow<DownloadState> = appUpdateManager.downloadState
 
     fun checkForUpdates() {
         viewModelScope.launch {
@@ -35,6 +38,15 @@ class StartupViewModel @Inject constructor(
 
     fun dismissSoftUpdate() {
         appUpdateManager.dismissSoftUpdate()
+        appUpdateManager.resetDownloadState()
+    }
+
+    fun startDownload(context: Context, url: String) {
+        appUpdateManager.startDownload(context, url)
+    }
+
+    fun installDownloadedApk(context: Context, apkFile: File) {
+        appUpdateManager.installDownloadedApk(context, apkFile)
     }
 
     fun openDownloadUrl(context: Context, url: String) {
