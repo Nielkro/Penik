@@ -41,7 +41,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/middleware/security_headers.go` — Sets Content-Security-Policy and defensive response headers (nosniff, frame-deny, referrer policy) on every response.
 - `Dockerfile` — Multi-stage Docker build packaging Node.js client build and Go server into a single lightweight Alpine runtime image with built-in HTTP healthcheck.
 - `docker-compose.yml` — Docker Compose configuration running standalone `penik-server` container on port 8143 with volume persistence and automated healthcheck.
-- `.github/workflows/docker.yml` — GitHub Actions workflow building and publishing `penik-server` container image to GitHub Container Registry (`ghcr.io`), coordinated with crypto releases via `workflow_run`, with post-deployment health verification and automatic rollback.
+- `.github/workflows/docker.yml` — GitHub Actions workflow building and publishing `penik-server` container image to GitHub Container Registry (`ghcr.io`), coordinated with crypto releases via `workflow_run`, running parallel E2E integration test verification before deployment, with post-deployment health verification and automatic rollback.
 - `.github/workflows/security.yml` — GitHub Actions workflow running scheduled and push-triggered `govulncheck` vulnerability audits for Go dependencies.
 - `penik.caddy` — Caddy site config for `/etc/caddy/sites-enabled/penik.caddy` routing `penik.ru` (landing), `web.penik.ru` (SPA web client), and `api.penik.ru` (reverse proxy to 127.0.0.1:8143).
 - `landing/index.html` — Standalone landing page promoting the messenger, providing web client entry and Android APK download links.
@@ -220,6 +220,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `tests/e2e/test_crypto_core.py` — Direct Python verification suite validating Rust C-ABI crypto primitives (PBKDF2, HKDF, AAD v2, zeroize, DH, ***REDACTED-BY-FILTER-REPO***, file crypto, safety numbers) against Python standard reference implementations.
 - `tests/e2e/client.py` — Multi-platform Penik test client simulating complete REST and WebSocket workflows with binary MsgPack frame serialization.
 - `tests/e2e/test_runner.py` — Automated E2E test suite running 67 assertions across live auth, key bundles, dual-client live E2EE messaging, edit and delete for everyone, pairwise decryption retry flows, offline queuing, encrypted attachments, safety numbers, group member kick and epoch rotation (R5), payload limits and third-party device spoofing prevention (R4), and session revocation WebSocket termination (R1); supports auto-starting ephemeral test servers with isolated databases.
+- `tests/e2e/requirements.txt` — Python dependency requirements for running the E2E verification test suite.
 - `scripts/run_e2e.py` — Entry point script managing ephemeral test server lifecycle and executing the full Python E2E verification suite.
 
 ### Documentation
