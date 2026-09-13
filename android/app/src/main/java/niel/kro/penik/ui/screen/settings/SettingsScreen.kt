@@ -47,17 +47,56 @@ import niel.kro.penik.ui.theme.AppIconManager
 import niel.kro.penik.ui.theme.AppVariant
 import niel.kro.penik.ui.theme.ThemeManager
 
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
+import niel.kro.penik.BuildConfig
+import niel.kro.penik.data.update.UpdateCheckResult
+import niel.kro.penik.ui.components.UpdateDialog
+import niel.kro.penik.ui.viewmodel.SettingsViewModel
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit = {},
-    onDevices: () -> Unit = {}
+    onDevices: () -> Unit = {},
+    viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
     val isLight by ThemeManager.isLight.collectAsState()
     val currentVariant by AppIconManager.currentVariant.collectAsState()
+    val isChecking by viewModel.isChecking.collectAsState()
+    val updateStatus by viewModel.updateStatus.collectAsState()
     var showVariantDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.manualCheckResult.collect { result ->
+            when (result) {
+                is UpdateCheckResult.UpToDate -> {
+                    android.widget.Toast.makeText(
+                        context,
+                        "У вас установлена последняя версия (v${BuildConfig.VERSION_NAME})",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+                is UpdateCheckResult.Error -> {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Не удалось проверить обновления: ${result.message}",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+                is UpdateCheckResult.Available -> Unit
+            }
+        }
+    }
+
+    UpdateDialog(
+        status = updateStatus,
+        onDismiss = { viewModel.dismissSoftUpdate() },
+        onDownload = { url -> viewModel.openDownloadUrl(context, url) }
+    )
 
     Scaffold(
         containerColor = colors.background,
@@ -158,6 +197,37 @@ fun SettingsScreen(
             ) {
                 Text("Мои устройства", color = colors.textPrimary, fontSize = 16.sp)
                 Text("›", color = colors.textMuted, fontSize = 20.sp)
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // App version and update check row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable(enabled = !isChecking) { viewModel.checkForUpdates(manual = true) }
+                    .padding(vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Версия приложения", color = colors.textPrimary, fontSize = 16.sp)
+                    Text(
+                        text = if (isChecking) "Проверка обновлений..." else "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                        color = colors.textMuted,
+                        fontSize = 13.sp
+                    )
+                }
+                if (isChecking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = colors.accent
+                    )
+                } else {
+                    Text("Проверить", color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                }
             }
         }
     }
