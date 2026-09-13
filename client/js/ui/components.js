@@ -786,14 +786,17 @@ function renderFileCard(container, fileMsg) {
     // plays the audio track, but reports videoWidth 0 and paints black. Name the
     // codec so the cause is obvious, and offer the file for download.
     videoEl.addEventListener("loadeddata", () => {
-      if (videoEl.videoWidth) return;
-      const src = videoEl.src;
-      showFallbackCard("Браузер не может декодировать это видео. Нажмите, чтобы скачать.", true);
-      describeUndecodableVideo(src).then((codec) => {
-        if (codec && noteEl) {
-          noteEl.textContent = `Видео в ${codec} — браузер этот кодек не поддерживает. Нажмите, чтобы скачать.`;
-        }
-      });
+      if (f.upload_msg_id || videoEl.videoWidth > 0 || videoEl.videoHeight > 0) return;
+      setTimeout(() => {
+        if (videoEl.videoWidth > 0 || videoEl.videoHeight > 0 || !videoEl.isConnected) return;
+        const src = videoEl.src;
+        showFallbackCard("Браузер не может декодировать это видео. Нажмите, чтобы скачать.", true);
+        describeUndecodableVideo(src).then((codec) => {
+          if (codec && noteEl) {
+            noteEl.textContent = `Видео в ${codec} — браузер этот кодек не поддерживает. Нажмите, чтобы скачать.`;
+          }
+        });
+      }, 500);
     });
     videoEl.addEventListener("error", () => {
       showFallbackCard("Не удалось воспроизвести видео. Нажмите, чтобы скачать.", true);
