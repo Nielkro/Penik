@@ -45,4 +45,8 @@ ENV STICKERS_DIR=/app/data/stickers
 
 EXPOSE 8143
 VOLUME ["/app/data"]
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8143/api/v1/health || exit 1
+
 ENTRYPOINT ["/app/penik-server"]

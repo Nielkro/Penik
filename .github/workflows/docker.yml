@@ -132,5 +132,33 @@ jobs:
           script: |
             cd ${{ secrets.SERVER_WORKDIR || '/opt/penik' }}
             git pull
+
+            # Save the currently running image ID for rollback in case new image fails
+            PREV_IMAGE=$(docker compose images -q penik-server || true)
+
             docker compose pull
             docker compose up -d
+
+            echo "Verifying server readiness..."
+            HEALTHY=0
+            for i in $(seq 1 15); do
+              if curl -s -f --max-time 2 http://127.0.0.1:8143/api/v1/health >/dev/null; then
+                echo "Server is ready! (verified on attempt $i)"
+                HEALTHY=1
+                break
+              fi
+              echo "Waiting for server to become ready... (attempt $i/15)"
+              sleep 2
+            done
+
+            if [ "$HEALTHY" -ne 1 ]; then
+              echo "❌ Healthcheck failed! Container logs:"
+              docker compose logs --tail=50 penik-server
+              if [ -n "$PREV_IMAGE" ]; then
+                echo "⚠️ Rolling back to previous container image: $PREV_IMAGE"
+                docker tag "$PREV_IMAGE" ghcr.io/nielkro/penik-server:latest || true
+                docker compose up -d
+              fi
+              exit 1
+            fi
+            echo "🚀 Deployment successfully verified and healthy."
