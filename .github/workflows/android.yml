@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-debug:
@@ -52,3 +52,15 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish or update Android rolling release
+        if: github.ref == 'refs/heads/master'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view android-latest >/dev/null 2>&1; then
+            gh release edit android-latest --prerelease --notes "Automated Android debug build from commit ${{ github.sha }}."
+          else
+            gh release create android-latest --prerelease --title "Latest Android Build" --notes "Automated Android debug build from commit ${{ github.sha }}."
+          fi
+          gh release upload android-latest android/app/build/outputs/apk/debug/app-debug.apk --clobber

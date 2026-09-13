@@ -103,18 +103,18 @@ func (c *Client) Run(ctx context.Context) {
 	}
 
 	c.conn.SetReadLimit(512 * 1024) // 512 KB max WebSocket frame limit
-	c.hub.register <- c
+	c.hub.Register(c)
 	// A device that dropped mid-call gets its call back instead of finding it
 	// already torn down: CleanupDeviceCalls only arms a grace timer now.
 	ResumeDeviceCalls(c.hub, c.userID, c.deviceID, func(frame []byte) {
 		select {
 		case c.send <- frame:
-		default:
+			default:
 		}
 	})
 	go c.broadcastPresenceConnect(context.Background())
 	defer func() {
-		c.hub.unregister <- c
+		c.hub.Unregister(c)
 		// A reconnect that landed before this socket finished tearing down now
 		// owns the device; releasing its call here would kill the live session.
 		if !c.hub.deviceReplaced(c) {

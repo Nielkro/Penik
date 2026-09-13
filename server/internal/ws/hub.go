@@ -32,18 +32,27 @@ func (h *Hub) run() {
 	for {
 		select {
 		case c := <-h.register:
-			h.mu.Lock()
-			h.clients[c.deviceID] = c
-			h.mu.Unlock()
-
+			h.Register(c)
 		case c := <-h.unregister:
-			h.mu.Lock()
-			if existing, ok := h.clients[c.deviceID]; ok && existing == c {
-				delete(h.clients, c.deviceID)
-				close(c.send)
-			}
-			h.mu.Unlock()
+			h.Unregister(c)
 		}
+	}
+}
+
+// Register adds a client device to the hub synchronously.
+func (h *Hub) Register(c *Client) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.clients[c.deviceID] = c
+}
+
+// Unregister removes a client device from the hub synchronously.
+func (h *Hub) Unregister(c *Client) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if existing, ok := h.clients[c.deviceID]; ok && existing == c {
+		delete(h.clients, c.deviceID)
+		close(c.send)
 	}
 }
 
