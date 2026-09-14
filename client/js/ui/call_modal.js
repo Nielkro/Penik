@@ -17,6 +17,7 @@ function esc(value) {
 let callModalEl = null;
 let settingsModalEl = null;
 let hideControlsTimer = null;
+let isSafetyCardHidden = false;
 
 function stopControlsAutoHide() {
   clearTimeout(hideControlsTimer);
@@ -73,6 +74,9 @@ export function initCallUI() {
   document.body.appendChild(callModalEl);
 
   callManager.onCallStateChange = (callState, mediaState) => {
+    if (callState?.state !== 'ACTIVE') {
+      isSafetyCardHidden = false;
+    }
     renderCallModal(callState, mediaState);
   };
 
@@ -200,10 +204,31 @@ function renderCallModal(callState, mediaState) {
             <span class="call-peer-title">${esc(peerDisplayName)}</span>
             <span class="call-duration-badge" id="call-duration-timer">00:00</span>
             ${callState.isE2EE ? `<span class="call-e2ee-badge" title="${callState.isE2EEVerified ? 'Сквозное шифрование проверено' : 'Сквозное шифрование'}">${SVG_ICONS.lock} ${callState.isE2EEVerified ? 'E2EE Защищено' : 'E2EE'}</span>` : ''}
-            ${callState.safetyWords && callState.safetyWords.length ? `<span class="call-safety-words" title="Кодовые слова для проверки сквозного шифрования">${esc(callState.safetyWords.join(' • '))}</span>` : ''}
             <span class="call-link-status hidden" id="call-link-status"></span>
           </div>
         </div>
+        ${callState.safetyWords && callState.safetyWords.length ? `
+          <div class="call-tg-safety-container ${isSafetyCardHidden ? 'collapsed' : ''}" id="call-tg-safety-container">
+            <button type="button" class="call-tg-toggle-btn" id="btn-toggle-safety-card" title="${isSafetyCardHidden ? 'Показать информацию о шифровании' : 'Скрыть слова'}">
+              ${isSafetyCardHidden ? `
+                <span class="call-tg-mini-lock">${SVG_ICONS.lock}</span>
+                <span class="call-tg-mini-words">
+                  ${callState.safetyWords.map(w => `<span class="call-tg-mini-chip">${esc(w)}</span>`).join('')}
+                </span>
+              ` : `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 15l-6-6-6 6"/></svg>
+                <span>Скрыть слова</span>
+              `}
+            </button>
+            <div class="call-tg-safety-card ${isSafetyCardHidden ? 'hidden' : ''}" id="call-tg-safety-card">
+              <div class="call-tg-words-row">
+                ${callState.safetyWords.map(w => `<span class="call-tg-word-chip">${esc(w)}</span>`).join('')}
+              </div>
+              <div class="call-tg-safety-title">Звонок защищён оконечным шифрованием</div>
+              <div class="call-tg-safety-desc">Если ${esc(peerDisplayName)} видит те же слова, что и Вы, звонок на 100% защищён.</div>
+            </div>
+          </div>
+        ` : ''}
         <div id="remote-video-container" class="remote-video-container ${!hasRemoteVideo ? 'hidden-stream' : ''}"></div>
         <div id="remote-placeholder-container" class="call-participant-placeholder ${hasRemoteVideo ? 'hidden' : ''}">
           <div class="call-active-avatar-wrap pulsing" id="active-peer-avatar-slot"></div>
@@ -238,6 +263,37 @@ function renderCallModal(callState, mediaState) {
 
     const activeSlot = document.getElementById('active-peer-avatar-slot');
     if (activeSlot) activeSlot.appendChild(avatar(peerContact, 100));
+
+    const toggleSafetyBtn = document.getElementById('btn-toggle-safety-card');
+    if (toggleSafetyBtn) {
+      toggleSafetyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isSafetyCardHidden = !isSafetyCardHidden;
+        const container = document.getElementById('call-tg-safety-container');
+        const card = document.getElementById('call-tg-safety-card');
+        if (container && card) {
+          if (isSafetyCardHidden) {
+            card.classList.add('hidden');
+            container.classList.add('collapsed');
+            toggleSafetyBtn.innerHTML = `
+              <span class="call-tg-mini-lock">${SVG_ICONS.lock}</span>
+              <span class="call-tg-mini-words">
+                ${(callState.safetyWords || []).map(w => `<span class="call-tg-mini-chip">${esc(w)}</span>`).join('')}
+              </span>
+            `;
+            toggleSafetyBtn.title = 'Показать информацию о шифровании';
+          } else {
+            card.classList.remove('hidden');
+            container.classList.remove('collapsed');
+            toggleSafetyBtn.innerHTML = `
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 15l-6-6-6 6"/></svg>
+              <span>Скрыть слова</span>
+            `;
+            toggleSafetyBtn.title = 'Скрыть информацию о шифровании';
+          }
+        }
+      });
+    }
 
     document.getElementById('btn-toggle-mic').addEventListener('click', () => callManager.toggleMic());
     document.getElementById('btn-toggle-cam').addEventListener('click', () => callManager.toggleCamera());
