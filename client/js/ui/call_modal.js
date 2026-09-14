@@ -229,7 +229,7 @@ function renderCallModal(callState, mediaState) {
             </div>
           </div>
         ` : ''}
-        <div id="remote-video-container" class="remote-video-container ${!hasRemoteVideo ? 'hidden-stream' : ''}"></div>
+        <div id="remote-video-container" class="remote-video-container ${!hasRemoteVideo ? 'hidden' : ''}"></div>
         <div id="remote-placeholder-container" class="call-participant-placeholder ${hasRemoteVideo ? 'hidden' : ''}">
           <div class="call-active-avatar-wrap pulsing" id="active-peer-avatar-slot"></div>
           <div class="call-active-peer-name">${esc(peerDisplayName)}</div>
@@ -436,11 +436,12 @@ function updateMediaControlsUI(mediaState) {
   const hasRemoteVideo = !!mediaState.hasRemoteVideo;
   if (remoteContainer && remotePlaceholder && activeWin) {
     if (hasRemoteVideo) {
-      remoteContainer.classList.remove('hidden-stream');
+      remoteContainer.classList.remove('hidden');
       remotePlaceholder.classList.add('hidden');
       activeWin.classList.remove('no-remote-video');
     } else {
-      remoteContainer.classList.add('hidden-stream');
+      remoteContainer.classList.add('hidden');
+      remoteContainer.innerHTML = '';
       remotePlaceholder.classList.remove('hidden');
       activeWin.classList.add('no-remote-video');
       activeWin.classList.remove('swapped-layout');

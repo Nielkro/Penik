@@ -330,11 +330,11 @@ private fun ActiveCallView(callManager: CallManager) {
 
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(0.92f)
-                                .clip(RoundedCornerShape(22.dp))
-                                .background(Color.Black.copy(alpha = 0.45f))
-                                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)), RoundedCornerShape(22.dp))
-                                .padding(horizontal = 16.dp, vertical = 18.dp)
+                                .fillMaxWidth(0.96f)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(Color.Black.copy(alpha = 0.5f))
+                                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)), RoundedCornerShape(20.dp))
+                                .padding(horizontal = 10.dp, vertical = 14.dp)
                         ) {
                             Column(
                                 modifier = Modifier.fillMaxWidth(),
@@ -342,7 +342,7 @@ private fun ActiveCallView(callManager: CallManager) {
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     state.safetyWords.forEach { word ->
@@ -350,16 +350,18 @@ private fun ActiveCallView(callManager: CallManager) {
                                             modifier = Modifier
                                                 .border(
                                                     BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f)),
-                                                    shape = RoundedCornerShape(10.dp)
+                                                    shape = RoundedCornerShape(9.dp)
                                                 )
-                                                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(9.dp))
+                                                .padding(horizontal = 7.dp, vertical = 5.dp)
                                         ) {
                                             Text(
                                                 text = word,
                                                 color = Color.White,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.SemiBold
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                softWrap = false
                                             )
                                         }
                                     }
@@ -417,7 +419,9 @@ private fun ActiveCallView(callManager: CallManager) {
                                         word,
                                         color = Color.White,
                                         fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                             }

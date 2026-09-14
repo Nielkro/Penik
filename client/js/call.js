@@ -779,13 +779,24 @@ export class CallManager {
             elements.forEach(el => el.remove());
             this._checkRemoteTracks();
           })
+          .on(RoomEvent.TrackUnpublished, (publication, participant) => {
+            if (publication.track) {
+              publication.track.detach();
+            }
+            this._removeTilesForPublication(publication);
+            this._checkRemoteTracks();
+          })
           .on(RoomEvent.TrackMuted, (publication, participant) => {
             if (publication.kind === 'video' && participant !== this.room?.localParticipant) {
+              this._removeTilesForPublication(publication);
               this._checkRemoteTracks();
             }
           })
           .on(RoomEvent.TrackUnmuted, (publication, participant) => {
             if (publication.kind === 'video' && participant !== this.room?.localParticipant) {
+              if (publication.track) {
+                this._attachRemoteTrack(publication.track, participant);
+              }
               this._checkRemoteTracks();
             }
           })
@@ -1156,6 +1167,13 @@ export class CallManager {
       }
     }
     this.hasRemoteVideo = hasVideo;
+    if (!hasVideo) {
+      const container = document.getElementById('remote-video-container');
+      if (container) {
+        container.querySelectorAll('video').forEach(el => el.remove());
+        container.innerHTML = '';
+      }
+    }
     this._updateTileLayout();
     this._notifyMediaState();
   }
