@@ -463,6 +463,14 @@ class GroupRepository @Inject constructor(
         dao.updateMessageText(event.groupId, event.messageId, text, event.editedAt)
     }
 
+    suspend fun getMessage(groupId: Long, messageId: String): GroupMessageEntity? {
+        return dao.getMessage(groupId, messageId)
+    }
+
+    suspend fun updateMessageLocalText(groupId: Long, messageId: String, text: String) {
+        dao.updateMessageText(groupId, messageId, text, System.currentTimeMillis())
+    }
+
     suspend fun onAck(groupId: Long, messageId: String, serverId: Long) {
         dao.acknowledgeMessage(groupId, messageId, serverId)
     }

@@ -806,7 +806,8 @@ private data class FileAttachment(
     val thumb: String?,
     val caption: String,
     val uploadMsgId: String? = null,
-    val uploading: Boolean = false
+    val uploading: Boolean = false,
+    val error: Boolean = false
 )
 
 private fun parseFileAttachment(text: String): FileAttachment? = runCatching {
@@ -816,7 +817,8 @@ private fun parseFileAttachment(text: String): FileAttachment? = runCatching {
     val url = file["url"]?.jsonPrimitive?.content.orEmpty()
     val key = file["key"]?.jsonPrimitive?.content.orEmpty()
     val uploadMsgId = file["upload_msg_id"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
-    val uploading = file["uploading"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: (uploadMsgId != null)
+    val isError = file["error"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false
+    val uploading = if (isError) false else (file["uploading"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: (uploadMsgId != null))
 
     if (url.isBlank() && uploadMsgId == null) return null
 
@@ -829,7 +831,8 @@ private fun parseFileAttachment(text: String): FileAttachment? = runCatching {
         thumb = file["thumb"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() },
         caption = root["text"]?.jsonPrimitive?.content.orEmpty(),
         uploadMsgId = uploadMsgId,
-        uploading = uploading
+        uploading = uploading,
+        error = isError
     )
 }.getOrNull()
 
@@ -1500,7 +1503,7 @@ private fun FileAttachmentContent(
 
     val uploadProgressMap by niel.kro.penik.data.repository.UploadProgressBus.progress.collectAsState()
     val uploadProgress = attachment.uploadMsgId?.let { uploadProgressMap[it] }
-    val isUploading = attachment.uploading || uploadProgress != null
+    val isUploading = !attachment.error && (attachment.uploading || (uploadProgress != null && uploadProgress.loaded < uploadProgress.total))
 
     val openFile: () -> Unit = {
         localFile?.let { file ->
@@ -1519,8 +1522,8 @@ private fun FileAttachmentContent(
         modifier = if (isImage || isVideo) Modifier else Modifier.combinedClickable(
             interactionSource = remember { MutableInteractionSource() },
             indication = null,
-            enabled = localFile != null,
-            onClick = openFile,
+            enabled = true,
+            onClick = { if (localFile != null) openFile() },
             onLongClick = triggerLongClick
         )
     ) {
@@ -1539,9 +1542,11 @@ private fun FileAttachmentContent(
                             .combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
-                                enabled = localFile != null && !isUploading,
+                                enabled = true,
                                 onClick = {
-                                    showVideoViewer = true
+                                    if (localFile != null && !isUploading) {
+                                        showVideoViewer = true
+                                    }
                                 },
                                 onLongClick = triggerLongClick
                             ),
@@ -1681,8 +1686,8 @@ private fun FileAttachmentContent(
                             .combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
-                                enabled = !isUploading,
-                                onClick = { showImageViewer = true },
+                                enabled = true,
+                                onClick = { if (!isUploading) showImageViewer = true },
                                 onLongClick = triggerLongClick
                             ),
                         contentScale = ContentScale.Crop
@@ -1696,7 +1701,8 @@ private fun FileAttachmentContent(
                             .combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
-                                onClick = {},
+                                enabled = true,
+                                onClick = { if (localFile != null && !isUploading) showImageViewer = true },
                                 onLongClick = triggerLongClick
                             ),
                         contentScale = ContentScale.Crop
@@ -1708,16 +1714,36 @@ private fun FileAttachmentContent(
                             .combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
+                                enabled = true,
                                 onClick = {},
                                 onLongClick = triggerLongClick
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (loadError) {
+                        if (loadError || attachment.error) {
                             Text("Ошибка загрузки", color = LocalAppColors.current.textMuted, fontSize = 12.sp)
                         } else {
                             CircularProgressIndicator(color = LocalAppColors.current.textMuted, modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
                         }
+                    }
+                }
+
+                if (attachment.error) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(6.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xDDEF5350))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Ошибка отправки",
+                            fontSize = 11.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            color = Color.White
+                        )
                     }
                 }
 

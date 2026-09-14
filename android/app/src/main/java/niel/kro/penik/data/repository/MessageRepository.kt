@@ -1312,6 +1312,14 @@ class MessageRepository @Inject constructor(
             chatRepository.updateLastMessage(chatUserId, "", 0)
         }
     }
+
+    suspend fun findMessageByLocalId(localId: String): MessageEntity? {
+        return messageDao.findMessageByLocalId(localId)
+    }
+
+    suspend fun updateMessageText(clientMsgId: String, serverId: Long?, newText: String, editedAt: Long = 0L) {
+        messageDao.updateMessageText(clientMsgId, serverId, newText, editedAt)
+    }
 }
 
 data class DecryptedOfflineMsg(

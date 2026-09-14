@@ -289,6 +289,16 @@ class ChatRoomViewModel @Inject constructor(
                     chatRepository.updateLastMessage(chatUserId, finalJsonPayload, System.currentTimeMillis(), name = chatName)
                 }
                 .onFailure { err ->
+                    viewModelScope.launch {
+                        runCatching {
+                            val existing = messageRepository.findMessageByLocalId(clientMsgId)
+                            if (existing != null) {
+                                val rootJson = org.json.JSONObject(existing.text)
+                                rootJson.optJSONObject("file")?.put("uploading", false)?.put("error", true)
+                                messageRepository.updateMessageText(clientMsgId, null, rootJson.toString(), System.currentTimeMillis())
+                            }
+                        }
+                    }
                     onError(err.message ?: "Ошибка отправки файла")
                 }
         }
