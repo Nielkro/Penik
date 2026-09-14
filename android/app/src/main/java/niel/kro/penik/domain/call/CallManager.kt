@@ -920,6 +920,9 @@ class CallManager @Inject constructor(
             roomOptions,
             LiveKitOverrides(eglBase = eglBase)
         )
+        if (e2eeOptions != null) {
+            r.e2eeManager?.enableE2EE(true)
+        }
         eventsJob?.cancel()
         eventsJob = scope.launch { collectRoomEvents(r) }
         return r
@@ -1101,6 +1104,13 @@ class CallManager @Inject constructor(
         updateRemoteVideoTrack(room)
         scheduleIceStatsSampling()
         try {
+            if (derivedMasterKey.isNotBlank() || callKey.isNotBlank()) {
+                try {
+                    room.e2eeManager?.enableE2EE(true)
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Failed to enable E2EE in onRoomConnected: ${t.message}", t)
+                }
+            }
             try {
                 room.audioHandler.start()
             } catch (e: Exception) {
