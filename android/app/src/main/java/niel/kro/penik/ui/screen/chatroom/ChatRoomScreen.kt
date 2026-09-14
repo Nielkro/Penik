@@ -135,6 +135,10 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
+import android.net.Uri
+import java.io.File
+import niel.kro.penik.ui.components.AttachmentPickerBottomSheet
 import niel.kro.penik.data.local.entity.MessageEntity
 
 sealed interface ChatTimelineItem {
@@ -1526,71 +1530,52 @@ fun ChatRoomScreen(
 
                     // Attachment picker button on the RIGHT
                     val showAttachPicker = remember { mutableStateOf(false) }
+                    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
+
                     val mediaPickerLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.PickVisualMedia()
                     ) { uri ->
                         if (uri != null) {
-                            viewModel.sendMediaFile(context, uri)
+                            viewModel.sendMediaFile(context, uri, stripExif = true)
                         }
                     }
                     val attachLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.GetContent()
                     ) { uri ->
                         if (uri != null) {
-                            viewModel.sendMediaFile(context, uri)
+                            viewModel.sendMediaFile(context, uri, stripExif = false)
+                        }
+                    }
+                    val cameraLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.TakePicture()
+                    ) { success ->
+                        if (success && tempCameraUri != null) {
+                            viewModel.sendMediaFile(context, tempCameraUri!!, stripExif = true)
                         }
                     }
 
                     if (showAttachPicker.value) {
-                        AlertDialog(
-                            onDismissRequest = { showAttachPicker.value = false },
-                            containerColor = LocalAppColors.current.panel,
-                            titleContentColor = LocalAppColors.current.textPrimary,
-                            title = { Text("Прикрепить вложение", fontWeight = FontWeight.SemiBold) },
-                            text = {
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    TextButton(
-                                        onClick = {
-                                            showAttachPicker.value = false
-                                            mediaPickerLauncher.launch(
-                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                                            )
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-                                            Text("🖼  Фото или видео", color = LocalAppColors.current.textPrimary, fontSize = 15.sp)
-                                        }
-                                    }
-                                    TextButton(
-                                        onClick = {
-                                            showAttachPicker.value = false
-                                            attachLauncher.launch("*/*")
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-                                            Text("📁  Файл или документ", color = LocalAppColors.current.textPrimary, fontSize = 15.sp)
-                                        }
-                                    }
-                                    TextButton(
-                                        onClick = {
-                                            showAttachPicker.value = false
-                                            attachLauncher.launch("audio/*")
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-                                            Text("🎵  Аудиозапись", color = LocalAppColors.current.textPrimary, fontSize = 15.sp)
-                                        }
-                                    }
-                                }
+                        AttachmentPickerBottomSheet(
+                            onDismiss = { showAttachPicker.value = false },
+                            onPickPhotoOrVideo = {
+                                mediaPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                )
                             },
-                            confirmButton = {},
-                            dismissButton = {
-                                TextButton(onClick = { showAttachPicker.value = false }) {
-                                    Text("Отмена", color = LocalAppColors.current.accent)
-                                }
+                            onPickDocument = {
+                                attachLauncher.launch("*/*")
+                            },
+                            onTakePhoto = {
+                                try {
+                                    val dir = File(context.cacheDir, "attachments").apply { mkdirs() }
+                                    val file = File(dir, "cam_${System.currentTimeMillis()}.jpg")
+                                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                                    tempCameraUri = uri
+                                    cameraLauncher.launch(uri)
+                                } catch (_: Exception) {}
+                            },
+                            onPickAudio = {
+                                attachLauncher.launch("audio/*")
                             }
                         )
                     }

@@ -38,7 +38,8 @@ class AttachmentManager(
         context: Context,
         uri: Uri,
         clientMsgId: String,
-        textCaption: String = ""
+        textCaption: String = "",
+        stripExif: Boolean = false
     ): LocalMediaInfo = withContext(Dispatchers.IO) {
         val contentResolver = context.contentResolver
         val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
@@ -55,8 +56,17 @@ class AttachmentManager(
             }
         }
 
-        val rawBytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        var rawBytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: throw IllegalStateException("Не удалось прочитать файл")
+
+        // Strip EXIF metadata (GPS, camera details) when requested for images
+        if (stripExif && (mimeType.startsWith("image/") || fileName.endsWith(".jpg", true) || fileName.endsWith(".jpeg", true) || fileName.endsWith(".png", true))) {
+            val sanitized = stripImageExif(context, uri, rawBytes)
+            if (sanitized != null) {
+                rawBytes = sanitized
+                fileSize = sanitized.size.toLong()
+            }
+        }
 
         if (fileSize == 0L) fileSize = rawBytes.size.toLong()
 
@@ -220,6 +230,42 @@ class AttachmentManager(
             } else {
                 null
             }
+        }.getOrNull()
+    }
+
+    private fun stripImageExif(context: Context, uri: Uri, rawBytes: ByteArray): ByteArray? {
+        return runCatching {
+            var rotation = 0
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val exif = android.media.ExifInterface(stream)
+                    val orientation = exif.getAttributeInt(
+                        android.media.ExifInterface.TAG_ORIENTATION,
+                        android.media.ExifInterface.ORIENTATION_NORMAL
+                    )
+                    rotation = when (orientation) {
+                        android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                        android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                        android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                        else -> 0
+                    }
+                }
+            }
+
+            val decoded = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size) ?: return null
+            val oriented = if (rotation != 0) {
+                val matrix = android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }
+                val rotated = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+                if (rotated != decoded) decoded.recycle()
+                rotated
+            } else {
+                decoded
+            }
+
+            val stream = ByteArrayOutputStream()
+            oriented.compress(Bitmap.CompressFormat.JPEG, 92, stream)
+            oriented.recycle()
+            stream.toByteArray()
         }.getOrNull()
     }
 }
