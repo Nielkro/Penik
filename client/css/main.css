@@ -1983,6 +1983,18 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   border-radius: 12px;
 }
 
+.call-e2ee-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #2ecc71;
+  background: rgba(46, 204, 113, 0.15);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
 /* Shown while the media session or the peer's signaling link is recovering,
    so a network switch does not read as a frozen call. */
 .call-link-status {

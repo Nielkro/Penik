@@ -13,6 +13,7 @@ import "net/http"
 // connect-src is locked down to 'self', secure wss: and https: endpoints.
 const contentSecurityPolicy = "default-src 'self'; " +
 	"script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; " +
+	"worker-src 'self' blob:; " +
 	"style-src 'self' 'unsafe-inline'; " +
 	"img-src 'self' data: blob: https: http:; " +
 	"media-src 'self' blob: https: http:; " +
