@@ -330,10 +330,19 @@ private fun ActiveCallView(callManager: CallManager) {
                             modifier = Modifier.size(13.dp)
                         )
                         Text(
-                            "E2EE Зашифровано",
+                            if (state.isE2EEVerified) "E2EE Защищено (Подтверждено)" else "E2EE Зашифровано",
                             color = Color(0xFF2ECC71),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
+                        )
+                    }
+                    if (state.safetyWords.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            state.safetyWords.joinToString(" • "),
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Normal
                         )
                     }
                 }

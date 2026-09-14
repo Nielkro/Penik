@@ -1995,6 +1995,18 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   border-radius: 12px;
 }
 
+.call-safety-words {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 12px;
+  letter-spacing: 0.3px;
+}
+
 /* Shown while the media session or the peer's signaling link is recovering,
    so a network switch does not read as a frozen call. */
 .call-link-status {

@@ -51,7 +51,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ### Browser client transport
 
 - `client/js/api.js` — Unified browser REST client: attaches tokens, serializes JSON, parses errors, and exports APIs for users, messages, pairing, and groups.
-- `client/js/call.js` — LiveKit Web SDK integration and call state manager supporting primary and fallback endpoints, prototype E2EE encryption via WebRTC Insertable Streams worker, multi-device ring handling (call_id matching and `CALL_TAKEN`), and reconnect recovery: full track resync after `RoomEvent.Reconnected`, camera restore retry, and media flags derived from actual publications.
+- `client/js/call.js` — LiveKit Web SDK integration and call state manager supporting primary and fallback endpoints, signed ephemeral Diffie-Hellman E2EE encryption via WebRTC Insertable Streams worker, identity key authentication tags, safety words verification, multi-device ring handling (call_id matching and `CALL_TAKEN`), and reconnect recovery: full track resync after `RoomEvent.Reconnected`, camera restore retry, and media flags derived from actual publications.
 - `client/js/sounds.js` — Web Audio API synthesizer for call sounds: melodious incoming ringtone, outgoing dial tone, connect/disconnect chimes, and busy signal.
 - `client/js/pairing.js` — Decrypts and imports history transferred from Android into the browser IndexedDB stores.
 - `client/js/ws.js` — Manages the browser WebSocket connection: encodes/decodes MsgPack frames, supports opcodes, ping/pong, request queuing, and exponential backoff reconnection; `connect()` is idempotent and each socket generation is fenced so a stale socket cannot open a second parallel session.
@@ -65,7 +65,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/data/network/websocket/WebSocketManager.kt` — Maintains the OkHttp WebSocket connection, binary MsgPack protocol, reconnects, ping/pong, and flow of typed events, including call signaling frames (0x30-0x39).
 - `android/app/src/main/java/niel/kro/penik/data/network/TimeSyncManager.kt` — Calibrates client-server clock offset via `/api/v1/time` to eliminate future message timestamps and skew.
 - `android/app/src/main/java/niel/kro/penik/data/update/AppUpdateManager.kt` — Evaluates client version against `/api/v1/version` policy, determines update necessity (soft vs force update), manages in-app streaming APK download with progress tracking, and launches Android PackageInstaller via FileProvider.
-- `android/app/src/main/java/niel/kro/penik/domain/call/CallManager.kt` — Singleton 1:1 call state machine (idle/dialing/incoming/connecting/active): LiveKit room connect with primary/fallback failover, prototype E2EE encryption via WebRTC FrameCryptor, mic/camera toggles, ringtone and vibration, ring timeout, call timer resumed from the server answer time, call_id matching with `CALL_TAKEN` handling for calls answered on another device, track resync and camera restore after a LiveKit reconnect, and cleanup on all exit paths.
+- `android/app/src/main/java/niel/kro/penik/domain/call/CallManager.kt` — Singleton 1:1 call state machine (idle/dialing/incoming/connecting/active): LiveKit room connect with primary/fallback failover, signed ephemeral Diffie-Hellman E2EE encryption via WebRTC FrameCryptor, identity key authentication tags, safety words derivation, mic/camera toggles, ringtone and vibration, ring timeout, call timer resumed from the server answer time, call_id matching with `CALL_TAKEN` handling for calls answered on another device, track resync and camera restore after a LiveKit reconnect, and cleanup on all exit paths.
 - `android/app/src/main/java/niel/kro/penik/data/repository/SecureTokenStorage.kt` — Stores tokens, user/device IDs, and cryptographic keys in secure local storage.
 
 ## UI
@@ -85,7 +85,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/js/theme.js` — Dark/light theme state, persistence in localStorage, and application to the document root.
 - `client/js/ui/search.js` — User search screen and initiator for direct chats.
 - `client/js/ui/stickers.js` — Sticker picker popup, recent stickers persistence, sticker pack viewer modal, and Telegram sticker pack import dialog.
-- `client/js/ui/call_modal.js` — Renders the active/incoming/dialing call overlay modal, participant placeholders, video/screenshare layout swapping, in-call media control buttons, and a reconnect/peer-link status badge.
+- `client/js/ui/call_modal.js` — Renders the active/incoming/dialing call overlay modal, participant placeholders, video/screenshare layout swapping, in-call media control buttons, reconnect/peer-link status badge, and E2EE verified / safety words indicators.
 - `client/js/ui/components.js` — Shared UI components: avatars, time formatting, hover tooltip for full timestamp, message copy menu, scroll-down button, toasts, and modals.
 - `client/js/globals.d.ts` — Ambient type declarations for globals the app attaches to `window`; type-checking only, emits no JavaScript.
 
