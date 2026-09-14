@@ -12,7 +12,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -33,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
@@ -228,12 +231,7 @@ private fun ActiveCallView(callManager: CallManager) {
     var swapped by remember { mutableStateOf(false) }
     var controlsVisible by remember { mutableStateOf(true) }
 
-    LaunchedEffect(controlsVisible) {
-        if (controlsVisible) {
-            delay(4000)
-            controlsVisible = false
-        }
-    }
+    var showSafetyCard by remember { mutableStateOf(true) }
 
     // Determine default primary and secondary (PiP) tracks:
     // 1. If screen share exists -> screen share is primary, PiP is remote camera (or local camera)
@@ -256,6 +254,13 @@ private fun ActiveCallView(callManager: CallManager) {
     val primary = if (swapped && defaultPip != null) defaultPip else defaultPrimary
     val pip = if (swapped && defaultPip != null) defaultPrimary else defaultPip
     val showPip = pip != null && (primary != pip)
+
+    LaunchedEffect(controlsVisible, primary) {
+        if (controlsVisible && primary != null) {
+            delay(4000)
+            controlsVisible = false
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (primary != null) {
@@ -291,34 +296,134 @@ private fun ActiveCallView(callManager: CallManager) {
         ) {
             Column(
                 modifier = Modifier
-                    .padding(top = 48.dp, start = 16.dp, end = 16.dp),
+                    .fillMaxWidth()
+                    .padding(top = 40.dp, start = 16.dp, end = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(state.peerName, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    state.elapsed.ifEmpty { "Подключение..." },
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 14.sp
-                )
-                // A network switch takes the media session down for a few
-                // seconds while the call stays alive, which otherwise just looks
-                // like the picture froze for no reason.
-                val linkStatus = when {
-                    state.isReconnecting -> "Восстановление соединения…"
-                    !state.peerOnline -> "Собеседник теряет связь…"
-                    else -> null
-                }
-                if (linkStatus != null) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        linkStatus,
-                        color = Color(0xFFFFB74D),
-                        fontSize = 13.sp
-                    )
-                }
-                if (state.isE2EE) {
-                    Spacer(Modifier.height(6.dp))
+                if (state.safetyWords.isNotEmpty()) {
+                    if (showSafetyCard) {
+                        Row(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.35f))
+                                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)), CircleShape)
+                                .clickable { showSafetyCard = false }
+                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.KeyboardArrowUp,
+                                contentDescription = "Скрыть слова",
+                                tint = Color.White.copy(alpha = 0.9f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                "Скрыть слова",
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.92f)
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(Color.Black.copy(alpha = 0.45f))
+                                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)), RoundedCornerShape(22.dp))
+                                .padding(horizontal = 16.dp, vertical = 18.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    state.safetyWords.forEach { word ->
+                                        Box(
+                                            modifier = Modifier
+                                                .border(
+                                                    BorderStroke(1.5.dp, Color.White.copy(alpha = 0.4f)),
+                                                    shape = RoundedCornerShape(10.dp)
+                                                )
+                                                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        ) {
+                                            Text(
+                                                text = word,
+                                                color = Color.White,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(Modifier.height(14.dp))
+
+                                Text(
+                                    text = "Звонок защищён оконечным шифрованием",
+                                    color = Color.White,
+                                    fontSize = 15.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    textAlign = TextAlign.Center
+                                )
+
+                                Spacer(Modifier.height(8.dp))
+
+                                Text(
+                                    text = "Если ${state.peerName} видит те же слова, что и Вы, звонок на 100% защищён.",
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    fontSize = 13.5.sp,
+                                    textAlign = TextAlign.Center,
+                                    lineHeight = 18.sp
+                                )
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.4f))
+                                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)), CircleShape)
+                                .clickable { showSafetyCard = true }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Lock,
+                                contentDescription = "E2EE",
+                                tint = Color(0xFF2ECC71),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            state.safetyWords.forEach { word ->
+                                Box(
+                                    modifier = Modifier
+                                        .border(
+                                            BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                                            shape = RoundedCornerShape(6.dp)
+                                        )
+                                        .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        word,
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (state.isE2EE) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -336,15 +441,38 @@ private fun ActiveCallView(callManager: CallManager) {
                             fontWeight = FontWeight.Medium
                         )
                     }
-                    if (state.safetyWords.isNotEmpty()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            state.safetyWords.joinToString(" • "),
-                            color = Color.White.copy(alpha = 0.85f),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal
-                        )
-                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                Text(
+                    state.peerName,
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                Text(
+                    state.elapsed.ifEmpty { "Подключение..." },
+                    color = Color.White.copy(alpha = 0.75f),
+                    fontSize = 14.sp
+                )
+
+                val linkStatus = when {
+                    state.isReconnecting -> "Восстановление соединения…"
+                    !state.peerOnline -> "Собеседник теряет связь…"
+                    else -> null
+                }
+                if (linkStatus != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        linkStatus,
+                        color = Color(0xFFFFB74D),
+                        fontSize = 13.sp
+                    )
                 }
             }
         }
