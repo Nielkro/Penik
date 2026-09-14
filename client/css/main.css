@@ -1988,6 +1988,16 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   display: contents;
 }
 
+.remote-video-container.hidden,
+.local-video-container.hidden {
+  display: none !important;
+}
+
+.call-active-window.no-remote-video .call-participant-placeholder {
+  z-index: 5;
+  display: flex !important;
+}
+
 .video-tile {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
@@ -2207,6 +2217,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   font-weight: 600;
   color: #ffffff;
   letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 
 .call-tg-safety-title {
