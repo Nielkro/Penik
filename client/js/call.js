@@ -984,7 +984,6 @@ export class CallManager {
         audioEl.dataset.trackSid = track.sid;
         audioEl.dataset.penikCallAudio = 'true';
         audioEl.autoplay = true;
-        audioEl.volume = 1.0;
         audioEl.style.position = 'fixed';
         audioEl.style.left = '-9999px';
         audioEl.style.top = '-9999px';
@@ -996,6 +995,11 @@ export class CallManager {
       } else {
         track.attach(audioEl);
       }
+      audioEl.muted = false;
+      audioEl.volume = 1.0;
+      if (typeof track.setVolume === 'function') {
+        track.setVolume(1.0);
+      }
       if (this.selectedAudioOutputId && typeof audioEl.setSinkId === 'function') {
         audioEl.setSinkId(this.selectedAudioOutputId).catch(console.warn);
       }
@@ -1003,8 +1007,20 @@ export class CallManager {
         console.warn('[call] audioEl.play() failed:', err);
       });
       if (this.room) {
+        if (this.room.audioContext && this.room.audioContext.state === 'suspended') {
+          this.room.audioContext.resume().catch(console.warn);
+        }
         this.room.startAudio().catch(console.warn);
       }
+      console.log('[call-audio] attached remote audio track:', {
+        sid: track.sid,
+        participant: participant?.identity,
+        isMuted: track.isMuted,
+        paused: audioEl.paused,
+        muted: audioEl.muted,
+        volume: audioEl.volume,
+        audioContextState: this.room?.audioContext?.state
+      });
     }
   }
 
