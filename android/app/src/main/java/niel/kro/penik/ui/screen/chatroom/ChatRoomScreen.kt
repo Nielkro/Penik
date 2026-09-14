@@ -46,6 +46,12 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.automirrored.filled.PhoneMissed
+import androidx.compose.material.icons.automirrored.filled.PhoneForwarded
+import androidx.compose.material.icons.automirrored.filled.PhoneCallback
+import androidx.compose.foundation.layout.widthIn
+import niel.kro.penik.ui.components.BubbleShape
+import niel.kro.penik.ui.components.MessageTicks
 import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
 import niel.kro.penik.ui.components.StickerPickerBottomSheet
 import niel.kro.penik.ui.components.StickerPackDetailDialog
@@ -158,81 +164,144 @@ fun CallLogCard(
 ) {
     val isOutgoing = call.isOutgoing
     val isMissed = when (call.status) {
-        "missed" -> !isOutgoing
+        "missed", "cancelled" -> !isOutgoing
         "declined" -> isOutgoing
-        "cancelled" -> !isOutgoing
         else -> false
     }
+
+    val typeLabel = if (call.isVideo) "Видео" else "Аудио"
 
     val durationStr = if (call.duration > 0) {
         val m = call.duration / 60
         val s = call.duration % 60
-        if (m == 0L) "$s сек" else "$m мин" + (if (s > 0) " $s сек" else "")
+        val h = m / 60
+        if (h > 0) {
+            String.format(java.util.Locale.US, "%d:%02d:%02d", h, m % 60, s)
+        } else {
+            String.format(java.util.Locale.US, "%02d:%02d", m, s)
+        }
     } else ""
 
-    val title = when (call.status) {
-        "completed" -> (if (isOutgoing) "Исходящий вызов" else "Входящий вызов") + (if (durationStr.isNotEmpty()) " ($durationStr)" else "")
-        "missed" -> if (isOutgoing) "Не отвечен" else "Пропущенный вызов"
-        "declined" -> if (isOutgoing) "Вызов отклонен" else "Отклоненный вызов"
-        "cancelled" -> if (isOutgoing) "Отмененный вызов" else "Пропущенный вызов"
-        "busy" -> if (isOutgoing) "Абонент занят" else "Пропущенный вызов (занято)"
-        else -> if (isOutgoing) "Исходящий вызов" else "Входящий вызов"
+    val title = if (call.isVideo) {
+        when (call.status) {
+            "completed" -> if (isOutgoing) "Исходящий видеозвонок" else "Входящий видеозвонок"
+            "missed", "cancelled" -> if (isOutgoing) "Не отвечен" else "Пропущенный видеозвонок"
+            "declined" -> if (isOutgoing) "Вызов отклонён" else "Отклонённый видеозвонок"
+            "busy" -> if (isOutgoing) "Абонент занят" else "Пропущенный видеозвонок"
+            else -> if (isOutgoing) "Исходящий видеозвонок" else "Входящий видеозвонок"
+        }
+    } else {
+        when (call.status) {
+            "completed" -> if (isOutgoing) "Исходящий вызов" else "Входящий вызов"
+            "missed", "cancelled" -> if (isOutgoing) "Не отвечен" else "Пропущенный вызов"
+            "declined" -> if (isOutgoing) "Вызов отклонён" else "Отклонённый вызов"
+            "busy" -> if (isOutgoing) "Абонент занят" else "Пропущенный вызов"
+            else -> if (isOutgoing) "Исходящий вызов" else "Входящий вызов"
+        }
+    }
+
+    val subtitle = when (call.status) {
+        "completed" -> if (durationStr.isNotEmpty()) "$durationStr  $typeLabel" else "00:00  $typeLabel"
+        "missed", "cancelled" -> "Без ответа"
+        "declined" -> "Отклонён"
+        "busy" -> "Занято"
+        else -> typeLabel
+    }
+
+    val boxAlignment = if (isOutgoing) Alignment.CenterEnd else Alignment.CenterStart
+    val bgColor = if (isOutgoing) LocalAppColors.current.sentMessageBg else LocalAppColors.current.panelSecondary
+    val textColor = if (isMissed) Color(0xFFEF5350) else if (isOutgoing) LocalAppColors.current.sentMessageText else LocalAppColors.current.textPrimary
+    val mutedColor = if (isMissed) Color(0xFFEF5350).copy(alpha = 0.8f) else if (isOutgoing) LocalAppColors.current.sentMessageText.copy(alpha = 0.7f) else LocalAppColors.current.textMuted
+    val iconBgColor = if (isMissed) Color(0x26EF5350) else if (isOutgoing) Color(0x22FFFFFF) else LocalAppColors.current.accent.copy(alpha = 0.15f)
+    val iconTint = if (isMissed) Color(0xFFEF5350) else if (isOutgoing) LocalAppColors.current.sentMessageText else LocalAppColors.current.accent
+
+    val timeStr = remember(call.startedAt) {
+        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(call.startedAt * 1000L))
     }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        contentAlignment = Alignment.Center
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        contentAlignment = boxAlignment
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
-                .clip(RoundedCornerShape(16.dp))
-                .background(LocalAppColors.current.panelSecondary)
-                .border(1.dp, LocalAppColors.current.border, RoundedCornerShape(16.dp))
-                .padding(horizontal = 14.dp, vertical = 8.dp)
+                .widthIn(min = 190.dp, max = 290.dp)
+                .clip(BubbleShape(isSentByMe = isOutgoing))
+                .background(bgColor)
+                .clickable { onCallback(call.isVideo) }
+                .padding(
+                    start = if (!isOutgoing) 12.dp else 10.dp,
+                    end = if (isOutgoing) 14.dp else 10.dp,
+                    top = 8.dp,
+                    bottom = 8.dp
+                )
         ) {
-            Icon(
-                imageVector = if (call.isVideo) Icons.Default.Videocam else Icons.Default.Call,
-                contentDescription = null,
-                tint = if (isMissed) Color(0xFFEF5350) else LocalAppColors.current.accent,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            // The title is the only elastic part of the card: a long duration
-            // ("5 мин 7 сек") used to push the action label past the card edge,
-            // which then wrapped mid-word.
-            Text(
-                text = title,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = if (isMissed) Color(0xFFEF5350) else LocalAppColors.current.textPrimary,
-                modifier = Modifier.weight(1f, fill = false)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(call.startedAt * 1000L)),
-                fontSize = 11.sp,
-                maxLines = 1,
-                softWrap = false,
-                color = LocalAppColors.current.textMuted
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = "Перезвонить",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                softWrap = false,
-                color = LocalAppColors.current.accent,
+            Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { onCallback(call.isVideo) }
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            )
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(iconBgColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = when {
+                        call.isVideo -> Icons.Default.Videocam
+                        isMissed -> Icons.AutoMirrored.Filled.PhoneMissed
+                        isOutgoing -> Icons.AutoMirrored.Filled.PhoneForwarded
+                        else -> Icons.AutoMirrored.Filled.PhoneCallback
+                    },
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = textColor
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = mutedColor
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.align(Alignment.Bottom)
+            ) {
+                Text(
+                    text = timeStr,
+                    fontSize = 10.sp,
+                    color = mutedColor
+                )
+                if (isOutgoing) {
+                    Spacer(modifier = Modifier.width(3.dp))
+                    MessageTicks(
+                        delivered = true,
+                        read = true,
+                        color = LocalAppColors.current.sentMessageText.copy(alpha = 0.75f)
+                    )
+                }
+            }
         }
     }
 }

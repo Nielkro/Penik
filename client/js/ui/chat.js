@@ -677,73 +677,146 @@ export async function renderChat(container, userId) {
     if (!seconds || seconds <= 0) return "";
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
-    if (m === 0) return `${s} сек`;
-    return `${m} мин ${s > 0 ? `${s} сек` : ""}`;
+    const h = Math.floor(m / 60);
+    if (h > 0) {
+      return `${h}:${String(m % 60).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
   function getCallLogInfo(call, myUserId) {
     const isOutgoing = Number(call.caller_id) === Number(myUserId);
     const isVideo = Boolean(call.is_video);
-    const videoIcon = isVideo ? "📹" : "📞";
     const durationStr = formatCallDuration(call.duration);
+    const typeLabel = isVideo ? "Видео" : "Аудио";
 
-    let title = "";
     let isMissed = false;
-
     switch (call.status) {
-      case "completed":
-        title = isOutgoing ? "Исходящий вызов" : "Входящий вызов";
-        if (durationStr) title += ` (${durationStr})`;
-        break;
       case "missed":
-        title = isOutgoing ? "Не отвечен" : "Пропущенный вызов";
+      case "cancelled":
         isMissed = !isOutgoing;
         break;
       case "declined":
-        title = isOutgoing ? "Вызов отклонен" : "Отклоненный вызов";
         isMissed = isOutgoing;
         break;
-      case "cancelled":
-        title = isOutgoing ? "Отмененный вызов" : "Пропущенный вызов";
-        isMissed = !isOutgoing;
-        break;
-      case "busy":
-        title = isOutgoing ? "Абонент занят" : "Пропущенный вызов (занято)";
-        break;
-      default:
-        title = isOutgoing ? "Исходящий вызов" : "Входящий вызов";
     }
 
-    return { title, isOutgoing, isMissed, isVideo, icon: videoIcon, duration: call.duration, ts: normalizeTs(call.started_at) };
+    let title = "";
+    if (isVideo) {
+      switch (call.status) {
+        case "completed":
+          title = isOutgoing ? "Исходящий видеозвонок" : "Входящий видеозвонок";
+          break;
+        case "missed":
+        case "cancelled":
+          title = isOutgoing ? "Не отвечен" : "Пропущенный видеозвонок";
+          break;
+        case "declined":
+          title = isOutgoing ? "Вызов отклонён" : "Отклонённый видеозвонок";
+          break;
+        case "busy":
+          title = isOutgoing ? "Абонент занят" : "Пропущенный видеозвонок";
+          break;
+        default:
+          title = isOutgoing ? "Исходящий видеозвонок" : "Входящий видеозвонок";
+      }
+    } else {
+      switch (call.status) {
+        case "completed":
+          title = isOutgoing ? "Исходящий вызов" : "Входящий вызов";
+          break;
+        case "missed":
+        case "cancelled":
+          title = isOutgoing ? "Не отвечен" : "Пропущенный вызов";
+          break;
+        case "declined":
+          title = isOutgoing ? "Вызов отклонён" : "Отклонённый вызов";
+          break;
+        case "busy":
+          title = isOutgoing ? "Абонент занят" : "Пропущенный вызов";
+          break;
+        default:
+          title = isOutgoing ? "Исходящий вызов" : "Входящий вызов";
+      }
+    }
+
+    let subtitle = "";
+    switch (call.status) {
+      case "completed":
+        subtitle = durationStr ? `${durationStr}  ${typeLabel}` : `00:00  ${typeLabel}`;
+        break;
+      case "missed":
+      case "cancelled":
+        subtitle = `Без ответа`;
+        break;
+      case "declined":
+        subtitle = `Отклонён`;
+        break;
+      case "busy":
+        subtitle = `Занято`;
+        break;
+      default:
+        subtitle = typeLabel;
+    }
+
+    return {
+      title,
+      subtitle,
+      isOutgoing,
+      isMissed,
+      isVideo,
+      duration: call.duration,
+      ts: normalizeTs(call.started_at)
+    };
   }
 
   function makeCallBubble(call, myUserId, onCallback) {
     const info = getCallLogInfo(call, myUserId);
-    const iconEl = el("span", { style: "font-size: 16px; margin-right: 6px;" }, info.icon);
-    const titleEl = el("span", {
-      style: `font-size: 13px; font-weight: 500; color: ${info.isMissed ? "var(--danger, #ff4d4f)" : "var(--text)"};`
-    }, info.title);
-    const timeEl = el("span", {
-      style: "font-size: 11px; color: var(--text-muted); margin-left: 8px;"
-    }, formatTime(info.ts));
 
-    const callbackBtn = el("button", {
-      class: "btn-ghost",
-      style: "padding: 3px 8px; font-size: 12px; border-radius: 8px; cursor: pointer; color: var(--accent); margin-left: 8px; border: 1px solid var(--border); background: transparent;",
-      title: "Перезвонить"
-    }, "Перезвонить");
-    callbackBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (typeof onCallback === "function") onCallback(info.isVideo);
-    });
+    const iconSvg = info.isVideo
+      ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>`
+      : (info.isMissed
+          ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="23" y1="1" x2="17" y2="7"></line><line x1="17" y1="1" x2="23" y2="7"></line><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>`
+          : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>`
+        );
 
+    const iconEl = el("div", { class: "msg-call-icon-wrap" });
+    iconEl.innerHTML = iconSvg;
+
+    const titleEl = el("div", { class: "msg-call-title" }, info.title);
+    const subtitleEl = el("div", { class: "msg-call-subtitle" }, info.subtitle);
+    const detailsEl = el("div", { class: "msg-call-details" }, titleEl, subtitleEl);
+
+    const timeEl = el("span", { class: "msg-time" });
+    wireMsgTime(timeEl, info.ts);
+
+    let statusEl = null;
+    if (info.isOutgoing) {
+      statusEl = el("span", { class: "msg-status-wrapper msg-status-read" },
+        el("span", { class: "chk chk-1" }, "✓"),
+        el("span", { class: "chk chk-2" }, "✓")
+      );
+    }
+
+    const metaEl = el("div", { class: "msg-call-meta" }, timeEl, statusEl);
+
+    const contentEl = el("div", { class: "msg-call-content" }, iconEl, detailsEl, metaEl);
+
+    const bubbleClass = `msg-bubble msg-call-bubble ${info.isOutgoing ? "msg-out" : "msg-in"}${info.isMissed ? " call-missed" : ""}`;
     const bubble = el("div", {
-      class: "msg-bubble msg-system msg-call-log",
-      style: "display: inline-flex; align-items: center; justify-content: center; padding: 6px 14px; margin: 6px auto; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; max-width: 85%;"
-    }, iconEl, titleEl, timeEl, callbackBtn);
+      class: bubbleClass,
+      title: "Нажмите, чтобы перезвонить"
+    }, contentEl);
 
     bubble.dataset.callId = call.call_id;
-    bubble.dataset.ts = info.ts;
+    bubble.dataset.ts = String(info.ts);
+
+    bubble.addEventListener("click", () => {
+      if (typeof onCallback === "function") {
+        onCallback(info.isVideo);
+      }
+    });
+
     return bubble;
   }
 
