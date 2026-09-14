@@ -13,14 +13,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,11 +59,13 @@ fun AttachmentPickerBottomSheet(
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = LocalAppColors.current.textPrimary,
-                modifier = Modifier.padding(bottom = 12.dp, start = 4.dp)
+                modifier = Modifier.padding(bottom = 14.dp, start = 4.dp)
             )
 
             AttachmentItemRow(
-                emoji = "🖼️",
+                icon = Icons.Default.PhotoLibrary,
+                iconTint = Color(0xFF4A89DC),
+                iconBgColor = Color(0xFF4A89DC).copy(alpha = 0.16f),
                 title = "Фото или видео",
                 subtitle = "Быстрая отправка, очищает геометку и EXIF",
                 onClick = {
@@ -64,10 +74,12 @@ fun AttachmentPickerBottomSheet(
                 }
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             AttachmentItemRow(
-                emoji = "📁",
+                icon = Icons.AutoMirrored.Filled.InsertDriveFile,
+                iconTint = Color(0xFFF6BB42),
+                iconBgColor = Color(0xFFF6BB42).copy(alpha = 0.16f),
                 title = "Файл или документ",
                 subtitle = "Без сжатия, оригинальное качество с метаданными",
                 onClick = {
@@ -76,10 +88,12 @@ fun AttachmentPickerBottomSheet(
                 }
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             AttachmentItemRow(
-                emoji = "📷",
+                icon = Icons.Default.PhotoCamera,
+                iconTint = Color(0xFF37BC9B),
+                iconBgColor = Color(0xFF37BC9B).copy(alpha = 0.16f),
                 title = "Сделать снимок",
                 subtitle = "Сфотографировать с камеры прямо сейчас",
                 onClick = {
@@ -88,10 +102,12 @@ fun AttachmentPickerBottomSheet(
                 }
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             AttachmentItemRow(
-                emoji = "🎵",
+                icon = Icons.Default.Audiotrack,
+                iconTint = Color(0xFF967ADC),
+                iconBgColor = Color(0xFF967ADC).copy(alpha = 0.16f),
                 title = "Аудиозапись",
                 subtitle = "Музыка и звуковые дорожки",
                 onClick = {
@@ -105,7 +121,9 @@ fun AttachmentPickerBottomSheet(
 
 @Composable
 private fun AttachmentItemRow(
-    emoji: String,
+    icon: ImageVector,
+    iconTint: Color,
+    iconBgColor: Color,
     title: String,
     subtitle: String,
     onClick: () -> Unit
@@ -123,12 +141,14 @@ private fun AttachmentItemRow(
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
-                .background(LocalAppColors.current.inputBg),
+                .background(iconBgColor),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = emoji,
-                fontSize = 22.sp
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = iconTint,
+                modifier = Modifier.size(24.dp)
             )
         }
 
