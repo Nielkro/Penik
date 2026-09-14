@@ -236,7 +236,7 @@ private fun ActiveCallView(callManager: CallManager) {
 
     // Determine default primary and secondary (PiP) tracks:
     // 1. If screen share exists -> screen share is primary, PiP is remote camera (or local camera)
-    // 2. Else if both local camera and remote camera exist -> local camera is primary, remote camera is PiP
+    // 2. Else if both local camera and remote camera exist -> remote camera is primary, local camera is PiP
     // 3. Else if only one stream exists -> that stream is primary, PiP is null
     val defaultPrimary: VideoTrack?
     val defaultPip: VideoTrack?
@@ -245,8 +245,8 @@ private fun ActiveCallView(callManager: CallManager) {
         defaultPrimary = remoteScreenTrack
         defaultPip = remoteCamTrack ?: localTrack
     } else if (localTrack != null && remoteCamTrack != null) {
-        defaultPrimary = localTrack
-        defaultPip = remoteCamTrack
+        defaultPrimary = remoteCamTrack
+        defaultPip = localTrack
     } else {
         defaultPrimary = remoteCamTrack ?: localTrack
         defaultPip = null
@@ -399,26 +399,25 @@ private fun VideoRenderer(
                 if (scaleAspectFit) RendererCommon.ScalingType.SCALE_ASPECT_FIT
                 else RendererCommon.ScalingType.SCALE_ASPECT_FILL
             )
+        },
+        onRelease = { view ->
+            try {
+                view.release()
+            } catch (_: Exception) {}
         }
     )
 
-    // Attach/detach the renderer whenever the track or the view instance changes.
-    // Recreate the renderer only when the track identity changes so stale frames
-    // from a previous track are not pushed into a black view.
-    LaunchedEffect(track, renderer) {
-        val r = renderer ?: return@LaunchedEffect
-        if (track == null) return@LaunchedEffect
-        track.addRenderer(r)
-        try {
-            awaitCancellation()
-        } finally {
-            track.removeRenderer(r)
+    DisposableEffect(track, renderer) {
+        val r = renderer
+        if (track != null && r != null) {
+            track.addRenderer(r)
         }
-    }
-
-    DisposableEffect(renderer) {
         onDispose {
-            renderer?.release()
+            if (track != null && r != null) {
+                try {
+                    track.removeRenderer(r)
+                } catch (_: Exception) {}
+            }
         }
     }
 }
