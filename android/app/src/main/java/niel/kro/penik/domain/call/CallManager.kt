@@ -786,6 +786,12 @@ class CallManager @Inject constructor(
     fun toggleMic() {
         val room = room ?: return
         val next = !ui.micMuted
+        if (!next && ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            toast("Нет разрешения на микрофон")
+            return
+        }
         scope.launch {
             try {
                 room.localParticipant.setMicrophoneEnabled(!next)
@@ -1095,9 +1101,27 @@ class CallManager @Inject constructor(
         updateRemoteVideoTrack(room)
         scheduleIceStatsSampling()
         try {
-            room.localParticipant.setMicrophoneEnabled(true)
+            try {
+                room.audioHandler.start()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to start room audioHandler", e)
+            }
+            if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                room.localParticipant.setMicrophoneEnabled(true)
+                _state.value = ui.copy(micMuted = false)
+            } else {
+                Log.w(TAG, "RECORD_AUDIO permission not granted when room connected")
+                _state.value = ui.copy(micMuted = true)
+                toast("Нет разрешения на микрофон")
+            }
             if (ui.isVideo) {
-                room.localParticipant.setCameraEnabled(true)
+                if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA)
+                    == android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    room.localParticipant.setCameraEnabled(true)
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to publish local tracks", e)
@@ -1233,6 +1257,14 @@ class CallManager @Inject constructor(
             stopAllTones()
             toneGenerator = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 75)
             toneGenerator?.startTone(ToneGenerator.TONE_PROP_ACK, 250)
+            scope.launch {
+                delay(300)
+                try {
+                    toneGenerator?.stopTone()
+                    toneGenerator?.release()
+                    toneGenerator = null
+                } catch (_: Exception) {}
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to play connected tone", e)
         }
@@ -1352,6 +1384,7 @@ class CallManager @Inject constructor(
         room = null
         if (r != null) {
             scope.launch {
+                try { r.audioHandler.stop() } catch (_: Exception) {}
                 try { r.disconnect() } catch (_: Exception) {}
                 try { r.release() } catch (_: Exception) {}
             }

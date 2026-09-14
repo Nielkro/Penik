@@ -65,6 +65,11 @@ export function initCallUI() {
   callModalEl = document.createElement('div');
   callModalEl.id = 'call-modal-overlay';
   callModalEl.className = 'call-modal-overlay hidden';
+  callModalEl.addEventListener('click', () => {
+    if (callManager.room && !callManager.room.canPlaybackAudio) {
+      callManager.room.startAudio().catch(console.warn);
+    }
+  });
   document.body.appendChild(callModalEl);
 
   callManager.onCallStateChange = (callState, mediaState) => {
