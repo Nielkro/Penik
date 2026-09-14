@@ -1576,6 +1576,11 @@ fun ChatRoomScreen(
                             },
                             onPickAudio = {
                                 attachLauncher.launch("audio/*")
+                            },
+                            onSendRecentMedias = { uris ->
+                                uris.forEach { uri ->
+                                    viewModel.sendMediaFile(context, uri, stripExif = true)
+                                }
                             }
                         )
                     }
