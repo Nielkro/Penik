@@ -979,19 +979,20 @@ export class CallManager {
       this._checkRemoteTracks();
     } else if (track.kind === 'audio') {
       let audioEl = /** @type {HTMLAudioElement|null} */ (document.querySelector(`audio[data-track-sid="${track.sid}"]`));
+      const targetContainer = document.getElementById('call-modal-overlay') || document.body;
       if (!audioEl) {
         audioEl = track.attach();
         audioEl.dataset.trackSid = track.sid;
         audioEl.dataset.penikCallAudio = 'true';
         audioEl.autoplay = true;
         audioEl.style.position = 'fixed';
-        audioEl.style.left = '-9999px';
-        audioEl.style.top = '-9999px';
+        audioEl.style.left = '0';
+        audioEl.style.bottom = '0';
         audioEl.style.width = '1px';
         audioEl.style.height = '1px';
-        audioEl.style.opacity = '0';
+        audioEl.style.opacity = '0.01';
         audioEl.style.pointerEvents = 'none';
-        document.body.appendChild(audioEl);
+        targetContainer.appendChild(audioEl);
       } else {
         track.attach(audioEl);
       }
@@ -1003,24 +1004,57 @@ export class CallManager {
       if (this.selectedAudioOutputId && typeof audioEl.setSinkId === 'function') {
         audioEl.setSinkId(this.selectedAudioOutputId).catch(console.warn);
       }
-      audioEl.play().catch((err) => {
-        console.warn('[call] audioEl.play() failed:', err);
-      });
+      const p = audioEl.play();
+      if (p !== undefined) {
+        p.catch((err) => {
+          console.warn('[call] audioEl.play() failed:', err);
+        });
+      }
+
+      try {
+        const AudioCtx = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
+        if (AudioCtx) {
+          if (!this._directAudioCtx || this._directAudioCtx.state === 'closed') {
+            this._directAudioCtx = new AudioCtx();
+          }
+          if (this._directAudioCtx.state === 'suspended') {
+            this._directAudioCtx.resume().catch(console.warn);
+          }
+          if (track.mediaStreamTrack) {
+            const stream = new MediaStream([track.mediaStreamTrack]);
+            const src = this._directAudioCtx.createMediaStreamSource(stream);
+            const gain = this._directAudioCtx.createGain();
+            gain.gain.value = 1.0;
+            src.connect(gain);
+            gain.connect(this._directAudioCtx.destination);
+          }
+        }
+      } catch (e) {
+        console.warn('[call] Direct WebAudio routing fallback failed:', e);
+      }
+
       if (this.room) {
         if (this.room.audioContext && this.room.audioContext.state === 'suspended') {
           this.room.audioContext.resume().catch(console.warn);
         }
         this.room.startAudio().catch(console.warn);
       }
-      console.log('[call-audio] attached remote audio track:', {
-        sid: track.sid,
-        participant: participant?.identity,
-        isMuted: track.isMuted,
-        paused: audioEl.paused,
-        muted: audioEl.muted,
-        volume: audioEl.volume,
-        audioContextState: this.room?.audioContext?.state
-      });
+
+      const statsInterval = setInterval(async () => {
+        if (!this.currentCall || !track) {
+          clearInterval(statsInterval);
+          return;
+        }
+        const stats = await track.getReceiverStats?.();
+        if (stats) {
+          console.log('[call-audio-stats]', {
+            bytesReceived: stats.bytesReceived,
+            jitter: stats.jitter,
+            totalAudioEnergy: stats.totalAudioEnergy,
+            audioContextState: this.room?.audioContext?.state || this._directAudioCtx?.state
+          });
+        }
+      }, 3000);
     }
   }
 
