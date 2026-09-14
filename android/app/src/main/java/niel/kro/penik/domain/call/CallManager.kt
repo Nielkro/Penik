@@ -151,6 +151,20 @@ class CallManager @Inject constructor(
         //   adb logcat -s CallManager LKLog
         LiveKit.loggingLevel = LoggingLevel.DEBUG
         LiveKit.enableWebRTCLogging = true
+        ensureWebRtcLoaded()
+    }
+
+    private fun ensureWebRtcLoaded() {
+        try {
+            System.loadLibrary("lkjingle_peerconnection_so")
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to load lkjingle_peerconnection_so: ${e.message}")
+        }
+        try {
+            LiveKit.init(context)
+        } catch (e: Throwable) {
+            Log.w(TAG, "LiveKit.init failed: ${e.message}")
+        }
     }
 
     // --- Outgoing ---
@@ -576,10 +590,16 @@ class CallManager @Inject constructor(
     }
 
     private fun createRoom(): Room {
+        ensureWebRtcLoaded()
         val e2eeOptions = if (callKey.isNotBlank()) {
-            val keyProvider = io.livekit.android.e2ee.BaseKeyProvider()
-            keyProvider.setSharedKey(callKey)
-            io.livekit.android.e2ee.E2EEOptions(keyProvider = keyProvider)
+            try {
+                val keyProvider = io.livekit.android.e2ee.BaseKeyProvider()
+                keyProvider.setSharedKey(callKey)
+                io.livekit.android.e2ee.E2EEOptions(keyProvider = keyProvider)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to initialize E2EE KeyProvider: ${t.message}", t)
+                null
+            }
         } else {
             null
         }
