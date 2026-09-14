@@ -188,11 +188,11 @@ class GroupChatViewModel @Inject constructor(
         }
     }
 
-    fun sendMediaFile(context: Context, uri: Uri, caption: String = "", onError: (String) -> Unit = {}) {
+    fun sendMediaFile(context: Context, uri: Uri, caption: String = "", stripExif: Boolean = false, onError: (String) -> Unit = {}) {
         viewModelScope.launch {
             val clientMsgId = java.util.UUID.randomUUID().toString()
             val mediaInfo = runCatching {
-                attachmentManager.prepareLocalMedia(context, uri, clientMsgId, caption)
+                attachmentManager.prepareLocalMedia(context, uri, clientMsgId, caption, stripExif = stripExif)
             }.getOrElse { err ->
                 onError(err.message ?: "Ошибка подготовки файла")
                 return@launch
