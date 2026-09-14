@@ -464,6 +464,7 @@ export class CallManager {
       }
       this.room = null;
     }
+    document.querySelectorAll('audio[data-penik-call-audio]').forEach((el) => el.remove());
 
     this._myEphemeral = null;
     this._authSecret = null;
@@ -834,6 +835,11 @@ export class CallManager {
             this._resyncTracks();
             this._restoreCameraIfNeeded(wantCamera);
           })
+          .on(RoomEvent.AudioPlaybackStatusChanged, () => {
+            if (this.room && !this.room.canPlaybackAudio) {
+              this.room.startAudio().catch(console.warn);
+            }
+          })
           .on(RoomEvent.Disconnected, (reason) => {
             // Do not treat a background tab freeze/pagehide as a hangup.
             // With disconnectOnPageLeave=false LiveKit no longer disconnects on
@@ -851,6 +857,9 @@ export class CallManager {
           });
 
         await this.room.connect(url, token);
+        if (this.room && !this.room.canPlaybackAudio) {
+          await this.room.startAudio().catch(console.warn);
+        }
 
         if (keyProvider && worker) {
           try {
@@ -937,7 +946,19 @@ export class CallManager {
       this._updateTileLayout();
       this._checkRemoteTracks();
     } else if (track.kind === 'audio') {
-      track.attach();
+      let audioEl = /** @type {HTMLAudioElement|null} */ (document.querySelector(`audio[data-track-sid="${track.sid}"]`));
+      if (!audioEl) {
+        audioEl = track.attach();
+        audioEl.dataset.trackSid = track.sid;
+        audioEl.dataset.penikCallAudio = 'true';
+        audioEl.style.display = 'none';
+        document.body.appendChild(audioEl);
+      } else {
+        track.attach(audioEl);
+      }
+      if (this.room && !this.room.canPlaybackAudio) {
+        this.room.startAudio().catch(console.warn);
+      }
     }
   }
 
