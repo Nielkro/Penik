@@ -793,11 +793,11 @@ export class CallManager {
             }
           })
           .on(RoomEvent.TrackUnmuted, (publication, participant) => {
-            if (publication.kind === 'video' && participant !== this.room?.localParticipant) {
-              if (publication.track) {
-                this._attachRemoteTrack(publication.track, participant);
+            if (participant !== this.room?.localParticipant && publication.track) {
+              this._attachRemoteTrack(publication.track, participant);
+              if (publication.kind === 'video') {
+                this._checkRemoteTracks();
               }
-              this._checkRemoteTracks();
             }
           })
           .on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
@@ -962,12 +962,26 @@ export class CallManager {
         audioEl = track.attach();
         audioEl.dataset.trackSid = track.sid;
         audioEl.dataset.penikCallAudio = 'true';
-        audioEl.style.display = 'none';
+        audioEl.autoplay = true;
+        audioEl.volume = 1.0;
+        audioEl.style.position = 'fixed';
+        audioEl.style.left = '-9999px';
+        audioEl.style.top = '-9999px';
+        audioEl.style.width = '1px';
+        audioEl.style.height = '1px';
+        audioEl.style.opacity = '0';
+        audioEl.style.pointerEvents = 'none';
         document.body.appendChild(audioEl);
       } else {
         track.attach(audioEl);
       }
-      if (this.room && !this.room.canPlaybackAudio) {
+      if (this.selectedAudioOutputId && typeof audioEl.setSinkId === 'function') {
+        audioEl.setSinkId(this.selectedAudioOutputId).catch(console.warn);
+      }
+      audioEl.play().catch((err) => {
+        console.warn('[call] audioEl.play() failed:', err);
+      });
+      if (this.room) {
         this.room.startAudio().catch(console.warn);
       }
     }
@@ -1223,7 +1237,7 @@ export class CallManager {
 
     for (const participant of this.room.remoteParticipants.values()) {
       for (const pub of participant.trackPublications.values()) {
-        if (!pub.track || pub.track.kind !== 'video' || pub.isMuted) continue;
+        if (!pub.track || pub.isMuted) continue;
         this._attachRemoteTrack(pub.track, participant);
       }
     }

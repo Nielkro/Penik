@@ -67,7 +67,7 @@ export function initCallUI() {
   callModalEl.id = 'call-modal-overlay';
   callModalEl.className = 'call-modal-overlay hidden';
   callModalEl.addEventListener('click', () => {
-    if (callManager.room && !callManager.room.canPlaybackAudio) {
+    if (callManager.room) {
       callManager.room.startAudio().catch(console.warn);
     }
   });
@@ -165,7 +165,10 @@ function renderCallModal(callState, mediaState) {
     const slot = document.getElementById('incoming-avatar-slot');
     if (slot) slot.appendChild(avatar(peerContact, 88));
 
-    document.getElementById('btn-call-accept').addEventListener('click', () => callManager.acceptCall());
+    document.getElementById('btn-call-accept').addEventListener('click', () => {
+      callManager.acceptCall();
+      callManager.room?.startAudio().catch(console.warn);
+    });
     document.getElementById('btn-call-reject').addEventListener('click', () => callManager.rejectCall());
     return;
   }
