@@ -6,12 +6,6 @@
 <title>Penik Messenger — свой мессенджер с E2EE-шифрованием</title>
 <meta name="description" content="Penik Messenger — безопасный мессенджер со сквозным шифрованием (E2EE) сообщений. E2EE на X25519 + ***REDACTED-BY-FILTER-REPO*** для личных и групповых чатов, мультидевайсинг и бинарный WebSocket. Даже сервер не видит ваши сообщения.">
 <link rel="icon" href="https://web.penik.ru/assets/favicon-BYBt5M59.ico">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/cyrillic-400-normal.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/cyrillic-600-normal.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/cyrillic-700-normal.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/cyrillic-800-normal.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/jetbrains-mono@latest/cyrillic-400-normal.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/jetbrains-mono@latest/cyrillic-600-normal.css">
 <style>
 :root{
   --bg:#06080d;
@@ -23,14 +17,14 @@
   --acc:#34d399;
   --acc2:#22d3ee;
   --grad:linear-gradient(135deg,#34d399,#22d3ee);
-  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{
   background:var(--bg);
   color:var(--text);
-  font-family:'Inter',system-ui,sans-serif;
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
   line-height:1.55;
   overflow-x:hidden;
 }
@@ -541,7 +535,7 @@ footer{border-top:1px solid var(--border);padding:56px 0 36px;background:var(--b
           </tr>
           <tr>
             <td>Звонки E2EE</td>
-            <td class="penik-col no">❌ нет</td>
+            <td class="penik-col meh">⚠️ Тестируется</td>
             <td class="yes">✅ да</td>
             <td class="yes">✅ да</td>
             <td class="no">❌ нет</td>
