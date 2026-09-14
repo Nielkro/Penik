@@ -211,6 +211,16 @@ class GroupChatViewModel @Inject constructor(
                     if (id == null) onError("Не удалось отправить файл")
                 }
                 .onFailure { err ->
+                    viewModelScope.launch {
+                        runCatching {
+                            val existing = groupRepository.getMessage(groupId, clientMsgId)
+                            if (existing != null) {
+                                val rootJson = org.json.JSONObject(existing.text)
+                                rootJson.optJSONObject("file")?.put("uploading", false)?.put("error", true)
+                                groupRepository.updateMessageLocalText(groupId, clientMsgId, rootJson.toString())
+                            }
+                        }
+                    }
                     onError(err.message ?: "Ошибка отправки файла")
                 }
         }
