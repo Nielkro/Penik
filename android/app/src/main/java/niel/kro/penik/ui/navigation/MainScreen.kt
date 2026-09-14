@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.DarkMode
@@ -26,11 +28,13 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -112,6 +116,21 @@ fun MainScreen(
         Scaffold(
             containerColor = colors.background,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            floatingActionButton = {
+                if (!isDrawerMode && selectedTab == 0) {
+                    FloatingActionButton(
+                        onClick = { showCreateGroupDialog = true },
+                        containerColor = colors.accent,
+                        contentColor = Color.White,
+                        shape = CircleShape
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Создать группу"
+                        )
+                    }
+                }
+            },
             bottomBar = {
                 if (!isDrawerMode) {
                     NavigationBar(
@@ -197,6 +216,7 @@ fun MainScreen(
     if (isDrawerMode) {
         ModalNavigationDrawer(
             drawerState = drawerState,
+            gesturesEnabled = selectedTab == 0 || drawerState.isOpen,
             drawerContent = {
                 ModalDrawerSheet(
                     drawerContainerColor = colors.panel,
