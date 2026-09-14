@@ -24,32 +24,35 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Audiotrack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,8 +64,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -90,11 +93,12 @@ fun AttachmentPickerBottomSheet(
     onPickPhotoOrVideo: () -> Unit,
     onPickDocument: () -> Unit,
     onTakePhoto: () -> Unit,
-    onPickAudio: () -> Unit,
+    onPickAudio: () -> Unit = {},
     onSendRecentMedias: (List<Uri>) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
 
     var hasPermission by remember { mutableStateOf(hasGalleryPermission(context)) }
     val recentMedias = remember { mutableStateListOf<LocalGalleryMedia>() }
@@ -129,100 +133,50 @@ fun AttachmentPickerBottomSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = LocalAppColors.current.panel,
+        sheetState = sheetState,
+        containerColor = Color(0xFF101014),
         dragHandle = { BottomSheetDefaults.DragHandle() }
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 28.dp, top = 2.dp)
+                .fillMaxHeight(0.78f)
         ) {
-            // Header Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Прикрепить вложение",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = LocalAppColors.current.textPrimary
-                )
-
-                AnimatedVisibility(
-                    visible = selectedUris.isNotEmpty(),
-                    enter = fadeIn() + scaleIn(),
-                    exit = fadeOut() + scaleOut()
-                ) {
-                    Button(
-                        onClick = {
-                            val toSend = selectedUris.toList()
-                            onDismiss()
-                            onSendRecentMedias(toSend)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = LocalAppColors.current.accent
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Отправить",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Отправить (${selectedUris.size})",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Telegram-style Gallery Thumbnail Strip
+            // 3-Column Telegram Photo Grid
             if (hasPermission) {
                 if (isLoadingMedia) {
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(110.dp),
+                        modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         CircularProgressIndicator(
                             color = LocalAppColors.current.accent,
-                            modifier = Modifier.size(28.dp),
-                            strokeWidth = 2.5.dp
+                            modifier = Modifier.size(36.dp),
+                            strokeWidth = 3.dp
                         )
                     }
-                } else if (recentMedias.isNotEmpty()) {
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 96.dp),
+                        horizontalArrangement = Arrangement.spacedBy(1.5.dp),
+                        verticalArrangement = Arrangement.spacedBy(1.5.dp)
                     ) {
-                        // First item: Live Camera Tile
+                        // First item: Camera live tile
                         item {
-                            CameraTile(onClick = {
+                            TelegramCameraGridTile(onClick = {
                                 onDismiss()
                                 onTakePhoto()
                             })
                         }
 
-                        // Recent Media items
+                        // Gallery media items
                         items(recentMedias, key = { it.id }) { item ->
                             val isSelected = selectedUris.contains(item.uri)
                             val selectedIndex = if (isSelected) selectedUris.indexOf(item.uri) + 1 else 0
 
-                            MediaThumbnailTile(
+                            TelegramMediaGridTile(
                                 item = item,
                                 isSelected = isSelected,
                                 selectedNumber = selectedIndex,
@@ -236,30 +190,20 @@ fun AttachmentPickerBottomSheet(
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.height(14.dp))
                 }
             } else {
-                // Permission Request Banner
-                Row(
+                // Permission Request Container
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(LocalAppColors.current.panelSecondary.copy(alpha = 0.7f))
-                        .clickable {
-                            val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
-                            } else {
-                                arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-                            }
-                            permissionLauncher.launch(perms)
-                        }
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .fillMaxSize()
+                        .padding(horizontal = 28.dp)
+                        .padding(bottom = 96.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(64.dp)
                             .clip(CircleShape)
                             .background(LocalAppColors.current.accent.copy(alpha = 0.15f)),
                         contentAlignment = Alignment.Center
@@ -268,124 +212,215 @@ fun AttachmentPickerBottomSheet(
                             imageVector = Icons.Default.PhotoLibrary,
                             contentDescription = null,
                             tint = LocalAppColors.current.accent,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(32.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Доступ к галерее",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = LocalAppColors.current.textPrimary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Разрешите доступ к фото и видео для быстрого выбора вложений, как в Telegram",
+                        fontSize = 13.sp,
+                        color = LocalAppColors.current.textMuted,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(LocalAppColors.current.accent)
+                            .clickable {
+                                val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    arrayOf(
+                                        Manifest.permission.READ_MEDIA_IMAGES,
+                                        Manifest.permission.READ_MEDIA_VIDEO
+                                    )
+                                } else {
+                                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                                }
+                                permissionLauncher.launch(perms)
+                            }
+                            .padding(horizontal = 24.dp, vertical = 12.dp)
+                    ) {
                         Text(
-                            text = "Быстрый выбор из галереи",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = LocalAppColors.current.textPrimary
-                        )
-                        Text(
-                            text = "Разрешить доступ для мгновенного превью фото",
-                            fontSize = 12.sp,
-                            color = LocalAppColors.current.textMuted
+                            text = "Предоставить доступ",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(14.dp))
             }
 
-            // Action rows
-            Column(
+            // Bottom Floating Navigation Pill & Send Button
+            Box(
                 modifier = Modifier
+                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
+                    .navigationBarsPadding()
             ) {
-                AttachmentItemRow(
-                    icon = Icons.Default.PhotoLibrary,
-                    iconTint = Color(0xFF4A89DC),
-                    iconBgColor = Color(0xFF4A89DC).copy(alpha = 0.16f),
-                    title = "Галерея",
-                    subtitle = "Открыть системную галерею для выбора фото/видео",
-                    onClick = {
-                        onDismiss()
-                        onPickPhotoOrVideo()
-                    }
-                )
+                // Floating Bottom Capsule with "Галерея" and "Файл"
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .clip(RoundedCornerShape(32.dp))
+                        .background(Color(0xE61E1E28))
+                        .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(32.dp))
+                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // "Галерея" Tab/Button
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(Color(0xFF2B3A60))
+                                .clickable {
+                                    onDismiss()
+                                    onPickPhotoOrVideo()
+                                }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PhotoLibrary,
+                                contentDescription = "Галерея",
+                                tint = Color(0xFF64B5F6),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Галерея",
+                                color = Color(0xFF64B5F6),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
 
-                AttachmentItemRow(
-                    icon = Icons.AutoMirrored.Filled.InsertDriveFile,
-                    iconTint = Color(0xFFF6BB42),
-                    iconBgColor = Color(0xFFF6BB42).copy(alpha = 0.16f),
-                    title = "Файл или документ",
-                    subtitle = "Без сжатия, оригинальное качество с метаданными",
-                    onClick = {
-                        onDismiss()
-                        onPickDocument()
+                        // "Файл" Tab/Button
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(24.dp))
+                                .clickable {
+                                    onDismiss()
+                                    onPickDocument()
+                                }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.InsertDriveFile,
+                                contentDescription = "Файл",
+                                tint = Color(0xFFEEEEEE),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Файл",
+                                color = Color(0xFFEEEEEE),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
-                )
+                }
 
-                AttachmentItemRow(
-                    icon = Icons.Default.PhotoCamera,
-                    iconTint = Color(0xFF37BC9B),
-                    iconBgColor = Color(0xFF37BC9B).copy(alpha = 0.16f),
-                    title = "Камера",
-                    subtitle = "Сделать снимок в полном качестве",
-                    onClick = {
-                        onDismiss()
-                        onTakePhoto()
+                // Floating Send FAB when photos are selected
+                if (selectedUris.isNotEmpty()) {
+                    FloatingActionButton(
+                        onClick = {
+                            val toSend = selectedUris.toList()
+                            onDismiss()
+                            onSendRecentMedias(toSend)
+                        },
+                        containerColor = LocalAppColors.current.accent,
+                        contentColor = Color.White,
+                        shape = CircleShape,
+                        elevation = FloatingActionButtonDefaults.elevation(6.dp),
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .size(52.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Отправить",
+                                modifier = Modifier.size(22.dp)
+                            )
+                            if (selectedUris.size > 1) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(18.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "${selectedUris.size}",
+                                        color = LocalAppColors.current.accent,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
                     }
-                )
-
-                AttachmentItemRow(
-                    icon = Icons.Default.Audiotrack,
-                    iconTint = Color(0xFF967ADC),
-                    iconBgColor = Color(0xFF967ADC).copy(alpha = 0.16f),
-                    title = "Аудиозапись",
-                    subtitle = "Музыка и звуковые дорожки",
-                    onClick = {
-                        onDismiss()
-                        onPickAudio()
-                    }
-                )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun CameraTile(onClick: () -> Unit) {
-    Column(
+private fun TelegramCameraGridTile(onClick: () -> Unit) {
+    Box(
         modifier = Modifier
-            .size(width = 86.dp, height = 110.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(LocalAppColors.current.inputBg)
-            .border(1.dp, LocalAppColors.current.border, RoundedCornerShape(12.dp))
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .background(Color(0xFF1B1C24))
             .clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        contentAlignment = Alignment.Center
     ) {
+        // Subtle dark gradient background
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color(0xFF252733), Color(0xFF14151B))
+                    )
+                )
+        )
+
+        // Large camera icon
+        Box(
+            modifier = Modifier
+                .size(46.dp)
                 .clip(CircleShape)
-                .background(LocalAppColors.current.accent.copy(alpha = 0.15f)),
+                .background(Color.White.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Default.PhotoCamera,
+                imageVector = Icons.Default.CameraAlt,
                 contentDescription = "Камера",
-                tint = LocalAppColors.current.accent,
-                modifier = Modifier.size(22.dp)
+                tint = Color.White,
+                modifier = Modifier.size(26.dp)
             )
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Камера",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            color = LocalAppColors.current.textPrimary
-        )
     }
 }
 
 @Composable
-private fun MediaThumbnailTile(
+private fun TelegramMediaGridTile(
     item: LocalGalleryMedia,
     isSelected: Boolean,
     selectedNumber: Int,
@@ -393,13 +428,8 @@ private fun MediaThumbnailTile(
 ) {
     Box(
         modifier = Modifier
-            .size(width = 86.dp, height = 110.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .border(
-                width = if (isSelected) 2.5.dp else 0.5.dp,
-                color = if (isSelected) LocalAppColors.current.accent else LocalAppColors.current.border,
-                shape = RoundedCornerShape(12.dp)
-            )
+            .fillMaxWidth()
+            .aspectRatio(1f)
             .clickable(onClick = onToggleSelect)
     ) {
         AsyncImage(
@@ -409,27 +439,27 @@ private fun MediaThumbnailTile(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Dim overlay if selected
+        // Dim overlay when selected
         if (isSelected) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.25f))
+                    .background(Color.Black.copy(alpha = 0.35f))
             )
         }
 
-        // Top right selection checkbox/badge
+        // Top right hollow ring / filled selection checkmark (Telegram style)
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(6.dp)
-                .size(22.dp)
+                .size(26.dp)
                 .clip(CircleShape)
                 .background(
-                    if (isSelected) LocalAppColors.current.accent else Color.Black.copy(alpha = 0.45f)
+                    if (isSelected) LocalAppColors.current.accent else Color.Black.copy(alpha = 0.35f)
                 )
                 .border(
-                    width = 1.5.dp,
+                    width = 2.dp,
                     color = Color.White,
                     shape = CircleShape
                 ),
@@ -439,14 +469,14 @@ private fun MediaThumbnailTile(
                 Text(
                     text = if (selectedNumber > 0) "$selectedNumber" else "✓",
                     color = Color.White,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
         }
 
-        // Bottom video duration badge
-        if (item.isVideo && item.durationText != null) {
+        // Video duration badge or play icon in bottom-left
+        if (item.isVideo) {
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -460,68 +490,18 @@ private fun MediaThumbnailTile(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(10.dp)
+                    modifier = Modifier.size(12.dp)
                 )
-                Spacer(modifier = Modifier.width(2.dp))
-                Text(
-                    text = item.durationText,
-                    color = Color.White,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Medium
-                )
+                if (item.durationText != null) {
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(
+                        text = item.durationText,
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
-        }
-    }
-}
-
-@Composable
-private fun AttachmentItemRow(
-    icon: ImageVector,
-    iconTint: Color,
-    iconBgColor: Color,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(LocalAppColors.current.panelSecondary.copy(alpha = 0.6f))
-            .clickable(onClick = onClick)
-            .padding(vertical = 11.dp, horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(42.dp)
-                .clip(CircleShape)
-                .background(iconBgColor),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = iconTint,
-                modifier = Modifier.size(22.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(14.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = LocalAppColors.current.textPrimary
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                fontSize = 12.sp,
-                color = LocalAppColors.current.textMuted
-            )
         }
     }
 }
@@ -535,7 +515,7 @@ private fun hasGalleryPermission(context: Context): Boolean {
     }
 }
 
-private suspend fun fetchRecentGalleryMedia(context: Context, limit: Int = 40): List<LocalGalleryMedia> = withContext(Dispatchers.IO) {
+private suspend fun fetchRecentGalleryMedia(context: Context, limit: Int = 60): List<LocalGalleryMedia> = withContext(Dispatchers.IO) {
     val items = mutableListOf<LocalGalleryMedia>()
     val projection = arrayOf(
         MediaStore.Files.FileColumns._ID,
