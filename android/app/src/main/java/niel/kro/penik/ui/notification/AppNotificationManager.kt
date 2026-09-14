@@ -66,6 +66,9 @@ class AppNotificationManager @Inject constructor(
         const val EXTRA_GROUP_NAME = "groupName"
         const val EXTRA_LAST_MSG_SERVER_ID = "lastMsgServerId"
         const val EXTRA_CALL_ACTION = "callAction"
+        const val ACTION_ANSWER_CALL = "niel.kro.penik.action.ANSWER_CALL"
+        const val ACTION_DECLINE_CALL = "niel.kro.penik.action.DECLINE_CALL"
+        const val ACTION_INCOMING_CALL = "niel.kro.penik.action.INCOMING_CALL"
 
         @Volatile
         var isAppInForeground: Boolean = false
@@ -178,7 +181,9 @@ class AppNotificationManager @Inject constructor(
         val title = if (isVideo) "Входящий видеозвонок" else "Входящий звонок"
 
         val answerIntent = Intent(context, MainActivity::class.java).apply {
-            action = Intent.ACTION_VIEW
+            action = ACTION_ANSWER_CALL
+            data = Uri.parse("penik://call/answer/$peerUserId")
+            `package` = context.packageName
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(EXTRA_CALL_ACTION, CallActionReceiver.ACTION_ANSWER)
         }
@@ -190,12 +195,28 @@ class AppNotificationManager @Inject constructor(
         )
 
         val declineIntent = Intent(context, CallActionReceiver::class.java).apply {
+            action = ACTION_DECLINE_CALL
+            data = Uri.parse("penik://call/decline/$peerUserId")
+            `package` = context.packageName
             putExtra(EXTRA_CALL_ACTION, CallActionReceiver.ACTION_DECLINE)
         }
         val declinePendingIntent = PendingIntent.getBroadcast(
             context,
             INCOMING_CALL_NOTIFICATION_ID + 1,
             declineIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val fullScreenIntent = Intent(context, MainActivity::class.java).apply {
+            action = ACTION_INCOMING_CALL
+            data = Uri.parse("penik://call/incoming/$peerUserId")
+            `package` = context.packageName
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val fullScreenPendingIntent = PendingIntent.getActivity(
+            context,
+            INCOMING_CALL_NOTIFICATION_ID + 2,
+            fullScreenIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -208,6 +229,7 @@ class AppNotificationManager @Inject constructor(
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_CALLS)
             .setSmallIcon(R.drawable.ic_notification)
+            .setContentIntent(fullScreenPendingIntent)
             .setStyle(
                 NotificationCompat.CallStyle.forIncomingCall(
                     person,
@@ -215,7 +237,7 @@ class AppNotificationManager @Inject constructor(
                     answerPendingIntent
                 )
             )
-            .setFullScreenIntent(answerPendingIntent, true)
+            .setFullScreenIntent(fullScreenPendingIntent, true)
             .setOngoing(true)
             .setAutoCancel(false)
             .setCategory(NotificationCompat.CATEGORY_CALL)

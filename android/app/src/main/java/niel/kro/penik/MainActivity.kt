@@ -187,7 +187,11 @@ class MainActivity : ComponentActivity() {
     private fun extractNavigationRoute(intent: Intent?) {
         if (intent == null) return
 
-        if (intent.getStringExtra(AppNotificationManager.EXTRA_CALL_ACTION) == CallActionReceiver.ACTION_ANSWER) {
+        val isAnswer = intent.action == AppNotificationManager.ACTION_ANSWER_CALL ||
+            intent.getStringExtra(AppNotificationManager.EXTRA_CALL_ACTION) == CallActionReceiver.ACTION_ANSWER ||
+            intent.data?.path?.contains("answer") == true
+
+        if (isAnswer) {
             intent.removeExtra(AppNotificationManager.EXTRA_CALL_ACTION)
             val needed = mutableListOf(Manifest.permission.RECORD_AUDIO)
             if (callManager.state.value.isVideo) {
