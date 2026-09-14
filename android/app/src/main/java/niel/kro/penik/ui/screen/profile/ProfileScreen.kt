@@ -14,8 +14,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -206,7 +208,9 @@ fun ProfileScreen(
 
     Column(
         modifier = Modifier
-            .fillMaxSize(),
+            .fillMaxSize()
+            .navigationBarsPadding()
+            .then(if (onBack == null) Modifier.statusBarsPadding() else Modifier),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (onBack != null) {
@@ -228,110 +232,120 @@ fun ProfileScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(if (onBack != null) 16.dp else 40.dp))
-
-        // Avatar with Camera icon badge at bottom-right
-        Box(
-            modifier = Modifier.size(104.dp),
-            contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = if (onBack != null) 32.dp else 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Spacer(modifier = Modifier.height(if (onBack != null) 16.dp else 40.dp))
+
+            // Avatar with Camera icon badge at bottom-right
             Box(
-                modifier = Modifier
-                    .size(96.dp)
-                    .clip(CircleShape)
-                    .clickable { showAvatarOptions = true },
+                modifier = Modifier.size(104.dp),
                 contentAlignment = Alignment.Center
             ) {
-                UserAvatar(
-                    userId = viewModel.userId,
-                    name = displayName,
-                    size = 96.dp,
-                    avatarKey = uiState.avatarUpdateKey
-                )
+                Box(
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(CircleShape)
+                        .clickable { showAvatarOptions = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    UserAvatar(
+                        userId = viewModel.userId,
+                        name = displayName,
+                        size = 96.dp,
+                        avatarKey = uiState.avatarUpdateKey
+                    )
 
-                if (uiState.isLoading) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(LocalAppColors.current.background.copy(alpha = 0.6f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color = LocalAppColors.current.accent,
-                            modifier = Modifier.size(32.dp)
-                        )
+                    if (uiState.isLoading) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(LocalAppColors.current.background.copy(alpha = 0.6f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                color = LocalAppColors.current.accent,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
                     }
+                }
+
+                // Camera Icon Badge in Bottom-Right
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(LocalAppColors.current.accent)
+                        .clickable { showAvatarOptions = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CameraAlt,
+                        contentDescription = "Сменить аватар",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
 
-            // Camera Icon Badge in Bottom-Right
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(LocalAppColors.current.accent)
-                    .clickable { showAvatarOptions = true },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CameraAlt,
-                    contentDescription = "Сменить аватар",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
+            Spacer(modifier = Modifier.height(20.dp))
+
+            if (displayName.isNotBlank()) {
+                Text(
+                    text = displayName,
+                    color = LocalAppColors.current.textPrimary,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
-        }
 
-        Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-        if (displayName.isNotBlank()) {
-            Text(
-                text = displayName,
-                color = LocalAppColors.current.textPrimary,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
+            if (nickname.isNotBlank()) {
+                Text(
+                    text = "@$nickname",
+                    color = LocalAppColors.current.textMuted,
+                    fontSize = 15.sp
+                )
+            }
 
-        Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.weight(1f))
 
-        if (nickname.isNotBlank()) {
-            Text(
-                text = "@$nickname",
-                color = LocalAppColors.current.textMuted,
-                fontSize = 15.sp
-            )
-        }
+            Button(
+                onClick = onPairingScanner,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text("Подключить устройство", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            }
 
-        Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(12.dp))
 
-        Button(
-            onClick = onPairingScanner,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(14.dp)
-        ) {
-            Text("Подключить устройство", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Button(
-            onClick = { viewModel.logout(onLogout) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = LocalAppColors.current.danger.copy(alpha = 0.15f)
-            )
-        ) {
-            Text(
-                text = "Выйти",
-                color = LocalAppColors.current.danger,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium
-            )
+            Button(
+                onClick = { viewModel.logout(onLogout) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = LocalAppColors.current.danger.copy(alpha = 0.15f)
+                )
+            ) {
+                Text(
+                    text = "Выйти",
+                    color = LocalAppColors.current.danger,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
     }
 }
