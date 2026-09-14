@@ -808,11 +808,15 @@ class WebSocketManager @Inject constructor(
         sendFrame(Opcode.CALL_OFFER, bos.toByteArray())
     }
 
-    fun sendCallAccept(callId: String) {
+    fun sendCallAccept(callId: String, callKey: String? = null) {
         val bos = ByteArrayOutputStream()
         val packer = MessagePack.newDefaultPacker(bos)
-        packer.packMapHeader(1)
+        val size = 1 + if (callKey != null) 1 else 0
+        packer.packMapHeader(size)
         packer.packString("call_id"); packer.packString(callId)
+        if (callKey != null) {
+            packer.packString("call_key"); packer.packString(callKey)
+        }
         packer.close()
         sendFrame(Opcode.CALL_ACCEPT, bos.toByteArray())
     }

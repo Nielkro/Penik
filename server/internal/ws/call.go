@@ -471,6 +471,9 @@ func (c *Client) handleCallAccept(payload []byte) error {
 	// solely owns the callee side of the call.
 	otherDevices := ac.otherRingingDevices(c.deviceID)
 	ac.RingingDevices = nil
+	if accept.CallKey != "" {
+		ac.CallKey = accept.CallKey
+	}
 	callerID, roomName, callID, callKey := ac.CallerID, ac.RoomName, ac.CallID, ac.CallKey
 	callsMu.Unlock()
 
