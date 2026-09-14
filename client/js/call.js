@@ -770,8 +770,24 @@ export class CallManager {
         });
 
         this.room
+          .on(RoomEvent.ParticipantConnected, (participant) => {
+            if (keyProvider && this.room?.e2eeManager) {
+              this.room.e2eeManager.setParticipantCryptorEnabled(true, participant.identity);
+            }
+          })
+          .on(RoomEvent.TrackPublished, (publication, participant) => {
+            if (keyProvider && this.room?.e2eeManager) {
+              this.room.e2eeManager.setParticipantCryptorEnabled(true, participant.identity);
+            }
+          })
           .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+            if (keyProvider && this.room?.e2eeManager) {
+              this.room.e2eeManager.setParticipantCryptorEnabled(true, participant.identity);
+            }
             this._attachRemoteTrack(track, participant);
+          })
+          .on(RoomEvent.EncryptionError, (error, participant) => {
+            console.warn('[call] E2EE decryption/encryption error:', error, participant?.identity);
           })
           .on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
             track.detach();
@@ -877,6 +893,11 @@ export class CallManager {
             await this.room.setE2EEEnabled(true);
             if (this.currentCall) {
               this.currentCall.isE2EE = true;
+            }
+            if (this.room.e2eeManager) {
+              for (const participant of this.room.remoteParticipants.values()) {
+                this.room.e2eeManager.setParticipantCryptorEnabled(true, participant.identity);
+              }
             }
           } catch (e) {
             console.warn('[call] Failed to enable E2EE on room:', e);
