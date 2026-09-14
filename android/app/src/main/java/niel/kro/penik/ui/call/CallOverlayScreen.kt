@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Videocam
@@ -315,6 +316,26 @@ private fun ActiveCallView(callManager: CallManager) {
                         color = Color(0xFFFFB74D),
                         fontSize = 13.sp
                     )
+                }
+                if (state.isE2EE) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = "E2EE",
+                            tint = Color(0xFF2ECC71),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            "E2EE Зашифровано",
+                            color = Color(0xFF2ECC71),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
         }

@@ -43,6 +43,7 @@ type activeCall struct {
 	RingingDevices map[int64]bool
 	RoomName       string
 	IsVideo        bool
+	CallKey        string
 	Accepted       bool
 	StartedAt      time.Time
 	AnsweredAt     *time.Time
@@ -359,6 +360,7 @@ func (c *Client) handleCallOffer(payload []byte) error {
 		RingingDevices: make(map[int64]bool, len(calleeDevices)),
 		RoomName:       roomName,
 		IsVideo:        offer.IsVideo,
+		CallKey:        offer.CallKey,
 		StartedAt:      time.Now(),
 		DB:             c.db.DB,
 	}
@@ -403,6 +405,7 @@ func (c *Client) handleCallOffer(payload []byte) error {
 		LiveKitURL:         c.cfg.LiveKitURL,
 		LiveKitFallbackURL: c.cfg.LiveKitFallbackURL,
 		Token:              token,
+		CallKey:            offer.CallKey,
 	})
 
 	// Ring exactly the devices recorded in RingingDevices, so the tracked ring
@@ -468,7 +471,7 @@ func (c *Client) handleCallAccept(payload []byte) error {
 	// solely owns the callee side of the call.
 	otherDevices := ac.otherRingingDevices(c.deviceID)
 	ac.RingingDevices = nil
-	callerID, roomName, callID := ac.CallerID, ac.RoomName, ac.CallID
+	callerID, roomName, callID, callKey := ac.CallerID, ac.RoomName, ac.CallID, ac.CallKey
 	callsMu.Unlock()
 
 	notifyOtherCalleeDevices(c.hub, otherDevices, callID, "accepted")
@@ -487,6 +490,7 @@ func (c *Client) handleCallAccept(payload []byte) error {
 		LiveKitURL:         c.cfg.LiveKitURL,
 		LiveKitFallbackURL: c.cfg.LiveKitFallbackURL,
 		Token:              token,
+		CallKey:            callKey,
 	})
 
 	c.hub.SendToUser(callerID, append([]byte{byte(OpCallAccepted)}, acceptedPayload...))
@@ -759,6 +763,7 @@ func ResumeDeviceCalls(hub *Hub, userID, deviceID int64, deliver func(frame []by
 		IsVideo:    ac.IsVideo,
 		RoomName:   ac.RoomName,
 		Accepted:   ac.Accepted,
+		CallKey:    ac.CallKey,
 	}
 	if ac.AnsweredAt != nil {
 		state.AnsweredAt = ac.AnsweredAt.Unix()

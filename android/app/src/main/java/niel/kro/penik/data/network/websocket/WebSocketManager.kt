@@ -171,7 +171,8 @@ sealed class WebSocketEvent {
         val roomName: String,
         val livekitUrl: String,
         val livekitFallbackUrl: String?,
-        val token: String
+        val token: String,
+        val callKey: String? = null
     ) : WebSocketEvent()
 
     data class CallAccepted(
@@ -180,7 +181,8 @@ sealed class WebSocketEvent {
         val roomName: String,
         val livekitUrl: String,
         val livekitFallbackUrl: String?,
-        val token: String
+        val token: String,
+        val callKey: String? = null
     ) : WebSocketEvent()
 
     data class CallReject(val callId: String, val toUserId: Long, val reason: String) : WebSocketEvent()
@@ -204,7 +206,8 @@ sealed class WebSocketEvent {
         val isVideo: Boolean,
         val roomName: String,
         val accepted: Boolean,
-        val answeredAt: Long
+        val answeredAt: Long,
+        val callKey: String? = null
     ) : WebSocketEvent()
 
     /** The peer's signaling link dropped or came back while the call is held open. */
@@ -553,7 +556,8 @@ class WebSocketManager @Inject constructor(
                         isVideo = map["is_video"] as? Boolean ?: false,
                         roomName = map["room_name"]?.toString().orEmpty(),
                         accepted = map["accepted"] as? Boolean ?: false,
-                        answeredAt = (map["answered_at"] as? Number)?.toLong() ?: 0L
+                        answeredAt = (map["answered_at"] as? Number)?.toLong() ?: 0L,
+                        callKey = map["call_key"] as? String
                     )
                 )
             }
@@ -698,7 +702,8 @@ class WebSocketManager @Inject constructor(
                         roomName = map["room_name"] as? String ?: "",
                         livekitUrl = map["livekit_url"] as? String ?: "",
                         livekitFallbackUrl = map["livekit_fallback_url"] as? String,
-                        token = map["token"] as? String ?: ""
+                        token = map["token"] as? String ?: "",
+                        callKey = map["call_key"] as? String
                     )
                 )
             }
@@ -721,7 +726,8 @@ class WebSocketManager @Inject constructor(
                         roomName = map["room_name"] as? String ?: "",
                         livekitUrl = map["livekit_url"] as? String ?: "",
                         livekitFallbackUrl = map["livekit_fallback_url"] as? String,
-                        token = map["token"] as? String ?: ""
+                        token = map["token"] as? String ?: "",
+                        callKey = map["call_key"] as? String
                     )
                 )
             }
@@ -779,7 +785,7 @@ class WebSocketManager @Inject constructor(
                 _events.emit(
                     WebSocketEvent.CallTaken(
                         callId = callId,
-                        reason = map["reason"] as? String ?: "accepted"
+                        reason = map["reason"] as? String ?: "declined"
                     )
                 )
             }
@@ -788,12 +794,16 @@ class WebSocketManager @Inject constructor(
         }
     }
 
-    fun sendCallOffer(toUserId: Long, isVideo: Boolean) {
+    fun sendCallOffer(toUserId: Long, isVideo: Boolean, callKey: String? = null) {
         val bos = ByteArrayOutputStream()
         val packer = MessagePack.newDefaultPacker(bos)
-        packer.packMapHeader(2)
+        val headerCount = if (callKey != null) 3 else 2
+        packer.packMapHeader(headerCount)
         packer.packString("to_user_id"); packer.packLong(toUserId)
         packer.packString("is_video"); packer.packBoolean(isVideo)
+        if (callKey != null) {
+            packer.packString("call_key"); packer.packString(callKey)
+        }
         packer.close()
         sendFrame(Opcode.CALL_OFFER, bos.toByteArray())
     }

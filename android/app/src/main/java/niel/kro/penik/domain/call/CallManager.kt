@@ -67,7 +67,9 @@ data class CallUiState(
     // True while LiveKit is re-establishing the session after a network change.
     val isReconnecting: Boolean = false,
     // False while the peer's signaling link is inside the server grace window.
-    val peerOnline: Boolean = true
+    val peerOnline: Boolean = true,
+    // True when the call is End-to-End Encrypted via WebRTC FrameCryptor.
+    val isE2EE: Boolean = false
 )
 
 private const val TAG = "CallManager"
@@ -76,7 +78,8 @@ private const val TAG = "CallManager"
 private data class PendingOutgoingCall(
     val peerUserId: Long,
     val peerName: String,
-    val isVideo: Boolean
+    val isVideo: Boolean,
+    val callKey: String
 )
 
 private const val RING_TIMEOUT_MS = 30_000L
@@ -131,6 +134,7 @@ class CallManager @Inject constructor(
     private var livekitFallbackUrl: String? = null
     private var token: String = ""
     private var currentCallId: String = ""
+    private var callKey: String = ""
     // Pending outgoing call that was held until the user confirms despite VPN.
     private var pendingOutgoingCall: PendingOutgoingCall? = null
     // True while an incoming call accept is held pending the VPN confirmation.
@@ -156,18 +160,23 @@ class CallManager @Inject constructor(
             toast("Уже есть активный звонок")
             return
         }
+        val randomBytes = ByteArray(32).apply { java.security.SecureRandom().nextBytes(this) }
+        val generatedKey = randomBytes.joinToString("") { "%02x".format(it) }
+        callKey = generatedKey
+
         _state.value = CallUiState(
             phase = CallPhase.DIALING,
             peerUserId = peerUserId,
             peerName = peerName.ifBlank { "Пользователь #$peerUserId" },
             isVideo = isVideo,
-            isOutgoing = true
+            isOutgoing = true,
+            isE2EE = true
         )
         startDialingTone()
         // Ask to disable VPN (if active) BEFORE dialing so media does not try
         // to collect candidates against the tunnel interface.
         if (isVpnActive()) {
-            pendingOutgoingCall = PendingOutgoingCall(peerUserId, peerName, isVideo)
+            pendingOutgoingCall = PendingOutgoingCall(peerUserId, peerName, isVideo, generatedKey)
             _vpnWarning.tryEmit(Unit)
             return
         }
@@ -180,7 +189,7 @@ class CallManager @Inject constructor(
                 cleanup()
             }
         }
-        webSocketManager.sendCallOffer(peerUserId, isVideo)
+        webSocketManager.sendCallOffer(peerUserId, isVideo, generatedKey)
     }
 
     // --- Incoming ---
@@ -199,12 +208,14 @@ class CallManager @Inject constructor(
         livekitUrl = event.livekitUrl
         livekitFallbackUrl = event.livekitFallbackUrl
         token = event.token
+        callKey = event.callKey.orEmpty()
         _state.value = CallUiState(
             phase = CallPhase.INCOMING,
             peerUserId = event.fromUserId,
             peerName = "Пользователь #${event.fromUserId}",
             isVideo = event.isVideo,
-            isOutgoing = false
+            isOutgoing = false,
+            isE2EE = callKey.isNotBlank()
         )
         startRinger()
         notificationManager.showIncomingCallNotification(
@@ -311,6 +322,8 @@ class CallManager @Inject constructor(
         if (ui.phase != CallPhase.DIALING) return
         val peerUserId = ui.peerUserId
         val isVideo = ui.isVideo
+        val outgoingKey = pendingOutgoingCall?.callKey ?: callKey
+        callKey = outgoingKey
         ringTimeoutJob = scope.launch {
             delay(RING_TIMEOUT_MS)
             if (ui.phase == CallPhase.DIALING) {
@@ -320,7 +333,7 @@ class CallManager @Inject constructor(
                 cleanup()
             }
         }
-        webSocketManager.sendCallOffer(peerUserId, isVideo)
+        webSocketManager.sendCallOffer(peerUserId, isVideo, outgoingKey)
     }
 
     fun rejectCall() {
@@ -360,7 +373,10 @@ class CallManager @Inject constructor(
         livekitUrl = event.livekitUrl
         livekitFallbackUrl = event.livekitFallbackUrl
         token = event.token
-        _state.value = ui.copy(phase = CallPhase.CONNECTING)
+        if (callKey.isEmpty() && !event.callKey.isNullOrEmpty()) {
+            callKey = event.callKey
+        }
+        _state.value = ui.copy(phase = CallPhase.CONNECTING, isE2EE = callKey.isNotBlank())
         scope.launch { connectLiveKit() }
     }
 
@@ -424,6 +440,10 @@ class CallManager @Inject constructor(
             return
         }
         currentCallId = event.callId
+        if (callKey.isEmpty() && !event.callKey.isNullOrEmpty()) {
+            callKey = event.callKey
+            _state.value = ui.copy(isE2EE = true)
+        }
         if (event.answeredAt > 0L) {
             resumeTimer(event.answeredAt * 1000L)
         }
@@ -556,9 +576,21 @@ class CallManager @Inject constructor(
     }
 
     private fun createRoom(): Room {
+        val e2eeOptions = if (callKey.isNotBlank()) {
+            val keyProvider = io.livekit.android.e2ee.BaseKeyProvider()
+            keyProvider.setSharedKey(callKey)
+            io.livekit.android.e2ee.E2EEOptions(keyProvider = keyProvider)
+        } else {
+            null
+        }
+        val roomOptions = RoomOptions(
+            adaptiveStream = true,
+            dynacast = true,
+            e2eeOptions = e2eeOptions
+        )
         val r = LiveKit.create(
             context,
-            RoomOptions(adaptiveStream = true, dynacast = true),
+            roomOptions,
             LiveKitOverrides(eglBase = eglBase)
         )
         eventsJob?.cancel()
@@ -730,7 +762,11 @@ class CallManager @Inject constructor(
 
     private suspend fun onRoomConnected() {
         val room = room ?: return
-        _state.value = ui.copy(phase = CallPhase.ACTIVE, isReconnecting = false)
+        _state.value = ui.copy(
+            phase = CallPhase.ACTIVE,
+            isReconnecting = false,
+            isE2EE = callKey.isNotBlank()
+        )
         playConnectedTone()
         startTimer()
         updateRemoteVideoTrack(room)
@@ -1004,6 +1040,7 @@ class CallManager @Inject constructor(
         livekitUrl = ""
         livekitFallbackUrl = null
         token = ""
+        callKey = ""
         callIdOfIncoming = ""
         currentCallId = ""
         pendingOutgoingCall = null

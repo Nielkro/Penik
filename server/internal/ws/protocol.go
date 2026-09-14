@@ -354,8 +354,9 @@ type GroupAvatarUpdate struct {
 
 // CallOffer is sent client→server to initiate a 1:1 call.
 type CallOffer struct {
-	ToUserID int64 `msgpack:"to_user_id"`
-	IsVideo  bool  `msgpack:"is_video"`
+	ToUserID int64  `msgpack:"to_user_id"`
+	IsVideo  bool   `msgpack:"is_video"`
+	CallKey  string `msgpack:"call_key,omitempty"`
 }
 
 // CallIncoming is sent server→client to inform the target user of an incoming call.
@@ -367,6 +368,7 @@ type CallIncoming struct {
 	LiveKitURL         string `msgpack:"livekit_url"`
 	LiveKitFallbackURL string `msgpack:"livekit_fallback_url"`
 	Token              string `msgpack:"token"`
+	CallKey            string `msgpack:"call_key,omitempty"`
 }
 
 // CallAccept is sent client→server when the recipient accepts the call.
@@ -382,6 +384,7 @@ type CallAccepted struct {
 	LiveKitURL         string `msgpack:"livekit_url"`
 	LiveKitFallbackURL string `msgpack:"livekit_fallback_url"`
 	Token              string `msgpack:"token"`
+	CallKey            string `msgpack:"call_key,omitempty"`
 }
 
 // CallReject is sent client→server (or server→client) when call is declined/busy.
@@ -433,7 +436,8 @@ type CallState struct {
 	Accepted   bool   `msgpack:"accepted"`
 	// AnsweredAt lets a reconnecting client resume its call timer from the real
 	// start instead of restarting it from zero.
-	AnsweredAt int64 `msgpack:"answered_at"`
+	AnsweredAt int64  `msgpack:"answered_at"`
+	CallKey    string `msgpack:"call_key,omitempty"`
 }
 
 // CallPeerState tells a client that the peer's signaling link went away or came

@@ -106,12 +106,18 @@ export class CallManager {
 
     const peerContact = await this._resolveContact(toUserId);
 
+    const keyBytes = new Uint8Array(32);
+    crypto.getRandomValues(keyBytes);
+    const callKey = Array.from(keyBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
     this.currentCall = {
       state: 'DIALING',
       toUserId,
       isVideo,
       callId: null,
       peerContact,
+      callKey,
+      isE2EE: true,
     };
 
     callSounds.playDialing();
@@ -119,6 +125,7 @@ export class CallManager {
     ws.send(OP.CALL_OFFER, {
       to_user_id: toUserId,
       is_video: isVideo,
+      call_key: callKey,
     });
 
     this._dialTimeout = setTimeout(() => {
@@ -342,6 +349,8 @@ export class CallManager {
       livekitFallbackUrl: payload.livekit_fallback_url,
       token: payload.token,
       peerContact,
+      callKey: payload.call_key || '',
+      isE2EE: Boolean(payload.call_key),
     };
 
     callSounds.playRingtone();
@@ -354,6 +363,10 @@ export class CallManager {
     callSounds.stopAll();
     clearTimeout(this._dialTimeout);
     this.currentCall.callId = payload.call_id;
+    if (payload.call_key) {
+      this.currentCall.callKey = payload.call_key;
+      this.currentCall.isE2EE = true;
+    }
     this.currentCall.state = 'CONNECTING';
     if (!this.currentCall.peerContact && payload.to_user_id) {
       this.currentCall.peerContact = await this._resolveContact(payload.to_user_id);
@@ -410,13 +423,17 @@ export class CallManager {
    * owns a side of a live call. The server held the call open through the
    * network switch, so all this does is re-sync the call id and timer — the
    * LiveKit room reconnects on its own.
-   * @param {{call_id?: string, peer_user_id?: number, is_video?: boolean, accepted?: boolean, answered_at?: number}} payload
+   * @param {{call_id?: string, peer_user_id?: number, is_video?: boolean, accepted?: boolean, answered_at?: number, call_key?: string}} payload
    */
   async _handleCallState(payload) {
     if (!payload || !payload.call_id) return;
     if (this.currentCall) {
       // Adopt the id if this device was dialing and lost the accept frame.
       this.currentCall.callId = payload.call_id;
+      if (payload.call_key) {
+        this.currentCall.callKey = payload.call_key;
+        this.currentCall.isE2EE = true;
+      }
       if (payload.answered_at) {
         this._resumeTimer(payload.answered_at * 1000);
       }
@@ -452,7 +469,7 @@ export class CallManager {
       fallbackUrl = null;
     }
 
-    const { Room, RoomEvent, VideoPresets } = await getLiveKit();
+    const { Room, RoomEvent, VideoPresets, ExternalE2EEKeyProvider, isE2EESupported } = await getLiveKit();
 
     const urlsToTry = [primaryUrl];
     if (fallbackUrl && fallbackUrl !== primaryUrl) {
@@ -463,6 +480,27 @@ export class CallManager {
     for (let attempt = 0; attempt < urlsToTry.length; attempt++) {
       const url = urlsToTry[attempt];
       try {
+        let keyProvider = null;
+        let worker = null;
+        const callKey = this.currentCall?.callKey;
+        if (callKey && typeof Worker !== 'undefined') {
+          try {
+            const supported = typeof isE2EESupported === 'function' ? isE2EESupported() : true;
+            if (supported && typeof ExternalE2EEKeyProvider === 'function') {
+              keyProvider = new ExternalE2EEKeyProvider();
+              worker = new Worker('/livekit-client.e2ee.worker.js');
+              await keyProvider.setKey(callKey);
+            }
+          } catch (e) {
+            console.warn('[call] Failed to setup E2EE key provider:', e);
+            keyProvider = null;
+            if (worker) {
+              worker.terminate();
+              worker = null;
+            }
+          }
+        }
+
         this.room = new Room({
           disconnectOnPageLeave: false,
           adaptiveStream: {
@@ -502,6 +540,7 @@ export class CallManager {
               maxFramerate: 60,
             },
           },
+          ...(keyProvider && worker ? { e2ee: { keyProvider, worker } } : {}),
         });
 
         this.room
@@ -587,6 +626,17 @@ export class CallManager {
           });
 
         await this.room.connect(url, token);
+
+        if (keyProvider && worker) {
+          try {
+            await this.room.setE2EEEnabled(true);
+            if (this.currentCall) {
+              this.currentCall.isE2EE = true;
+            }
+          } catch (e) {
+            console.warn('[call] Failed to enable E2EE on room:', e);
+          }
+        }
 
         callSounds.playConnected();
 
