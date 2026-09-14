@@ -94,7 +94,6 @@ export function renderProfile(container) {
 
   const username = user.username || user.nickname || "";
   const usernameEl = el("span", { class: "profile-username", style: "font-size:14px;color:var(--text-muted);margin-top:4px;" }, `@${username}`);
-  const userIdEl = el("span", { class: "profile-uid", style: "font-size:12px;color:var(--text-muted);opacity:0.75;margin-top:4px;" }, `ID аккаунта: ${userId}`);
 
   editBtn.addEventListener("click", () => {
     nameDisplay.classList.add("hidden");
@@ -159,7 +158,6 @@ export function renderProfile(container) {
   const infoSection = el("div", { class: "profile-info", style: "display:flex;flex-direction:column;align-items:center;margin-bottom:16px;width:100%;" },
     el("div", { class: "profile-name-row", style: "display:flex;align-items:center;justify-content:center;width:100%;margin-bottom:4px;" }, nameDisplay, nameInput),
     usernameEl,
-    userIdEl,
     el("div", { class: "profile-edit-row", style: "display:flex;gap:8px;margin-top:12px;" }, editBtn, saveBtn, cancelBtn)
   );
 

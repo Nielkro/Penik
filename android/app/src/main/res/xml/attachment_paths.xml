@@ -6,4 +6,11 @@
     <cache-path
         name="updates"
         path="updates/" />
+    <cache-path
+        name="avatars"
+        path="avatars/" />
+    <cache-path
+        name="cache"
+        path="." />
 </paths>
+
