@@ -14,12 +14,21 @@ class CallActionReceiver : BroadcastReceiver() {
     @Inject lateinit var appNotificationManager: AppNotificationManager
 
     override fun onReceive(context: Context, intent: Intent) {
-        when (intent.getStringExtra(AppNotificationManager.EXTRA_CALL_ACTION)) {
-            ACTION_ANSWER -> callManager.acceptCall()
-            ACTION_DECLINE -> {
-                callManager.rejectCall()
-                appNotificationManager.cancelIncomingCallNotification()
-            }
+        val extraAction = intent.getStringExtra(AppNotificationManager.EXTRA_CALL_ACTION)
+        val isAnswer = extraAction == ACTION_ANSWER ||
+            intent.action == AppNotificationManager.ACTION_ANSWER_CALL ||
+            intent.data?.path?.contains("answer") == true
+
+        val isDecline = extraAction == ACTION_DECLINE ||
+            intent.action == AppNotificationManager.ACTION_DECLINE_CALL ||
+            intent.data?.path?.contains("decline") == true
+
+        if (isAnswer) {
+            callManager.acceptCall()
+            appNotificationManager.cancelIncomingCallNotification()
+        } else if (isDecline) {
+            callManager.rejectCall()
+            appNotificationManager.cancelIncomingCallNotification()
         }
     }
 
