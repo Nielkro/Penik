@@ -48,3 +48,5 @@ target/
 rust/**/target/
 *.so
 *.wasm
+bot_identity.json
+bot*.json
