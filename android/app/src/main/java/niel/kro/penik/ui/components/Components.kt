@@ -107,6 +107,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.DropdownMenu
@@ -634,39 +636,112 @@ private fun formatFullTime(timestamp: Long): String {
     return sdf.format(Date(toMs(timestamp)))
 }
 
-private val URL_REGEX = Regex("""(https?://|www\.)[^\s<>"']+\.[^\s<>"']+|https?://[^\s<>"']+""")
+private val MARKDOWN_TOKEN_REGEX = Regex(
+    """(```[\s\S]*?```)|(`[^`\n]+`)|(\[([^\]]+)\]\(((?:https?://|www\.)[^\s\)]+)\))|(\*\*[^\*\n]+\*\*)|(~~[^~\n]+~~)|((?<!\*)\*[^\*\n]+\*(?!\*))|((?:https?://|www\.)[^\s<>"']+\.[^\s<>"']+|https?://[^\s<>"']+)"""
+)
 
-/** Build an AnnotatedString where http(s) URLs become clickable spans. */
+/** Build an AnnotatedString where Markdown and URLs become styled spans and clickable links. */
 private fun buildLinkedText(text: String, linkColor: Color): androidx.compose.ui.text.AnnotatedString {
     return buildAnnotatedString {
         var lastEnd = 0
-        for (match in URL_REGEX.findAll(text)) {
+        for (match in MARKDOWN_TOKEN_REGEX.findAll(text)) {
             val start = match.range.first
-            val rawUrl = match.value
-            // Strip trailing punctuation that likely isn't part of the URL.
-            var url = rawUrl
-            var trail = ""
-            while (url.isNotEmpty() && url.last() in ".,;:!?)]") {
-                trail = url.last() + trail
-                url = url.dropLast(1)
-            }
             if (start > lastEnd) {
                 append(text.substring(lastEnd, start))
             }
-            if (url.isNotEmpty()) {
-                val targetUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                    "https://$url"
-                } else {
-                    url
+            val matchVal = match.value
+
+            when {
+                // 1. Fenced code block ```...```
+                matchVal.startsWith("```") && matchVal.endsWith("```") && matchVal.length >= 6 -> {
+                    var inner = matchVal.removePrefix("```").removeSuffix("```")
+                    val firstNewline = inner.indexOf('\n')
+                    if (firstNewline != -1 && firstNewline < 30 && !inner.substring(0, firstNewline).contains(' ')) {
+                        inner = inner.substring(firstNewline + 1)
+                    }
+                    withStyle(
+                        SpanStyle(
+                            fontFamily = FontFamily.Monospace,
+                            background = Color(0x28888888),
+                            fontSize = 13.sp
+                        )
+                    ) {
+                        append(inner.trimEnd())
+                    }
                 }
-                pushStringAnnotation(tag = "URL", annotation = targetUrl)
-                withStyle(SpanStyle(color = linkColor)) {
-                    append(url)
+                // 2. Inline code `...`
+                matchVal.startsWith("`") && matchVal.endsWith("`") && matchVal.length >= 2 -> {
+                    val inner = matchVal.removePrefix("`").removeSuffix("`")
+                    withStyle(
+                        SpanStyle(
+                            fontFamily = FontFamily.Monospace,
+                            background = Color(0x28888888),
+                            fontSize = 13.5.sp
+                        )
+                    ) {
+                        append(inner)
+                    }
                 }
-                pop()
-            }
-            if (trail.isNotEmpty()) {
-                append(trail)
+                // 3. Markdown link [label](url)
+                matchVal.startsWith("[") -> {
+                    val label = match.groups[4]?.value ?: ""
+                    val target = match.groups[5]?.value ?: ""
+                    val targetUrl = if (!target.startsWith("http://") && !target.startsWith("https://")) {
+                        "https://$target"
+                    } else {
+                        target
+                    }
+                    pushStringAnnotation(tag = "URL", annotation = targetUrl)
+                    withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
+                        append(label)
+                    }
+                    pop()
+                }
+                // 4. Bold **...**
+                matchVal.startsWith("**") && matchVal.endsWith("**") && matchVal.length >= 4 -> {
+                    val inner = matchVal.removePrefix("**").removeSuffix("**")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(inner)
+                    }
+                }
+                // 5. Strikethrough ~~...~~
+                matchVal.startsWith("~~") && matchVal.endsWith("~~") && matchVal.length >= 4 -> {
+                    val inner = matchVal.removePrefix("~~").removeSuffix("~~")
+                    withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) {
+                        append(inner)
+                    }
+                }
+                // 6. Italic *...*
+                matchVal.startsWith("*") && matchVal.endsWith("*") && matchVal.length >= 2 -> {
+                    val inner = matchVal.removePrefix("*").removeSuffix("*")
+                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                        append(inner)
+                    }
+                }
+                // 7. Raw URL
+                else -> {
+                    var url = matchVal
+                    var trail = ""
+                    while (url.isNotEmpty() && url.last() in ".,;:!?)]") {
+                        trail = url.last() + trail
+                        url = url.dropLast(1)
+                    }
+                    if (url.isNotEmpty()) {
+                        val targetUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                            "https://$url"
+                        } else {
+                            url
+                        }
+                        pushStringAnnotation(tag = "URL", annotation = targetUrl)
+                        withStyle(SpanStyle(color = linkColor)) {
+                            append(url)
+                        }
+                        pop()
+                    }
+                    if (trail.isNotEmpty()) {
+                        append(trail)
+                    }
+                }
             }
             lastEnd = match.range.last + 1
         }

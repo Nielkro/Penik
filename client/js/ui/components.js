@@ -480,42 +480,8 @@ export function setMsgTextContent(el, text) {
     }
   }
 
-  let last = 0;
-  MSG_URL_RE.lastIndex = 0;
-  let m;
   const directImageUrls = [];
-
-  while ((m = MSG_URL_RE.exec(s)) !== null) {
-    if (m.index > last) {
-      el.appendChild(document.createTextNode(s.slice(last, m.index)));
-    }
-    let url = m[0];
-    let trail = "";
-    while (url.length && /[.,;:!?)]+$/.test(url)) {
-      trail = url.slice(-1) + trail;
-      url = url.slice(0, -1);
-    }
-    if (url) {
-      const href = url.toLowerCase().startsWith("www.") ? "https://" + url : url;
-      const a = document.createElement("a");
-      a.className = "msg-link";
-      a.href = href;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      a.textContent = url;
-      a.addEventListener("click", (e) => e.stopPropagation());
-      el.appendChild(a);
-
-      if (isDirectImageUrl(url) && directImageUrls.length < 3) {
-        directImageUrls.push(href);
-      }
-    }
-    if (trail) el.appendChild(document.createTextNode(trail));
-    last = m.index + m[0].length;
-  }
-  if (last < s.length) {
-    el.appendChild(document.createTextNode(s.slice(last)));
-  }
+  renderMarkdown(el, s, directImageUrls);
 
   if (directImageUrls.length > 0) {
     for (const imgUrl of directImageUrls) {
@@ -536,6 +502,245 @@ export function setMsgTextContent(el, text) {
       previewCard.appendChild(previewImg);
       el.appendChild(previewCard);
     }
+  }
+}
+
+const INLINE_MD_RE = /(`[^`\n]+`)|(\[([^\]]+)\]\(((?:https?:\/\/|www\.)[^\s\)]+)\))|(\*\*\*[^\*\n]+\*\*\*)|(\*\*[^\*\n]+\*\*)|(~~[^~\n]+~~)|((?<!\*)\*[^\*\n]+\*(?!\*))|((?:https?:\/\/[^\s<>"']+|www\.[^\s<>"']+))/g;
+
+/**
+ * Parses inline Markdown formatting (code, links, bold, italic, strikethrough, auto-URLs)
+ * into safe DOM elements (no innerHTML).
+ *
+ * @param {HTMLElement} container
+ * @param {string} text
+ * @param {string[]} [directImageUrls]
+ */
+export function formatInlineMarkdown(container, text, directImageUrls = []) {
+  if (!text) return;
+
+  INLINE_MD_RE.lastIndex = 0;
+  let last = 0;
+  let m;
+
+  while ((m = INLINE_MD_RE.exec(text)) !== null) {
+    if (m.index > last) {
+      container.appendChild(document.createTextNode(text.slice(last, m.index)));
+    }
+
+    if (m[1]) {
+      // Inline code: `code`
+      const codeSpan = document.createElement("code");
+      codeSpan.className = "msg-inline-code";
+      codeSpan.textContent = m[1].slice(1, -1);
+      container.appendChild(codeSpan);
+    } else if (m[2]) {
+      // Markdown link: [label](url)
+      const label = m[3];
+      const rawUrl = m[4];
+      const href = rawUrl.toLowerCase().startsWith("www.") ? "https://" + rawUrl : rawUrl;
+      const a = document.createElement("a");
+      a.className = "msg-link";
+      a.href = href;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = label;
+      a.addEventListener("click", (e) => e.stopPropagation());
+      container.appendChild(a);
+
+      if (isDirectImageUrl(rawUrl) && directImageUrls.length < 3) {
+        directImageUrls.push(href);
+      }
+    } else if (m[5]) {
+      // Bold + Italic: ***text***
+      const strong = document.createElement("strong");
+      const em = document.createElement("em");
+      em.textContent = m[5].slice(3, -3);
+      strong.appendChild(em);
+      container.appendChild(strong);
+    } else if (m[6]) {
+      // Bold: **text**
+      const strong = document.createElement("strong");
+      strong.textContent = m[6].slice(2, -2);
+      container.appendChild(strong);
+    } else if (m[7]) {
+      // Strikethrough: ~~text~~
+      const del = document.createElement("del");
+      del.textContent = m[7].slice(2, -2);
+      container.appendChild(del);
+    } else if (m[8]) {
+      // Italic: *text*
+      const em = document.createElement("em");
+      em.textContent = m[8].slice(1, -1);
+      container.appendChild(em);
+    } else if (m[9]) {
+      // Raw autolink URL
+      let url = m[9];
+      let trail = "";
+      while (url.length && /[.,;:!?)]+$/.test(url)) {
+        trail = url.slice(-1) + trail;
+        url = url.slice(0, -1);
+      }
+      if (url) {
+        const href = url.toLowerCase().startsWith("www.") ? "https://" + url : url;
+        const a = document.createElement("a");
+        a.className = "msg-link";
+        a.href = href;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = url;
+        a.addEventListener("click", (e) => e.stopPropagation());
+        container.appendChild(a);
+
+        if (isDirectImageUrl(url) && directImageUrls.length < 3) {
+          directImageUrls.push(href);
+        }
+      }
+      if (trail) {
+        container.appendChild(document.createTextNode(trail));
+      }
+    }
+
+    last = m.index + m[0].length;
+  }
+
+  if (last < text.length) {
+    container.appendChild(document.createTextNode(text.slice(last)));
+  }
+}
+
+/**
+ * Parses multiline Markdown containing code blocks, blockquotes, headers, lists,
+ * and paragraphs, inserting structured DOM nodes safely.
+ *
+ * @param {HTMLElement} container
+ * @param {string} text
+ * @param {string[]} [directImageUrls]
+ */
+export function renderMarkdown(container, text, directImageUrls = []) {
+  if (!text) return;
+
+  const lines = text.split(/\r?\n/);
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // 1. Fenced code block: ```[lang]
+    if (line.trim().startsWith("```")) {
+      const lang = line.trim().slice(3).trim();
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length && lines[i].trim().startsWith("```")) {
+        i++; // skip closing ```
+      }
+
+      const rawCode = codeLines.join("\n");
+      const blockEl = document.createElement("div");
+      blockEl.className = "msg-code-block";
+
+      const headerEl = document.createElement("div");
+      headerEl.className = "msg-code-header";
+
+      const langSpan = document.createElement("span");
+      langSpan.className = "msg-code-lang";
+      langSpan.textContent = lang || "code";
+      headerEl.appendChild(langSpan);
+
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "msg-code-copy-btn";
+      copyBtn.textContent = "Копировать";
+      copyBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(rawCode);
+          copyBtn.textContent = "✓ Скопировано";
+          copyBtn.classList.add("copied");
+          setTimeout(() => {
+            copyBtn.textContent = "Копировать";
+            copyBtn.classList.remove("copied");
+          }, 2000);
+        } catch (err) {
+          console.error("[Markdown] Failed to copy code:", err);
+        }
+      });
+      headerEl.appendChild(copyBtn);
+      blockEl.appendChild(headerEl);
+
+      const preEl = document.createElement("pre");
+      preEl.className = "msg-code-content";
+      const codeEl = document.createElement("code");
+      codeEl.textContent = rawCode;
+      preEl.appendChild(codeEl);
+      blockEl.appendChild(preEl);
+
+      container.appendChild(blockEl);
+      continue;
+    }
+
+    // 2. Blockquote: > quote
+    if (line.startsWith("> ") || line === ">") {
+      const quoteLines = [];
+      while (i < lines.length && (lines[i].startsWith("> ") || lines[i] === ">")) {
+        quoteLines.push(lines[i].startsWith("> ") ? lines[i].slice(2) : lines[i].slice(1));
+        i++;
+      }
+      const quoteEl = document.createElement("blockquote");
+      quoteEl.className = "msg-md-quote";
+      for (let q = 0; q < quoteLines.length; q++) {
+        if (q > 0) quoteEl.appendChild(document.createElement("br"));
+        formatInlineMarkdown(quoteEl, quoteLines[q], directImageUrls);
+      }
+      container.appendChild(quoteEl);
+      continue;
+    }
+
+    // 3. Headers: #, ##, ###
+    const h3Match = line.match(/^###\s+(.*)$/);
+    const h2Match = line.match(/^##\s+(.*)$/);
+    const h1Match = line.match(/^#\s+(.*)$/);
+    if (h1Match || h2Match || h3Match) {
+      const level = h1Match ? 1 : (h2Match ? 2 : 3);
+      const content = (h1Match || h2Match || h3Match)[1];
+      const hEl = document.createElement("div");
+      hEl.className = `msg-md-header msg-md-h${level}`;
+      formatInlineMarkdown(hEl, content, directImageUrls);
+      container.appendChild(hEl);
+      i++;
+      continue;
+    }
+
+    // 4. Bullet lists: - ... or * ... (with space)
+    if (line.match(/^[-*]\s+(.*)$/)) {
+      const ulEl = document.createElement("ul");
+      ulEl.className = "msg-md-list";
+      while (i < lines.length) {
+        const itemMatch = lines[i].match(/^[-*]\s+(.*)$/);
+        if (!itemMatch) break;
+        const liEl = document.createElement("li");
+        formatInlineMarkdown(liEl, itemMatch[1], directImageUrls);
+        ulEl.appendChild(liEl);
+        i++;
+      }
+      container.appendChild(ulEl);
+      continue;
+    }
+
+    // 5. Regular paragraph line
+    const pEl = document.createElement("div");
+    pEl.className = "msg-md-p";
+    if (!line.trim()) {
+      pEl.innerHTML = "&nbsp;";
+      pEl.className = "msg-md-spacer";
+    } else {
+      formatInlineMarkdown(pEl, line, directImageUrls);
+    }
+    container.appendChild(pEl);
+    i++;
   }
 }
 

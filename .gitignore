@@ -50,3 +50,5 @@ rust/**/target/
 *.wasm
 bot_identity.json
 bot*.json
+*identity*.json
+ai_bot_identity.json
