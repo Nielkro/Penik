@@ -99,6 +99,36 @@ func SearchUsers(database *db.DB) http.HandlerFunc {
 	}
 }
 
+// GetMe handles GET /api/v1/users/me.
+func GetMe(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		deviceID := middleware.DeviceIDFromCtx(r.Context())
+		if userID == 0 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		var name, nickname string
+		var isBot int
+		err := database.QueryRowContext(r.Context(),
+			`SELECT name, nickname, is_bot FROM users WHERE id=?`, userID).Scan(&name, &nickname, &isBot)
+		if err != nil {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"id":        userID,
+			"device_id": deviceID,
+			"name":      name,
+			"nickname":  nickname,
+			"is_bot":    isBot != 0,
+		})
+	}
+}
+
 // GetUser handles GET /api/v1/users/:id.
 func GetUser(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

@@ -133,6 +133,8 @@ func main() {
 		authMW(http.HandlerFunc(handlers.DeleteBot(database, hub))))
 
 
+	mux.Handle("GET /api/v1/users/me",
+		authMW(http.HandlerFunc(handlers.GetMe(database))))
 	mux.Handle("GET /api/v1/users/search",
 		authMW(http.HandlerFunc(handlers.SearchUsers(database))))
 	mux.Handle("GET /api/v1/users/{id}",

@@ -284,41 +284,31 @@ class PenikBot:
         return {"Authorization": f"Bearer {self.token}"}
 
     def init_account(self):
-        """Fetches bot devices and updates server with public identity key."""
-        res = self.session.get(f"{self.server_url}/api/v1/devices", headers=self._auth_headers())
-        if res.status_code != 200:
-            raise RuntimeError(f"Authentication failed ({res.status_code}): {res.text}")
+        """Fetches bot profile and updates server with public identity key."""
+        me_res = self.session.get(f"{self.server_url}/api/v1/users/me", headers=self._auth_headers())
+        if me_res.status_code == 200:
+            me = me_res.json()
+            self.user_id = me["id"]
+            self.device_id = me.get("device_id")
+            self.name = me.get("name")
+            self.nickname = me.get("nickname")
+        else:
+            dev_res = self.session.get(f"{self.server_url}/api/v1/devices", headers=self._auth_headers())
+            if dev_res.status_code != 200:
+                raise RuntimeError(f"Authentication failed ({dev_res.status_code}): {dev_res.text}")
+            devices = dev_res.json()
+            if not devices:
+                raise RuntimeError("No device associated with bot token")
+            current_dev = next((d for d in devices if d.get("is_current")), devices[0])
+            self.device_id = current_dev["id"]
 
-        devices = res.json()
-        if not devices:
-            raise RuntimeError("No device associated with bot token")
-
-        # Find current device
-        current_dev = None
-        for d in devices:
-            if d.get("is_current"):
-                current_dev = d
-                break
-        if not current_dev:
-            current_dev = devices[0]
-
-        self.device_id = current_dev["id"]
-        self.user_id = current_dev["user_id"]
-
-        # Publish identity key if not present
+        # Publish identity key to server
         pub_b64 = base64.b64encode(self.public_key).decode("ascii")
         self.session.post(
             f"{self.server_url}/api/v1/keys/init",
             headers=self._auth_headers(),
             json={"ik_pub": pub_b64},
         )
-
-        # Get bot profile info
-        user_res = self.session.get(f"{self.server_url}/api/v1/users/{self.user_id}", headers=self._auth_headers())
-        if user_res.status_code == 200:
-            u = user_res.json()
-            self.name = u.get("name")
-            self.nickname = u.get("nickname")
 
         logger.info(f"Bot authenticated as @{self.nickname} (Name: '{self.name}', User ID: {self.user_id}, Device ID: {self.device_id})")
 
