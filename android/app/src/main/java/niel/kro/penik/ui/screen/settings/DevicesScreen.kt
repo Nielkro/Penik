@@ -3,6 +3,7 @@ package niel.kro.penik.ui.screen.settings
 import niel.kro.penik.ui.theme.LocalAppColors
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -110,13 +111,34 @@ fun DevicesScreen(
                                     .clip(RoundedCornerShape(12.dp))
                                     .padding(12.dp)
                             ) {
-                                Text(
-                                    text = device.platform.ifBlank { device.deviceName.ifBlank { "Устройство" } } +
-                                        if (device.isCurrent) "  · это устройство" else "",
-                                    color = colors.textPrimary,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
+                                val title = device.deviceName.ifBlank { device.platform.ifBlank { "Устройство" } }
+                                val subtitle = if (device.deviceName.isNotBlank() && device.platform.isNotBlank() && device.deviceName != device.platform) {
+                                    device.platform
+                                } else null
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = title,
+                                        color = colors.textPrimary,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    if (device.isCurrent) {
+                                        Text(
+                                            text = "  · это устройство",
+                                            color = colors.accent,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Normal
+                                        )
+                                    }
+                                }
+                                if (subtitle != null) {
+                                    Text(
+                                        text = subtitle,
+                                        color = colors.textMuted,
+                                        fontSize = 13.sp
+                                    )
+                                }
                                 Text(
                                     text = if (device.location.isNotBlank()) "📍 ${device.location}" else "📍 Местоположение неизвестно",
                                     color = colors.textMuted,

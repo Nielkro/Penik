@@ -118,19 +118,16 @@ fun GroupsListScreen(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
-                                modifier = Modifier.clickable {
+                            GroupAvatar(
+                                groupId = group.id,
+                                name = group.name,
+                                size = 44.dp,
+                                modifier = Modifier.padding(end = 12.dp),
+                                avatarKey = groupAvatarKeys[group.id],
+                                onClick = {
                                     fullscreenAvatarUrl = avatarUrlFor(true, group.id, groupAvatarKeys[group.id])
                                 }
-                            ) {
-                                GroupAvatar(
-                                    groupId = group.id,
-                                    name = group.name,
-                                    size = 44.dp,
-                                    modifier = Modifier.padding(end = 12.dp),
-                                    avatarKey = groupAvatarKeys[group.id]
-                                )
-                            }
+                            )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(group.name, color = niel.kro.penik.ui.components.initialsColor(group.id, group.name), fontWeight = FontWeight.Medium, fontSize = 16.sp)
                                 Text(

@@ -129,6 +129,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/components/AvatarCropDialog.kt` — Dialog for interactive cropping, scaling, panning, rotating, and preparing profile avatars before upload.
 - `android/app/src/main/java/niel/kro/penik/ui/components/AttachmentPickerBottomSheet.kt` — Modern Material 3 bottom sheet for chat attachments with emojis, descriptive metadata hints, and photo/file/camera/audio options.
 - `android/app/src/main/java/niel/kro/penik/ui/components/Stickers.kt` — Sticker picker bottom sheet with tabs and recents, Telegram sticker pack import dialog, sticker pack detail modal, and seamless sticker message rendering.
+-`android/app/src/main/java/niel/kro/penik/ui/util/DeviceUtils.kt` — Device metadata helper formatting marketing device names from manufacturer and model strings without brand duplication.
 - `android/app/src/main/java/niel/kro/penik/ui/util/QrCodeGenerator.kt` — Encodes string payloads (such as E2EE safety fingerprint URLs) into QR code Bitmaps using ZXing.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/DirectReplyReceiver.kt` — BroadcastReceiver handling inline direct replies from the notification shade without opening the app.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/MarkAsReadReceiver.kt` — BroadcastReceiver for the notification "Mark as read" action clearing unread counters and dismissing notifications.

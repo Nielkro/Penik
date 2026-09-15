@@ -394,16 +394,15 @@ fun ChatRoomScreen(
                         name = chatName,
                         size = 80.dp,
                         avatarKey = avatarKey,
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .clickable {
-                                showProfileDialog = false
-                                fullscreenAvatarUrl = niel.kro.penik.ui.components.avatarUrlFor(
-                                    isGroup = false,
-                                    id = chatUserId,
-                                    avatarKey = avatarKey
-                                )
-                            }
+                        modifier = Modifier.clip(CircleShape),
+                        onClick = {
+                            showProfileDialog = false
+                            fullscreenAvatarUrl = niel.kro.penik.ui.components.avatarUrlFor(
+                                isGroup = false,
+                                id = chatUserId,
+                                avatarKey = avatarKey
+                            )
+                        }
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(

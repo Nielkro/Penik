@@ -160,7 +160,16 @@ interface ApiService {
     ): Response<Unit>
 
     @GET("keys/backup")
-    suspend fun getKeyBackup(): Response<KeyBackupResponse>
+    suspend fun getKeyBackup(
+        @Query("id") id: Long? = null,
+        @Query("device_id") deviceId: Long? = null
+    ): Response<KeyBackupResponse>
+
+    @GET("keys/backups")
+    suspend fun listKeyBackups(): Response<List<KeyBackupSummaryResponse>>
+
+    @DELETE("keys/backups/{id}")
+    suspend fun deleteKeyBackup(@Path("id") id: Long): Response<Unit>
 
     @Multipart
     @PUT("avatar")

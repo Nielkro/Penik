@@ -222,7 +222,8 @@ fun UserAvatar(
     name: String,
     size: Dp = 48.dp,
     modifier: Modifier = Modifier,
-    avatarKey: Any? = null
+    avatarKey: Any? = null,
+    onClick: (() -> Unit)? = null
 ) {
     if (name == "Избранное") {
         Box(
@@ -269,10 +270,21 @@ fun UserAvatar(
         contentScale = ContentScale.Crop
     ) {
         val state = painter.state
-        if (state is coil.compose.AsyncImagePainter.State.Loading || state is coil.compose.AsyncImagePainter.State.Error) {
-            InitialsAvatar(name = name, id = userId, size = size)
+        if (state is coil.compose.AsyncImagePainter.State.Success) {
+            SubcomposeAsyncImageContent(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (onClick != null) {
+                            Modifier.clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) { onClick() }
+                        } else Modifier
+                    )
+            )
         } else {
-            SubcomposeAsyncImageContent()
+            InitialsAvatar(name = name, id = userId, size = size)
         }
     }
 }
@@ -283,7 +295,8 @@ fun GroupAvatar(
     name: String,
     size: Dp = 48.dp,
     modifier: Modifier = Modifier,
-    avatarKey: Any? = null
+    avatarKey: Any? = null,
+    onClick: (() -> Unit)? = null
 ) {
     val avatarUrl = avatarUrlFor(isGroup = true, id = groupId, avatarKey = avatarKey)
 
@@ -297,10 +310,21 @@ fun GroupAvatar(
             contentScale = ContentScale.Crop
         ) {
             val state = painter.state
-            if (state is coil.compose.AsyncImagePainter.State.Loading || state is coil.compose.AsyncImagePainter.State.Error) {
-                InitialsAvatar(name = name, id = groupId, size = size)
+            if (state is coil.compose.AsyncImagePainter.State.Success) {
+                SubcomposeAsyncImageContent(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (onClick != null) {
+                                Modifier.clickable(
+                                    indication = null,
+                                    interactionSource = remember { MutableInteractionSource() }
+                                ) { onClick() }
+                            } else Modifier
+                        )
+                )
             } else {
-                SubcomposeAsyncImageContent()
+                InitialsAvatar(name = name, id = groupId, size = size)
             }
         }
 
@@ -451,25 +475,29 @@ fun ChatListItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Avatar: independent clickable area that does NOT propagate to the row
-        val hasAvatarClick = onAvatarClick != null && name != "Избранное" && avatarKey != null
-        Box(
-            modifier = if (hasAvatarClick) {
-                Modifier.clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() }
-                ) {
-                    onAvatarClick!!(avatarUrlFor(isGroup, userId, avatarKey))
-                }
-            } else {
-                Modifier
-            }
-        ) {
-            if (isGroup) {
-                GroupAvatar(groupId = userId, name = name, size = 48.dp, avatarKey = avatarKey)
-            } else {
-                UserAvatar(userId = userId, name = name, size = 48.dp, avatarKey = avatarKey)
-            }
+        // Avatar: independent clickable area that does NOT propagate to the row.
+        // Clicks are enabled only when a real image has loaded (handled internally by UserAvatar/GroupAvatar).
+        val avatarUrl = avatarUrlFor(isGroup, userId, avatarKey)
+        val handleAvatarClick: (() -> Unit)? = if (onAvatarClick != null && name != "Избранное") {
+            { onAvatarClick(avatarUrl) }
+        } else null
+
+        if (isGroup) {
+            GroupAvatar(
+                groupId = userId,
+                name = name,
+                size = 48.dp,
+                avatarKey = avatarKey,
+                onClick = handleAvatarClick
+            )
+        } else {
+            UserAvatar(
+                userId = userId,
+                name = name,
+                size = 48.dp,
+                avatarKey = avatarKey,
+                onClick = handleAvatarClick
+            )
         }
 
         Spacer(modifier = Modifier.width(12.dp))

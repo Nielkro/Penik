@@ -2,6 +2,7 @@ package niel.kro.penik.ui.screen.groups
 
 import niel.kro.penik.ui.theme.LocalAppColors
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,9 +26,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -37,6 +42,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -64,6 +70,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.graphics.Color
+import androidx.core.content.FileProvider
+import java.io.File
+import niel.kro.penik.ui.components.AvatarCropDialog
 import niel.kro.penik.ui.components.FullscreenImageViewer
 import niel.kro.penik.ui.components.GroupAvatar
 import niel.kro.penik.ui.components.UserAvatar
@@ -118,18 +127,23 @@ fun GroupSettingsScreen(
 
     val groupName = group?.name ?: ""
 
+    var showAvatarOptions by remember { mutableStateOf(false) }
+    var pendingCropUri by remember { mutableStateOf<Uri?>(null) }
+    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
+
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        uri?.let {
-            try {
-                context.contentResolver.openInputStream(it)?.use { stream ->
-                    val bytes = stream.readBytes()
-                    viewModel.uploadAvatar(bytes)
-                }
-            } catch (e: Exception) {
-                Toast.makeText(context, "Не удалось прочитать файл", Toast.LENGTH_SHORT).show()
-            }
+        if (uri != null) {
+            pendingCropUri = uri
+        }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && tempCameraUri != null) {
+            pendingCropUri = tempCameraUri
         }
     }
 
@@ -137,6 +151,108 @@ fun GroupSettingsScreen(
         error?.let {
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
             viewModel.clearError()
+        }
+    }
+
+    // Avatar Crop & Edit Dialog
+    pendingCropUri?.let { uri ->
+        AvatarCropDialog(
+            imageUri = uri,
+            onDismiss = { pendingCropUri = null },
+            onCropDone = { bytes ->
+                pendingCropUri = null
+                viewModel.uploadAvatar(bytes)
+            }
+        )
+    }
+
+    // Bottom Sheet for Photo Selection
+    if (showAvatarOptions) {
+        ModalBottomSheet(
+            onDismissRequest = { showAvatarOptions = false },
+            containerColor = LocalAppColors.current.panel,
+            dragHandle = { BottomSheetDefaults.DragHandle() }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp, top = 8.dp)
+            ) {
+                Text(
+                    text = "Фотография группы",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = LocalAppColors.current.textPrimary,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            showAvatarOptions = false
+                            try {
+                                val avatarsDir = File(context.cacheDir, "avatars").apply { mkdirs() }
+                                val tempFile = File(avatarsDir, "camera_${System.currentTimeMillis()}.jpg")
+                                val uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    tempFile
+                                )
+                                tempCameraUri = uri
+                                cameraLauncher.launch(uri)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Не удалось открыть камеру", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .padding(vertical = 14.dp, horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PhotoCamera,
+                        contentDescription = null,
+                        tint = LocalAppColors.current.accent,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "Сделать снимок",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = LocalAppColors.current.textPrimary
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            showAvatarOptions = false
+                            imagePickerLauncher.launch("image/*")
+                        }
+                        .padding(vertical = 14.dp, horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PhotoLibrary,
+                        contentDescription = null,
+                        tint = LocalAppColors.current.accent,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "Выбрать из галереи",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = LocalAppColors.current.textPrimary
+                    )
+                }
+            }
         }
     }
 
@@ -171,26 +287,26 @@ fun GroupSettingsScreen(
                 item {
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Group Avatar: tap the photo to view it full-screen; the
-                    // camera badge (owner/admin only) opens the picker to change it.
+                    // Group Avatar: tap the photo to view it full-screen (photo-only); the
+                    // camera badge (owner/admin only) opens the options to change it.
                     Box(
-                        modifier = Modifier.size(96.dp),
+                        modifier = Modifier.size(104.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Box(
                             modifier = Modifier
                                 .size(96.dp)
-                                .clip(CircleShape)
-                                .clickable {
-                                    fullscreenAvatarUrl = avatarUrlFor(true, groupId, avatarUpdateKey)
-                                },
+                                .clip(CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             GroupAvatar(
                                 groupId = groupId,
                                 name = groupName,
                                 size = 96.dp,
-                                avatarKey = avatarUpdateKey
+                                avatarKey = avatarUpdateKey,
+                                onClick = {
+                                    fullscreenAvatarUrl = avatarUrlFor(true, groupId, avatarUpdateKey)
+                                }
                             )
 
                             if (isLoading) {
@@ -205,17 +321,17 @@ fun GroupSettingsScreen(
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
-                                    .size(28.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
                                     .background(LocalAppColors.current.accent)
-                                    .clickable { imagePickerLauncher.launch("image/*") },
+                                    .clickable { showAvatarOptions = true },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    Icons.Default.Edit,
+                                    imageVector = Icons.Default.CameraAlt,
                                     contentDescription = "Изменить аватар группы",
-                                    tint = Color(0xFF121214),
-                                    modifier = Modifier.size(14.dp)
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }

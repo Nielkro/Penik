@@ -153,6 +153,10 @@ func main() {
 		authMW(http.HandlerFunc(handlers.UploadKeyBackup(database))))
 	mux.Handle("GET /api/v1/keys/backup",
 		authMW(http.HandlerFunc(handlers.DownloadKeyBackup(database))))
+	mux.Handle("GET /api/v1/keys/backups",
+		authMW(http.HandlerFunc(handlers.ListKeyBackups(database))))
+	mux.Handle("DELETE /api/v1/keys/backups/{id}",
+		authMW(http.HandlerFunc(handlers.DeleteKeyBackup(database))))
 	mux.Handle("POST /api/v1/pairing/sessions",
 		authMW(http.HandlerFunc(handlers.CreatePairingSession(database))))
 	mux.Handle("POST /api/v1/pairing/sessions/claim",

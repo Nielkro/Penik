@@ -181,19 +181,36 @@ type KeyBackupRequest struct {
 	EncryptedBlob []byte `json:"encrypted_blob"`
 	Salt          []byte `json:"salt"`
 	IV            []byte `json:"iv"`
+	DeviceName    string `json:"device_name,omitempty"`
+	Platform      string `json:"platform,omitempty"`
+}
+
+type KeyBackupSummary struct {
+	ID         int64  `json:"id"`
+	DeviceID   *int64 `json:"device_id,omitempty"`
+	DeviceName string `json:"device_name"`
+	Platform   string `json:"platform"`
+	CreatedAt  int64  `json:"created_at"`
+	UpdatedAt  int64  `json:"updated_at"`
 }
 
 type KeyBackupResponse struct {
+	ID            int64  `json:"id,omitempty"`
+	DeviceID      *int64 `json:"device_id,omitempty"`
+	DeviceName    string `json:"device_name,omitempty"`
+	Platform      string `json:"platform,omitempty"`
 	EncryptedBlob []byte `json:"encrypted_blob"`
 	Salt          []byte `json:"salt"`
 	IV            []byte `json:"iv"`
 	CreatedAt     int64  `json:"created_at"`
+	UpdatedAt     int64  `json:"updated_at,omitempty"`
 }
 
 // UploadKeyBackup handles POST /api/v1/keys/backup.
 func UploadKeyBackup(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
+		deviceID := middleware.DeviceIDFromCtx(r.Context())
 		if userID == 0 {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -210,16 +227,49 @@ func UploadKeyBackup(database *db.DB) http.HandlerFunc {
 			return
 		}
 
+		deviceName := sanitizeDeviceField(req.DeviceName, maxDeviceFieldRunes)
+		platform := sanitizeDeviceField(req.Platform, maxDeviceFieldRunes)
+
+		// If device metadata was not provided in the request body, look up from devices table
+		if deviceID > 0 && (deviceName == "" || platform == "") {
+			var dName, dPlat string
+			_ = database.QueryRowContext(r.Context(),
+				`SELECT device_name, platform FROM devices WHERE id = ? AND user_id = ?`,
+				deviceID, userID).Scan(&dName, &dPlat)
+			if deviceName == "" {
+				deviceName = dName
+			}
+			if platform == "" {
+				platform = dPlat
+			}
+		}
+		if deviceName == "" {
+			deviceName = "Устройство"
+		}
+		if platform == "" {
+			platform = resolvePlatform("", r)
+		}
+
 		now := time.Now().Unix()
-		_, err := database.ExecContext(r.Context(),
-			`INSERT INTO key_backups(user_id, encrypted_blob, salt, iv, created_at)
-			 VALUES(?, ?, ?, ?, ?)
-			 ON CONFLICT(user_id) DO UPDATE SET
-				encrypted_blob=excluded.encrypted_blob,
-				salt=excluded.salt,
-				iv=excluded.iv,
-				created_at=excluded.created_at`,
-			userID, req.EncryptedBlob, req.Salt, req.IV, now)
+		var err error
+		if deviceID > 0 {
+			_, err = database.ExecContext(r.Context(),
+				`INSERT INTO key_backups(user_id, device_id, device_name, platform, encrypted_blob, salt, iv, created_at, updated_at)
+				 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(user_id, device_id) DO UPDATE SET
+					device_name=excluded.device_name,
+					platform=excluded.platform,
+					encrypted_blob=excluded.encrypted_blob,
+					salt=excluded.salt,
+					iv=excluded.iv,
+					updated_at=excluded.updated_at`,
+				userID, deviceID, deviceName, platform, req.EncryptedBlob, req.Salt, req.IV, now, now)
+		} else {
+			_, err = database.ExecContext(r.Context(),
+				`INSERT INTO key_backups(user_id, device_id, device_name, platform, encrypted_blob, salt, iv, created_at, updated_at)
+				 VALUES(?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+				userID, deviceName, platform, req.EncryptedBlob, req.Salt, req.IV, now, now)
+		}
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -229,7 +279,47 @@ func UploadKeyBackup(database *db.DB) http.HandlerFunc {
 	}
 }
 
+// ListKeyBackups handles GET /api/v1/keys/backups.
+func ListKeyBackups(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		if userID == 0 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		rows, err := database.QueryContext(r.Context(),
+			`SELECT id, device_id, device_name, platform, created_at, updated_at
+			   FROM key_backups
+			  WHERE user_id = ?
+			  ORDER BY updated_at DESC, id DESC`, userID)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		list := make([]KeyBackupSummary, 0)
+		for rows.Next() {
+			var item KeyBackupSummary
+			if err := rows.Scan(&item.ID, &item.DeviceID, &item.DeviceName, &item.Platform, &item.CreatedAt, &item.UpdatedAt); err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			list = append(list, item)
+		}
+		if err := rows.Err(); err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(list)
+	}
+}
+
 // DownloadKeyBackup handles GET /api/v1/keys/backup.
+// Supports optional query parameters: ?id=123 or ?device_id=456.
 func DownloadKeyBackup(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
@@ -238,10 +328,30 @@ func DownloadKeyBackup(database *db.DB) http.HandlerFunc {
 			return
 		}
 
+		idParam := r.URL.Query().Get("id")
+		deviceIDParam := r.URL.Query().Get("device_id")
+
+		var query string
+		var args []any
+
+		if idParam != "" {
+			query = `SELECT id, device_id, device_name, platform, encrypted_blob, salt, iv, created_at, updated_at
+			           FROM key_backups WHERE user_id = ? AND id = ?`
+			args = []any{userID, idParam}
+		} else if deviceIDParam != "" {
+			query = `SELECT id, device_id, device_name, platform, encrypted_blob, salt, iv, created_at, updated_at
+			           FROM key_backups WHERE user_id = ? AND device_id = ?`
+			args = []any{userID, deviceIDParam}
+		} else {
+			query = `SELECT id, device_id, device_name, platform, encrypted_blob, salt, iv, created_at, updated_at
+			           FROM key_backups WHERE user_id = ?
+			          ORDER BY updated_at DESC, id DESC LIMIT 1`
+			args = []any{userID}
+		}
+
 		var resp KeyBackupResponse
-		err := database.QueryRowContext(r.Context(),
-			`SELECT encrypted_blob, salt, iv, created_at FROM key_backups WHERE user_id=?`, userID).
-			Scan(&resp.EncryptedBlob, &resp.Salt, &resp.IV, &resp.CreatedAt)
+		err := database.QueryRowContext(r.Context(), query, args...).
+			Scan(&resp.ID, &resp.DeviceID, &resp.DeviceName, &resp.Platform, &resp.EncryptedBlob, &resp.Salt, &resp.IV, &resp.CreatedAt, &resp.UpdatedAt)
 		if err == sql.ErrNoRows {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
@@ -256,6 +366,37 @@ func DownloadKeyBackup(database *db.DB) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
+	}
+}
+
+// DeleteKeyBackup handles DELETE /api/v1/keys/backups/{id}.
+func DeleteKeyBackup(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := middleware.UserIDFromCtx(r.Context())
+		if userID == 0 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		id := r.PathValue("id")
+		if id == "" {
+			http.Error(w, "id required", http.StatusBadRequest)
+			return
+		}
+
+		res, err := database.ExecContext(r.Context(),
+			`DELETE FROM key_backups WHERE id = ? AND user_id = ?`, id, userID)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		rowsAffected, _ := res.RowsAffected()
+		if rowsAffected == 0 {
+			http.Error(w, "backup not found", http.StatusNotFound)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
