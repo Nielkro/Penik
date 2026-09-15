@@ -89,7 +89,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/js/ui/search.js` — User search screen and initiator for direct chats.
 - `client/js/ui/stickers.js` — Sticker picker popup, recent stickers persistence, sticker pack viewer modal, and Telegram sticker pack import dialog.
 - `client/js/ui/call_modal.js` — Renders the active/incoming/dialing call overlay modal, participant placeholders, video/screenshare layout swapping, in-call media control buttons, reconnect/peer-link status badge, and E2EE verified / safety words indicators.
-- `client/js/ui/components.js` — Shared UI components: avatars, time formatting, hover tooltip for full timestamp, message copy menu, scroll-down button, toasts, modals, and safe Markdown parsing and rendering (fenced code blocks with language badge & copy button, inline code, quotes, headers, bold, italic, strikethrough, and lists).
+- `client/js/ui/components.js` — Shared UI components: avatars, time formatting, hover tooltip for full timestamp, message copy menu, scroll-down button, toasts, modals, and safe Markdown parsing and rendering (fenced code blocks with language badge & copy button, tables, inline code, quotes, headers, bold, italic, strikethrough, and lists).
 - `client/js/globals.d.ts` — Ambient type declarations for globals the app attaches to `window`; type-checking only, emits no JavaScript.
 
 ### Android client
