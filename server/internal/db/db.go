@@ -224,6 +224,16 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate key_backups multi-device: %w", err)
 	}
 
+	if err := migrateUsersIsBot(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate users is_bot: %w", err)
+	}
+
+	if err := migrateBotsTable(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate bots table: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
 }
 
@@ -1118,6 +1128,36 @@ func migrateKeyBackupsMultiDevice(database *sql.DB) error {
 
 	return tx.Commit()
 }
+
+func migrateUsersIsBot(database *sql.DB) error {
+	has, err := tableHasColumn(database, "users", "is_bot")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := database.Exec("ALTER TABLE users ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return fmt.Errorf("add is_bot to users: %w", err)
+		}
+	}
+	return nil
+}
+
+func migrateBotsTable(database *sql.DB) error {
+	_, err := database.Exec(`
+		CREATE TABLE IF NOT EXISTS bots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+			owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			created_at INTEGER NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_bots_owner ON bots(owner_user_id);
+	`)
+	if err != nil {
+		return fmt.Errorf("create bots table: %w", err)
+	}
+	return nil
+}
+
 
 
 

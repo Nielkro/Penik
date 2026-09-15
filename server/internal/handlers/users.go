@@ -66,7 +66,7 @@ func SearchUsers(database *db.DB) http.HandlerFunc {
 
 		pattern := "%" + escapeLikePattern(q) + "%"
 		rows, err := database.QueryContext(r.Context(),
-			`SELECT id, name, nickname FROM users
+			`SELECT id, name, nickname, is_bot FROM users
 			 WHERE nickname LIKE ? ESCAPE '\' OR name LIKE ? ESCAPE '\'
 			 LIMIT ?`, pattern, pattern, limit)
 		if err != nil {
@@ -79,11 +79,14 @@ func SearchUsers(database *db.DB) http.HandlerFunc {
 			ID       int64  `json:"id"`
 			Name     string `json:"name"`
 			Nickname string `json:"nickname"`
+			IsBot    bool   `json:"is_bot"`
 		}
 		var results []result
 		for rows.Next() {
 			var res result
-			if err := rows.Scan(&res.ID, &res.Name, &res.Nickname); err == nil {
+			var isBot int
+			if err := rows.Scan(&res.ID, &res.Name, &res.Nickname, &isBot); err == nil {
+				res.IsBot = isBot != 0
 				results = append(results, res)
 			}
 		}
@@ -107,8 +110,9 @@ func GetUser(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 		}
 
 		var name, nickname string
+		var isBot int
 		err = database.QueryRowContext(r.Context(),
-			`SELECT name, nickname FROM users WHERE id=?`, id).Scan(&name, &nickname)
+			`SELECT name, nickname, is_bot FROM users WHERE id=?`, id).Scan(&name, &nickname, &isBot)
 		if err != nil {
 			http.Error(w, "user not found", http.StatusNotFound)
 			return
@@ -129,6 +133,7 @@ func GetUser(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 			"id":        id,
 			"name":      name,
 			"nickname":  nickname,
+			"is_bot":    isBot != 0,
 			"online":    online,
 			"last_seen": lastSeen,
 		})
@@ -534,8 +539,9 @@ func GetUserByNicknameProfile(database *db.DB) http.HandlerFunc {
 
 		var id int64
 		var name, dbNickname string
+		var isBot int
 		err := database.QueryRowContext(r.Context(),
-			`SELECT id, name, nickname FROM users WHERE nickname=?`, nickname).Scan(&id, &name, &dbNickname)
+			`SELECT id, name, nickname, is_bot FROM users WHERE nickname=?`, nickname).Scan(&id, &name, &dbNickname, &isBot)
 		if err != nil {
 			http.Error(w, "user not found", http.StatusNotFound)
 			return
@@ -546,6 +552,8 @@ func GetUserByNicknameProfile(database *db.DB) http.HandlerFunc {
 			"id":       id,
 			"name":     name,
 			"nickname": dbNickname,
+			"is_bot":   isBot != 0,
 		})
 	}
 }
+

@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS users (
   nickname_changed_at INTEGER DEFAULT 0,
   password_hash TEXT NOT NULL,
   avatar BLOB,
+  is_bot INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
 
@@ -287,3 +288,13 @@ CREATE TABLE IF NOT EXISTS attachments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_attachments_uploader ON attachments(uploader_user_id);
+
+CREATE TABLE IF NOT EXISTS bots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bots_owner ON bots(owner_user_id);
+

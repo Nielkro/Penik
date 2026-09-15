@@ -24,6 +24,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/handlers/health.go` — REST handler `GET /api/v1/health` and `/healthz` performing readiness checks on core local subsystems (SQLite SELECT 1, upload directory stat and writeability) without external dependencies.
 - `server/internal/handlers/version.go` — REST handler `GET /api/v1/version` serving client update policy and minimum crypto version requirements, supporting thread-safe caching and background refresh from remote GitHub Gist or raw repository URLs with local fallback.
 - `server/internal/handlers/calls.go` — REST handlers for listing user call history (`GET /api/v1/calls`) and peer-to-peer call logs (`GET /api/v1/calls/peer/:user_id`).
+- `server/internal/handlers/bots.go` — REST handlers for creating bots, issuing/regenerating permanent bot API tokens, and bot account lifecycle.
 - `server/internal/handlers/stickers.go` — REST handlers for sticker packs: listing installed packs, pack metadata, install/uninstall, Telegram sticker pack import, and static file serving.
 - `server/internal/stickers/models.go` — Data models for sticker packs and individual stickers.
 - `server/internal/handlers/attachments.go` — Self-hosted encrypted attachment handlers: streaming multipart upload (`POST /api/v1/attachments/upload`), relation-based ACL checks, and streaming file download (`GET /api/v1/attachments/file/:id`) with HTTP Range requests support.

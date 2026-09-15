@@ -8,6 +8,7 @@ type User struct {
 	NicknameChangedAt int64
 	PasswordHash      string
 	Avatar            []byte
+	IsBot             bool
 	CreatedAt         int64
 }
 
@@ -16,4 +17,6 @@ type UserProfile struct {
 	ID       int64  `json:"id"`
 	Name     string `json:"name"`
 	Nickname string `json:"nickname"`
+	IsBot    bool   `json:"is_bot"`
 }
+
