@@ -407,9 +407,9 @@ class AIClient:
         }
 
         msgs = list(messages)
+        max_search_turns = 3
 
-        # Allow up to 3 tool calling iterations
-        for _ in range(3):
+        for turn in range(max_search_turns):
             payload = {
                 "model": self.model,
                 "messages": msgs,
@@ -445,26 +445,44 @@ class AIClient:
                     except Exception:
                         pass
 
+                    tool_id = tool.get("id") or f"call_{uuid.uuid4().hex[:8]}"
                     if fn_name == "web_search":
                         query = fn_args.get("query", "")
                         logger.info(f"🌐 AI invoked web_search: {query!r}")
                         search_result = perform_web_search(query)
                         msgs.append({
                             "role": "tool",
-                            "tool_call_id": tool.get("id", "call_1"),
+                            "tool_call_id": tool_id,
                             "content": search_result,
                         })
                     else:
                         msgs.append({
                             "role": "tool",
-                            "tool_call_id": tool.get("id", "call_unknown"),
+                            "tool_call_id": tool_id,
                             "content": f"Unknown tool: {fn_name}",
                         })
             except Exception as e:
                 logger.error(f"AI request exception: {e}")
                 return f"⚠️ Ошибка соединения с AI API: {e}"
 
-        return "⚠️ Превышен лимит итераций поиска."
+        # Final forced synthesis turn without tools so model writes the final text answer
+        try:
+            logger.info("Synthesizing final answer from accumulated web search results...")
+            payload = {
+                "model": self.model,
+                "messages": msgs,
+                "temperature": 0.7,
+            }
+            res = self.session.post(self.api_url, headers=headers, json=payload, timeout=60)
+            if res.status_code == 200:
+                data = res.json()
+                choices = data.get("choices", [])
+                if choices and "message" in choices[0]:
+                    return choices[0]["message"].get("content", "").strip()
+        except Exception as e:
+            logger.error(f"Final synthesis error: {e}")
+
+        return "⚠️ Не удалось сформировать ответ после поиска."
 
 
 # ─── Penik AI Bot Class ───
@@ -474,9 +492,9 @@ def get_system_prompt() -> str:
     now_str = datetime.now().strftime("%d.%m.%Y")
     return (
         f"Ты — полезный, умный и вежливый AI-ассистент в защищенном мессенджере Penik. "
-        f"Сегодняшняя реальная дата: {now_str} года. Учитывай, что вышли новые версии софта, языков (Go, Rust, Python) и ОС. "
+        f"Сегодняшняя реальная дата: {now_str} года. Учитывай, что вышли новые версии софта, языков (Go, Rust, Python) и ОС (Alpine, Ubuntu, Debian). "
         f"Отвечай емко, по делу и структурированно на русском языке, используй markdown-разметку при необходимости. "
-        f"У тебя есть доступ к поиску в интернете (инструмент web_search). Обязательно используй его для проверки актуальных версий, документации, новостей и фактов."
+        f"У тебя есть доступ к поиску в интернете (инструмент web_search). Сделай 1-2 точных поисковых запроса при необходимости и сразу сформируй итоговый ответ пользователю."
     )
 
 class PenikAIBot:
