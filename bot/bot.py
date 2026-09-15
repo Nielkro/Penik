@@ -347,7 +347,7 @@ class PenikBot:
                 return None
         return None
 
-    async def send_message(self, recipient_user_id: int, text: str, reply_to_msg_id: Optional[str] = None) -> str:
+    async def send_message(self, recipient_user_id: int, text: str, reply_to_msg_id: Optional[str] = None, min_ts: int = 0) -> str:
         """Encrypts and sends a message to all devices of recipient_user_id."""
         bundle = self.get_user_key_bundle(recipient_user_id)
         devices = bundle.get("devices", [])
@@ -356,6 +356,8 @@ class PenikBot:
 
         client_msg_id = str(uuid.uuid4())
         now = int(time.time())
+        if min_ts > 0 and now <= min_ts:
+            now = min_ts + 1
 
         devices_payload = []
         for dev in devices:
@@ -425,7 +427,7 @@ class PenikBot:
             logger.error(f"Decryption failed: {e}")
             return None
 
-    async def handle_message(self, sender_user_id: int, text: str, msg_id: str):
+    async def handle_message(self, sender_user_id: int, text: str, msg_id: str, incoming_ts: int = 0):
         """Processes decrypted message and sends appropriate response."""
         logger.info(f"Incoming message from User #{sender_user_id}: {text!r}")
         trimmed = text.strip()
@@ -454,12 +456,13 @@ class PenikBot:
         else:
             reply = f"🤖 Эхо: {text}"
 
-        await self.send_message(sender_user_id, reply, reply_to_msg_id=msg_id)
+        await self.send_message(sender_user_id, reply, reply_to_msg_id=msg_id, min_ts=incoming_ts)
 
     async def _process_incoming_msg(self, payload: Dict[str, Any]):
         sender_id = payload.get("from_user_id")
         server_msg_id = payload.get("id") or payload.get("server_msg_id") or 0
         client_msg_id = payload.get("client_msg_id", "")
+        ts = payload.get("ts") or payload.get("created_at") or 0
 
         # Acknowledge delivery & read
         if server_msg_id > 0:
@@ -484,7 +487,7 @@ class PenikBot:
         decrypted_text = self.decrypt_payload(payload, sender_pub)
 
         if decrypted_text is not None:
-            await self.handle_message(sender_id, decrypted_text, client_msg_id)
+            await self.handle_message(sender_id, decrypted_text, client_msg_id, incoming_ts=ts)
 
     async def run_forever(self):
         """Main WebSocket connect & message loop with auto-reconnect."""
