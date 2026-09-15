@@ -2261,7 +2261,7 @@ fun MessageBubble(
                         showMenu = false
                     }
                 )
-                if (onEdit != null && isSentByMe && !isFailed && !isPending && attachment == null && !isSticker) {
+                if (onEdit != null && isSentByMe && !isFailed && !isPending && !isSticker) {
                     DropdownMenuItem(
                         text = { Text("Изменить", color = LocalAppColors.current.textPrimary) },
                         leadingIcon = {

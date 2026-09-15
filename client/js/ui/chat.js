@@ -1147,7 +1147,7 @@ export async function renderChat(container, userId) {
       const currentText = (bubble._msg ? bubble._msg.plaintext : msg.plaintext) || "";
       const senderName = isMine ? (me?.name || "Вы") : (contact.name || contact.nickname || "Собеседник");
       showForwardModal(currentText, senderName);
-    }, (isMine && !isFailed && !isMediaMsg && !isStickerMsg) ? () => {
+    }, (isMine && !isFailed && !isStickerMsg) ? () => {
       setActiveEdit(bubble._msg || msg);
     } : null);
 
@@ -1313,10 +1313,22 @@ export async function renderChat(container, userId) {
     if (msg) activeReply = null;
     replyBarContainer.innerHTML = "";
     if (msg) {
+      let displayText = msg.plaintext || "";
+      let initialInput = msg.plaintext || "";
+      try {
+        if (displayText.startsWith("{")) {
+          const parsed = JSON.parse(displayText);
+          if (parsed && (parsed.type === "file" || parsed.file)) {
+            initialInput = parsed.text || "";
+            displayText = parsed.text || parsed.file?.name || "Медиафайл";
+          }
+        }
+      } catch (_) {}
+
       const barChildren = [
         el("div", { class: "reply-preview-content" },
           el("span", { class: "reply-preview-sender", style: "color:var(--accent);" }, "Редактирование"),
-          el("span", { class: "reply-preview-text" }, msg.plaintext || "")
+          el("span", { class: "reply-preview-text" }, displayText)
         ),
         el("button", { class: "reply-preview-close" }, "✕")
       ];
@@ -1327,7 +1339,7 @@ export async function renderChat(container, userId) {
         inputEl.value = "";
       });
       replyBarContainer.appendChild(bar);
-      inputEl.value = msg.plaintext || "";
+      inputEl.value = initialInput;
       inputEl.focus();
       inputEl.style.height = "auto";
       const newH = Math.min(inputEl.scrollHeight, 120);
@@ -1607,12 +1619,23 @@ export async function renderChat(container, userId) {
       const msgId = editMsg.client_msg_id || editMsg.msg_id;
       const now = Date.now();
 
-      await updateMessageText(msgId, text, now);
-      updateDomMessageText(msgId, text, now);
+      let finalText = text;
+      try {
+        if (editMsg.plaintext && editMsg.plaintext.startsWith("{")) {
+          const parsed = JSON.parse(editMsg.plaintext);
+          if (parsed && (parsed.type === "file" || parsed.file)) {
+            parsed.text = text;
+            finalText = JSON.stringify(parsed);
+          }
+        }
+      } catch (_) {}
+
+      await updateMessageText(msgId, finalText, now);
+      updateDomMessageText(msgId, finalText, now);
       triggerChatListUpdate();
 
       try {
-        const ciphertexts = await encryptMessagePayload(text, userId, msgId, now);
+        const ciphertexts = await encryptMessagePayload(finalText, userId, msgId, now);
         const ws = getWS();
         if (ws && ws.isConnected() && ciphertexts) {
           ws.send(OP.MSG_EDIT, {
