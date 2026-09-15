@@ -89,7 +89,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/js/ui/search.js` — User search screen and initiator for direct chats.
 - `client/js/ui/stickers.js` — Sticker picker popup, recent stickers persistence, sticker pack viewer modal, and Telegram sticker pack import dialog.
 - `client/js/ui/call_modal.js` — Renders the active/incoming/dialing call overlay modal, participant placeholders, video/screenshare layout swapping, in-call media control buttons, reconnect/peer-link status badge, and E2EE verified / safety words indicators.
-- `client/js/ui/components.js` — Shared UI components: avatars, time formatting, hover tooltip for full timestamp, message copy menu, scroll-down button, toasts, and modals.
+- `client/js/ui/components.js` — Shared UI components: avatars, time formatting, hover tooltip for full timestamp, message copy menu, scroll-down button, toasts, modals, and safe Markdown parsing and rendering (fenced code blocks with language badge & copy button, inline code, quotes, headers, bold, italic, strikethrough, and lists).
 - `client/js/globals.d.ts` — Ambient type declarations for globals the app attaches to `window`; type-checking only, emits no JavaScript.
 
 ### Android client
@@ -129,7 +129,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/StartupViewModel.kt` — Determines the initial navigation route based on authorization state and triggers automatic startup update checks.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/DevicesViewModel.kt` — Loads the user's own device list for the devices screen.
 - `android/app/src/main/java/niel/kro/penik/ui/components/UpdateDialog.kt` — Reusable update prompt dialog supporting dismissible soft updates and non-dismissible force updates with release notes display.
-- `android/app/src/main/java/niel/kro/penik/ui/components/Components.kt` — Reusable Compose UI components, including parsing and rendering encrypted file-message payloads as local images with a zoomable full-screen viewer, aspect-ratio-aware inline Media3 video players without attachment labels, downloadable file attachments, Telegram-style large emoji-only messages (1-3 emojis scaled up without a background bubble and with an overlaid timestamp pill), plus a custom measuring layout that hangs the message meta block (edit mark, time, ticks) off the last text line without ever letting it collapse or wrap.
+- `android/app/src/main/java/niel/kro/penik/ui/components/Components.kt` — Reusable Compose UI components, including Markdown parsing and rendering into AnnotatedString (code blocks, inline code, bold, italic, strikethrough, links), parsing and rendering encrypted file-message payloads as local images with a zoomable full-screen viewer, aspect-ratio-aware inline Media3 video players without attachment labels, downloadable file attachments, Telegram-style large emoji-only messages (1-3 emojis scaled up without a background bubble and with an overlaid timestamp pill), plus a custom measuring layout that hangs the message meta block (edit mark, time, ticks) off the last text line without ever letting it collapse or wrap.
 - `android/app/src/main/java/niel/kro/penik/ui/components/AvatarCropDialog.kt` — Dialog for interactive cropping, scaling, panning, rotating, and preparing profile avatars before upload.
 - `android/app/src/main/java/niel/kro/penik/ui/components/AttachmentPickerBottomSheet.kt` — Modern Material 3 bottom sheet for chat attachments with emojis, descriptive metadata hints, and photo/file/camera/audio options.
 - `android/app/src/main/java/niel/kro/penik/ui/components/Stickers.kt` — Sticker picker bottom sheet with tabs and recents, Telegram sticker pack import dialog, sticker pack detail modal, and seamless sticker message rendering.
@@ -240,6 +240,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ### Bots
 
 - `bot/bot.py` — Standalone Python E2EE bot prototype running over WebSocket with direct X25519 / ***REDACTED-BY-FILTER-REPO*** pairwise encryption and command handling.
+- `bot/ai_bot.py` — Standalone E2EE AI bot integrating DeepSeek models via OpenAI-compatible API with per-user conversation memory.
 - `bot/README.md` — Usage documentation and guide for the Python E2EE bot prototype.
 
 
