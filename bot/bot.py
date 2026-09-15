@@ -330,6 +330,19 @@ class PenikBot:
         frame = bytes([opcode]) + payload_bytes
         await self.ws.send(frame)
 
+    def _extract_pub_key(self, dev: Dict[str, Any]) -> Optional[bytes]:
+        raw = dev.get("identity_key") or dev.get("ik_pub") or dev.get("x25519_pub")
+        if not raw:
+            return None
+        if isinstance(raw, (bytes, bytearray)):
+            return bytes(raw)
+        if isinstance(raw, str):
+            try:
+                return base64.b64decode(raw)
+            except Exception:
+                return None
+        return None
+
     async def send_message(self, recipient_user_id: int, text: str, reply_to_msg_id: Optional[str] = None) -> str:
         """Encrypts and sends a message to all devices of recipient_user_id."""
         bundle = self.get_user_key_bundle(recipient_user_id)
@@ -343,10 +356,9 @@ class PenikBot:
         devices_payload = []
         for dev in devices:
             dev_id = dev["device_id"]
-            ik_pub_b64 = dev.get("ik_pub") or dev.get("x25519_pub")
-            if not ik_pub_b64:
+            peer_pub = self._extract_pub_key(dev)
+            if not peer_pub:
                 continue
-            peer_pub = base64.b64decode(ik_pub_b64)
             shared_secret = self.get_shared_secret(peer_pub)
 
             # Build AAD v1 with timestamp
@@ -424,8 +436,7 @@ class PenikBot:
                 "• /help — список команд"
             )
         elif trimmed == "/ping":
-            start = time.perf_counter()
-            reply = f"🏓 Pong! Бот онлайн и готов к работе."
+            reply = "🏓 Pong! Бот онлайн и готов к работе."
         elif trimmed == "/info":
             reply = (
                 "🤖 Penik E2EE Bot\n"
@@ -454,19 +465,18 @@ class PenikBot:
         # Fetch sender's public key
         bundle = self.get_user_key_bundle(sender_id)
         sender_dev_id = payload.get("from_device_id")
-        sender_pub_b64 = None
+        sender_pub = None
         for d in bundle.get("devices", []):
             if d.get("device_id") == sender_dev_id:
-                sender_pub_b64 = d.get("ik_pub") or d.get("x25519_pub")
+                sender_pub = self._extract_pub_key(d)
                 break
-        if not sender_pub_b64 and bundle.get("devices"):
-            sender_pub_b64 = bundle["devices"][0].get("ik_pub") or bundle["devices"][0].get("x25519_pub")
+        if not sender_pub and bundle.get("devices"):
+            sender_pub = self._extract_pub_key(bundle["devices"][0])
 
-        if not sender_pub_b64:
+        if not sender_pub:
             logger.warning(f"Could not find public key for sender #{sender_id}")
             return
 
-        sender_pub = base64.b64decode(sender_pub_b64)
         decrypted_text = self.decrypt_payload(payload, sender_pub)
 
         if decrypted_text is not None:
@@ -500,10 +510,16 @@ class PenikBot:
 
                     while True:
                         raw = await ws.recv()
-                        if isinstance(raw, str):
+                        if isinstance(raw, str) or len(raw) == 0:
                             continue
                         opcode = raw[0]
-                        payload = msgpack.unpackb(raw[1:], raw=False)
+                        payload = {}
+                        if len(raw) > 1:
+                            try:
+                                payload = msgpack.unpackb(raw[1:], raw=False)
+                            except Exception as e:
+                                logger.debug(f"MsgPack unpack skipped for opcode 0x{opcode:02x}: {e}")
+                                payload = {}
 
                         if opcode == OP_MSG_RECV:
                             asyncio.create_task(self._process_incoming_msg(payload))
