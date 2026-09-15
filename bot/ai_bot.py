@@ -325,6 +325,72 @@ def extract_video_frames(video_bytes: bytes, max_frames: int = 6) -> List[str]:
         return frames
 
 
+# ─── Web Search Helper ───
+
+def perform_web_search(query: str, max_results: int = 5) -> str:
+    """Searches the web via DuckDuckGo and returns markdown-formatted snippets."""
+    query = query.strip()
+    if not query:
+        return "Пустой поисковый запрос."
+
+    # Direct DuckDuckGo HTML endpoint
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        }
+        r = requests.post(
+            "https://html.duckduckgo.com/html/",
+            data={"q": query},
+            headers=headers,
+            timeout=10,
+        )
+        if r.status_code == 200:
+            import re
+            import urllib.parse
+            matches = re.findall(
+                r'<a class="result__url"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?<a class="result__snippet"[^>]*>(.*?)</a>',
+                r.text,
+                re.DOTALL,
+            )
+            if matches:
+                snippets = []
+                for href, title, snippet in matches[:max_results]:
+                    clean_title = re.sub(r"<[^>]+>", "", title).strip()
+                    clean_snippet = re.sub(r"<[^>]+>", "", snippet).strip()
+                    if "uddg=" in href:
+                        parsed = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
+                        if "uddg" in parsed:
+                            href = parsed["uddg"][0]
+                    snippets.append(f"• [{clean_title}]({href})\n  {clean_snippet}")
+                return "\n\n".join(snippets)
+    except Exception as e:
+        logger.error(f"Web search failed: {e}")
+
+    return f"По запросу '{query}' ничего не найдено."
+
+
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Поиск свежей информации в интернете (новости, актуальные версии библиотек/софта, документация, факты).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Поисковый запрос на русском или английском языке"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    }
+]
+
+
 # ─── AI Client Helper ───
 
 class AIClient:
@@ -334,37 +400,84 @@ class AIClient:
         self.model = model
         self.session = requests.Session()
 
-    def generate_reply(self, messages: List[Dict[str, str]]) -> str:
+    def generate_reply(self, messages: List[Dict[str, Any]]) -> str:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": 0.7,
-        }
-        try:
-            res = self.session.post(self.api_url, headers=headers, json=payload, timeout=60)
-            if res.status_code != 200:
-                logger.error(f"AI API returned error [{res.status_code}]: {res.text}")
-                return f"⚠️ Ошибка вызова нейросети ({res.status_code}). Попробуйте позже."
-            data = res.json()
-            choices = data.get("choices", [])
-            if choices and "message" in choices[0]:
-                return choices[0]["message"].get("content", "").strip()
-            return "⚠️ Не удалось получить ответ от нейросети."
-        except Exception as e:
-            logger.error(f"AI request exception: {e}")
-            return f"⚠️ Ошибка соединения с AI API: {e}"
+
+        msgs = list(messages)
+
+        # Allow up to 3 tool calling iterations
+        for _ in range(3):
+            payload = {
+                "model": self.model,
+                "messages": msgs,
+                "temperature": 0.7,
+                "tools": TOOLS,
+                "tool_choice": "auto",
+            }
+            try:
+                res = self.session.post(self.api_url, headers=headers, json=payload, timeout=60)
+                if res.status_code != 200:
+                    logger.error(f"AI API returned error [{res.status_code}]: {res.text}")
+                    return f"⚠️ Ошибка вызова нейросети ({res.status_code}). Попробуйте позже."
+                data = res.json()
+                choices = data.get("choices", [])
+                if not choices:
+                    return "⚠️ Пустой ответ от нейросети."
+
+                choice = choices[0]
+                msg = choice.get("message", {})
+                tool_calls = msg.get("tool_calls", [])
+
+                if not tool_calls:
+                    return msg.get("content", "").strip()
+
+                # Handle tool calls
+                msgs.append(msg)
+                for tool in tool_calls:
+                    func = tool.get("function", {})
+                    fn_name = func.get("name")
+                    fn_args = {}
+                    try:
+                        fn_args = json.loads(func.get("arguments", "{}"))
+                    except Exception:
+                        pass
+
+                    if fn_name == "web_search":
+                        query = fn_args.get("query", "")
+                        logger.info(f"🌐 AI invoked web_search: {query!r}")
+                        search_result = perform_web_search(query)
+                        msgs.append({
+                            "role": "tool",
+                            "tool_call_id": tool.get("id", "call_1"),
+                            "content": search_result,
+                        })
+                    else:
+                        msgs.append({
+                            "role": "tool",
+                            "tool_call_id": tool.get("id", "call_unknown"),
+                            "content": f"Unknown tool: {fn_name}",
+                        })
+            except Exception as e:
+                logger.error(f"AI request exception: {e}")
+                return f"⚠️ Ошибка соединения с AI API: {e}"
+
+        return "⚠️ Превышен лимит итераций поиска."
 
 
 # ─── Penik AI Bot Class ───
 
-SYSTEM_PROMPT = (
-    "Ты — полезный, умный и вежливый AI-ассистент в защищенном мессенджере Penik. "
-    "Отвечай емко, по делу и структурированно на русском языке, используй markdown-разметку при необходимости."
-)
+def get_system_prompt() -> str:
+    from datetime import datetime
+    now_str = datetime.now().strftime("%d.%m.%Y")
+    return (
+        f"Ты — полезный, умный и вежливый AI-ассистент в защищенном мессенджере Penik. "
+        f"Сегодняшняя реальная дата: {now_str} года. Учитывай, что вышли новые версии софта, языков (Go, Rust, Python) и ОС. "
+        f"Отвечай емко, по делу и структурированно на русском языке, используй markdown-разметку при необходимости. "
+        f"У тебя есть доступ к поиску в интернете (инструмент web_search). Обязательно используй его для проверки актуальных версий, документации, новостей и фактов."
+    )
 
 class PenikAIBot:
     def __init__(
@@ -574,7 +687,7 @@ class PenikAIBot:
 
     def _get_history(self, user_id: int) -> List[Dict[str, Any]]:
         if user_id not in self.user_histories:
-            self.user_histories[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
+            self.user_histories[user_id] = [{"role": "system", "content": get_system_prompt()}]
         return self.user_histories[user_id]
 
     def download_attachment(self, file_url: str) -> bytes:
@@ -589,7 +702,7 @@ class PenikAIBot:
         return res.content
 
     async def handle_message(self, sender_user_id: int, text: str, msg_id: str, incoming_ts: int = 0):
-        """Processes decrypted message, queries AI (with Vision & Video support), and sends response."""
+        """Processes decrypted message, queries AI (with Vision, Video, and Web Search), and sends response."""
         logger.info(f"Incoming message from User #{sender_user_id}: {text!r}")
         trimmed = text.strip()
 
@@ -598,20 +711,35 @@ class PenikAIBot:
                 "👋 Привет! Я AI-ассистент на базе **DeepSeek (v4.1 Flash)** в защищенном мессенджере Penik 🔐🧠\n\n"
                 "Я умею:\n"
                 "• Отвечать на любые вопросы и помогать с кодом/текстами\n"
+                "• Искать актуальную информацию в интернете в реальном времени 🌐\n"
                 "• Анализировать **фотографии** и изображения 📸\n"
-                "• Смотреть и разбирать **видео** по раскадровке 🎬\n\n"
+                "• Смотреть и разбирать **видео** по раскадровке 🎬\n"
+                "• Читать файлы с кодом и текстом (`.md`, `.py`, `.go`, `.txt`, `.rs` и др.) 📄\n\n"
                 "Доступные команды:\n"
+                "• `/search <запрос>` — прямой поиск в интернете\n"
                 "• `/clear` или `/reset` — очистить контекст диалога\n"
-                "• `/info` — информация о модели и E2EE-защите\n"
+                "• `/info` — информация о модели, поиске и защите\n"
                 "• `/help` — список команд"
             )
-            self.user_histories[sender_user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
+            self.user_histories[sender_user_id] = [{"role": "system", "content": get_system_prompt()}]
             await self.send_message(sender_user_id, reply, reply_to_msg_id=msg_id, min_ts=incoming_ts)
             return
 
         if trimmed in ("/clear", "/reset"):
-            self.user_histories[sender_user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
+            self.user_histories[sender_user_id] = [{"role": "system", "content": get_system_prompt()}]
             reply = "🧹 Контекст диалога очищен. Можем начать новую беседу!"
+            await self.send_message(sender_user_id, reply, reply_to_msg_id=msg_id, min_ts=incoming_ts)
+            return
+
+        if trimmed.startswith("/search"):
+            query = trimmed[7:].strip()
+            if not query:
+                await self.send_message(sender_user_id, "Использование: `/search <поисковый запрос>`", reply_to_msg_id=msg_id, min_ts=incoming_ts)
+                return
+            await self.send_typing(sender_user_id, is_typing=True)
+            search_results = await asyncio.to_thread(perform_web_search, query)
+            await self.send_typing(sender_user_id, is_typing=False)
+            reply = f"🌐 **Результаты поиска по запросу:** `{query}`\n\n{search_results}"
             await self.send_message(sender_user_id, reply, reply_to_msg_id=msg_id, min_ts=incoming_ts)
             return
 
@@ -619,6 +747,7 @@ class PenikAIBot:
             reply = (
                 f"🧠 **AI Bot Info**\n"
                 f"• Model: `{self.ai_client.model}`\n"
+                f"• Web Search: DuckDuckGo Live Search 🌐\n"
                 f"• Vision & Video: Поддерживается (авто-раскадровка видео через ffmpeg)\n"
                 f"• Provider: `plusvibeapi.ru` (OpenAI API compatible)\n"
                 f"• Encryption: End-to-End (X25519 + ChaCha20-Poly1305)\n"
@@ -628,7 +757,7 @@ class PenikAIBot:
             return
 
         if trimmed == "/help":
-            reply = "Команды:\n/start — начало работы\n/clear — очистить контекст\n/info — о боте\n/help — помощь"
+            reply = "Команды:\n/start — начало работы\n/search <запрос> — поиск в интернете\n/clear — очистить контекст\n/info — о боте\n/help — помощь"
             await self.send_message(sender_user_id, reply, reply_to_msg_id=msg_id, min_ts=incoming_ts)
             return
 
