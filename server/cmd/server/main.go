@@ -123,6 +123,16 @@ func main() {
 	mux.Handle("PUT /api/v1/devices/me/fcm",
 		authMW(http.HandlerFunc(handlers.UpdateFCMToken(database))))
 
+	mux.Handle("POST /api/v1/bots",
+		authMW(http.HandlerFunc(handlers.CreateBot(database))))
+	mux.Handle("GET /api/v1/bots",
+		authMW(http.HandlerFunc(handlers.ListMyBots(database))))
+	mux.Handle("POST /api/v1/bots/{id}/token/regenerate",
+		authMW(http.HandlerFunc(handlers.RegenerateBotToken(database, hub))))
+	mux.Handle("DELETE /api/v1/bots/{id}",
+		authMW(http.HandlerFunc(handlers.DeleteBot(database, hub))))
+
+
 	mux.Handle("GET /api/v1/users/search",
 		authMW(http.HandlerFunc(handlers.SearchUsers(database))))
 	mux.Handle("GET /api/v1/users/{id}",
