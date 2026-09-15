@@ -718,7 +718,12 @@ export async function renderChat(container, userId) {
 
   function insertBubbleInOrder(bubble, ts) {
     const bubbles = Array.from(messagesEl.querySelectorAll(".msg-bubble"));
-    const successor = bubbles.find(b => Number(b.dataset.ts || 0) > ts);
+    const sec = Math.floor(ts / 1000);
+    const successor = bubbles.find(b => {
+      const bTs = Number(b.dataset.ts || 0);
+      const bSec = Math.floor(bTs / 1000);
+      return bSec > sec;
+    });
     if (successor) {
       messagesEl.insertBefore(bubble, successor);
     } else {
