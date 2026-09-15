@@ -17,7 +17,7 @@ import { groupAvatarUpdateTimestamps, showToast } from './ui/components.js';
 import { renderGroup } from './ui/groups.js';
 import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
-import { renderSettings, renderDevices } from './ui/settings.js';
+import { renderSettings, renderDevices, renderBackup } from './ui/settings.js';
 import { initTheme } from './theme.js';
 import { appSounds } from './sounds.js';
 import { getMessagePreview } from './ui/chat.js';
@@ -281,15 +281,19 @@ function buildMainLayout() {
   settingsScreen.className = 'screen settings-screen';
   settingsScreen.id = 'screen-settings';
 
+  const backupScreen = document.createElement('div');
+  backupScreen.className = 'screen settings-screen';
+  backupScreen.id = 'screen-backup';
+
   const devicesScreen = document.createElement('div');
   devicesScreen.className = 'screen devices-screen';
   devicesScreen.id = 'screen-devices';
 
-  screensWrap.append(chatListScreen, callsScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, devicesScreen);
+  screensWrap.append(chatListScreen, callsScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, backupScreen, devicesScreen);
   wrap.append(screensWrap, nav);
   app.appendChild(wrap);
 
-  _mainLayout = { chatListScreen, callsScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, devicesScreen, nav };
+  _mainLayout = { chatListScreen, callsScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, backupScreen, devicesScreen, nav };
   return _mainLayout;
 }
 
@@ -312,14 +316,14 @@ function showMain(screen, userId) {
 
   /* Update nav */
   const activeNavScreen = isChat ? 'chats'
-    : (screen === 'devices') ? 'settings'
+    : (screen === 'devices' || screen === 'backup') ? 'settings'
     : screen;
   layout.nav.querySelectorAll('.nav-item').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.screen === activeNavScreen);
   });
 
   /* Hide all screens */
-  ['chats', 'calls', 'chat', 'search', 'profile', 'group', 'settings', 'devices'].forEach(s => {
+  ['chats', 'calls', 'chat', 'search', 'profile', 'group', 'settings', 'devices', 'backup'].forEach(s => {
     const el = document.getElementById(`screen-${s}`);
     if (el) el.classList.remove('active');
   });
@@ -372,6 +376,10 @@ function showMain(screen, userId) {
     layout.settingsScreen.classList.add('active');
     layout.settingsScreen.innerHTML = '';
     renderSettings(layout.settingsScreen);
+  } else if (screen === 'backup') {
+    layout.backupScreen.classList.add('active');
+    layout.backupScreen.innerHTML = '';
+    renderBackup(layout.backupScreen);
   } else if (screen === 'devices') {
     layout.devicesScreen.classList.add('active');
     layout.devicesScreen.innerHTML = '';

@@ -2,8 +2,6 @@ package niel.kro.penik.ui.screen.settings
 
 import niel.kro.penik.ui.theme.LocalAppColors
 
-import android.content.Context
-import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -54,18 +52,6 @@ import niel.kro.penik.ui.theme.AppIconManager
 import niel.kro.penik.ui.theme.AppVariant
 import niel.kro.penik.ui.theme.ThemeManager
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.net.Uri
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.LaunchedEffect
@@ -79,6 +65,7 @@ import niel.kro.penik.ui.viewmodel.SettingsViewModel
 fun SettingsScreen(
     onBack: () -> Unit = {},
     onDevices: () -> Unit = {},
+    onBackup: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val colors = LocalAppColors.current
@@ -91,48 +78,6 @@ fun SettingsScreen(
     val downloadState by viewModel.downloadState.collectAsState()
     var showVariantDialog by remember { mutableStateOf(false) }
     var showNavStyleDialog by remember { mutableStateOf(false) }
-
-    var showCloudBackupDialog by remember { mutableStateOf(false) }
-    var showExportDialog by remember { mutableStateOf(false) }
-    var showImportDialog by remember { mutableStateOf(false) }
-    var showMnemonicDialog by remember { mutableStateOf(false) }
-    var mnemonicPhrase by remember { mutableStateOf("") }
-
-    var exportPassphrase by remember { mutableStateOf("") }
-    var importPassphrase by remember { mutableStateOf("") }
-    var cloudBackupPassphrase by remember { mutableStateOf("") }
-    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
-    var isBackupLoading by remember { mutableStateOf(false) }
-
-    val createDocLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
-        if (uri != null && exportPassphrase.isNotBlank()) {
-            isBackupLoading = true
-            viewModel.exportHistoryToFile(exportPassphrase, uri, context) { res ->
-                isBackupLoading = false
-                showExportDialog = false
-                exportPassphrase = ""
-                res.fold(
-                    onSuccess = {
-                        Toast.makeText(context, "История успешно экспортирована в файл!", Toast.LENGTH_LONG).show()
-                    },
-                    onFailure = { e ->
-                        Toast.makeText(context, "Ошибка экспорта: ${e.message}", Toast.LENGTH_LONG).show()
-                    }
-                )
-            }
-        }
-    }
-
-    val importFilePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            pendingImportUri = uri
-            showImportDialog = true
-        }
-    }
 
     LaunchedEffect(Unit) {
         viewModel.manualCheckResult.collect { result ->
@@ -190,7 +135,6 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
             // Theme toggle row: tapping anywhere switches between light and dark.
@@ -303,94 +247,20 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Cloud Key Backup row
+            // Backup & Keys navigation row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .clickable { showCloudBackupDialog = true }
+                    .clickable { onBackup() }
                     .padding(vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
-                    Text("Резервная копия ключей в облаке", color = colors.textPrimary, fontSize = 16.sp)
+                    Text("Резервное копирование", color = colors.textPrimary, fontSize = 16.sp)
                     Text(
-                        text = "Сохранить или восстановить ключи E2EE",
-                        color = colors.textMuted,
-                        fontSize = 13.sp
-                    )
-                }
-                Text("›", color = colors.textMuted, fontSize = 20.sp)
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Export History to File row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable { showExportDialog = true }
-                    .padding(vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text("Экспорт истории в файл (.penikbackup)", color = colors.textPrimary, fontSize = 16.sp)
-                    Text(
-                        text = "Зашифрованный файл со всеми чатами и группами",
-                        color = colors.textMuted,
-                        fontSize = 13.sp
-                    )
-                }
-                Text("›", color = colors.textMuted, fontSize = 20.sp)
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Import History from File row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable {
-                        importFilePickerLauncher.launch(arrayOf("*/*"))
-                    }
-                    .padding(vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text("Импорт истории из файла (.penikbackup)", color = colors.textPrimary, fontSize = 16.sp)
-                    Text(
-                        text = "Восстановить историю переписок из локального файла",
-                        color = colors.textMuted,
-                        fontSize = 13.sp
-                    )
-                }
-                Text("›", color = colors.textMuted, fontSize = 20.sp)
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Mnemonic seed phrase row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable {
-                        mnemonicPhrase = viewModel.generateMnemonicPhrase(12)
-                        showMnemonicDialog = true
-                    }
-                    .padding(vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text("Мнемоническая фраза (12 слов)", color = colors.textPrimary, fontSize = 16.sp)
-                    Text(
-                        text = "Сгенерировать 12 слов для шифрования и бэкапа",
+                        text = "Облачные ключи, экспорт и импорт истории",
                         color = colors.textMuted,
                         fontSize = 13.sp
                     )
@@ -561,294 +431,4 @@ fun SettingsScreen(
             containerColor = colors.panel
         )
     }
-
-    if (showCloudBackupDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                showCloudBackupDialog = false
-                cloudBackupPassphrase = ""
-            },
-            title = {
-                Text("Резервная копия ключей", color = colors.textPrimary, fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "Зашифруйте ваши ключи E2EE паролем или мнемонической фразой для безопасного хранения на сервере.",
-                        color = colors.textMuted,
-                        fontSize = 13.sp
-                    )
-                    OutlinedTextField(
-                        value = cloudBackupPassphrase,
-                        onValueChange = { cloudBackupPassphrase = it },
-                        label = { Text("Пароль или мнемоника") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        onClick = {
-                            if (cloudBackupPassphrase.isBlank()) {
-                                Toast.makeText(context, "Введите пароль или мнемонику", Toast.LENGTH_SHORT).show()
-                                return@TextButton
-                            }
-                            isBackupLoading = true
-                            viewModel.uploadKeyBackup(cloudBackupPassphrase) { res ->
-                                isBackupLoading = false
-                                res.fold(
-                                    onSuccess = {
-                                        Toast.makeText(context, "Резервная копия ключей создана на сервере!", Toast.LENGTH_SHORT).show()
-                                        showCloudBackupDialog = false
-                                        cloudBackupPassphrase = ""
-                                    },
-                                    onFailure = { e ->
-                                        Toast.makeText(context, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
-                                    }
-                                )
-                            }
-                        }
-                    ) {
-                        Text("Создать", color = colors.accent)
-                    }
-
-                    TextButton(
-                        onClick = {
-                            if (cloudBackupPassphrase.isBlank()) {
-                                Toast.makeText(context, "Введите пароль или мнемонику", Toast.LENGTH_SHORT).show()
-                                return@TextButton
-                            }
-                            isBackupLoading = true
-                            viewModel.restoreKeyBackup(cloudBackupPassphrase) { res ->
-                                isBackupLoading = false
-                                res.fold(
-                                    onSuccess = {
-                                        Toast.makeText(context, "Ключи E2EE успешно восстановлены!", Toast.LENGTH_SHORT).show()
-                                        showCloudBackupDialog = false
-                                        cloudBackupPassphrase = ""
-                                    },
-                                    onFailure = { e ->
-                                        Toast.makeText(context, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
-                                    }
-                                )
-                            }
-                        }
-                    ) {
-                        Text("Восстановить", color = colors.accent)
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showCloudBackupDialog = false
-                    cloudBackupPassphrase = ""
-                }) {
-                    Text("Отмена", color = colors.textMuted)
-                }
-            },
-            containerColor = colors.panel
-        )
-    }
-
-    if (showExportDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                showExportDialog = false
-                exportPassphrase = ""
-            },
-            title = {
-                Text("Экспорт всей истории", color = colors.textPrimary, fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "История чатов, сообщений, групп и ключи шифрования будут сохранены в зашифрованный файл .penikbackup (AES-256-GCM / PBKDF2 600,000).",
-                        color = colors.textMuted,
-                        fontSize = 13.sp
-                    )
-                    OutlinedTextField(
-                        value = exportPassphrase,
-                        onValueChange = { exportPassphrase = it },
-                        label = { Text("Пароль или мнемоническая фраза") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedButton(
-                        onClick = {
-                            val phrase = viewModel.generateMnemonicPhrase(12)
-                            exportPassphrase = phrase
-                            Toast.makeText(context, "Мнемоника сгенерирована! Обязательно сохраните её.", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("🎲 Сгенерировать мнемонику (12 слов)", fontSize = 13.sp)
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (exportPassphrase.isBlank()) {
-                            Toast.makeText(context, "Введите пароль или мнемонику", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        createDocLauncher.launch("penik_backup_${System.currentTimeMillis()}.penikbackup")
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
-                ) {
-                    Text("Сохранить в файл")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showExportDialog = false
-                    exportPassphrase = ""
-                }) {
-                    Text("Отмена", color = colors.textMuted)
-                }
-            },
-            containerColor = colors.panel
-        )
-    }
-
-    if (showImportDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                showImportDialog = false
-                importPassphrase = ""
-                pendingImportUri = null
-            },
-            title = {
-                Text("Импорт истории из файла", color = colors.textPrimary, fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "Введите пароль или мнемоническую фразу, которая использовалась при создании резервной копии.",
-                        color = colors.textMuted,
-                        fontSize = 13.sp
-                    )
-                    OutlinedTextField(
-                        value = importPassphrase,
-                        onValueChange = { importPassphrase = it },
-                        label = { Text("Пароль или мнемоника файла") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val uri = pendingImportUri
-                        if (uri == null || importPassphrase.isBlank()) {
-                            Toast.makeText(context, "Введите пароль или мнемонику", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        isBackupLoading = true
-                        viewModel.importHistoryFromFile(uri, importPassphrase, context) { res ->
-                            isBackupLoading = false
-                            showImportDialog = false
-                            importPassphrase = ""
-                            pendingImportUri = null
-                            res.fold(
-                                onSuccess = { summary ->
-                                    Toast.makeText(
-                                        context,
-                                        "Импортировано: чатов ${summary.chatsCount}, сообщений ${summary.messagesCount}, групп ${summary.groupsCount}",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                },
-                                onFailure = { e ->
-                                    Toast.makeText(context, "Ошибка импорта: ${e.message}", Toast.LENGTH_LONG).show()
-                                }
-                            )
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
-                ) {
-                    Text("Импортировать")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showImportDialog = false
-                    importPassphrase = ""
-                    pendingImportUri = null
-                }) {
-                    Text("Отмена", color = colors.textMuted)
-                }
-            },
-            containerColor = colors.panel
-        )
-    }
-
-    if (showMnemonicDialog) {
-        AlertDialog(
-            onDismissRequest = { showMnemonicDialog = false },
-            title = {
-                Text("Мнемоническая фраза", color = colors.textPrimary, fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "Сохраните эти 12 слов в надёжном месте. Фразу можно использовать как мастер-пароль для резервных копий истории и ключей.",
-                        color = colors.textMuted,
-                        fontSize = 13.sp
-                    )
-                    val words = mnemonicPhrase.split(" ")
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        words.chunked(3).forEachIndexed { rowIdx, chunk ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                chunk.forEachIndexed { colIdx, word ->
-                                    val index = rowIdx * 3 + colIdx + 1
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(colors.background)
-                                            .padding(vertical = 8.dp, horizontal = 6.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = "$index. $word",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = colors.textPrimary
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                            val clip = ClipData.newPlainText("Penik Mnemonic", mnemonicPhrase)
-                            clipboard?.setPrimaryClip(clip)
-                            Toast.makeText(context, "Мнемоническая фраза скопирована!", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
-                    ) {
-                        Text("Скопировать фразу")
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showMnemonicDialog = false }) {
-                    Text("Закрыть", color = colors.accent)
-                }
-            },
-            containerColor = colors.panel
-        )
-    }
 }
-
-
