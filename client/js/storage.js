@@ -250,7 +250,14 @@ export async function getMessages(chatId, limit = 50, before = null) {
     };
 
     const finalize = async () => {
-      list.sort((a, b) => getMsgTs(a) - getMsgTs(b));
+      list.sort((a, b) => {
+        const diff = getMsgTs(a) - getMsgTs(b);
+        if (Math.abs(diff) >= 1000) return diff;
+        const idA = Number(a.id || a.msg_id || 0);
+        const idB = Number(b.id || b.msg_id || 0);
+        if (idA && idB && idA !== idB) return idA - idB;
+        return diff;
+      });
       const sliced = list.slice(-limit);
       const unsealed = await Promise.all(sliced.map(m => unsealMessageRecord(m)));
       resolve(unsealed);

@@ -304,11 +304,15 @@ class PenikBot:
 
         # Publish identity key to server
         pub_b64 = base64.b64encode(self.public_key).decode("ascii")
-        self.session.post(
+        res = self.session.post(
             f"{self.server_url}/api/v1/keys/init",
             headers=self._auth_headers(),
-            json={"ik_pub": pub_b64},
+            json={"ik_pub": pub_b64, "crypto_version": 2},
         )
+        if res.status_code not in (200, 204):
+            logger.error(f"Failed to publish bot public key ({res.status_code}): {res.text}")
+        else:
+            logger.info("Published bot public identity key to server.")
 
         logger.info(f"Bot authenticated as @{self.nickname} (Name: '{self.name}', User ID: {self.user_id}, Device ID: {self.device_id})")
 

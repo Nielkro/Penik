@@ -35,13 +35,19 @@ func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		if len(req.IKPub) == 0 || len(req.SPKPub) == 0 || len(req.SPKSig) == 0 {
-			http.Error(w, "missing fields", http.StatusBadRequest)
+		if len(req.IKPub) == 0 {
+			http.Error(w, "ik_pub required", http.StatusBadRequest)
 			return
 		}
-		if !validCurveKey(req.IKPub) || !validCurveKey(req.SPKPub) || len(req.SPKSig) != 64 {
+		if !validCurveKey(req.IKPub) {
 			http.Error(w, "malformed identity key material", http.StatusBadRequest)
 			return
+		}
+		if len(req.SPKPub) > 0 || len(req.SPKSig) > 0 {
+			if !validCurveKey(req.SPKPub) || len(req.SPKSig) != 64 {
+				http.Error(w, "malformed identity key material", http.StatusBadRequest)
+				return
+			}
 		}
 
 		tx, err := database.BeginTx(r.Context(), nil)
@@ -52,11 +58,21 @@ func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
 		defer tx.Rollback()
 
 		_, err = tx.ExecContext(r.Context(),
-			`INSERT OR REPLACE INTO identity_keys(device_id,ik_pub,spk_pub,spk_sig,updated_at) VALUES(?,?,?,?,?)`,
-			deviceID, req.IKPub, req.SPKPub, req.SPKSig, now)
+			`INSERT OR REPLACE INTO device_public_keys(device_id,x25519_pub,created_at,updated_at) VALUES(?,?,?,?)`,
+			deviceID, req.IKPub, now, now)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
+		}
+
+		if len(req.SPKSig) > 0 {
+			_, err = tx.ExecContext(r.Context(),
+				`INSERT OR REPLACE INTO identity_keys(device_id,ik_pub,spk_pub,spk_sig,updated_at) VALUES(?,?,?,?,?)`,
+				deviceID, req.IKPub, req.SPKPub, req.SPKSig, now)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
 		}
 
 		if req.RegistrationID > 0 {
