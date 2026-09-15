@@ -6,6 +6,7 @@ sealed class Screen(val route: String) {
     object Auth : Screen("auth")
     object Main : Screen("main")
     object Settings : Screen("settings")
+    object Backup : Screen("backup")
     object Devices : Screen("devices")
     object PairingScanner : Screen("pairing/scanner")
     object ChatRoom : Screen("chat/{chatUserId}/{chatName}") {

@@ -20,6 +20,7 @@ import niel.kro.penik.ui.screen.chatroom.ChatRoomScreen
 import niel.kro.penik.ui.screen.groups.GroupChatScreen
 import niel.kro.penik.ui.screen.groups.GroupSettingsScreen
 import niel.kro.penik.ui.screen.settings.SettingsScreen
+import niel.kro.penik.ui.screen.settings.BackupScreen
 import niel.kro.penik.ui.screen.settings.DevicesScreen
 import niel.kro.penik.ui.viewmodel.StartupViewModel
 import androidx.compose.ui.Modifier
@@ -140,7 +141,14 @@ fun NavGraph(
         composable(Screen.Settings.route) {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
-                onDevices = { navController.navigate(Screen.Devices.route) }
+                onDevices = { navController.navigate(Screen.Devices.route) },
+                onBackup = { navController.navigate(Screen.Backup.route) }
+            )
+        }
+
+        composable(Screen.Backup.route) {
+            BackupScreen(
+                onBack = { navController.popBackStack() }
             )
         }
 
