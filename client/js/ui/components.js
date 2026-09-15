@@ -507,6 +507,40 @@ export function setMsgTextContent(el, text) {
 
 const INLINE_MD_RE = /(`[^`\n]+`)|(\[([^\]]+)\]\(((?:https?:\/\/|www\.)[^\s\)]+)\))|(\*\*\*[^\*\n]+\*\*\*)|(\*\*[^\*\n]+\*\*)|(~~[^~\n]+~~)|((?<!\*)\*[^\*\n]+\*(?!\*))|((?:https?:\/\/[^\s<>"']+|www\.[^\s<>"']+))/g;
 
+function isTableDelimiterRow(line) {
+  if (!line) return false;
+  const trimmed = line.trim();
+  if (!trimmed.includes("-")) return false;
+  let s = trimmed;
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  const parts = s.split("|");
+  if (parts.length === 0) return false;
+  return parts.every(part => /^\s*:?-{1,}:?\s*$/.test(part));
+}
+
+function parseTableCells(line) {
+  let s = line.trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  return s.split("|").map(cell => cell.trim());
+}
+
+function getTableAlignments(delimiterLine) {
+  let s = delimiterLine.trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  return s.split("|").map(part => {
+    const p = part.trim();
+    const left = p.startsWith(":");
+    const right = p.endsWith(":");
+    if (left && right) return "center";
+    if (right) return "right";
+    if (left) return "left";
+    return "";
+  });
+}
+
 /**
  * Parses inline Markdown formatting (code, links, bold, italic, strikethrough, auto-URLs)
  * into safe DOM elements (no innerHTML).
@@ -730,7 +764,63 @@ export function renderMarkdown(container, text, directImageUrls = []) {
       continue;
     }
 
-    // 5. Regular paragraph line
+    // 5. Tables: | Header 1 | Header 2 | \n |---|---| \n | Cell 1 | Cell 2 |
+    if (line.includes("|") && i + 1 < lines.length && isTableDelimiterRow(lines[i + 1])) {
+      const headerLine = lines[i];
+      const delimiterLine = lines[i + 1];
+      const alignments = getTableAlignments(delimiterLine);
+      const headerCells = parseTableCells(headerLine);
+      i += 2;
+
+      const bodyRows = [];
+      while (i < lines.length) {
+        const rowLine = lines[i];
+        if (!rowLine.trim() || rowLine.trim().startsWith("```") || rowLine.startsWith("#") || !rowLine.includes("|")) {
+          break;
+        }
+        bodyRows.push(parseTableCells(rowLine));
+        i++;
+      }
+
+      const tableWrap = document.createElement("div");
+      tableWrap.className = "msg-md-table-wrap";
+      const tableEl = document.createElement("table");
+      tableEl.className = "msg-md-table";
+
+      const maxCols = Math.max(headerCells.length, alignments.length, ...bodyRows.map(r => r.length));
+
+      const theadEl = document.createElement("thead");
+      const headTr = document.createElement("tr");
+      for (let c = 0; c < maxCols; c++) {
+        const th = document.createElement("th");
+        if (alignments[c]) th.style.textAlign = alignments[c];
+        formatInlineMarkdown(th, headerCells[c] || "", directImageUrls);
+        headTr.appendChild(th);
+      }
+      theadEl.appendChild(headTr);
+      tableEl.appendChild(theadEl);
+
+      if (bodyRows.length > 0) {
+        const tbodyEl = document.createElement("tbody");
+        for (const row of bodyRows) {
+          const tr = document.createElement("tr");
+          for (let c = 0; c < maxCols; c++) {
+            const td = document.createElement("td");
+            if (alignments[c]) td.style.textAlign = alignments[c];
+            formatInlineMarkdown(td, row[c] || "", directImageUrls);
+            tr.appendChild(td);
+          }
+          tbodyEl.appendChild(tr);
+        }
+        tableEl.appendChild(tbodyEl);
+      }
+
+      tableWrap.appendChild(tableEl);
+      container.appendChild(tableWrap);
+      continue;
+    }
+
+    // 6. Regular paragraph line
     const pEl = document.createElement("div");
     pEl.className = "msg-md-p";
     if (!line.trim()) {
