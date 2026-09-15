@@ -325,47 +325,44 @@ def extract_video_frames(video_bytes: bytes, max_frames: int = 6) -> List[str]:
         return frames
 
 
-# ─── Web Search Helper ───
+# ─── Web Search Helper (Powered by SearXNG) ───
+
+SEARXNG_URL = os.getenv("SEARXNG_URL", "https://search.home.slavchat.ru/search")
+
 
 def perform_web_search(query: str, max_results: int = 5) -> str:
-    """Searches the web via DuckDuckGo and returns markdown-formatted snippets."""
+    """Searches the web via SearXNG JSON API and returns markdown-formatted snippets."""
     query = query.strip()
     if not query:
         return "Пустой поисковый запрос."
 
-    # Direct DuckDuckGo HTML endpoint
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
-            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-        }
-        r = requests.post(
-            "https://html.duckduckgo.com/html/",
-            data={"q": query},
-            headers=headers,
-            timeout=10,
-        )
-        if r.status_code == 200:
-            import re
-            import urllib.parse
-            matches = re.findall(
-                r'<a class="result__url"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?<a class="result__snippet"[^>]*>(.*?)</a>',
-                r.text,
-                re.DOTALL,
-            )
-            if matches:
-                snippets = []
-                for href, title, snippet in matches[:max_results]:
-                    clean_title = re.sub(r"<[^>]+>", "", title).strip()
-                    clean_snippet = re.sub(r"<[^>]+>", "", snippet).strip()
-                    if "uddg=" in href:
-                        parsed = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
-                        if "uddg" in parsed:
-                            href = parsed["uddg"][0]
-                    snippets.append(f"• [{clean_title}]({href})\n  {clean_snippet}")
-                return "\n\n".join(snippets)
-    except Exception as e:
-        logger.error(f"Web search failed: {e}")
+    import urllib3
+    urllib3.disable_warnings()
+
+    searxng_candidates = [
+        SEARXNG_URL,
+        "https://search.home.slavchat.ru/search",
+        "http://search.home.slavchat.ru/search",
+    ]
+
+    for base in searxng_candidates:
+        if not base:
+            continue
+        try:
+            r = requests.get(base, params={"q": query, "format": "json"}, timeout=8, verify=False)
+            if r.status_code == 200:
+                data = r.json()
+                results = data.get("results", [])
+                if results:
+                    snippets = []
+                    for res in results[:max_results]:
+                        title = res.get("title", "").strip()
+                        url = res.get("url", "").strip()
+                        content = res.get("content", "").strip()
+                        snippets.append(f"• [{title}]({url})\n  {content}")
+                    return "\n\n".join(snippets)
+        except Exception as e:
+            logger.debug(f"SearXNG query to {base} failed: {e}")
 
     return f"По запросу '{query}' ничего не найдено."
 
@@ -995,6 +992,7 @@ def main():
     parser.add_argument("--openai-base-url", default=os.getenv("OPENAI_BASE_URL", "https://plusvibeapi.ru/v1"), help="AI API Base URL")
     parser.add_argument("--openai-api-key", default=os.getenv("OPENAI_API_KEY", ""), help="AI API Key")
     parser.add_argument("--model", default=os.getenv("AI_MODEL", "deepseek-v4.1-flash"), help="Model name")
+    parser.add_argument("--searxng-url", default=os.getenv("SEARXNG_URL", "https://search.home.slavchat.ru/search"), help="SearXNG Search URL")
 
     # Arguments for creating a new bot
     parser.add_argument("--create", action="store_true", help="Create a new bot via user token")
