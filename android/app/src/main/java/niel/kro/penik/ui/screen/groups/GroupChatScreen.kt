@@ -160,6 +160,7 @@ fun GroupChatScreen(
     val error by viewModel.error.collectAsState()
     val editingMessage by viewModel.editingMessage.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
+    val isOnline by viewModel.isOnline.collectAsState()
     val isUnauthorized = connectionState == niel.kro.penik.data.network.websocket.ConnectionState.UNAUTHORIZED
     val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
     val timelineItems = remember(messages) {
@@ -336,7 +337,11 @@ fun GroupChatScreen(
                         )
                         Column {
                             Text(groupName, color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("${members.size} участников", color = LocalAppColors.current.textMuted, fontSize = 11.sp)
+                            if (!isOnline) {
+                                Text("ожидание сети", color = LocalAppColors.current.textMuted, fontSize = 11.sp)
+                            } else {
+                                Text("${members.size} участников", color = LocalAppColors.current.textMuted, fontSize = 11.sp)
+                            }
                         }
                     }
                 },
@@ -406,6 +411,7 @@ fun GroupChatScreen(
                 .padding(padding)
                 .imePadding()
         ) {
+            niel.kro.penik.ui.components.ConnectionStatusBar(connectionState = connectionState, isOnline = isOnline)
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 niel.kro.penik.ui.components.TelegramDoodleBackground()
                 LazyColumn(

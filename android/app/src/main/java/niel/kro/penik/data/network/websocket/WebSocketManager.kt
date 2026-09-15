@@ -322,6 +322,7 @@ class WebSocketManager @Inject constructor(
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+    val isOnline: StateFlow<Boolean> = networkMonitor.isOnline
 
     @Volatile
     private var token: String = ""

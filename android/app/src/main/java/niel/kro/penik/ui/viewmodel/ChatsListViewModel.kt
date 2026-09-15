@@ -144,6 +144,7 @@ class ChatsListViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val connectionState = webSocketManager.connectionState
+    val isOnline: StateFlow<Boolean> = webSocketManager.isOnline
 
     private val _searchResults = MutableStateFlow<List<UserSearchResult>>(emptyList())
     val searchResults: StateFlow<List<UserSearchResult>> = _searchResults.asStateFlow()

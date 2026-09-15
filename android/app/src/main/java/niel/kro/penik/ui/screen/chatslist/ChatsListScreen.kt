@@ -62,6 +62,7 @@ fun ChatsListContent(
     val feed by viewModel.feed.collectAsState()
     val isInitialLoading by viewModel.isInitialLoading.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
+    val isOnline by viewModel.isOnline.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val selfChatLastMessage by viewModel.selfChatLastMessage.collectAsState()
     val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
@@ -115,11 +116,20 @@ fun ChatsListContent(
                         )
                     )
                 } else {
-                    Text(
-                        text = currentVariant.displayName,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp
-                    )
+                    Column {
+                        Text(
+                            text = currentVariant.displayName,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp
+                        )
+                        if (!isOnline) {
+                            Text(
+                                text = "ожидание сети",
+                                fontSize = 12.sp,
+                                color = LocalAppColors.current.textMuted
+                            )
+                        }
+                    }
                 }
             },
             navigationIcon = {
@@ -171,7 +181,7 @@ fun ChatsListContent(
             )
         )
 
-        ConnectionStatusBar(connectionState = connectionState)
+        ConnectionStatusBar(connectionState = connectionState, isOnline = isOnline)
 
         if (isSearching && searchResults.isNotEmpty()) {
             Text(

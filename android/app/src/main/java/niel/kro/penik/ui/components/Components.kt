@@ -2635,16 +2635,22 @@ fun MessageBubble(
 }
 
 @Composable
-fun ConnectionStatusBar(connectionState: ConnectionState) {
-    val text = when (connectionState) {
-        ConnectionState.CONNECTING -> "Устанавливается соединение..."
-        ConnectionState.DISCONNECTED -> "Нет соединения"
-        ConnectionState.UNAUTHORIZED -> "Сессия завершена (401). Требуется повторный вход"
-        ConnectionState.CONNECTED -> return
+fun ConnectionStatusBar(
+    connectionState: ConnectionState,
+    isOnline: Boolean = true
+) {
+    val text = when {
+        !isOnline -> "Ожидание сети"
+        connectionState == ConnectionState.CONNECTING -> "Устанавливается соединение..."
+        connectionState == ConnectionState.DISCONNECTED -> "Нет соединения"
+        connectionState == ConnectionState.UNAUTHORIZED -> "Сессия завершена (401). Требуется повторный вход"
+        connectionState == ConnectionState.CONNECTED -> return
+        else -> return
     }
-    val color = when (connectionState) {
-        ConnectionState.CONNECTING -> LocalAppColors.current.warning
-        ConnectionState.UNAUTHORIZED -> LocalAppColors.current.danger
+    val color = when {
+        !isOnline -> LocalAppColors.current.warning
+        connectionState == ConnectionState.CONNECTING -> LocalAppColors.current.warning
+        connectionState == ConnectionState.UNAUTHORIZED -> LocalAppColors.current.danger
         else -> LocalAppColors.current.danger
     }
     Box(
