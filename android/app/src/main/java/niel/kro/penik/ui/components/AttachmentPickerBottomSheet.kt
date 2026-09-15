@@ -45,6 +45,8 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -98,7 +100,7 @@ fun AttachmentPickerBottomSheet(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var hasPermission by remember { mutableStateOf(hasGalleryPermission(context)) }
     val recentMedias = remember { mutableStateListOf<LocalGalleryMedia>() }
@@ -137,11 +139,84 @@ fun AttachmentPickerBottomSheet(
         containerColor = Color(0xFF101014),
         dragHandle = { BottomSheetDefaults.DragHandle() }
     ) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.78f)
+                .fillMaxHeight(0.85f)
         ) {
+            // Top action bar: clearly visible without any scrolling
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (selectedUris.isNotEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Выбрано: ${selectedUris.size}",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.White.copy(alpha = 0.1f))
+                                .clickable { selectedUris.clear() }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "Сбросить",
+                                fontSize = 12.sp,
+                                color = LocalAppColors.current.accent
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            val toSend = selectedUris.toList()
+                            onDismiss()
+                            onSendRecentMedias(toSend)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = LocalAppColors.current.accent,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(20.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Отправить (${selectedUris.size})",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "Галерея",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
             // 3-Column Telegram Photo Grid
             if (hasPermission) {
                 if (isLoadingMedia) {
@@ -265,111 +340,114 @@ fun AttachmentPickerBottomSheet(
                     .padding(horizontal = 16.dp, vertical = 14.dp)
                     .navigationBarsPadding()
             ) {
-                // Floating Bottom Capsule with "Галерея" and "Файл"
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .clip(RoundedCornerShape(32.dp))
-                        .background(Color(0xE61E1E28))
-                        .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(32.dp))
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = if (selectedUris.isNotEmpty()) Arrangement.SpaceBetween else Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    // Floating Bottom Capsule with "Галерея" and "Файл"
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(32.dp))
+                            .background(Color(0xE61E1E28))
+                            .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(32.dp))
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
                     ) {
-                        // "Галерея" Tab/Button
                         Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(24.dp))
-                                .background(Color(0xFF2B3A60))
-                                .clickable {
-                                    onDismiss()
-                                    onPickPhotoOrVideo()
-                                }
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.PhotoLibrary,
-                                contentDescription = "Галерея",
-                                tint = Color(0xFF64B5F6),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Галерея",
-                                color = Color(0xFF64B5F6),
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                            // "Галерея" Tab/Button
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .background(Color(0xFF2B3A60))
+                                    .clickable {
+                                        onDismiss()
+                                        onPickPhotoOrVideo()
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PhotoLibrary,
+                                    contentDescription = "Галерея",
+                                    tint = Color(0xFF64B5F6),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Галерея",
+                                    color = Color(0xFF64B5F6),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
 
-                        // "Файл" Tab/Button
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(24.dp))
-                                .clickable {
-                                    onDismiss()
-                                    onPickDocument()
-                                }
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.InsertDriveFile,
-                                contentDescription = "Файл",
-                                tint = Color(0xFFEEEEEE),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Файл",
-                                color = Color(0xFFEEEEEE),
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
+                            // "Файл" Tab/Button
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .clickable {
+                                        onDismiss()
+                                        onPickDocument()
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.InsertDriveFile,
+                                    contentDescription = "Файл",
+                                    tint = Color(0xFFEEEEEE),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Файл",
+                                    color = Color(0xFFEEEEEE),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
                         }
                     }
-                }
 
-                // Floating Send FAB when photos are selected
-                if (selectedUris.isNotEmpty()) {
-                    FloatingActionButton(
-                        onClick = {
-                            val toSend = selectedUris.toList()
-                            onDismiss()
-                            onSendRecentMedias(toSend)
-                        },
-                        containerColor = LocalAppColors.current.accent,
-                        contentColor = Color.White,
-                        shape = CircleShape,
-                        elevation = FloatingActionButtonDefaults.elevation(6.dp),
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .size(52.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Отправить",
-                                modifier = Modifier.size(22.dp)
-                            )
-                            if (selectedUris.size > 1) {
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .size(18.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.White),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "${selectedUris.size}",
-                                        color = LocalAppColors.current.accent,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                    // Floating Send FAB when photos are selected
+                    if (selectedUris.isNotEmpty()) {
+                        FloatingActionButton(
+                            onClick = {
+                                val toSend = selectedUris.toList()
+                                onDismiss()
+                                onSendRecentMedias(toSend)
+                            },
+                            containerColor = LocalAppColors.current.accent,
+                            contentColor = Color.White,
+                            shape = CircleShape,
+                            elevation = FloatingActionButtonDefaults.elevation(6.dp),
+                            modifier = Modifier.size(52.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "Отправить",
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                if (selectedUris.size > 1) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .size(18.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.White),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "${selectedUris.size}",
+                                            color = LocalAppColors.current.accent,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -378,6 +456,7 @@ fun AttachmentPickerBottomSheet(
             }
         }
     }
+}
 }
 
 @Composable
