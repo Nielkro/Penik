@@ -2435,7 +2435,8 @@ fun MessageBubble(
                             showMenu = true
                         }
                     )
-                    if (attachment.caption.isNotBlank()) {
+                    val isMedia = attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/")
+                    if (attachment.caption.isNotBlank() || !isMedia) {
                         Spacer(modifier = Modifier.height(2.dp))
                         Row(
                             horizontalArrangement = Arrangement.End,

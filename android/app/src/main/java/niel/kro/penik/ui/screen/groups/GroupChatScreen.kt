@@ -733,21 +733,27 @@ fun GroupChatScreen(
                         contract = ActivityResultContracts.PickVisualMedia()
                     ) { uri ->
                         if (uri != null) {
-                            viewModel.sendMediaFile(context, uri, stripExif = true)
+                            val caption = inputText.trim()
+                            viewModel.sendMediaFile(context, uri, caption = caption, stripExif = true)
+                            inputText = ""
                         }
                     }
                     val attachLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.GetContent()
                     ) { uri ->
                         if (uri != null) {
-                            viewModel.sendMediaFile(context, uri, stripExif = false)
+                            val caption = inputText.trim()
+                            viewModel.sendMediaFile(context, uri, caption = caption, stripExif = false)
+                            inputText = ""
                         }
                     }
                     val cameraLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.TakePicture()
                     ) { success ->
                         if (success && tempCameraUri != null) {
-                            viewModel.sendMediaFile(context, tempCameraUri!!, stripExif = true)
+                            val caption = inputText.trim()
+                            viewModel.sendMediaFile(context, tempCameraUri!!, caption = caption, stripExif = true)
+                            inputText = ""
                         }
                     }
 
@@ -775,9 +781,12 @@ fun GroupChatScreen(
                                 attachLauncher.launch("audio/*")
                             },
                             onSendRecentMedias = { uris ->
-                                uris.forEach { uri ->
-                                    viewModel.sendMediaFile(context, uri, stripExif = true)
+                                val caption = inputText.trim()
+                                uris.forEachIndexed { index, uri ->
+                                    val cap = if (index == 0) caption else ""
+                                    viewModel.sendMediaFile(context, uri, caption = cap, stripExif = true)
                                 }
+                                inputText = ""
                             }
                         )
                     }
