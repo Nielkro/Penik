@@ -221,6 +221,47 @@ export function showFullscreenImage(url, altText = "") {
   showFullscreenMedia(url, false);
 }
 
+/**
+ * Enables full-screen image viewing on click for an avatar element, but ONLY if
+ * it contains a successfully loaded <img>. If the avatar is an initials placeholder
+ * (or "Избранное"), clicks are prevented from propagating and no zoom is triggered.
+ *
+ * @param {HTMLElement} avatarEl
+ * @param {string | (() => string)} [getName]
+ */
+export function enableAvatarFullscreen(avatarEl, getName = "") {
+  avatarEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const img = avatarEl.querySelector("img");
+    if (img && img.complete && img.naturalWidth > 0) {
+      const name = typeof getName === "function" ? getName() : getName;
+      showFullscreenImage(img.src, name || "");
+    }
+  });
+
+  const updateCursor = () => {
+    const img = avatarEl.querySelector("img");
+    if (img && img.complete && img.naturalWidth > 0) {
+      avatarEl.style.cursor = "zoom-in";
+    } else {
+      avatarEl.style.cursor = "default";
+    }
+  };
+
+  const img = avatarEl.querySelector("img");
+  if (img) {
+    if (img.complete && img.naturalWidth > 0) {
+      updateCursor();
+    } else {
+      avatarEl.style.cursor = "default";
+      img.addEventListener("load", updateCursor);
+      img.addEventListener("error", updateCursor);
+    }
+  } else {
+    avatarEl.style.cursor = "default";
+  }
+}
+
 // Shared cache-buster for group avatars: bumped locally after a self-upload,
 // and by the GROUP_AVATAR_UPDATE websocket event when any member changes it.
 export const groupAvatarUpdateTimestamps = new Map();

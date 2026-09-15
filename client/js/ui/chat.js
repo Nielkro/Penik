@@ -10,7 +10,7 @@ import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpda
 import { OP } from "../ws.js";
 import {
   avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon,
-  showDeleteChatConfirmModal, showFullscreenImage, showConfirmModal, showForwardModal,
+  showDeleteChatConfirmModal, showFullscreenImage, enableAvatarFullscreen, showConfirmModal, showForwardModal,
   setMsgTextContent, getEmojiOnlyCount, isDirectImageUrl, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
 import { syncGroups, getAllGroups, getGroupMessages, onGroupUpdate } from "../groups.js";
@@ -157,8 +157,11 @@ export async function renderChatList(container) {
   function render(filter) {
     listEl.innerHTML = "";
     if (selfChatEntry && (!filter || "избранное".includes(filter))) {
+      const selfAvatar = avatar({ name: "Избранное" }, 48);
+      selfAvatar.addEventListener("click", (e) => e.stopPropagation());
+      selfAvatar.style.cursor = "default";
       const selfItem = el("li", { class: "chatlist-item" },
-        avatar({ name: "Избранное" }, 48),
+        selfAvatar,
         el("div", { class: "chatlist-item-info" },
           el("span", { class: "chatlist-item-name" }, "Избранное"),
           el("span", { class: "chatlist-item-preview" }, getMessagePreview(selfChatEntry.last_message || ""))
@@ -192,13 +195,7 @@ export async function renderChatList(container) {
         }));
       } else {
         const avatarEl = avatar(entry, 48, avatarUpdateTimestamps.get(String(entry.user_id)));
-        avatarEl.addEventListener("click", (e) => {
-          const img = avatarEl.querySelector("img");
-          if (img) {
-            e.stopPropagation();
-            showFullscreenImage(img.src, entry.name || entry.nickname || "");
-          }
-        });
+        enableAvatarFullscreen(avatarEl, () => entry.name || entry.nickname || "");
         const item = el("li", { class: "chatlist-item" },
           avatarEl,
           el("div", { class: "chatlist-item-info" },
@@ -420,11 +417,7 @@ export async function renderChat(container, userId) {
   }
 
   let avatarEl = avatar(contact, 40, avatarUpdateTimestamps.get(String(userId)));
-  avatarEl.style.cursor = "zoom-in";
-  avatarEl.addEventListener("click", () => {
-    const img = avatarEl.querySelector("img");
-    if (img) showFullscreenImage(img.src, contact.name || contact.nickname || "");
-  });
+  enableAvatarFullscreen(avatarEl, () => contact.name || contact.nickname || "");
   const nameEl = el("span", { class: "chat-header-name" }, contact.name || contact.nickname);
   // Subtitle: nickname until presence resolves, then "в сети" / "был(а) в сети …".
   const nickEl = el("span", { class: "chat-header-nick" }, contact.nickname ? `@${contact.nickname}` : "");
