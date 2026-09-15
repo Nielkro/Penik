@@ -301,15 +301,6 @@ export function groupAvatar(group, size = 40, forceTimestamp = null) {
 
   container.appendChild(wrap);
 
-  const badgeSize = Math.max(14, Math.min(22, Math.round(size * 0.35)));
-  const badgeFontSize = Math.max(9, Math.min(14, Math.round(badgeSize * 0.6)));
-
-  const badge = el("div", {
-    style: `position:absolute;bottom:-2px;right:-2px;width:${badgeSize}px;height:${badgeSize}px;border-radius:50%;background:#00e676;color:#121214;display:flex;align-items:center;justify-content:center;font-size:${badgeFontSize}px;box-shadow:0 0 0 2px #1e1e24;font-weight:bold;z-index:2;line-height:1;`
-  }, "👥");
-
-  container.appendChild(badge);
-
   return container;
 }
 

@@ -189,23 +189,31 @@ fun FullscreenImageViewer(url: String?, onDismiss: () -> Unit) {
                 .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onDismiss() },
             contentAlignment = Alignment.Center
         ) {
-            SubcomposeAsyncImage(
+            var isLoading by remember(url) { mutableStateOf(true) }
+
+            AsyncImage(
                 model = url,
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxWidth(0.92f)
                     .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {},
-                contentScale = ContentScale.Fit
-            ) {
-                val state = painter.state
-                if (state is coil.compose.AsyncImagePainter.State.Loading) {
-                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
-                } else if (state is coil.compose.AsyncImagePainter.State.Error) {
-                    LaunchedEffect(Unit) { onDismiss() }
-                } else {
-                    SubcomposeAsyncImageContent()
+                contentScale = ContentScale.Fit,
+                onLoading = { isLoading = true },
+                onSuccess = { isLoading = false },
+                onError = {
+                    isLoading = false
+                    onDismiss()
                 }
+            )
+
+            if (isLoading) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    modifier = Modifier.size(36.dp),
+                    strokeWidth = 3.dp
+                )
             }
+
             IconButton(
                 onClick = onDismiss,
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
@@ -326,23 +334,6 @@ fun GroupAvatar(
             } else {
                 InitialsAvatar(name = name, id = groupId, size = size)
             }
-        }
-
-        val badgeSize = size * 0.4f
-        Box(
-            modifier = Modifier
-                .size(badgeSize)
-                .align(Alignment.BottomEnd)
-                .clip(CircleShape)
-                .background(Color(0xFF00E676)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                Icons.Default.Group,
-                contentDescription = null,
-                tint = Color(0xFF121214),
-                modifier = Modifier.size(badgeSize * 0.62f)
-            )
         }
     }
 }
@@ -530,21 +521,38 @@ fun ChatListItem(
                 }
             }
 
-            if (unreadCount > 0) {
+            if ((timestamp != null && timestamp > 0) || unreadCount > 0) {
                 Spacer(modifier = Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .clip(CircleShape)
-                        .background(LocalAppColors.current.accent),
-                    contentAlignment = Alignment.Center
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    Text(
-                        text = if (unreadCount > 99) "99+" else unreadCount.toString(),
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (timestamp != null && timestamp > 0) {
+                        Text(
+                            text = formatTime(timestamp),
+                            color = LocalAppColors.current.textMuted,
+                            fontSize = 12.sp
+                        )
+                    }
+                    if (unreadCount > 0) {
+                        if (timestamp != null && timestamp > 0) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(LocalAppColors.current.accent),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (unreadCount > 99) "99+" else unreadCount.toString(),
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
         }
