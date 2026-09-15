@@ -1244,11 +1244,29 @@ class MessageRepository @Inject constructor(
         val nowSec = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
         val editedAtMs = nowSec * 1000
 
+        val existingMsg = messageDao.findMessageByLocalId(clientMsgId)
+            ?: (clientMsgId.toLongOrNull()?.let { messageDao.findMessageByServerId(it) })
+        val finalPayload = if (existingMsg != null && existingMsg.text.startsWith("{")) {
+            runCatching {
+                val root = org.json.JSONObject(existingMsg.text)
+                if (root.optString("type") == "file" || root.has("file")) {
+                    root.put("text", newText)
+                    root.toString()
+                } else {
+                    newText
+                }
+            }.getOrElse { newText }
+        } else {
+            newText
+        }
+
+        if (finalPayload.isBlank()) return
+
         // 1. Update Room DB immediately
         messageDao.updateMessageText(
             clientMsgId = clientMsgId,
             serverId = clientMsgId.toLongOrNull(),
-            newText = newText,
+            newText = finalPayload,
             editedAt = editedAtMs
         )
         updateChatLastMessage(chatUserId)
@@ -1285,7 +1303,7 @@ class MessageRepository @Inject constructor(
             recipientUserId = chatUserId,
             clientMsgId = clientMsgId,
             timestamp = nowSec,
-            plaintext = newText.toByteArray(Charsets.UTF_8),
+            plaintext = finalPayload.toByteArray(Charsets.UTF_8),
             recipients = recipientInfos
         )
 

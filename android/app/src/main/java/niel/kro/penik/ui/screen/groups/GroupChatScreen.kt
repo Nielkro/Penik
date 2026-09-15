@@ -186,7 +186,13 @@ fun GroupChatScreen(
     LaunchedEffect(editingMessage) {
         editingMessage?.let {
             activeReply = null
-            inputText = it.text
+            val fileAttachment = runCatching {
+                if (it.text.startsWith("{")) {
+                    val root = org.json.JSONObject(it.text)
+                    if (root.optString("type") == "file" || root.has("file")) root.optString("text") else null
+                } else null
+            }.getOrNull()
+            inputText = fileAttachment ?: it.text
         }
     }
     var showMembersDialog by remember { mutableStateOf(false) }
@@ -564,6 +570,7 @@ fun GroupChatScreen(
                         .background(LocalAppColors.current.panel)
                 ) {
                 editingMessage?.let { editMsg ->
+                    val bannerText = parseReplyContent(editMsg.text)?.displayText ?: editMsg.text
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -585,7 +592,7 @@ fun GroupChatScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = editMsg.text,
+                                text = bannerText,
                                 color = LocalAppColors.current.textMuted,
                                 fontSize = 12.sp,
                                 maxLines = 1,
@@ -599,7 +606,8 @@ fun GroupChatScreen(
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Закрыть",
-                                tint = LocalAppColors.current.textMuted
+                                tint = LocalAppColors.current.textMuted,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }

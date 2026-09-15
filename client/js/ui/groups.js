@@ -571,7 +571,7 @@ export async function renderGroup(container, groupId) {
       const currentText = (bubble._msg ? bubble._msg.plaintext : msg.plaintext) || "";
       const senderName = mine ? "Вы" : (nameById.get(senderId) || msg.sender_name || `#${senderId}`);
       showForwardModal(currentText, senderName);
-    }, (mine && !isMediaMsg && !isStickerMsg) ? () => {
+    }, (mine && !isStickerMsg) ? () => {
       setActiveEdit(bubble._msg || msg);
     } : null);
     const stick = scrollDown.isNearBottom();
@@ -689,17 +689,29 @@ export async function renderGroup(container, groupId) {
     if (msg) activeReply = null;
     replyBarContainer.innerHTML = "";
     if (msg) {
+      let displayText = msg.plaintext || "";
+      let initialInput = msg.plaintext || "";
+      try {
+        if (displayText.startsWith("{")) {
+          const parsed = JSON.parse(displayText);
+          if (parsed && (parsed.type === "file" || parsed.file)) {
+            initialInput = parsed.text || "";
+            displayText = parsed.text || parsed.file?.name || "Медиафайл";
+          }
+        }
+      } catch (_) {}
+
       const barChildren = [
         el("div", { class: "reply-preview-content" },
           el("span", { class: "reply-preview-sender", style: "color:var(--accent);" }, "Редактирование"),
-          el("span", { class: "reply-preview-text" }, msg.plaintext || "")
+          el("span", { class: "reply-preview-text" }, displayText)
         ),
         el("button", { class: "reply-preview-close" }, "✕")
       ];
 
       const bar = el("div", { class: "reply-preview-bar" }, ...barChildren);
       replyBarContainer.appendChild(bar);
-      inputEl.value = msg.plaintext || "";
+      inputEl.value = initialInput;
       inputEl.focus();
       inputEl.style.height = "auto";
       const newH = Math.min(inputEl.scrollHeight, 120);
@@ -922,9 +934,21 @@ export async function renderGroup(container, groupId) {
       const editMsg = activeEditMessage;
       setActiveEdit(null);
       const messageId = editMsg.message_id;
+
+      let finalText = text;
       try {
-        await editGroupMessage(groupId, messageId, text);
-        updateDomGroupMessageText(messageId, text, Date.now());
+        if (editMsg.plaintext && editMsg.plaintext.startsWith("{")) {
+          const parsed = JSON.parse(editMsg.plaintext);
+          if (parsed && (parsed.type === "file" || parsed.file)) {
+            parsed.text = text;
+            finalText = JSON.stringify(parsed);
+          }
+        }
+      } catch (_) {}
+
+      try {
+        await editGroupMessage(groupId, messageId, finalText);
+        updateDomGroupMessageText(messageId, finalText, Date.now());
       } catch (e) {
         showToast(e.message || "Не удалось изменить сообщение", "error");
       }

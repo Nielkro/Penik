@@ -469,15 +469,32 @@ class GroupRepository @Inject constructor(
     }
 
     suspend fun editMessage(groupId: Long, messageId: String, newText: String) {
+        val existingMsg = dao.getMessage(groupId, messageId)
+        val finalPayload = if (existingMsg != null && existingMsg.text.startsWith("{")) {
+            runCatching {
+                val root = org.json.JSONObject(existingMsg.text)
+                if (root.optString("type") == "file" || root.has("file")) {
+                    root.put("text", newText)
+                    root.toString()
+                } else {
+                    newText
+                }
+            }.getOrElse { newText }
+        } else {
+            newText
+        }
+
+        if (finalPayload.isBlank()) return
+
         val version = currentVersion(groupId)
         val groupKey = ensureGroupKey(groupId, version) ?: return
         val editedAt = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
         val senderUserId = myUserId()
         val enc = groupCrypto.encryptMessage(
-            newText.toByteArray(Charsets.UTF_8), groupKey, groupId, version, senderUserId, messageId, editedAt
+            finalPayload.toByteArray(Charsets.UTF_8), groupKey, groupId, version, senderUserId, messageId, editedAt
         )
 
-        dao.updateMessageText(groupId, messageId, newText, editedAt * 1000)
+        dao.updateMessageText(groupId, messageId, finalPayload, editedAt * 1000)
         ws.sendGroupMessageEdit(groupId, messageId, version, enc.ciphertext, enc.salt, enc.nonce, editedAt)
     }
 
