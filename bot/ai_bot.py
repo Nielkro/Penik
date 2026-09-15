@@ -206,33 +206,31 @@ def build_pairwise_aad_v2(sender_user_id: int, recipient_user_id: int, client_ms
 
 
 def e2ee_encrypt(plaintext: str | bytes, shared_secret: bytes, aad: bytes = b"") -> Dict[str, bytes]:
-    pt_bytes = plaintext.encode("utf-8") if isinstance(plaintext, str) else plaintext
-    salt = os.urandom(16)
-    nonce = os.urandom(12)
-
-    out_ct_len = len(pt_bytes) + 16
-    out_ct = (ctypes.c_uint8 * out_ct_len)()
+    if isinstance(plaintext, str):
+        plaintext = plaintext.encode("utf-8")
+    pt_len = len(plaintext)
+    ct_buf = (ctypes.c_uint8 * (pt_len + 16))()
+    salt_buf = (ctypes.c_uint8 * 32)()
+    nonce_buf = (ctypes.c_uint8 * 12)()
 
     if _crypto.penik_e2ee_encrypt(
-        pt_bytes,
-        len(pt_bytes),
+        plaintext,
+        pt_len,
         shared_secret,
-        salt,
-        len(salt),
-        nonce,
-        len(nonce),
         PAIRWISE_INFO,
         len(PAIRWISE_INFO),
         aad,
         len(aad),
-        out_ct,
+        ct_buf,
+        salt_buf,
+        nonce_buf,
     ) != 0:
-        raise RuntimeError("Encryption failed in Rust core")
+        raise RuntimeError("Failed to encrypt with ChaCha20-Poly1305")
 
     return {
-        "ciphertext": bytes(out_ct),
-        "salt": salt,
-        "nonce": nonce,
+        "ciphertext": bytes(ct_buf),
+        "salt": bytes(salt_buf),
+        "nonce": bytes(nonce_buf),
     }
 
 
@@ -650,7 +648,7 @@ class PenikAIBot:
                     file_info = parsed.get("file") or parsed
                     file_url = file_info.get("url")
                     file_key_b64 = file_info.get("key")
-                    mime_type = file_info.get("mime_type", "")
+                    mime_type = file_info.get("mime_type") or file_info.get("mime") or ""
                     caption = parsed.get("text") or file_info.get("caption") or ""
 
                     if file_url and file_key_b64:
