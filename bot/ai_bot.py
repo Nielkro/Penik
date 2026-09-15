@@ -120,6 +120,15 @@ def load_crypto_lib() -> ctypes.CDLL:
     ]
     lib.penik_e2ee_decrypt.restype = ctypes.c_int32
 
+    lib.penik_decrypt_file.argtypes = [
+        ctypes.c_char_p,
+        ctypes.c_size_t,
+        ctypes.c_char_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    lib.penik_decrypt_file.restype = ctypes.c_int32
+
     return lib
 
 
@@ -188,31 +197,33 @@ def build_pairwise_aad_v2(sender_user_id: int, recipient_user_id: int, client_ms
 
 
 def e2ee_encrypt(plaintext: str | bytes, shared_secret: bytes, aad: bytes = b"") -> Dict[str, bytes]:
-    if isinstance(plaintext, str):
-        plaintext = plaintext.encode("utf-8")
-    pt_len = len(plaintext)
-    ct_buf = (ctypes.c_uint8 * (pt_len + 16))()
-    salt_buf = (ctypes.c_uint8 * 32)()
-    nonce_buf = (ctypes.c_uint8 * 12)()
+    pt_bytes = plaintext.encode("utf-8") if isinstance(plaintext, str) else plaintext
+    salt = os.urandom(16)
+    nonce = os.urandom(12)
+
+    out_ct_len = len(pt_bytes) + 16
+    out_ct = (ctypes.c_uint8 * out_ct_len)()
 
     if _crypto.penik_e2ee_encrypt(
-        plaintext,
-        pt_len,
+        pt_bytes,
+        len(pt_bytes),
         shared_secret,
+        salt,
+        len(salt),
+        nonce,
+        len(nonce),
         PAIRWISE_INFO,
         len(PAIRWISE_INFO),
         aad,
         len(aad),
-        ct_buf,
-        salt_buf,
-        nonce_buf,
+        out_ct,
     ) != 0:
-        raise RuntimeError("Failed to encrypt with ***REDACTED-BY-FILTER-REPO***")
+        raise RuntimeError("Encryption failed in Rust core")
 
     return {
-        "ciphertext": bytes(ct_buf),
-        "salt": bytes(salt_buf),
-        "nonce": bytes(nonce_buf),
+        "ciphertext": bytes(out_ct),
+        "salt": salt,
+        "nonce": nonce,
     }
 
 
@@ -238,6 +249,73 @@ def e2ee_decrypt(ciphertext: bytes, shared_secret: bytes, salt: bytes, nonce: by
         raise ValueError("Decryption failed: tag or AAD mismatch")
 
     return bytes(out_pt[:out_pt_len.value])
+
+
+def decrypt_file(combined_encrypted_bytes: bytes, key: bytes) -> bytes:
+    """Decrypts PCK1 chunked or legacy monolithic file payload using Rust penik-crypto."""
+    if len(combined_encrypted_bytes) < 28:
+        raise ValueError("Invalid encrypted file payload: too short")
+
+    out_len = ctypes.c_size_t(0)
+    _crypto.penik_decrypt_file(
+        combined_encrypted_bytes,
+        len(combined_encrypted_bytes),
+        key,
+        None,
+        ctypes.byref(out_len),
+    )
+    if out_len.value == 0:
+        return b""
+
+    buf = (ctypes.c_uint8 * out_len.value)()
+    res = _crypto.penik_decrypt_file(
+        combined_encrypted_bytes,
+        len(combined_encrypted_bytes),
+        key,
+        buf,
+        ctypes.byref(out_len),
+    )
+    if res != 0:
+        raise ValueError("penik_decrypt_file failed in Rust core: tag mismatch")
+
+    return bytes(buf[:out_len.value])
+
+
+def extract_video_frames(video_bytes: bytes, max_frames: int = 6) -> List[str]:
+    """Extracts evenly spaced JPEG frames from video bytes using ffmpeg and returns base64 strings."""
+    import tempfile
+    import subprocess
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        video_file = tmp_path / "input.mp4"
+        with open(video_file, "wb") as f:
+            f.write(video_bytes)
+
+        frame_pattern = str(tmp_path / "frame_%03d.jpg")
+        cmd = [
+            "ffmpeg", "-y", "-i", str(video_file),
+            "-vf", "scale=min(iw\\,720):-2",
+            "-vframes", str(max_frames),
+            "-q:v", "3",
+            frame_pattern
+        ]
+        try:
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        except Exception as e:
+            logger.error(f"ffmpeg execution failed: {e}")
+            return []
+
+        frames = []
+        for frame_file in sorted(tmp_path.glob("frame_*.jpg")):
+            try:
+                with open(frame_file, "rb") as f:
+                    f_bytes = f.read()
+                frames.append(base64.b64encode(f_bytes).decode("ascii"))
+            except Exception as e:
+                logger.warning(f"Failed to read extracted frame {frame_file}: {e}")
+
+        return frames
 
 
 # ─── AI Client Helper ───
@@ -305,6 +383,7 @@ class PenikAIBot:
         self.private_key, self.public_key = self._load_or_create_identity()
         self._shared_secrets_cache: Dict[bytes, bytes] = {}
         self.user_histories: Dict[int, List[Dict[str, str]]] = {}
+        self.seen_msg_ids: set = set()
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self.session = requests.Session()
 
@@ -486,20 +565,34 @@ class PenikAIBot:
             logger.error(f"Decryption failed: {e}")
             return None
 
-    def _get_history(self, user_id: int) -> List[Dict[str, str]]:
+    def _get_history(self, user_id: int) -> List[Dict[str, Any]]:
         if user_id not in self.user_histories:
             self.user_histories[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
         return self.user_histories[user_id]
 
+    def download_attachment(self, file_url: str) -> bytes:
+        """Downloads encrypted attachment ciphertext from Penik server."""
+        if file_url.startswith("/"):
+            url = f"{self.server_url}{file_url}"
+        else:
+            url = file_url
+        res = self.session.get(url, headers=self._auth_headers())
+        if res.status_code != 200:
+            raise RuntimeError(f"Failed to download attachment ({res.status_code}): {res.text}")
+        return res.content
+
     async def handle_message(self, sender_user_id: int, text: str, msg_id: str, incoming_ts: int = 0):
-        """Processes decrypted message, queries AI, and sends response."""
+        """Processes decrypted message, queries AI (with Vision & Video support), and sends response."""
         logger.info(f"Incoming message from User #{sender_user_id}: {text!r}")
         trimmed = text.strip()
 
         if trimmed == "/start":
             reply = (
                 "👋 Привет! Я AI-ассистент на базе **DeepSeek (v4.1 Flash)** в защищенном мессенджере Penik 🔐🧠\n\n"
-                "Задайте мне любой вопрос или отправьте задачу!\n\n"
+                "Я умею:\n"
+                "• Отвечать на любые вопросы и помогать с кодом/текстами\n"
+                "• Анализировать **фотографии** и изображения 📸\n"
+                "• Смотреть и разбирать **видео** по раскадровке 🎬\n\n"
                 "Доступные команды:\n"
                 "• `/clear` или `/reset` — очистить контекст диалога\n"
                 "• `/info` — информация о модели и E2EE-защите\n"
@@ -519,6 +612,7 @@ class PenikAIBot:
             reply = (
                 f"🧠 **AI Bot Info**\n"
                 f"• Model: `{self.ai_client.model}`\n"
+                f"• Vision & Video: Поддерживается (авто-раскадровка видео через ffmpeg)\n"
                 f"• Provider: `plusvibeapi.ru` (OpenAI API compatible)\n"
                 f"• Encryption: End-to-End (X25519 + ***REDACTED-BY-FILTER-REPO***)\n"
                 f"• Memory: до {self.max_history} сообщений в контексте"
@@ -534,9 +628,51 @@ class PenikAIBot:
         # Show typing status
         await self.send_typing(sender_user_id, is_typing=True)
 
+        user_content: Any = text
+
+        # Check for media attachments (photo or video)
+        if trimmed.startswith("{"):
+            try:
+                parsed = json.loads(trimmed)
+                if parsed.get("type") == "fwd":
+                    text = parsed.get("text", "")
+                    user_content = text
+                elif parsed.get("type") == "file" or parsed.get("file"):
+                    file_info = parsed.get("file") or parsed
+                    file_url = file_info.get("url")
+                    file_key_b64 = file_info.get("key")
+                    mime_type = file_info.get("mime_type", "")
+                    caption = parsed.get("text") or file_info.get("caption") or ""
+
+                    if file_url and file_key_b64:
+                        logger.info(f"Downloading attachment {file_url} (MIME: {mime_type})...")
+                        raw_encrypted = await asyncio.to_thread(self.download_attachment, file_url)
+                        file_key = base64.b64decode(file_key_b64)
+                        decrypted = await asyncio.to_thread(decrypt_file, raw_encrypted, file_key)
+
+                        if mime_type.startswith("image/"):
+                            logger.info(f"Processing image attachment ({len(decrypted)} bytes)...")
+                            img_b64 = base64.b64encode(decrypted).decode("ascii")
+                            prompt_text = caption.strip() if caption.strip() else "Опиши подробно, что изображено на этом изображении, и ответь на любые вопросы."
+                            user_content = [
+                                {"type": "text", "text": prompt_text},
+                                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{img_b64}"}}
+                            ]
+                        elif mime_type.startswith("video/"):
+                            logger.info(f"Extracting frames from video attachment ({len(decrypted)} bytes)...")
+                            frames = await asyncio.to_thread(extract_video_frames, decrypted, 6)
+                            prompt_text = caption.strip() if caption.strip() else "Посмотри на эти кадры из видео по порядку. Опиши подробно, что происходит на видео."
+                            content_list = [{"type": "text", "text": prompt_text}]
+                            for f_b64 in frames:
+                                content_list.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{f_b64}"}})
+                            user_content = content_list
+                            logger.info(f"Extracted {len(frames)} frames for AI vision analysis.")
+            except Exception as e:
+                logger.error(f"Error processing attachment: {e}", exc_info=True)
+
         # Prepare messages
         history = self._get_history(sender_user_id)
-        history.append({"role": "user", "content": text})
+        history.append({"role": "user", "content": user_content})
 
         # Trim history if too long (keep system prompt + last N messages)
         if len(history) > self.max_history + 1:
@@ -554,14 +690,24 @@ class PenikAIBot:
 
     async def _process_incoming_msg(self, payload: Dict[str, Any]):
         sender_id = payload.get("from_user_id")
-        server_msg_id = payload.get("id") or payload.get("server_msg_id") or 0
+        server_msg_id = payload.get("msg_id") or payload.get("id") or payload.get("server_msg_id") or 0
         client_msg_id = payload.get("client_msg_id", "")
         ts = payload.get("ts") or payload.get("created_at") or 0
 
-        # Acknowledge delivery & read
+        # Always acknowledge delivery & read to server
         if server_msg_id > 0:
             await self.send_frame(OP_MSG_DELIVERED, {"msg_id": server_msg_id, "chat_user_id": sender_id})
             await self.send_frame(OP_MSG_READ, {"chat_user_id": sender_id, "up_to_msg_id": server_msg_id})
+
+        # Deduplicate incoming messages so offline batches / duplicate frames aren't re-answered
+        dedup_key = client_msg_id or (str(server_msg_id) if server_msg_id > 0 else "")
+        if dedup_key:
+            if dedup_key in self.seen_msg_ids:
+                logger.info(f"Skipping already processed message: {dedup_key}")
+                return
+            self.seen_msg_ids.add(dedup_key)
+            if len(self.seen_msg_ids) > 10000:
+                self.seen_msg_ids.pop()
 
         # Fetch sender's public key
         bundle = self.get_user_key_bundle(sender_id)

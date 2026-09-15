@@ -255,6 +255,7 @@ class PenikBot:
 
         self.private_key, self.public_key = self._load_or_create_identity()
         self._shared_secrets_cache: Dict[bytes, bytes] = {}
+        self.seen_msg_ids: set = set()
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self.session = requests.Session()
 
@@ -464,14 +465,24 @@ class PenikBot:
 
     async def _process_incoming_msg(self, payload: Dict[str, Any]):
         sender_id = payload.get("from_user_id")
-        server_msg_id = payload.get("id") or payload.get("server_msg_id") or 0
+        server_msg_id = payload.get("msg_id") or payload.get("id") or payload.get("server_msg_id") or 0
         client_msg_id = payload.get("client_msg_id", "")
         ts = payload.get("ts") or payload.get("created_at") or 0
 
-        # Acknowledge delivery & read
+        # Always acknowledge delivery & read to server
         if server_msg_id > 0:
             await self.send_frame(OP_MSG_DELIVERED, {"msg_id": server_msg_id, "chat_user_id": sender_id})
             await self.send_frame(OP_MSG_READ, {"chat_user_id": sender_id, "up_to_msg_id": server_msg_id})
+
+        # Deduplicate incoming messages so offline batches / duplicate frames aren't re-answered
+        dedup_key = client_msg_id or (str(server_msg_id) if server_msg_id > 0 else "")
+        if dedup_key:
+            if dedup_key in self.seen_msg_ids:
+                logger.info(f"Skipping already processed message: {dedup_key}")
+                return
+            self.seen_msg_ids.add(dedup_key)
+            if len(self.seen_msg_ids) > 10000:
+                self.seen_msg_ids.pop()
 
         # Fetch sender's public key
         bundle = self.get_user_key_bundle(sender_id)
