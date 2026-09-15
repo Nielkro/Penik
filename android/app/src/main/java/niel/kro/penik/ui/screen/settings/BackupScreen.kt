@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -28,7 +27,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,31 +58,31 @@ import niel.kro.penik.data.crypto.SafetyNumber
 import niel.kro.penik.ui.theme.LocalAppColors
 import niel.kro.penik.ui.viewmodel.SettingsViewModel
 
-private enum class ExportStep {
+private enum class WizardStep {
     SELECT_METHOD,
     ENTER_PASSWORD,
     SHOW_MNEMONIC,
     VERIFY_MNEMONIC
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BackupScreen(
-    onBack: () -> Unit = {},
-    viewModel: SettingsViewModel = hiltViewModel()
+private fun BackupPassphraseWizardDialog(
+    title: String,
+    description: String,
+    confirmActionLabel: String,
+    onDismiss: () -> Unit,
+    onConfirmed: (passphrase: String) -> Unit,
+    generateMnemonic: (count: Int) -> String
 ) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
 
-    var showCloudBackupDialog by remember { mutableStateOf(false) }
-    var showExportDialog by remember { mutableStateOf(false) }
-    var showImportDialog by remember { mutableStateOf(false) }
+    var step by remember { mutableStateOf(WizardStep.SELECT_METHOD) }
+    var customPassword by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
 
-    var exportStep by remember { mutableStateOf(ExportStep.SELECT_METHOD) }
-    var exportCustomPassword by remember { mutableStateOf("") }
-    var exportPasswordVisible by remember { mutableStateOf(false) }
-    var exportMnemonicPhrase by remember { mutableStateOf("") }
-    var exportMnemonicWords by remember { mutableStateOf<List<String>>(emptyList()) }
+    var mnemonicPhrase by remember { mutableStateOf("") }
+    var mnemonicWords by remember { mutableStateOf<List<String>>(emptyList()) }
     var quizIdx1 by remember { mutableIntStateOf(0) }
     var quizIdx2 by remember { mutableIntStateOf(1) }
     var quizOptions1 by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -92,20 +90,11 @@ fun BackupScreen(
     var quizSelected1 by remember { mutableStateOf<String?>(null) }
     var quizSelected2 by remember { mutableStateOf<String?>(null) }
 
-    var finalExportPassphrase by remember { mutableStateOf("") }
-    var importPassphrase by remember { mutableStateOf("") }
-    var importPasswordVisible by remember { mutableStateOf(false) }
-    var cloudPassphrase by remember { mutableStateOf("") }
-    var cloudPasswordVisible by remember { mutableStateOf(false) }
-    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
-    var isBackupLoading by remember { mutableStateOf(false) }
-
-    fun startMnemonicExport() {
-        val phrase = viewModel.generateMnemonicPhrase(12)
-        exportMnemonicPhrase = phrase
+    fun initMnemonic() {
+        val phrase = generateMnemonic(12)
+        mnemonicPhrase = phrase
         val words = phrase.split(" ").filter { it.isNotBlank() }
-        exportMnemonicWords = words
-        finalExportPassphrase = phrase
+        mnemonicWords = words
 
         val i1 = (0..5).random()
         val i2 = (6..11).random()
@@ -121,20 +110,341 @@ fun BackupScreen(
 
         quizSelected1 = null
         quizSelected2 = null
-        exportStep = ExportStep.SHOW_MNEMONIC
+        step = WizardStep.SHOW_MNEMONIC
     }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = when (step) {
+                    WizardStep.SELECT_METHOD -> title
+                    WizardStep.ENTER_PASSWORD -> "Свой пароль"
+                    WizardStep.SHOW_MNEMONIC -> "12 слов (Мнемоника)"
+                    WizardStep.VERIFY_MNEMONIC -> "Проверка мнемоники"
+                },
+                color = colors.textPrimary,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                when (step) {
+                    WizardStep.SELECT_METHOD -> {
+                        Text(
+                            text = description,
+                            color = colors.textMuted,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Card 1: Custom Password
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(130.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .border(1.dp, colors.border, RoundedCornerShape(16.dp))
+                                    .background(colors.background)
+                                    .clickable {
+                                        customPassword = ""
+                                        step = WizardStep.ENTER_PASSWORD
+                                    }
+                                    .padding(14.dp),
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("🔑", fontSize = 26.sp)
+                                Column {
+                                    Text("Свой пароль", color = colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text("Личный пароль", color = colors.textMuted, fontSize = 11.sp)
+                                }
+                            }
+
+                            // Card 2: 12 Words
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(130.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .border(1.dp, colors.border, RoundedCornerShape(16.dp))
+                                    .background(colors.background)
+                                    .clickable {
+                                        initMnemonic()
+                                    }
+                                    .padding(14.dp),
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("🎲", fontSize = 26.sp)
+                                Column {
+                                    Text("12 слов", color = colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text("Seed-фраза", color = colors.textMuted, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    WizardStep.ENTER_PASSWORD -> {
+                        Text(
+                            text = "Придумайте надёжный пароль (минимум 6 символов) для шифрования.",
+                            color = colors.textMuted,
+                            fontSize = 13.sp
+                        )
+                        OutlinedTextField(
+                            value = customPassword,
+                            onValueChange = { customPassword = it },
+                            label = { Text("Пароль") },
+                            singleLine = true,
+                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                    Text(if (passwordVisible) "🙈" else "👁️", fontSize = 16.sp)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    WizardStep.SHOW_MNEMONIC -> {
+                        Text(
+                            text = "Запишите эти 12 слов в точном порядке и сохраните в надёжном месте. Они понадобятся для восстановления:",
+                            color = colors.textMuted,
+                            fontSize = 13.sp,
+                            lineHeight = 17.sp
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            mnemonicWords.chunked(3).forEachIndexed { rowIdx, chunk ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    chunk.forEachIndexed { colIdx, word ->
+                                        val index = rowIdx * 3 + colIdx + 1
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(colors.background)
+                                                .border(1.dp, colors.border, RoundedCornerShape(8.dp))
+                                                .padding(vertical = 6.dp, horizontal = 4.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "$index. $word",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = colors.textPrimary,
+                                                textAlign = TextAlign.Center
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                val clip = ClipData.newPlainText("Penik Mnemonic", mnemonicPhrase)
+                                clipboard?.setPrimaryClip(clip)
+                                Toast.makeText(context, "12 слов скопированы в буфер!", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("📋 Скопировать фразу", fontSize = 13.sp)
+                        }
+                    }
+
+                    WizardStep.VERIFY_MNEMONIC -> {
+                        Text(
+                            text = "Подтвердите сохранность фразы. Выберите указанные слова из предложенных вариантов:",
+                            color = colors.textMuted,
+                            fontSize = 13.sp,
+                            lineHeight = 17.sp
+                        )
+
+                        // Quiz 1
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Слово #${quizIdx1 + 1}:",
+                                color = colors.textPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                quizOptions1.forEach { word ->
+                                    val isSelected = (quizSelected1 == word)
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) colors.accent else colors.background)
+                                            .border(1.dp, if (isSelected) colors.accent else colors.border, RoundedCornerShape(8.dp))
+                                            .clickable { quizSelected1 = word }
+                                            .padding(vertical = 8.dp, horizontal = 2.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = word,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (isSelected) colors.panel else colors.textPrimary,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Quiz 2
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Слово #${quizIdx2 + 1}:",
+                                color = colors.textPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                quizOptions2.forEach { word ->
+                                    val isSelected = (quizSelected2 == word)
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) colors.accent else colors.background)
+                                            .border(1.dp, if (isSelected) colors.accent else colors.border, RoundedCornerShape(8.dp))
+                                            .clickable { quizSelected2 = word }
+                                            .padding(vertical = 8.dp, horizontal = 2.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = word,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (isSelected) colors.panel else colors.textPrimary,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            when (step) {
+                WizardStep.SELECT_METHOD -> {}
+                WizardStep.ENTER_PASSWORD -> {
+                    Button(
+                        onClick = {
+                            if (customPassword.length < 6) {
+                                Toast.makeText(context, "Пароль должен быть не менее 6 символов", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            onConfirmed(customPassword)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
+                    ) {
+                        Text(confirmActionLabel)
+                    }
+                }
+                WizardStep.SHOW_MNEMONIC -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(
+                            onClick = { step = WizardStep.VERIFY_MNEMONIC }
+                        ) {
+                            Text("Проверить", fontSize = 13.sp)
+                        }
+                        Button(
+                            onClick = { onConfirmed(mnemonicPhrase) },
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
+                        ) {
+                            Text(confirmActionLabel, fontSize = 13.sp)
+                        }
+                    }
+                }
+                WizardStep.VERIFY_MNEMONIC -> {
+                    val isCorrect1 = (quizSelected1 == mnemonicWords.getOrNull(quizIdx1))
+                    val isCorrect2 = (quizSelected2 == mnemonicWords.getOrNull(quizIdx2))
+                    val isAllCorrect = isCorrect1 && isCorrect2
+
+                    Button(
+                        enabled = isAllCorrect,
+                        onClick = { onConfirmed(mnemonicPhrase) },
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
+                    ) {
+                        Text("Готово, $confirmActionLabel")
+                    }
+                }
+            }
+        },
+        dismissButton = {
+            when (step) {
+                WizardStep.SELECT_METHOD -> {
+                    TextButton(onClick = onDismiss) {
+                        Text("Отмена", color = colors.textMuted)
+                    }
+                }
+                WizardStep.ENTER_PASSWORD, WizardStep.SHOW_MNEMONIC -> {
+                    TextButton(onClick = { step = WizardStep.SELECT_METHOD }) {
+                        Text("Назад", color = colors.textMuted)
+                    }
+                }
+                WizardStep.VERIFY_MNEMONIC -> {
+                    TextButton(onClick = { step = WizardStep.SHOW_MNEMONIC }) {
+                        Text("Назад к фразе", color = colors.textMuted)
+                    }
+                }
+            }
+        },
+        containerColor = colors.panel
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BackupScreen(
+    onBack: () -> Unit = {},
+    viewModel: SettingsViewModel = hiltViewModel()
+) {
+    val colors = LocalAppColors.current
+    val context = LocalContext.current
+
+    var showCloudBackupWizard by remember { mutableStateOf(false) }
+    var showCloudRestoreDialog by remember { mutableStateOf(false) }
+    var showExportWizard by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
+
+    var pendingExportPassphrase by remember { mutableStateOf("") }
+    var importPassphrase by remember { mutableStateOf("") }
+    var importPasswordVisible by remember { mutableStateOf(false) }
+    var cloudRestorePassphrase by remember { mutableStateOf("") }
+    var cloudRestorePasswordVisible by remember { mutableStateOf(false) }
+    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    var isBackupLoading by remember { mutableStateOf(false) }
 
     val createDocLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
-        if (uri != null && finalExportPassphrase.isNotBlank()) {
+        if (uri != null && pendingExportPassphrase.isNotBlank()) {
             isBackupLoading = true
-            viewModel.exportHistoryToFile(finalExportPassphrase, uri, context) { res ->
+            viewModel.exportHistoryToFile(pendingExportPassphrase, uri, context) { res ->
                 isBackupLoading = false
-                showExportDialog = false
-                exportStep = ExportStep.SELECT_METHOD
-                finalExportPassphrase = ""
-                exportCustomPassword = ""
+                showExportWizard = false
+                pendingExportPassphrase = ""
                 res.fold(
                     onSuccess = {
                         Toast.makeText(context, "История успешно экспортирована в файл!", Toast.LENGTH_LONG).show()
@@ -192,13 +502,13 @@ fun BackupScreen(
                 modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
             )
 
-            // Cloud Key Backup row
+            // Create Cloud Key Backup row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
                     .background(colors.panel)
-                    .clickable { showCloudBackupDialog = true }
+                    .clickable { showCloudBackupWizard = true }
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -206,7 +516,31 @@ fun BackupScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("☁️ Резервная копия ключей в облаке", color = colors.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
                     Text(
-                        text = "Сохранить или восстановить ключи E2EE и групп на сервере",
+                        text = "Зашифровать ключи паролем или 12 словами и сохранить на сервере",
+                        color = colors.textMuted,
+                        fontSize = 13.sp
+                    )
+                }
+                Text("›", color = colors.textMuted, fontSize = 20.sp)
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Restore Cloud Key Backup row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(colors.panel)
+                    .clickable { showCloudRestoreDialog = true }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("🔄 Восстановить ключи из облака", color = colors.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                    Text(
+                        text = "Восстановить ключи E2EE по паролю или 12 словам",
                         color = colors.textMuted,
                         fontSize = 13.sp
                     )
@@ -231,9 +565,8 @@ fun BackupScreen(
                     .clip(RoundedCornerShape(14.dp))
                     .background(colors.panel)
                     .clickable {
-                        exportStep = ExportStep.SELECT_METHOD
-                        exportCustomPassword = ""
-                        showExportDialog = true
+                        pendingExportPassphrase = ""
+                        showExportWizard = true
                     }
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -278,322 +611,112 @@ fun BackupScreen(
         }
     }
 
-    // --- Export History Dialog (Wizard) ---
-    if (showExportDialog) {
+    // --- Export History Wizard Dialog ---
+    if (showExportWizard) {
+        BackupPassphraseWizardDialog(
+            title = "Экспорт всей истории",
+            description = "История чатов, сообщений, групп и ключи шифрования будут сохранены в зашифрованный файл .penikbackup (AES-256-GCM / PBKDF2 600,000).",
+            confirmActionLabel = "Сохранить",
+            onDismiss = { showExportWizard = false },
+            onConfirmed = { passphrase ->
+                pendingExportPassphrase = passphrase
+                createDocLauncher.launch("penik_backup_${System.currentTimeMillis()}.penikbackup")
+            },
+            generateMnemonic = { viewModel.generateMnemonicPhrase(it) }
+        )
+    }
+
+    // --- Cloud Backup Wizard Dialog ---
+    if (showCloudBackupWizard) {
+        BackupPassphraseWizardDialog(
+            title = "Резервная копия ключей в облаке",
+            description = "Зашифруйте ваши ключи E2EE и эпохи групп паролем или мнемонической фразой (12 слов) для безопасного хранения на сервере.",
+            confirmActionLabel = "Создать",
+            onDismiss = { showCloudBackupWizard = false },
+            onConfirmed = { passphrase ->
+                isBackupLoading = true
+                viewModel.uploadKeyBackup(passphrase) { res ->
+                    isBackupLoading = false
+                    showCloudBackupWizard = false
+                    res.fold(
+                        onSuccess = {
+                            Toast.makeText(context, "Резервная копия ключей успешно создана на сервере!", Toast.LENGTH_SHORT).show()
+                        },
+                        onFailure = { e ->
+                            Toast.makeText(context, "Ошибка создания копии: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    )
+                }
+            },
+            generateMnemonic = { viewModel.generateMnemonicPhrase(it) }
+        )
+    }
+
+    // --- Cloud Restore Dialog ---
+    if (showCloudRestoreDialog) {
         AlertDialog(
             onDismissRequest = {
-                showExportDialog = false
-                exportStep = ExportStep.SELECT_METHOD
-                exportCustomPassword = ""
-                finalExportPassphrase = ""
+                showCloudRestoreDialog = false
+                cloudRestorePassphrase = ""
             },
             title = {
-                Text(
-                    text = when (exportStep) {
-                        ExportStep.SELECT_METHOD -> "Экспорт всей истории"
-                        ExportStep.ENTER_PASSWORD -> "Свой пароль"
-                        ExportStep.SHOW_MNEMONIC -> "12 слов (Мнемоника)"
-                        ExportStep.VERIFY_MNEMONIC -> "Проверка мнемоники"
-                    },
-                    color = colors.textPrimary,
-                    fontWeight = FontWeight.Bold
-                )
+                Text("Восстановление ключей из облака", color = colors.textPrimary, fontWeight = FontWeight.Bold)
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    when (exportStep) {
-                        ExportStep.SELECT_METHOD -> {
-                            Text(
-                                "История чатов, сообщений, групп и ключи шифрования будут сохранены в зашифрованный файл .penikbackup (AES-256-GCM / PBKDF2 600,000).",
-                                color = colors.textMuted,
-                                fontSize = 13.sp,
-                                lineHeight = 18.sp
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                // Card 1: Custom Password
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(130.dp)
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .border(1.dp, colors.border, RoundedCornerShape(16.dp))
-                                        .background(colors.background)
-                                        .clickable {
-                                            exportCustomPassword = ""
-                                            exportStep = ExportStep.ENTER_PASSWORD
-                                        }
-                                        .padding(14.dp),
-                                    verticalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text("🔑", fontSize = 26.sp)
-                                    Column {
-                                        Text("Свой пароль", color = colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text("Личный пароль", color = colors.textMuted, fontSize = 11.sp)
-                                    }
-                                }
-
-                                // Card 2: 12 Words
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(130.dp)
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .border(1.dp, colors.border, RoundedCornerShape(16.dp))
-                                        .background(colors.background)
-                                        .clickable {
-                                            startMnemonicExport()
-                                        }
-                                        .padding(14.dp),
-                                    verticalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text("🎲", fontSize = 26.sp)
-                                    Column {
-                                        Text("12 слов", color = colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text("Seed-фраза", color = colors.textMuted, fontSize = 11.sp)
-                                    }
-                                }
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Введите пароль или мнемоническую фразу (12 слов), которая использовалась при создании резервной копии ключей на сервере.",
+                        color = colors.textMuted,
+                        fontSize = 13.sp
+                    )
+                    OutlinedTextField(
+                        value = cloudRestorePassphrase,
+                        onValueChange = { cloudRestorePassphrase = it },
+                        label = { Text("Пароль или 12 слов") },
+                        singleLine = true,
+                        visualTransformation = if (cloudRestorePasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { cloudRestorePasswordVisible = !cloudRestorePasswordVisible }) {
+                                Text(if (cloudRestorePasswordVisible) "🙈" else "👁️", fontSize = 16.sp)
                             }
-                        }
-
-                        ExportStep.ENTER_PASSWORD -> {
-                            Text(
-                                "Придумайте надёжный пароль для расшифровки файла бэкапа (не менее 6 символов).",
-                                color = colors.textMuted,
-                                fontSize = 13.sp
-                            )
-                            OutlinedTextField(
-                                value = exportCustomPassword,
-                                onValueChange = { exportCustomPassword = it },
-                                label = { Text("Пароль для файла") },
-                                singleLine = true,
-                                visualTransformation = if (exportPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                trailingIcon = {
-                                    IconButton(onClick = { exportPasswordVisible = !exportPasswordVisible }) {
-                                        Text(if (exportPasswordVisible) "🙈" else "👁️", fontSize = 16.sp)
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-
-                        ExportStep.SHOW_MNEMONIC -> {
-                            Text(
-                                "Запишите эти 12 слов в точном порядке и сохраните в надёжном месте. Они понадобятся для восстановления:",
-                                color = colors.textMuted,
-                                fontSize = 13.sp,
-                                lineHeight = 17.sp
-                            )
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                exportMnemonicWords.chunked(3).forEachIndexed { rowIdx, chunk ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        chunk.forEachIndexed { colIdx, word ->
-                                            val index = rowIdx * 3 + colIdx + 1
-                                            Box(
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .background(colors.background)
-                                                    .border(1.dp, colors.border, RoundedCornerShape(8.dp))
-                                                    .padding(vertical = 6.dp, horizontal = 4.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = "$index. $word",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = colors.textPrimary,
-                                                    textAlign = TextAlign.Center
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            OutlinedButton(
-                                onClick = {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                    val clip = ClipData.newPlainText("Penik Mnemonic", exportMnemonicPhrase)
-                                    clipboard?.setPrimaryClip(clip)
-                                    Toast.makeText(context, "12 слов скопированы в буфер!", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Text("📋 Скопировать фразу", fontSize = 13.sp)
-                            }
-                        }
-
-                        ExportStep.VERIFY_MNEMONIC -> {
-                            Text(
-                                "Подтвердите, что вы записали фразу. Выберите указанные слова из предложенных вариантов:",
-                                color = colors.textMuted,
-                                fontSize = 13.sp,
-                                lineHeight = 17.sp
-                            )
-
-                            // Quiz 1
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    "Слово #${quizIdx1 + 1}:",
-                                    color = colors.textPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    quizOptions1.forEach { word ->
-                                        val isSelected = (quizSelected1 == word)
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(if (isSelected) colors.accent else colors.background)
-                                                .border(1.dp, if (isSelected) colors.accent else colors.border, RoundedCornerShape(8.dp))
-                                                .clickable { quizSelected1 = word }
-                                                .padding(vertical = 8.dp, horizontal = 2.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = word,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = if (isSelected) colors.panel else colors.textPrimary,
-                                                textAlign = TextAlign.Center
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Quiz 2
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    "Слово #${quizIdx2 + 1}:",
-                                    color = colors.textPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    quizOptions2.forEach { word ->
-                                        val isSelected = (quizSelected2 == word)
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(if (isSelected) colors.accent else colors.background)
-                                                .border(1.dp, if (isSelected) colors.accent else colors.border, RoundedCornerShape(8.dp))
-                                                .clickable { quizSelected2 = word }
-                                                .padding(vertical = 8.dp, horizontal = 2.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = word,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = if (isSelected) colors.panel else colors.textPrimary,
-                                                textAlign = TextAlign.Center
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             },
             confirmButton = {
-                when (exportStep) {
-                    ExportStep.SELECT_METHOD -> {
-                        // Handled via cards
-                    }
-                    ExportStep.ENTER_PASSWORD -> {
-                        Button(
-                            onClick = {
-                                if (exportCustomPassword.length < 6) {
-                                    Toast.makeText(context, "Пароль должен быть не менее 6 символов", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-                                finalExportPassphrase = exportCustomPassword
-                                createDocLauncher.launch("penik_backup_${System.currentTimeMillis()}.penikbackup")
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
-                        ) {
-                            Text("Сохранить в файл")
+                Button(
+                    onClick = {
+                        if (cloudRestorePassphrase.isBlank()) {
+                            Toast.makeText(context, "Введите пароль или мнемонику", Toast.LENGTH_SHORT).show()
+                            return@Button
                         }
-                    }
-                    ExportStep.SHOW_MNEMONIC -> {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OutlinedButton(
-                                onClick = { exportStep = ExportStep.VERIFY_MNEMONIC }
-                            ) {
-                                Text("Проверить", fontSize = 13.sp)
-                            }
-                            Button(
-                                onClick = {
-                                    finalExportPassphrase = exportMnemonicPhrase
-                                    createDocLauncher.launch("penik_backup_${System.currentTimeMillis()}.penikbackup")
+                        isBackupLoading = true
+                        viewModel.restoreKeyBackup(cloudRestorePassphrase) { res ->
+                            isBackupLoading = false
+                            showCloudRestoreDialog = false
+                            cloudRestorePassphrase = ""
+                            res.fold(
+                                onSuccess = {
+                                    Toast.makeText(context, "Ключи шифрования успешно восстановлены!", Toast.LENGTH_SHORT).show()
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
-                            ) {
-                                Text("Сохранить", fontSize = 13.sp)
-                            }
+                                onFailure = { e ->
+                                    Toast.makeText(context, "Ошибка восстановления: ${e.message}", Toast.LENGTH_LONG).show()
+                                }
+                            )
                         }
-                    }
-                    ExportStep.VERIFY_MNEMONIC -> {
-                        val isCorrect1 = (quizSelected1 == exportMnemonicWords.getOrNull(quizIdx1))
-                        val isCorrect2 = (quizSelected2 == exportMnemonicWords.getOrNull(quizIdx2))
-                        val isAllCorrect = isCorrect1 && isCorrect2
-
-                        Button(
-                            enabled = isAllCorrect,
-                            onClick = {
-                                finalExportPassphrase = exportMnemonicPhrase
-                                createDocLauncher.launch("penik_backup_${System.currentTimeMillis()}.penikbackup")
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
-                        ) {
-                            Text("Готово, сохранить")
-                        }
-                    }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
+                ) {
+                    Text("Восстановить")
                 }
             },
             dismissButton = {
-                when (exportStep) {
-                    ExportStep.SELECT_METHOD -> {
-                        TextButton(onClick = { showExportDialog = false }) {
-                            Text("Отмена", color = colors.textMuted)
-                        }
-                    }
-                    ExportStep.ENTER_PASSWORD -> {
-                        TextButton(onClick = { exportStep = ExportStep.SELECT_METHOD }) {
-                            Text("Назад", color = colors.textMuted)
-                        }
-                    }
-                    ExportStep.SHOW_MNEMONIC -> {
-                        TextButton(onClick = { exportStep = ExportStep.SELECT_METHOD }) {
-                            Text("Назад", color = colors.textMuted)
-                        }
-                    }
-                    ExportStep.VERIFY_MNEMONIC -> {
-                        TextButton(onClick = { exportStep = ExportStep.SHOW_MNEMONIC }) {
-                            Text("Назад к фразе", color = colors.textMuted)
-                        }
-                    }
+                TextButton(onClick = {
+                    showCloudRestoreDialog = false
+                    cloudRestorePassphrase = ""
+                }) {
+                    Text("Отмена", color = colors.textMuted)
                 }
             },
             containerColor = colors.panel
@@ -671,103 +794,6 @@ fun BackupScreen(
                     showImportDialog = false
                     importPassphrase = ""
                     pendingImportUri = null
-                }) {
-                    Text("Отмена", color = colors.textMuted)
-                }
-            },
-            containerColor = colors.panel
-        )
-    }
-
-    // --- Cloud Backup Dialog ---
-    if (showCloudBackupDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                showCloudBackupDialog = false
-                cloudPassphrase = ""
-            },
-            title = {
-                Text("Резервная копия ключей", color = colors.textPrimary, fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "Зашифруйте ваши ключи E2EE паролем или мнемонической фразой для безопасного хранения на сервере.",
-                        color = colors.textMuted,
-                        fontSize = 13.sp
-                    )
-                    OutlinedTextField(
-                        value = cloudPassphrase,
-                        onValueChange = { cloudPassphrase = it },
-                        label = { Text("Пароль или мнемоника") },
-                        singleLine = true,
-                        visualTransformation = if (cloudPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { cloudPasswordVisible = !cloudPasswordVisible }) {
-                                Text(if (cloudPasswordVisible) "🙈" else "👁️", fontSize = 16.sp)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        onClick = {
-                            if (cloudPassphrase.isBlank()) {
-                                Toast.makeText(context, "Введите пароль или мнемонику", Toast.LENGTH_SHORT).show()
-                                return@TextButton
-                            }
-                            isBackupLoading = true
-                            viewModel.uploadKeyBackup(cloudPassphrase) { res ->
-                                isBackupLoading = false
-                                res.fold(
-                                    onSuccess = {
-                                        Toast.makeText(context, "Резервная копия ключей создана на сервере!", Toast.LENGTH_SHORT).show()
-                                        showCloudBackupDialog = false
-                                        cloudPassphrase = ""
-                                    },
-                                    onFailure = { e ->
-                                        Toast.makeText(context, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
-                                    }
-                                )
-                            }
-                        }
-                    ) {
-                        Text("Создать", color = colors.accent)
-                    }
-
-                    TextButton(
-                        onClick = {
-                            if (cloudPassphrase.isBlank()) {
-                                Toast.makeText(context, "Введите пароль или мнемонику", Toast.LENGTH_SHORT).show()
-                                return@TextButton
-                            }
-                            isBackupLoading = true
-                            viewModel.restoreKeyBackup(cloudPassphrase) { res ->
-                                isBackupLoading = false
-                                res.fold(
-                                    onSuccess = {
-                                        Toast.makeText(context, "Ключи E2EE успешно восстановлены!", Toast.LENGTH_SHORT).show()
-                                        showCloudBackupDialog = false
-                                        cloudPassphrase = ""
-                                    },
-                                    onFailure = { e ->
-                                        Toast.makeText(context, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
-                                    }
-                                )
-                            }
-                        }
-                    ) {
-                        Text("Восстановить", color = colors.accent)
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showCloudBackupDialog = false
-                    cloudPassphrase = ""
                 }) {
                     Text("Отмена", color = colors.textMuted)
                 }
