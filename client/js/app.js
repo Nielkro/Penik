@@ -469,6 +469,24 @@ async function boot() {
   const loading = document.getElementById('loading');
   if (loading) loading.remove();
 
+  function updateNetworkStatus() {
+    let bar = document.getElementById('network-status-bar');
+    if (!navigator.onLine) {
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'network-status-bar';
+        bar.className = 'network-status-bar';
+        bar.textContent = 'Ожидание сети';
+        document.body.prepend(bar);
+      }
+    } else {
+      if (bar) bar.remove();
+    }
+  }
+  window.addEventListener('online', updateNetworkStatus);
+  window.addEventListener('offline', updateNetworkStatus);
+  updateNetworkStatus();
+
   window.addEventListener('hashchange', handleRoute);
   window.addEventListener('resize', () => {
     if (!_mainLayout) return;

@@ -109,6 +109,7 @@ class GroupChatViewModel @Inject constructor(
     val groupId: Long = savedStateHandle.get<Long>("groupId") ?: 0L
 
     val connectionState = webSocketManager.connectionState
+    val isOnline: StateFlow<Boolean> = webSocketManager.isOnline
 
     val myUserId: Long = authRepository.getUserId() ?: -1L
 

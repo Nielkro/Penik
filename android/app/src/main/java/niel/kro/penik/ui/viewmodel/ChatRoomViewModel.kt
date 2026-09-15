@@ -55,6 +55,7 @@ class ChatRoomViewModel @Inject constructor(
     private val chatName: String = savedStateHandle.get<String>("chatName") ?: ""
 
     val connectionState = webSocketManager.connectionState
+    val isOnline: StateFlow<Boolean> = webSocketManager.isOnline
 
     val isSelfChat: Boolean = chatUserId == tokenStorage.getUserId()
 

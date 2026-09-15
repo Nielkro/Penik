@@ -366,6 +366,7 @@ fun ChatRoomScreen(
     }
     val editingMessage by viewModel.editingMessage.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
+    val isOnline by viewModel.isOnline.collectAsState()
     val isUnauthorized = connectionState == niel.kro.penik.data.network.websocket.ConnectionState.UNAUTHORIZED
     val isSelfChat = viewModel.isSelfChat
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
@@ -1138,6 +1139,15 @@ fun ChatRoomScreen(
                                         overflow = TextOverflow.Ellipsis,
                                         color = LocalAppColors.current.accent
                                     )
+                                } else if (!isOnline) {
+                                    Text(
+                                        text = "ожидание сети",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = LocalAppColors.current.textMuted
+                                    )
                                 } else {
                                     val presence = niel.kro.penik.ui.util.formatPresence(online, lastSeen)
                                     if (presence.isNotEmpty()) {
@@ -1234,6 +1244,7 @@ fun ChatRoomScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            niel.kro.penik.ui.components.ConnectionStatusBar(connectionState = connectionState, isOnline = isOnline)
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 niel.kro.penik.ui.components.TelegramDoodleBackground()
                 LazyColumn(
