@@ -298,19 +298,16 @@ fun GroupChatScreen(
                             .clickable { onGroupSettingsClick(groupId) },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier.clickable {
+                        GroupAvatar(
+                            groupId = groupId,
+                            name = groupName,
+                            size = 36.dp,
+                            modifier = Modifier.padding(end = 10.dp),
+                            avatarKey = groupAvatarKeys[groupId],
+                            onClick = {
                                 fullscreenAvatarUrl = avatarUrlFor(true, groupId, groupAvatarKeys[groupId])
                             }
-                        ) {
-                            GroupAvatar(
-                                groupId = groupId,
-                                name = groupName,
-                                size = 36.dp,
-                                modifier = Modifier.padding(end = 10.dp),
-                                avatarKey = groupAvatarKeys[groupId]
-                            )
-                        }
+                        )
                         Column {
                             Text(groupName, color = LocalAppColors.current.textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text("${members.size} участников", color = LocalAppColors.current.textMuted, fontSize = 11.sp)

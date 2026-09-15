@@ -230,7 +230,9 @@ class AuthRepository @Inject constructor(
                 niel.kro.penik.data.network.api.KeyBackupRequest(
                     encryptedBlob = b64Blob,
                     salt = b64Salt,
-                    iv = b64Iv
+                    iv = b64Iv,
+                    deviceName = niel.kro.penik.ui.util.DeviceUtils.getDeviceMarketingName(),
+                    platform = clientPlatform()
                 )
             )
             if (response.isSuccessful) {
@@ -252,9 +254,39 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    suspend fun restoreKeyBackup(passphrase: String): Result<Unit> {
+    suspend fun listKeyBackups(): Result<List<niel.kro.penik.data.network.api.KeyBackupSummaryResponse>> {
         return try {
-            val response = apiService.getKeyBackup()
+            val response = apiService.listKeyBackups()
+            if (response.isSuccessful) {
+                Result.success(response.body().orEmpty())
+            } else {
+                Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(mapException(e)))
+        }
+    }
+
+    suspend fun getKeyBackup(backupId: Long? = null, deviceId: Long? = null): Result<niel.kro.penik.data.network.api.KeyBackupResponse> {
+        return try {
+            val response = apiService.getKeyBackup(id = backupId, deviceId = deviceId)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                if (response.code() == 404) {
+                    Result.failure(Exception("Резервная копия ключей не найдена на сервере"))
+                } else {
+                    Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(mapException(e)))
+        }
+    }
+
+    suspend fun restoreKeyBackup(passphrase: String, backupId: Long? = null, deviceId: Long? = null): Result<Unit> {
+        return try {
+            val response = apiService.getKeyBackup(id = backupId, deviceId = deviceId)
             if (response.isSuccessful) {
                 val body = response.body()!!
                 val blob = Base64.getDecoder().decode(body.encryptedBlob)
@@ -295,7 +327,9 @@ class AuthRepository @Inject constructor(
                 niel.kro.penik.data.network.api.KeyBackupRequest(
                     encryptedBlob = b64Blob,
                     salt = b64Salt,
-                    iv = b64Iv
+                    iv = b64Iv,
+                    deviceName = niel.kro.penik.ui.util.DeviceUtils.getDeviceMarketingName(),
+                    platform = clientPlatform()
                 )
             )
             if (response.isSuccessful) {

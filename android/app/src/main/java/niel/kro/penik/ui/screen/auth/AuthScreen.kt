@@ -621,7 +621,54 @@ fun AuthScreen(
                             Text("Восстановление ключей", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.textPrimary)
                             Spacer(modifier = Modifier.height(8.dp))
                             Text("Введите e2ee-пароль для расшифрования сообщений", fontSize = 13.sp, color = LocalAppColors.current.textMuted, textAlign = TextAlign.Center)
-                            Spacer(modifier = Modifier.height(32.dp))
+
+                            if (state.availableBackups.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(LocalAppColors.current.panel)
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text("Резервная копия:", fontSize = 12.sp, color = LocalAppColors.current.textMuted, fontWeight = FontWeight.Medium)
+                                    state.availableBackups.forEach { backup ->
+                                        val isSelected = backup.id == state.selectedBackupId
+                                        val title = backup.deviceName.ifBlank { backup.platform.ifBlank { "Устройство" } }
+                                        val subtitle = if (backup.deviceName.isNotBlank() && backup.platform.isNotBlank() && backup.deviceName != backup.platform) {
+                                            "${backup.platform} · "
+                                        } else ""
+                                        val timeText = if (backup.updatedAt > 0) {
+                                            java.text.SimpleDateFormat("d MMM, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(backup.updatedAt * 1000L))
+                                        } else ""
+
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (isSelected) LocalAppColors.current.accent.copy(alpha = 0.15f) else Color.Transparent)
+                                                .clickable { viewModel.selectBackup(backup.id) }
+                                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(if (backup.platform.contains("android", ignoreCase = true)) "📱" else "💻", fontSize = 18.sp)
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (isSelected) LocalAppColors.current.accent else LocalAppColors.current.textPrimary)
+                                                if (subtitle.isNotBlank() || timeText.isNotBlank()) {
+                                                    Text("$subtitle$timeText".trim(), fontSize = 11.sp, color = LocalAppColors.current.textMuted)
+                                                }
+                                            }
+                                            if (isSelected) {
+                                                Text("✓", color = LocalAppColors.current.accent, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(24.dp))
                             OutlinedTextField(
                                 value = state.e2eePassword,
                                 onValueChange = viewModel::updateE2eePassword,

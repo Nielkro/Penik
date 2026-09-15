@@ -283,14 +283,32 @@ data class PublicProfileResponse(
 data class KeyBackupRequest(
     @SerialName("encrypted_blob") val encryptedBlob: String,
     val salt: String,
-    val iv: String
+    val iv: String,
+    @SerialName("device_name") val deviceName: String = "",
+    val platform: String = ""
+)
+
+@Serializable
+data class KeyBackupSummaryResponse(
+    val id: Long,
+    @SerialName("device_id") val deviceId: Long? = null,
+    @SerialName("device_name") val deviceName: String = "",
+    val platform: String = "",
+    @SerialName("created_at") val createdAt: Long = 0,
+    @SerialName("updated_at") val updatedAt: Long = 0
 )
 
 @Serializable
 data class KeyBackupResponse(
+    val id: Long? = null,
+    @SerialName("device_id") val deviceId: Long? = null,
+    @SerialName("device_name") val deviceName: String = "",
+    val platform: String = "",
     @SerialName("encrypted_blob") val encryptedBlob: String,
     val salt: String,
-    val iv: String
+    val iv: String,
+    @SerialName("created_at") val createdAt: Long = 0,
+    @SerialName("updated_at") val updatedAt: Long = 0
 )
 
 @Serializable

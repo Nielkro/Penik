@@ -87,11 +87,17 @@ CREATE TABLE IF NOT EXISTS device_public_keys (
 CREATE INDEX IF NOT EXISTS idx_device_public_keys_pub ON device_public_keys(x25519_pub);
 
 CREATE TABLE IF NOT EXISTS key_backups (
-    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
+    device_name TEXT NOT NULL DEFAULT '',
+    platform TEXT NOT NULL DEFAULT '',
     encrypted_blob BLOB NOT NULL,
     salt BLOB NOT NULL,
     iv BLOB NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(user_id, device_id)
 );
 
 CREATE TABLE IF NOT EXISTS pairing_sessions (

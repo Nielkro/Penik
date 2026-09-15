@@ -5,7 +5,8 @@ import {
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
   findAndResolvePendingSentMessage, deleteChatData, deleteMessage,
   getMessageByClientId, isMessageDeletedLocally,
-  getIKPrivate, saveIKPrivate, getIKPublic, saveIKPublic
+  getIKPrivate, saveIKPrivate, getIKPublic, saveIKPublic,
+  getPersistentDeviceName, getClientPlatform
 } from './storage.js';
 import { ws, OP } from './ws.js';
 import { renderAuth } from './ui/auth.js';
@@ -1644,7 +1645,9 @@ export async function backupE2EEKeys(passphrase) {
   await apiPost("/keys/backup", {
     encrypted_blob: btoa(String.fromCharCode(...backup.encryptedBlob)),
     salt: btoa(String.fromCharCode(...backup.salt)),
-    iv: btoa(String.fromCharCode(...backup.iv))
+    iv: btoa(String.fromCharCode(...backup.iv)),
+    device_name: getPersistentDeviceName(),
+    platform: getClientPlatform()
   });
 }
 

@@ -26,6 +26,8 @@ data class AuthUiState(
     val avatarBytes: ByteArray? = null,
     val tempUserId: Long? = null,
     val tempName: String? = null,
+    val availableBackups: List<niel.kro.penik.data.network.api.KeyBackupSummaryResponse> = emptyList(),
+    val selectedBackupId: Long? = null,
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -135,7 +137,7 @@ class AuthViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.value = state.copy(isLoading = true, error = null)
-            val deviceName = android.os.Build.MODEL
+            val deviceName = niel.kro.penik.ui.util.DeviceUtils.getDeviceMarketingName()
             
             // 1. Register User
             val regResult = authRepository.register(state.name, state.nickname, state.password, deviceName)
@@ -165,6 +167,10 @@ class AuthViewModel @Inject constructor(
                 }
             )
         }
+    }
+
+    fun selectBackup(id: Long) {
+        _uiState.value = _uiState.value.copy(selectedBackupId = id)
     }
 
     // --- LOGIN FLOW ACTIONS ---
@@ -219,10 +225,19 @@ class AuthViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.value = state.copy(isLoading = true, error = null)
-            val deviceName = android.os.Build.MODEL
+            val deviceName = niel.kro.penik.ui.util.DeviceUtils.getDeviceMarketingName()
             authRepository.login(state.nickname, state.password, deviceName).fold(
                 onSuccess = {
-                    if (authRepository.hasKeyBackup()) {
+                    val backupsResult = authRepository.listKeyBackups()
+                    val backups = backupsResult.getOrNull().orEmpty()
+                    if (backups.isNotEmpty()) {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            step = 3,
+                            availableBackups = backups,
+                            selectedBackupId = backups.first().id
+                        )
+                    } else if (authRepository.hasKeyBackup()) {
                         _uiState.value = _uiState.value.copy(isLoading = false, step = 3)
                     } else {
                         authRepository.getToken()?.let { tok ->
@@ -248,7 +263,7 @@ class AuthViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.value = state.copy(isLoading = true, error = null)
-            authRepository.restoreKeyBackup(state.e2eePassword).fold(
+            authRepository.restoreKeyBackup(state.e2eePassword, backupId = state.selectedBackupId).fold(
                 onSuccess = {
                     // Sync message history and connect WS
                     messageRepository.syncHistory()
