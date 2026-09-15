@@ -41,6 +41,15 @@ OP_TYPING = 0x1f
 
 PAIRWISE_INFO = b"penik-pairwise-message-v1"
 
+TEXT_EXTENSIONS = {
+    ".txt", ".md", ".py", ".go", ".rs", ".js", ".ts", ".jsx", ".tsx",
+    ".json", ".c", ".cpp", ".h", ".hpp", ".cs", ".java", ".kt", ".kts",
+    ".sh", ".bash", ".zsh", ".sql", ".yaml", ".yml", ".toml", ".ini",
+    ".html", ".htm", ".css", ".scss", ".sass", ".xml", ".csv", ".tsv",
+    ".log", ".env", ".proto", ".cmake", ".make", ".dockerfile", ".r",
+    ".rb", ".php", ".swift", ".dart", ".lua", ".asm", ".s", ".patch", ".diff"
+}
+
 
 # ─── Rust Crypto Core C-ABI Loader ───
 
@@ -667,6 +676,34 @@ class PenikAIBot:
                                 content_list.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{f_b64}"}})
                             user_content = content_list
                             logger.info(f"Extracted {len(frames)} frames for AI vision analysis.")
+                        else:
+                            # Check if attachment is a text / code document (.md, .py, .go, .txt, .rs, .json, etc.)
+                            filename = file_info.get("name", "document.txt")
+                            ext = Path(filename.lower()).suffix
+                            is_text = (
+                                ext in TEXT_EXTENSIONS
+                                or mime_type.startswith("text/")
+                                or mime_type in ("application/json", "application/javascript", "application/x-sh", "application/xml", "application/yaml")
+                                or (b"\x00" not in decrypted[:2048])
+                            )
+
+                            if is_text:
+                                logger.info(f"Reading text/code document {filename} ({len(decrypted)} bytes)...")
+                                file_text = decrypted.decode("utf-8", errors="replace")
+                                if len(file_text) > 60000:
+                                    file_text = file_text[:60000] + "\n\n... [Файл обрезан: показаны первые 60 000 символов] ..."
+                                
+                                code_lang = ext.lstrip(".") if ext else "text"
+                                prompt_text = caption.strip() if caption.strip() else "Проанализируй прикрепленный файл, объясни его содержимое или помоги с кодом/текстом."
+                                user_content = (
+                                    f"{prompt_text}\n\n"
+                                    f"📄 **Файл:** `{filename}` ({len(decrypted)} байт)\n"
+                                    f"```{code_lang}\n"
+                                    f"{file_text}\n"
+                                    f"```"
+                                )
+                            else:
+                                user_content = f"Пользователь прикрепил бинарный файл `{filename}` ({len(decrypted)} байт, тип: {mime_type}). {caption}"
             except Exception as e:
                 logger.error(f"Error processing attachment: {e}", exc_info=True)
 
