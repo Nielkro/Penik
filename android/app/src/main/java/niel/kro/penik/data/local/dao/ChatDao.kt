@@ -28,6 +28,12 @@ interface ChatDao {
     @Query("UPDATE chats SET unreadCount = 0 WHERE userId = :userId")
     suspend fun clearUnread(userId: Long)
 
+    @Query("SELECT * FROM chats ORDER BY lastMessageTimestamp DESC")
+    suspend fun getChatsSnapshot(): List<ChatEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChats(chats: List<ChatEntity>)
+
     @Query("SELECT * FROM chats WHERE userId = :userId")
     suspend fun getChat(userId: Long): ChatEntity?
 

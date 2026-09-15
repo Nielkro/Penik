@@ -35,6 +35,13 @@ import {
 } from "../storage.js";
 import { ws, OP } from "../ws.js";
 import QRCode from "qrcode";
+import {
+  exportHistoryToBackup,
+  importHistoryFromBackup,
+  downloadBackupFile,
+  readBackupFile
+} from "../backup.js";
+import { generateMnemonicPhrase } from "../wordcoder.js";
 
 const decodeB64Url = s => {
   const normalized = String(s).trim().replaceAll("-", "+").replaceAll("_", "/");
@@ -66,6 +73,177 @@ const createSection = (titleText, ...children) => {
     ...children
   );
 };
+
+function showMnemonicModal() {
+  const phrase = generateMnemonicPhrase(12);
+  const words = phrase.split(" ");
+
+  const modal = el("div", { style: "position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;" });
+  const close = () => modal.remove();
+  modal.addEventListener("click", event => { if (event.target === modal) close(); });
+
+  const wordChips = el("div", { style: "display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0;" },
+    ...words.map((w, idx) => el("div", {
+      style: "background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;font-size:13px;display:flex;align-items:center;gap:6px;"
+    },
+      el("span", { style: "color:var(--text-muted);font-size:11px;font-weight:600;" }, `${idx + 1}.`),
+      el("span", { style: "color:var(--text);font-weight:500;" }, w)
+    ))
+  );
+
+  const copyBtn = el("button", { class: "btn-primary", style: "width:100%;margin-bottom:8px;cursor:pointer;" }, "Скопировать фразу");
+  copyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(phrase);
+    showToast("Мнемоническая фраза скопирована!", "success");
+  });
+
+  modal.appendChild(el("div", { style: "width:min(420px,100%);background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.45);" },
+    el("h3", { style: "margin:0 0 8px;color:var(--text);" }, "Мнемоническая фраза (12 слов)"),
+    el("p", { style: "margin:0;color:var(--text-muted);font-size:13px;line-height:1.4;" }, "Сохраните эти 12 слов в надёжном месте. Вы можете использовать эту фразу вместо пароля для шифрования и восстановления резервных копий."),
+    wordChips,
+    copyBtn,
+    el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;", onclick: close }, "Закрыть")
+  ));
+
+  document.body.appendChild(modal);
+}
+
+function showExportBackupModal() {
+  const modal = el("div", { style: "position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;" });
+  const close = () => modal.remove();
+  modal.addEventListener("click", event => { if (event.target === modal) close(); });
+
+  const passInput = el("input", {
+    type: "password",
+    placeholder: "Пароль или мнемоническая фраза",
+    class: "profile-input",
+    style: "width:100%;padding:10px 12px;border-radius:var(--r);background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:14px;box-sizing:border-box;"
+  });
+
+  const genMnemonicBtn = el("button", {
+    class: "btn-secondary",
+    style: "font-size:12px;padding:6px 10px;margin-top:6px;cursor:pointer;align-self:flex-start;"
+  }, "🎲 Сгенерировать мнемонику (12 слов)");
+  genMnemonicBtn.addEventListener("click", () => {
+    const phrase = generateMnemonicPhrase(12);
+    passInput.type = "text";
+    passInput.value = phrase;
+    showToast("Сгенерирована мнемоника. Скопируйте и сохраните её!", "info");
+  });
+
+  const exportBtn = el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;cursor:pointer;" }, "Экспортировать и скачать");
+  exportBtn.addEventListener("click", async () => {
+    const pass = passInput.value.trim();
+    if (!pass) {
+      showToast("Введите пароль или мнемоническую фразу", "error");
+      return;
+    }
+    exportBtn.disabled = true;
+    exportBtn.textContent = "";
+    exportBtn.appendChild(spinner());
+    try {
+      const json = await exportHistoryToBackup(pass);
+      downloadBackupFile(json);
+      showToast("Файл резервной копии .penikbackup успешно скачан!", "success");
+      close();
+    } catch (e) {
+      showToast("Ошибка экспорта: " + e.message, "error");
+    } finally {
+      exportBtn.disabled = false;
+      exportBtn.textContent = "Экспортировать и скачать";
+    }
+  });
+
+  modal.appendChild(el("div", { style: "width:min(400px,100%);background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:left;box-shadow:0 12px 40px rgba(0,0,0,.45);" },
+    el("h3", { style: "margin:0 0 8px;color:var(--text);" }, "Экспорт истории в файл"),
+    el("p", { style: "margin:0 0 16px;color:var(--text-muted);font-size:13px;line-height:1.4;" }, "Все переписки, группы и ключи будут зашифрованы алгоритмом AES-256-GCM с PBKDF2 (600,000 итераций) и сохранены в файл .penikbackup."),
+    el("div", { style: "display:flex;flex-direction:column;" },
+      passInput,
+      genMnemonicBtn
+    ),
+    exportBtn,
+    el("button", { class: "btn-ghost", style: "width:100%;margin-top:8px;cursor:pointer;", onclick: close }, "Отмена")
+  ));
+
+  document.body.appendChild(modal);
+}
+
+function showImportBackupModal() {
+  const modal = el("div", { style: "position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;" });
+  const close = () => modal.remove();
+  modal.addEventListener("click", event => { if (event.target === modal) close(); });
+
+  let selectedFile = null;
+
+  const fileInput = el("input", {
+    type: "file",
+    accept: ".penikbackup,.json",
+    style: "display:none;"
+  });
+
+  const fileSelectBtn = el("button", {
+    class: "btn-secondary",
+    style: "width:100%;padding:12px;cursor:pointer;font-size:13px;border-radius:var(--r);text-align:center;"
+  }, "📁 Выбрать файл .penikbackup");
+
+  fileSelectBtn.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files && fileInput.files[0]) {
+      selectedFile = fileInput.files[0];
+      fileSelectBtn.textContent = `📄 ${selectedFile.name} (${Math.round(selectedFile.size / 1024)} КБ)`;
+    }
+  });
+
+  const passInput = el("input", {
+    type: "password",
+    placeholder: "Пароль или мнемоническая фраза файла",
+    class: "profile-input",
+    style: "width:100%;margin-top:12px;padding:10px 12px;border-radius:var(--r);background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:14px;box-sizing:border-box;"
+  });
+
+  const importBtn = el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;cursor:pointer;" }, "Расшифровать и импортировать");
+  importBtn.addEventListener("click", async () => {
+    if (!selectedFile) {
+      showToast("Сначала выберите файл .penikbackup", "error");
+      return;
+    }
+    const pass = passInput.value.trim();
+    if (!pass) {
+      showToast("Введите пароль или мнемонику для расшифровки", "error");
+      return;
+    }
+
+    importBtn.disabled = true;
+    importBtn.textContent = "";
+    importBtn.appendChild(spinner());
+
+    try {
+      const fileText = await readBackupFile(selectedFile);
+      const res = await importHistoryFromBackup(fileText, pass);
+      showToast(`Импорт успешен! Чатов: ${res.chatsCount}, Сообщений: ${res.messagesCount}, Групп: ${res.groupsCount}`, "success");
+      close();
+      window.location.reload();
+    } catch (e) {
+      showToast("Ошибка импорта (неверный пароль или повреждённый файл): " + e.message, "error");
+    } finally {
+      importBtn.disabled = false;
+      importBtn.textContent = "Расшифровать и импортировать";
+    }
+  });
+
+  modal.appendChild(el("div", { style: "width:min(400px,100%);background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:left;box-shadow:0 12px 40px rgba(0,0,0,.45);" },
+    el("h3", { style: "margin:0 0 8px;color:var(--text);" }, "Импорт истории из файла"),
+    el("p", { style: "margin:0 0 16px;color:var(--text-muted);font-size:13px;line-height:1.4;" }, "Выберите сохранённый файл .penikbackup и введите пароль или мнемоническую фразу, использованную при экспорте."),
+    fileInput,
+    fileSelectBtn,
+    passInput,
+    importBtn,
+    el("button", { class: "btn-ghost", style: "width:100%;margin-top:8px;cursor:pointer;", onclick: close }, "Отмена")
+  ));
+
+  document.body.appendChild(modal);
+}
 
 export function renderSettings(container) {
   container.innerHTML = "";
@@ -289,20 +467,47 @@ export function renderSettings(container) {
 
   const securitySection = createSection("Безопасность и вход", securityBox);
 
-  // --- 3. E2EE Key Backup Section ---
+  // --- 3. E2EE Key & History Backup Section ---
   const backupSectionBtn = el("button", {
     class: "btn-secondary",
     style: "width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;font-size:14px;"
   },
-    el("span", { style: "color:var(--text);" }, "Резервная копия ключей"),
+    el("span", { style: "color:var(--text);" }, "☁️  Резервная копия ключей в облаке"),
     el("span", { style: "color:var(--text-muted);" }, "›")
   );
 
+  const exportBackupBtn = el("button", {
+    class: "btn-secondary",
+    style: "width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;font-size:14px;"
+  },
+    el("span", { style: "color:var(--text);" }, "💾  Экспорт всей истории в файл (.penikbackup)"),
+    el("span", { style: "color:var(--text-muted);" }, "›")
+  );
+  exportBackupBtn.addEventListener("click", () => showExportBackupModal());
+
+  const importBackupBtn = el("button", {
+    class: "btn-secondary",
+    style: "width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;font-size:14px;"
+  },
+    el("span", { style: "color:var(--text);" }, "📂  Импорт истории из файла (.penikbackup)"),
+    el("span", { style: "color:var(--text-muted);" }, "›")
+  );
+  importBackupBtn.addEventListener("click", () => showImportBackupModal());
+
+  const mnemonicBtn = el("button", {
+    class: "btn-secondary",
+    style: "width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;font-size:14px;"
+  },
+    el("span", { style: "color:var(--text);" }, "🔐  Мнемоническая фраза (12 слов)"),
+    el("span", { style: "color:var(--text-muted);" }, "›")
+  );
+  mnemonicBtn.addEventListener("click", () => showMnemonicModal());
+
   const backupPassInput = el("input", {
     type: "password",
-    placeholder: "Пароль резервной копии",
+    placeholder: "Пароль или мнемоника для копии",
     class: "profile-input",
-    style: "width:100%;padding:10px 12px;padding-right:36px;border-radius:var(--r);background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:14px;"
+    style: "width:100%;padding:10px 12px;padding-right:36px;border-radius:var(--r);background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:14px;box-sizing:border-box;"
   });
 
   const toggleVisibilityBtn = el("button", {
@@ -322,7 +527,7 @@ export function renderSettings(container) {
 
   const backupPassWrapper = el("div", {
     class: "hidden",
-    style: "position:relative;width:100%;margin-bottom:8px;"
+    style: "position:relative;width:100%;margin-bottom:8px;padding:0 8px;box-sizing:border-box;"
   }, backupPassInput, toggleVisibilityBtn);
 
   const doBackupBtn = el("button", { class: "btn-primary hidden", style: "margin-right:8px;padding:8px 14px;font-size:13px;cursor:pointer;" }, "Создать копию");
@@ -406,14 +611,17 @@ export function renderSettings(container) {
   });
 
   const backupBox = el("div", {
-    style: "background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:4px;display:flex;flex-direction:column;"
+    style: "background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:4px;display:flex;flex-direction:column;gap:4px;"
   },
     backupSectionBtn,
     backupPassWrapper,
-    el("div", { style: "display:flex;padding:0 8px 8px;" }, doBackupBtn, doRestoreBtn, cancelBackupBtn)
+    el("div", { style: "display:flex;padding:0 8px 8px;" }, doBackupBtn, doRestoreBtn, cancelBackupBtn),
+    exportBackupBtn,
+    importBackupBtn,
+    mnemonicBtn
   );
 
-  const backupSection = createSection("Ключи и шифрование (E2EE)", backupBox);
+  const backupSection = createSection("Резервное копирование и ключи (E2EE)", backupBox);
 
   // --- 4. Devices & Pairing Section ---
   const devicesBtn = el("button", {
@@ -421,6 +629,7 @@ export function renderSettings(container) {
     style: "width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;font-size:14px;"
   },
     el("span", { style: "color:var(--text);" }, "Мои устройства"),
+
     el("span", { style: "color:var(--text-muted);" }, "›")
   );
   devicesBtn.addEventListener("click", () => {

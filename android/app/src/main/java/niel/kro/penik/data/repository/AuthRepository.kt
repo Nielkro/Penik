@@ -33,6 +33,7 @@ class AuthRepository @Inject constructor(
     private val e2eeCrypto: E2EECrypto,
     private val identityPins: niel.kro.penik.data.crypto.IdentityPinStore,
     private val database: PenikDatabase,
+    private val groupDao: niel.kro.penik.data.local.dao.GroupDao
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -221,7 +222,23 @@ class AuthRepository @Inject constructor(
     suspend fun uploadKeyBackup(passphrase: String): Result<Unit> {
         return try {
             val privateKey = tokenStorage.getPrivateKey() ?: return Result.failure(Exception("Локальный приватный ключ не найден"))
-            val backup = e2eeCrypto.encryptKeyBackup(privateKey, passphrase)
+            val allGroupKeys = groupDao.getAllKeys()
+            val groupKeysArr = org.json.JSONArray().apply {
+                allGroupKeys.forEach { gk ->
+                    put(org.json.JSONObject().apply {
+                        put("group_id", gk.groupId)
+                        put("version", gk.keyVersion)
+                        put("key", Base64.getEncoder().encodeToString(gk.key))
+                    })
+                }
+            }
+            val payloadBytes = org.json.JSONObject().apply {
+                put("version", 2)
+                put("identity_key", Base64.getEncoder().encodeToString(privateKey))
+                put("group_keys", groupKeysArr)
+            }.toString().toByteArray(Charsets.UTF_8)
+
+            val backup = e2eeCrypto.encryptKeyBackup(payloadBytes, passphrase)
             val b64Blob = Base64.getEncoder().encodeToString(backup.encryptedBlob)
             val b64Salt = Base64.getEncoder().encodeToString(backup.salt)
             val b64Iv = Base64.getEncoder().encodeToString(backup.iv)
@@ -293,10 +310,37 @@ class AuthRepository @Inject constructor(
                 val salt = Base64.getDecoder().decode(body.salt)
                 val iv = Base64.getDecoder().decode(body.iv)
 
-                val decryptedPrivKey = e2eeCrypto.decryptKeyBackup(blob, salt, iv, passphrase)
-                val derivedPubKey = e2eeCrypto.derivePublicKey(decryptedPrivKey)
+                val decryptedBytes = e2eeCrypto.decryptKeyBackup(blob, salt, iv, passphrase)
+                val isJson = decryptedBytes.isNotEmpty() && decryptedBytes[0] == '{'.code.toByte()
+                val privKey = if (isJson) {
+                    val root = org.json.JSONObject(String(decryptedBytes, Charsets.UTF_8))
+                    val idKeyB64 = root.optString("identity_key")
+                    val k = Base64.getDecoder().decode(idKeyB64)
+                    val groupKeysArr = root.optJSONArray("group_keys")
+                    if (groupKeysArr != null) {
+                        val keysToInsert = mutableListOf<niel.kro.penik.data.local.entity.GroupKeyEntity>()
+                        for (i in 0 until groupKeysArr.length()) {
+                            val gkObj = groupKeysArr.optJSONObject(i) ?: continue
+                            val gId = gkObj.optLong("group_id")
+                            val gVer = gkObj.optLong("version")
+                            val gKeyB64 = gkObj.optString("key")
+                            if (gId > 0 && gVer > 0 && gKeyB64.isNotBlank()) {
+                                val gKeyBytes = Base64.getDecoder().decode(gKeyB64)
+                                keysToInsert.add(niel.kro.penik.data.local.entity.GroupKeyEntity(gId, gVer, gKeyBytes))
+                            }
+                        }
+                        if (keysToInsert.isNotEmpty()) {
+                            groupDao.saveGroupKeys(keysToInsert)
+                        }
+                    }
+                    k
+                } else {
+                    decryptedBytes
+                }
 
-                tokenStorage.savePrivateKey(decryptedPrivKey)
+                val derivedPubKey = e2eeCrypto.derivePublicKey(privKey)
+
+                tokenStorage.savePrivateKey(privKey)
                 tokenStorage.savePublicKey(derivedPubKey)
 
                 Result.success(Unit)
@@ -318,7 +362,23 @@ class AuthRepository @Inject constructor(
             val privateKey = generated.first
             val publicKey = generated.second
 
-            val backup = e2eeCrypto.encryptKeyBackup(privateKey, newPassphrase)
+            val allGroupKeys = groupDao.getAllKeys()
+            val groupKeysArr = org.json.JSONArray().apply {
+                allGroupKeys.forEach { gk ->
+                    put(org.json.JSONObject().apply {
+                        put("group_id", gk.groupId)
+                        put("version", gk.keyVersion)
+                        put("key", Base64.getEncoder().encodeToString(gk.key))
+                    })
+                }
+            }
+            val payloadBytes = org.json.JSONObject().apply {
+                put("version", 2)
+                put("identity_key", Base64.getEncoder().encodeToString(privateKey))
+                put("group_keys", groupKeysArr)
+            }.toString().toByteArray(Charsets.UTF_8)
+
+            val backup = e2eeCrypto.encryptKeyBackup(payloadBytes, newPassphrase)
             val b64Blob = Base64.getEncoder().encodeToString(backup.encryptedBlob)
             val b64Salt = Base64.getEncoder().encodeToString(backup.salt)
             val b64Iv = Base64.getEncoder().encodeToString(backup.iv)

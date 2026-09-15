@@ -53,7 +53,8 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/js/api.js` — Unified browser REST client: attaches tokens, serializes JSON, parses errors, and exports APIs for users, messages, pairing, and groups.
 - `client/js/call.js` — LiveKit Web SDK integration and call state manager supporting primary and fallback endpoints, signed ephemeral Diffie-Hellman E2EE encryption via WebRTC Insertable Streams worker, identity key authentication tags, safety words verification, multi-device ring handling (call_id matching and `CALL_TAKEN`), and reconnect recovery: full track resync after `RoomEvent.Reconnected`, camera restore retry, and media flags derived from actual publications.
 - `client/js/sounds.js` — Web Audio API synthesizer for call sounds: melodious incoming ringtone, outgoing dial tone, connect/disconnect chimes, and busy signal.
-- `client/js/pairing.js` — Decrypts and imports history transferred from Android into the browser IndexedDB stores.
+-`client/js/pairing.js` — Decrypts and imports history transferred from Android into the browser IndexedDB stores.
+- `client/js/backup.js` — Exports and imports encrypted full history envelopes (.penikbackup) and key backups using AES-256-GCM / PBKDF2 with mnemonic seed phrase support.
 - `client/js/ws.js` — Manages the browser WebSocket connection: encodes/decodes MsgPack frames, supports opcodes, ping/pong, request queuing, and exponential backoff reconnection; `connect()` is idempotent and each socket generation is fenced so a stale socket cannot open a second parallel session.
 - `client/js/presence.js` — Publishes user presence events and provides handlers for online status updates.
 
@@ -198,6 +199,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/data/repository/MessageRepository.kt` — Synchronizes history, handles direct messages/WebSocket events, encrypts/decrypts payloads, and persists to Room.
 - `android/app/src/main/java/niel/kro/penik/data/repository/ChatRepository.kt` — Repository for the direct chat list and aggregated contact/last message data.
 - `android/app/src/main/java/niel/kro/penik/data/repository/GroupRepository.kt` — Synchronizes groups/members, stores group keys/messages, manages envelopes, rotation, and group history.
+- `android/app/src/main/java/niel/kro/penik/data/repository/BackupManager.kt` — Manages encrypted full history export and import (.penikbackup) and mnemonic seed phrase generation.
 - `android/app/src/main/java/niel/kro/penik/data/repository/StickerRepository.kt` — Manages sticker packs and individual stickers, Telegram sticker pack import, pack install/uninstall, and local caching of recent stickers.
 - `android/app/src/main/java/niel/kro/penik/data/repository/AttachmentManager.kt` — Handles file/media upload flow: prepares optimistic local media, reads URI bytes via ContentResolver, adaptively encrypts payload with ***REDACTED-BY-FILTER-REPO*** (streaming PCK1 chunks for crypto_version >= 2 or legacy monolithic format for crypto_version == 1) via E2EECrypto, uploads the ciphertext directly to the Penik server (`POST /api/v1/attachments/upload`) with real-time progress, generates a WebP thumbnail, caches the plaintext locally, and returns a JSON payload string matching the wire format.
 - `android/app/src/main/java/niel/kro/penik/data/repository/UploadProgressBus.kt` — App-wide live upload progress bus mapping message IDs to loaded/total bytes for optimistic media UI.

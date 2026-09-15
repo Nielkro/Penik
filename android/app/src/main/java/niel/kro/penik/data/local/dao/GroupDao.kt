@@ -17,6 +17,9 @@ interface GroupDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertGroup(group: GroupEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertGroups(groups: List<GroupEntity>)
+
     @Query("SELECT * FROM groups ORDER BY id")
     fun observeGroups(): Flow<List<GroupEntity>>
 
@@ -61,12 +64,18 @@ interface GroupDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveGroupKey(key: GroupKeyEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveGroupKeys(keys: List<GroupKeyEntity>)
+
     @Query("SELECT * FROM group_keys WHERE groupId = :groupId AND keyVersion = :keyVersion LIMIT 1")
     suspend fun getGroupKey(groupId: Long, keyVersion: Long): GroupKeyEntity?
 
     // Messages
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertMessage(message: GroupMessageEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertGroupMessages(messages: List<GroupMessageEntity>)
 
     @Query("SELECT * FROM group_messages WHERE groupId = :groupId ORDER BY serverId, createdAt")
     fun observeMessages(groupId: Long): Flow<List<GroupMessageEntity>>
