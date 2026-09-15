@@ -91,4 +91,10 @@ interface GroupDao {
 
     @Query("SELECT * FROM group_members WHERE groupId = :groupId AND userId = :userId LIMIT 1")
     fun observeMember(groupId: Long, userId: Long): Flow<GroupMemberEntity?>
+
+    @Query("SELECT * FROM group_messages WHERE serverId = 0 AND sentByMe = 1 AND text != '[DELETED]' ORDER BY createdAt ASC")
+    suspend fun getPendingMessages(): List<GroupMessageEntity>
+
+    @Query("DELETE FROM group_messages WHERE groupId = :groupId AND messageId = :messageId")
+    suspend fun deleteMessage(groupId: Long, messageId: String)
 }

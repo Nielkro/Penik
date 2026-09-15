@@ -300,7 +300,8 @@ enum class ConnectionState {
 
 @Singleton
 class WebSocketManager @Inject constructor(
-    private val tokenStorage: SecureTokenStorage
+    private val tokenStorage: SecureTokenStorage,
+    private val networkMonitor: niel.kro.penik.data.network.NetworkMonitor
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -343,6 +344,28 @@ class WebSocketManager @Inject constructor(
     @Volatile
     private var reconnectJob: kotlinx.coroutines.Job? = null
 
+    init {
+        scope.launch {
+            networkMonitor.isOnline.collect { online ->
+                if (online) {
+                    Log.d("WS", "Network back online, checking connection (state=${_connectionState.value})")
+                    if (!manualDisconnect && connectHost.isNotEmpty() && connectPort != 0 &&
+                        _connectionState.value == ConnectionState.DISCONNECTED) {
+                        reconnectJob?.cancel()
+                        reconnectAttempt = 0
+                        doConnect()
+                    }
+                } else {
+                    Log.d("WS", "Network lost, pausing reconnects")
+                    reconnectJob?.cancel()
+                    if (_connectionState.value == ConnectionState.CONNECTING) {
+                        _connectionState.value = ConnectionState.DISCONNECTED
+                    }
+                }
+            }
+        }
+    }
+
     fun connect(host: String, port: Int, token: String) {
         if (_connectionState.value != ConnectionState.DISCONNECTED) return
         this.connectHost = host
@@ -361,6 +384,7 @@ class WebSocketManager @Inject constructor(
      */
     fun notifyRestSuccess() {
         if (manualDisconnect) return
+        if (!networkMonitor.isConnected()) return
         if (connectHost.isEmpty() || connectPort == 0) return
         if (_connectionState.value != ConnectionState.DISCONNECTED && _connectionState.value != ConnectionState.UNAUTHORIZED) return
         reconnectJob?.cancel()
@@ -410,6 +434,11 @@ class WebSocketManager @Inject constructor(
     }
 
     private fun doConnect() {
+        if (!networkMonitor.isConnected()) {
+            Log.d("WS", "doConnect: network offline, skipping socket connection")
+            _connectionState.value = ConnectionState.DISCONNECTED
+            return
+        }
         _connectionState.value = ConnectionState.CONNECTING
         try {
             // Derived from the REST scheme rather than the port: a non-443 port
@@ -484,6 +513,11 @@ class WebSocketManager @Inject constructor(
     }
 
     private fun reconnectWithBackoff() {
+        if (!networkMonitor.isConnected()) {
+            Log.d("WS", "reconnectWithBackoff: network offline, waiting for network callback")
+            _connectionState.value = ConnectionState.DISCONNECTED
+            return
+        }
         reconnectAttempt++
         val delayMs = minOf(1000L * (1 shl (reconnectAttempt - 1)), 30_000L)
         Log.d("WS", "Reconnecting in ${delayMs}ms (attempt $reconnectAttempt)")

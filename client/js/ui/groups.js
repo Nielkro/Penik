@@ -41,18 +41,14 @@ export function buildGroupListItem(g, onChange) {
     previewSpan,
   );
 
-  let timeSpan = null;
+  const timeSpan = el("span", { class: "chatlist-item-time" }, (!isPending && g.last_ts) ? formatTime(g.last_ts) : "");
   if (!isPending) {
-    if (g.last_ts) {
-      timeSpan = el("span", { class: "chatlist-item-time" }, formatTime(g.last_ts));
-      info.after(timeSpan);
-    }
     getGroupMessages(g.id).then(async (msgs) => {
       const last = msgs && msgs[msgs.length - 1];
       if (last) {
-        if (!timeSpan && last.created_at) {
-          timeSpan = el("span", { class: "chatlist-item-time" }, formatTime(last.created_at));
-          info.after(timeSpan);
+        const ts = last.created_at || last.timestamp || last.ts;
+        if (ts) {
+          timeSpan.textContent = formatTime(ts);
         }
         const my = getCurrentUser();
         const myId = my && (my.id || my.user_id);
@@ -100,6 +96,7 @@ export function buildGroupListItem(g, onChange) {
   const item = el("li", { class: "chatlist-item" },
     avatarEl,
     info,
+    ...(!isPending ? [timeSpan] : [])
   );
 
   if (isPending) {

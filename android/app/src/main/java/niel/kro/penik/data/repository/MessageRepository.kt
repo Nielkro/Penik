@@ -443,6 +443,37 @@ class MessageRepository @Inject constructor(
         return clientMsgId
     }
 
+    suspend fun retryPendingMessages() {
+        val pending = messageDao.getPendingMessages()
+        if (pending.isEmpty()) return
+        Log.d("PenikMsg", "retryPendingMessages: found ${pending.size} pending messages")
+        for (msg in pending) {
+            runCatching {
+                sendMessage(
+                    toUserId = msg.chatUserId,
+                    text = msg.text,
+                    replyToMsgId = msg.replyToMsgId,
+                    existingClientMsgId = msg.localId
+                )
+            }.onFailure { e ->
+                Log.e("PenikMsg", "Failed to retry pending message ${msg.localId}", e)
+            }
+        }
+    }
+
+    suspend fun retryMessage(localId: String): Boolean {
+        val msg = messageDao.findMessageByLocalId(localId) ?: return false
+        return runCatching {
+            sendMessage(
+                toUserId = msg.chatUserId,
+                text = msg.text,
+                replyToMsgId = msg.replyToMsgId,
+                existingClientMsgId = msg.localId
+            )
+            true
+        }.getOrDefault(false)
+    }
+
     suspend fun handleMsgAck(event: WebSocketEvent.MsgAck) {
         Log.d("PenikMsg", "handleMsgAck: clientMsgId=${event.clientMsgId} -> serverMsgId=${event.serverMsgId}")
         messageDao.acknowledgeMessage(event.clientMsgId, event.serverMsgId)

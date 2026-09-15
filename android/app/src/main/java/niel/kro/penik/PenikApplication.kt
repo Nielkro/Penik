@@ -24,6 +24,9 @@ class PenikApplication : Application(), ImageLoaderFactory {
     @Inject
     lateinit var timeSyncManager: niel.kro.penik.data.network.TimeSyncManager
 
+    @Inject
+    lateinit var networkMonitor: niel.kro.penik.data.network.NetworkMonitor
+
     override fun onCreate() {
         super.onCreate()
         niel.kro.penik.data.network.api.ApiConfig.init(this)
@@ -56,7 +59,29 @@ class PenikApplication : Application(), ImageLoaderFactory {
     }
 
     override fun newImageLoader(): ImageLoader {
+        val imageCacheDir = java.io.File(cacheDir, "http_image_cache")
+        val okHttpClient = okhttp3.OkHttpClient.Builder()
+            .cache(okhttp3.Cache(imageCacheDir, 100L * 1024 * 1024))
+            .addInterceptor { chain ->
+                var request = chain.request()
+                if (!networkMonitor.isConnected()) {
+                    request = request.newBuilder()
+                        .cacheControl(okhttp3.CacheControl.FORCE_CACHE)
+                        .build()
+                }
+                chain.proceed(request)
+            }
+            .build()
+
         return ImageLoader.Builder(this)
+            .okHttpClient(okHttpClient)
+            .diskCache {
+                coil.disk.DiskCache.Builder()
+                    .directory(cacheDir.resolve("coil_disk_cache"))
+                    .maxSizeBytes(150L * 1024 * 1024)
+                    .build()
+            }
+            .respectCacheHeaders(false)
             .components {
                 if (android.os.Build.VERSION.SDK_INT >= 28) {
                     add(coil.decode.ImageDecoderDecoder.Factory())

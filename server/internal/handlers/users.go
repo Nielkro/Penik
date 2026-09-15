@@ -389,7 +389,7 @@ func GetAvatar(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		// Calculate ETag as MD5 hash of image bytes
 		etag := fmt.Sprintf(`"%x"`, md5.Sum(avatar))
 		w.Header().Set("ETag", etag)
-		w.Header().Set("Cache-Control", "private, no-cache")
+		w.Header().Set("Cache-Control", "public, max-age=86400, stale-if-error=2592000")
 
 		if r.Header.Get("If-None-Match") == etag {
 			w.WriteHeader(http.StatusNotModified)

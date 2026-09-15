@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
@@ -1907,6 +1908,7 @@ fun MessageTicks(
     color: Color,
     isPending: Boolean = false,
     fontSize: TextUnit = 10.sp,
+    onRetry: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (isPending) {
@@ -1914,7 +1916,16 @@ fun MessageTicks(
             imageVector = Icons.Default.Schedule,
             contentDescription = "Отправляется...",
             tint = color.copy(alpha = 0.85f),
-            modifier = modifier.size(if (fontSize <= 9.sp) 9.dp else 11.dp)
+            modifier = modifier
+                .size(if (fontSize <= 9.sp) 9.dp else 11.dp)
+                .then(
+                    if (onRetry != null) {
+                        Modifier.clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) { onRetry() }
+                    } else Modifier
+                )
         )
         return
     }
@@ -2051,7 +2062,8 @@ fun MessageBubble(
     onEdit: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onForward: (() -> Unit)? = null,
-    onStickerClick: ((String) -> Unit)? = null
+    onStickerClick: ((String) -> Unit)? = null,
+    onRetry: (() -> Unit)? = null
 ) {
     val isFailed = text.startsWith("[Ошибка расшифрования") || text.startsWith("[Сообщение не расшифровано")
     var isExpanded by remember { mutableStateOf(false) }
@@ -2171,7 +2183,7 @@ fun MessageBubble(
                             triggered = false
                         },
                         onDragEnd = {
-                            if (triggered && onReply != null && !isFailed) {
+                            if (triggered && onReply != null && !isFailed && !isPending) {
                                 onReply()
                             }
                             offsetX = 0f
@@ -2217,6 +2229,23 @@ fun MessageBubble(
                 onDismissRequest = { showMenu = false },
                 modifier = Modifier.background(LocalAppColors.current.panelSecondary)
             ) {
+                if (onRetry != null && (isPending || isFailed)) {
+                    DropdownMenuItem(
+                        text = { Text("Повторить попытку", color = LocalAppColors.current.accent) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                tint = LocalAppColors.current.accent,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        onClick = {
+                            onRetry()
+                            showMenu = false
+                        }
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text("Копировать", color = LocalAppColors.current.textPrimary) },
                     leadingIcon = {
@@ -2232,7 +2261,7 @@ fun MessageBubble(
                         showMenu = false
                     }
                 )
-                if (onEdit != null && isSentByMe && !isFailed && attachment == null && !isSticker) {
+                if (onEdit != null && isSentByMe && !isFailed && !isPending && attachment == null && !isSticker) {
                     DropdownMenuItem(
                         text = { Text("Изменить", color = LocalAppColors.current.textPrimary) },
                         leadingIcon = {
@@ -2249,7 +2278,7 @@ fun MessageBubble(
                         }
                     )
                 }
-                if (onReply != null && !isFailed) {
+                if (onReply != null && !isFailed && !isPending) {
                     DropdownMenuItem(
                         text = { Text("Ответить", color = LocalAppColors.current.textPrimary) },
                         leadingIcon = {
@@ -2266,7 +2295,7 @@ fun MessageBubble(
                         }
                     )
                 }
-                if (onForward != null && !isFailed) {
+                if (onForward != null && !isFailed && !isPending) {
                     DropdownMenuItem(
                         text = { Text("Переслать", color = LocalAppColors.current.textPrimary) },
                         leadingIcon = {
@@ -2424,6 +2453,7 @@ fun MessageBubble(
                                     delivered = delivered,
                                     read = read,
                                     isPending = isPending,
+                                    onRetry = onRetry,
                                     color = if (read) LocalAppColors.current.accent else LocalAppColors.current.textMuted
                                 )
                             }
@@ -2465,6 +2495,7 @@ fun MessageBubble(
                                     delivered = delivered,
                                     read = read,
                                     isPending = isPending,
+                                    onRetry = onRetry,
                                     color = if (read) LocalAppColors.current.accent else Color.White.copy(alpha = 0.8f)
                                 )
                             }
@@ -2512,6 +2543,7 @@ fun MessageBubble(
                                     read = read,
                                     isPending = isPending,
                                     fontSize = 9.sp,
+                                    onRetry = onRetry,
                                     color = if (read) Color(0xFF409CFF) else Color.White.copy(alpha = 0.8f)
                                 )
                             }
@@ -2590,6 +2622,7 @@ fun MessageBubble(
                                     delivered = delivered,
                                     read = read,
                                     isPending = isPending,
+                                    onRetry = onRetry,
                                     color = if (read) Color(0xFF409CFF) else if (isSentByMe) LocalAppColors.current.sentMessageText.copy(alpha = 0.7f) else LocalAppColors.current.textMuted
                                 )
                             }
