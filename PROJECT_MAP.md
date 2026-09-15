@@ -115,7 +115,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/screen/profile/ProfileScreen.kt` — Profile UI, name/password changes, avatar management, and key backup.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/pairing/PairingScannerScreen.kt` — Screen for scanning and processing QR pairing sessions for new devices.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/settings/SettingsScreen.kt` — Settings screen with light/dark theme switch, navigation style picker (Bottom bar vs Telegram drawer), app icon/variant chooser, backup & device list navigation, app version display, and manual update checks.
-- `android/app/src/main/java/niel/kro/penik/ui/screen/settings/BackupScreen.kt` — Dedicated backup and keys management screen: cloud key backup, export/import full history (.penikbackup) and 12-word mnemonic phrase generator.
+- `android/app/src/main/java/niel/kro/penik/ui/screen/settings/BackupScreen.kt` — Dedicated backup and keys management screen: cloud key backup, export/import full history (.penikbackup) with step-by-step password or 12-word seed-phrase verification wizard.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/settings/DevicesScreen.kt` — Separate screen listing the user's own devices.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/AuthViewModel.kt` — Manages login/registration state and actions.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ChatRoomViewModel.kt` — Subscribes the chat room to messages, handles sending, and processes statuses.
