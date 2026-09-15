@@ -237,6 +237,12 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `tests/e2e/requirements.txt` — Python dependency requirements for running the E2E verification test suite.
 - `scripts/run_e2e.py` — Entry point script managing ephemeral test server lifecycle and executing the full Python E2E verification suite.
 
+### Bots
+
+- `bot/bot.py` — Standalone Python E2EE bot prototype running over WebSocket with direct X25519 / ***REDACTED-BY-FILTER-REPO*** pairwise encryption and command handling.
+- `bot/README.md` — Usage documentation and guide for the Python E2EE bot prototype.
+
+
 ### Documentation
 
 - `README.md` — Root project overview: stack, repository layout, build and run instructions for server/web/Android, configuration reference, architecture summary (E2EE, pairing, WebSocket transport, storage, attachments), rate limits, test commands, and known security limitations.
