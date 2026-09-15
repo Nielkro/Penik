@@ -485,6 +485,66 @@ export async function renderChat(container, userId) {
   container.appendChild(chatWrap);
   const scrollDown = attachScrollDownButton(messagesEl);
 
+  // Handle paste (Ctrl+V) of files or images
+  const handlePaste = (e) => {
+    const files = e.clipboardData && e.clipboardData.files;
+    if (files && files.length > 0) {
+      e.preventDefault();
+      for (let i = 0; i < files.length; i++) {
+        handleFileUpload(files[i]);
+      }
+    }
+  };
+  inputEl.addEventListener("paste", handlePaste);
+  chatWrap.addEventListener("paste", handlePaste);
+
+  // Handle Drag & Drop of files
+  const dropOverlay = el("div", { class: "chat-drop-overlay" },
+    el("div", { class: "chat-drop-overlay-box" },
+      paperclipIcon(36),
+      el("div", { class: "chat-drop-overlay-title" }, "Перетащите файлы сюда"),
+      el("div", { class: "chat-drop-overlay-subtitle" }, "для отправки в чат")
+    )
+  );
+
+  let dragCounter = 0;
+  chatWrap.addEventListener("dragenter", (e) => {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) {
+      e.preventDefault();
+      dragCounter++;
+      if (dragCounter === 1) {
+        chatWrap.appendChild(dropOverlay);
+      }
+    }
+  });
+  chatWrap.addEventListener("dragover", (e) => {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    }
+  });
+  chatWrap.addEventListener("dragleave", (e) => {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        if (dropOverlay.parentNode) dropOverlay.remove();
+      }
+    }
+  });
+  chatWrap.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    if (dropOverlay.parentNode) dropOverlay.remove();
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length > 0) {
+      for (let i = 0; i < files.length; i++) {
+        handleFileUpload(files[i]);
+      }
+    }
+  });
+
   // Resolve the real contact after the shell is mounted, then patch the header.
   if (!isSelfChat) {
     (async () => {
