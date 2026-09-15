@@ -92,6 +92,22 @@ export class WordCoder {
     }
     return result;
   }
+
+  generateMnemonicPhrase(wordCount = 12) {
+    const bytes = new Uint8Array(wordCount);
+    if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+      crypto.getRandomValues(bytes);
+    } else {
+      for (let i = 0; i < wordCount; i++) {
+        bytes[i] = Math.floor(Math.random() * 256);
+      }
+    }
+    return this.encode(bytes).join(" ");
+  }
 }
 
 export const defaultWordCoder = new WordCoder(RUSSIAN_DICTIONARY);
+
+export function generateMnemonicPhrase(wordCount = 12) {
+  return defaultWordCoder.generateMnemonicPhrase(wordCount);
+}

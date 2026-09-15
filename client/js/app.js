@@ -6,7 +6,8 @@ import {
   findAndResolvePendingSentMessage, deleteChatData, deleteMessage,
   getMessageByClientId, isMessageDeletedLocally,
   getIKPrivate, saveIKPrivate, getIKPublic, saveIKPublic,
-  getPersistentDeviceName, getClientPlatform
+  getPersistentDeviceName, getClientPlatform,
+  getAllGroupKeysPlain, saveGroupKey
 } from './storage.js';
 import { ws, OP } from './ws.js';
 import { renderAuth } from './ui/auth.js';
@@ -1658,7 +1659,21 @@ export async function backupE2EEKeys(passphrase) {
   if (!privBytes) {
     throw new Error("Локальный приватный ключ не найден. Нечего резервировать.");
   }
-  const backup = await encryptKeyBackup(privBytes, passphrase);
+
+  const groupKeys = await getAllGroupKeysPlain();
+  const groupKeysArr = groupKeys.map(gk => ({
+    group_id: gk.group_id,
+    version: gk.key_version,
+    key: btoa(String.fromCharCode(...gk.key))
+  }));
+
+  const payloadJson = JSON.stringify({
+    version: 2,
+    identity_key: btoa(String.fromCharCode(...privBytes)),
+    group_keys: groupKeysArr
+  });
+  const payloadBytes = new TextEncoder().encode(payloadJson);
+  const backup = await encryptKeyBackup(payloadBytes, passphrase);
 
   await apiPost("/keys/backup", {
     encrypted_blob: btoa(String.fromCharCode(...backup.encryptedBlob)),
@@ -1687,11 +1702,31 @@ export async function restoreE2EEKeys(passphrase) {
   const iv = toUint8Array(backup.iv);
 
   const decrypted = await decryptKeyBackup(encryptedBlob, salt, iv, passphrase);
-  const derivedPub = await derivePublicKey(decrypted);
+  let privBytes = decrypted;
+  if (decrypted.length > 0 && decrypted[0] === 123 /* '{' */) {
+    try {
+      const parsed = JSON.parse(new TextDecoder().decode(decrypted));
+      if (parsed.identity_key) {
+        privBytes = toUint8Array(parsed.identity_key);
+      }
+      if (Array.isArray(parsed.group_keys)) {
+        for (const gk of parsed.group_keys) {
+          if (gk.group_id && gk.version && gk.key) {
+            const kBytes = toUint8Array(gk.key);
+            await saveGroupKey(gk.group_id, gk.version, kBytes);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to parse JSON backup v2 payload:", e);
+    }
+  }
 
-  await saveIKPrivate(decrypted);
+  const derivedPub = await derivePublicKey(privBytes);
+
+  await saveIKPrivate(privBytes);
   await saveIKPublic(derivedPub);
-  state.privateIK = decrypted;
+  state.privateIK = privBytes;
 
-  console.log("E2EE keys successfully restored from server backup!");
+  console.log("E2EE keys and group keys successfully restored from server backup!");
 }

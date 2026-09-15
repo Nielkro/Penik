@@ -129,6 +129,15 @@ object SafetyNumber {
         return clean
     }
 
+    fun generateMnemonicPhrase(wordCount: Int = 12): String {
+        val randomBytes = ByteArray(wordCount)
+        java.security.SecureRandom().nextBytes(randomBytes)
+        return randomBytes.map { b ->
+            val idx = b.toInt() and 0xFF
+            RUSSIAN_WORDS[idx]
+        }.joinToString(" ")
+    }
+
     private fun compareUnsigned(a: ByteArray, b: ByteArray): Int {
         for (i in 0 until 32) {
             val diff = (a[i].toInt() and 0xFF) - (b[i].toInt() and 0xFF)
