@@ -41,7 +41,7 @@ import {
   downloadBackupFile,
   readBackupFile
 } from "../backup.js";
-import { generateMnemonicPhrase } from "../wordcoder.js";
+import { generateMnemonicPhrase, RUSSIAN_DICTIONARY } from "../wordcoder.js";
 
 const decodeB64Url = s => {
   const normalized = String(s).trim().replaceAll("-", "+").replaceAll("_", "/");
@@ -74,97 +74,233 @@ const createSection = (titleText, ...children) => {
   );
 };
 
-function showMnemonicModal() {
-  const phrase = generateMnemonicPhrase(12);
-  const words = phrase.split(" ");
-
-  const modal = el("div", { style: "position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;" });
-  const close = () => modal.remove();
-  modal.addEventListener("click", event => { if (event.target === modal) close(); });
-
-  const wordChips = el("div", { style: "display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0;" },
-    ...words.map((w, idx) => el("div", {
-      style: "background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;font-size:13px;display:flex;align-items:center;gap:6px;"
-    },
-      el("span", { style: "color:var(--text-muted);font-size:11px;font-weight:600;" }, `${idx + 1}.`),
-      el("span", { style: "color:var(--text);font-weight:500;" }, w)
-    ))
-  );
-
-  const copyBtn = el("button", { class: "btn-primary", style: "width:100%;margin-bottom:8px;cursor:pointer;" }, "Скопировать фразу");
-  copyBtn.addEventListener("click", () => {
-    navigator.clipboard.writeText(phrase);
-    showToast("Мнемоническая фраза скопирована!", "success");
-  });
-
-  modal.appendChild(el("div", { style: "width:min(420px,100%);background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.45);" },
-    el("h3", { style: "margin:0 0 8px;color:var(--text);" }, "Мнемоническая фраза (12 слов)"),
-    el("p", { style: "margin:0;color:var(--text-muted);font-size:13px;line-height:1.4;" }, "Сохраните эти 12 слов в надёжном месте. Вы можете использовать эту фразу вместо пароля для шифрования и восстановления резервных копий."),
-    wordChips,
-    copyBtn,
-    el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;", onclick: close }, "Закрыть")
-  ));
-
-  document.body.appendChild(modal);
-}
-
 function showExportBackupModal() {
   const modal = el("div", { style: "position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;" });
   const close = () => modal.remove();
   modal.addEventListener("click", event => { if (event.target === modal) close(); });
 
-  const passInput = el("input", {
-    type: "password",
-    placeholder: "Пароль или мнемоническая фраза",
-    class: "profile-input",
-    style: "width:100%;padding:10px 12px;border-radius:var(--r);background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:14px;box-sizing:border-box;"
-  });
+  const container = el("div", { style: "width:min(440px,100%);background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:left;box-shadow:0 12px 40px rgba(0,0,0,.45);max-height:90vh;overflow-y:auto;" });
+  modal.appendChild(container);
 
-  const genMnemonicBtn = el("button", {
-    class: "btn-secondary",
-    style: "font-size:12px;padding:6px 10px;margin-top:6px;cursor:pointer;align-self:flex-start;"
-  }, "🎲 Сгенерировать мнемонику (12 слов)");
-  genMnemonicBtn.addEventListener("click", () => {
-    const phrase = generateMnemonicPhrase(12);
-    passInput.type = "text";
-    passInput.value = phrase;
-    showToast("Сгенерирована мнемоника. Скопируйте и сохраните её!", "info");
-  });
+  let currentStep = "select"; // 'select' | 'password' | 'mnemonic' | 'verify'
+  let mnemonicPhrase = "";
+  let mnemonicWords = [];
+  let quizIdx1 = 0;
+  let quizIdx2 = 1;
+  let quizOptions1 = [];
+  let quizOptions2 = [];
+  let quizSelected1 = null;
+  let quizSelected2 = null;
 
-  const exportBtn = el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;cursor:pointer;" }, "Экспортировать и скачать");
-  exportBtn.addEventListener("click", async () => {
-    const pass = passInput.value.trim();
-    if (!pass) {
-      showToast("Введите пароль или мнемоническую фразу", "error");
-      return;
+  function renderStep() {
+    container.innerHTML = "";
+
+    if (currentStep === "select") {
+      const header = el("h3", { style: "margin:0 0 8px;color:var(--text);font-size:18px;" }, "Экспорт всей истории");
+      const desc = el("p", { style: "margin:0 0 16px;color:var(--text-muted);font-size:13px;line-height:1.4;" },
+        "История чатов, сообщений, групп и ключи шифрования будут сохранены в зашифрованный файл .penikbackup (AES-256-GCM / PBKDF2 600,000)."
+      );
+
+      const passCard = el("div", {
+        style: "flex:1;background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;display:flex;flex-direction:column;justify-content:space-between;height:120px;transition:border-color .15s;"
+      },
+        el("span", { style: "font-size:26px;" }, "🔑"),
+        el("div", {},
+          el("div", { style: "color:var(--text);font-weight:700;font-size:15px;margin-bottom:2px;" }, "Свой пароль"),
+          el("div", { style: "color:var(--text-muted);font-size:11px;" }, "Личный пароль")
+        )
+      );
+      passCard.addEventListener("click", () => {
+        currentStep = "password";
+        renderStep();
+      });
+
+      const mnemonicCard = el("div", {
+        style: "flex:1;background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;display:flex;flex-direction:column;justify-content:space-between;height:120px;transition:border-color .15s;"
+      },
+        el("span", { style: "font-size:26px;" }, "🎲"),
+        el("div", {},
+          el("div", { style: "color:var(--text);font-weight:700;font-size:15px;margin-bottom:2px;" }, "12 слов"),
+          el("div", { style: "color:var(--text-muted);font-size:11px;" }, "Seed-фраза")
+        )
+      );
+      mnemonicCard.addEventListener("click", () => {
+        mnemonicPhrase = generateMnemonicPhrase(12);
+        mnemonicWords = mnemonicPhrase.split(" ").filter(Boolean);
+        quizIdx1 = Math.floor(Math.random() * 6);
+        quizIdx2 = 6 + Math.floor(Math.random() * 6);
+
+        const decoys1 = RUSSIAN_DICTIONARY.filter(w => w !== mnemonicWords[quizIdx1]).sort(() => Math.random() - 0.5).slice(0, 3);
+        quizOptions1 = [...decoys1, mnemonicWords[quizIdx1]].sort(() => Math.random() - 0.5);
+
+        const decoys2 = RUSSIAN_DICTIONARY.filter(w => w !== mnemonicWords[quizIdx2]).sort(() => Math.random() - 0.5).slice(0, 3);
+        quizOptions2 = [...decoys2, mnemonicWords[quizIdx2]].sort(() => Math.random() - 0.5);
+
+        quizSelected1 = null;
+        quizSelected2 = null;
+
+        currentStep = "mnemonic";
+        renderStep();
+      });
+
+      const cardsRow = el("div", { style: "display:flex;gap:12px;margin-bottom:16px;" }, passCard, mnemonicCard);
+      const cancelBtn = el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;", onclick: close }, "Отмена");
+
+      container.append(header, desc, cardsRow, cancelBtn);
+
+    } else if (currentStep === "password") {
+      const header = el("h3", { style: "margin:0 0 8px;color:var(--text);font-size:18px;" }, "Свой пароль");
+      const desc = el("p", { style: "margin:0 0 16px;color:var(--text-muted);font-size:13px;line-height:1.4;" },
+        "Придумайте надёжный пароль (минимум 6 символов) для расшифровки файла бэкапа."
+      );
+
+      const passInput = el("input", {
+        type: "password",
+        placeholder: "Пароль для файла",
+        class: "profile-input",
+        style: "width:100%;padding:10px 12px;border-radius:var(--r);background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:14px;box-sizing:border-box;"
+      });
+
+      const saveBtn = el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;cursor:pointer;" }, "Сохранить в файл");
+      saveBtn.addEventListener("click", async () => {
+        const pass = passInput.value.trim();
+        if (!pass || pass.length < 6) {
+          showToast("Пароль должен содержать минимум 6 символов", "error");
+          return;
+        }
+        await executeExport(pass, saveBtn);
+      });
+
+      const backBtn = el("button", { class: "btn-ghost", style: "width:100%;margin-top:8px;cursor:pointer;" }, "Назад");
+      backBtn.addEventListener("click", () => {
+        currentStep = "select";
+        renderStep();
+      });
+
+      container.append(header, desc, passInput, saveBtn, backBtn);
+
+    } else if (currentStep === "mnemonic") {
+      const header = el("h3", { style: "margin:0 0 8px;color:var(--text);font-size:18px;" }, "12 слов (Мнемоника)");
+      const desc = el("p", { style: "margin:0 0 12px;color:var(--text-muted);font-size:13px;line-height:1.4;" },
+        "Запишите эти 12 слов в точном порядке и сохраните в надёжном месте. Они понадобятся для восстановления:"
+      );
+
+      const wordGrid = el("div", { style: "display:grid;grid-template-columns:repeat(3, 1fr);gap:6px;margin-bottom:12px;" },
+        ...mnemonicWords.map((w, idx) => el("div", {
+          style: "background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px 8px;font-size:12px;display:flex;align-items:center;gap:4px;"
+        },
+          el("span", { style: "color:var(--accent);font-size:11px;font-weight:700;" }, `${idx + 1}.`),
+          el("span", { style: "color:var(--text);font-weight:500;" }, w)
+        ))
+      );
+
+      const copyBtn = el("button", { class: "btn-secondary", style: "width:100%;font-size:12px;padding:8px;margin-bottom:12px;cursor:pointer;" }, "📋 Скопировать фразу");
+      copyBtn.addEventListener("click", () => {
+        navigator.clipboard.writeText(mnemonicPhrase);
+        showToast("Мнемоническая фраза скопирована в буфер!", "success");
+      });
+
+      const verifyBtn = el("button", { class: "btn-secondary", style: "flex:1;cursor:pointer;padding:10px;" }, "Проверить слова");
+      verifyBtn.addEventListener("click", () => {
+        currentStep = "verify";
+        renderStep();
+      });
+
+      const directSaveBtn = el("button", { class: "btn-primary", style: "flex:1;cursor:pointer;padding:10px;" }, "Сохранить файл");
+      directSaveBtn.addEventListener("click", async () => {
+        await executeExport(mnemonicPhrase, directSaveBtn);
+      });
+
+      const actionRow = el("div", { style: "display:flex;gap:8px;margin-bottom:8px;" }, verifyBtn, directSaveBtn);
+      const backBtn = el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;" }, "Назад");
+      backBtn.addEventListener("click", () => {
+        currentStep = "select";
+        renderStep();
+      });
+
+      container.append(header, desc, wordGrid, copyBtn, actionRow, backBtn);
+
+    } else if (currentStep === "verify") {
+      const header = el("h3", { style: "margin:0 0 8px;color:var(--text);font-size:18px;" }, "Проверка мнемоники");
+      const desc = el("p", { style: "margin:0 0 12px;color:var(--text-muted);font-size:13px;line-height:1.4;" },
+        "Подтвердите сохранность фразы. Выберите указанные слова из предложенных вариантов:"
+      );
+
+      const quiz1Container = el("div", { style: "margin-bottom:12px;" },
+        el("div", { style: "font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px;" }, `Слово #${quizIdx1 + 1}:`)
+      );
+      const chipsRow1 = el("div", { style: "display:grid;grid-template-columns:repeat(2, 1fr);gap:6px;" });
+      quizOptions1.forEach(word => {
+        const isSel = (quizSelected1 === word);
+        const chip = el("button", {
+          style: `padding:8px 6px;border-radius:8px;border:1px solid ${isSel ? 'var(--accent)' : 'var(--border)'};background:${isSel ? 'var(--accent)' : 'var(--bg)'};color:${isSel ? '#fff' : 'var(--text)'};font-size:12px;cursor:pointer;font-weight:500;`
+        }, word);
+        chip.addEventListener("click", () => {
+          quizSelected1 = word;
+          renderStep();
+        });
+        chipsRow1.appendChild(chip);
+      });
+      quiz1Container.appendChild(chipsRow1);
+
+      const quiz2Container = el("div", { style: "margin-bottom:16px;" },
+        el("div", { style: "font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px;" }, `Слово #${quizIdx2 + 1}:`)
+      );
+      const chipsRow2 = el("div", { style: "display:grid;grid-template-columns:repeat(2, 1fr);gap:6px;" });
+      quizOptions2.forEach(word => {
+        const isSel = (quizSelected2 === word);
+        const chip = el("button", {
+          style: `padding:8px 6px;border-radius:8px;border:1px solid ${isSel ? 'var(--accent)' : 'var(--border)'};background:${isSel ? 'var(--accent)' : 'var(--bg)'};color:${isSel ? '#fff' : 'var(--text)'};font-size:12px;cursor:pointer;font-weight:500;`
+        }, word);
+        chip.addEventListener("click", () => {
+          quizSelected2 = word;
+          renderStep();
+        });
+        chipsRow2.appendChild(chip);
+      });
+      quiz2Container.appendChild(chipsRow2);
+
+      const isCorrect = (quizSelected1 === mnemonicWords[quizIdx1]) && (quizSelected2 === mnemonicWords[quizIdx2]);
+
+      const doneBtn = el("button", {
+        class: "btn-primary",
+        style: `width:100%;margin-bottom:8px;cursor:${isCorrect ? 'pointer' : 'not-allowed'};opacity:${isCorrect ? '1' : '0.5'};`
+      }, "Готово, скачать файл");
+      doneBtn.disabled = !isCorrect;
+      doneBtn.addEventListener("click", async () => {
+        if (!isCorrect) return;
+        await executeExport(mnemonicPhrase, doneBtn);
+      });
+
+      const backBtn = el("button", { class: "btn-ghost", style: "width:100%;cursor:pointer;" }, "Назад к фразе");
+      backBtn.addEventListener("click", () => {
+        currentStep = "mnemonic";
+        renderStep();
+      });
+
+      container.append(header, desc, quiz1Container, quiz2Container, doneBtn, backBtn);
     }
-    exportBtn.disabled = true;
-    exportBtn.textContent = "";
-    exportBtn.appendChild(spinner());
+  }
+
+  async function executeExport(passphrase, button) {
+    button.disabled = true;
+    const origText = button.textContent;
+    button.textContent = "";
+    button.appendChild(spinner());
     try {
-      const json = await exportHistoryToBackup(pass);
+      const json = await exportHistoryToBackup(passphrase);
       downloadBackupFile(json);
-      showToast("Файл резервной копии .penikbackup успешно скачан!", "success");
+      showToast("Файл резервной копии .penikbackup успешно сохранён!", "success");
       close();
     } catch (e) {
       showToast("Ошибка экспорта: " + e.message, "error");
     } finally {
-      exportBtn.disabled = false;
-      exportBtn.textContent = "Экспортировать и скачать";
+      button.disabled = false;
+      button.textContent = origText;
     }
-  });
+  }
 
-  modal.appendChild(el("div", { style: "width:min(400px,100%);background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:left;box-shadow:0 12px 40px rgba(0,0,0,.45);" },
-    el("h3", { style: "margin:0 0 8px;color:var(--text);" }, "Экспорт истории в файл"),
-    el("p", { style: "margin:0 0 16px;color:var(--text-muted);font-size:13px;line-height:1.4;" }, "Все переписки, группы и ключи будут зашифрованы алгоритмом AES-256-GCM с PBKDF2 (600,000 итераций) и сохранены в файл .penikbackup."),
-    el("div", { style: "display:flex;flex-direction:column;" },
-      passInput,
-      genMnemonicBtn
-    ),
-    exportBtn,
-    el("button", { class: "btn-ghost", style: "width:100%;margin-top:8px;cursor:pointer;", onclick: close }, "Отмена")
-  ));
-
+  renderStep();
   document.body.appendChild(modal);
 }
 
@@ -964,28 +1100,9 @@ export function renderBackup(container) {
   }, exportBtn, importBtn);
   const localSection = createSection("Локальная история", localBox);
 
-  // --- 3. Security & Mnemonic Phrase ---
-  const mnemonicBtn = el("button", {
-    class: "btn-secondary",
-    style: "width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer;font-size:14px;border-radius:var(--r);"
-  },
-    el("div", { style: "display:flex;flex-direction:column;gap:2px;text-align:left;" },
-      el("span", { style: "color:var(--text);font-weight:500;" }, "🔐  Мнемоническая фраза (12 слов)"),
-      el("span", { style: "color:var(--text-muted);font-size:12px;" }, "Сгенерировать 12 слов для шифрования и безопасного бэкапа")
-    ),
-    el("span", { style: "color:var(--text-muted);" }, "›")
-  );
-  mnemonicBtn.addEventListener("click", () => showMnemonicModal());
-
-  const securityBox = el("div", {
-    style: "background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:6px;display:flex;flex-direction:column;gap:6px;"
-  }, mnemonicBtn);
-  const mnemonicSection = createSection("Безопасность", securityBox);
-
   const content = el("div", { style: "display:flex;flex-direction:column;gap:12px;padding:20px;max-width:860px;margin:0 auto;width:100%;box-sizing:border-box;" },
     cloudSection,
-    localSection,
-    mnemonicSection
+    localSection
   );
   const scrollWrapper = el("div", { style: "flex:1;overflow-y:auto;overflow-x:hidden;" }, content);
 
