@@ -10,7 +10,7 @@ import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessa
 import { navigate, getCurrentUser, triggerChatListUpdate, getCachedKeyBundle } from "../app.js";
 import {
   el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence,
-  showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon, showConfirmModal, showPromptModal, showFullscreenImage, showForwardModal,
+  showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon, showConfirmModal, showPromptModal, showFullscreenImage, enableAvatarFullscreen, showForwardModal,
   setMsgTextContent, getEmojiOnlyCount, isDirectImageUrl, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
 import { onPresenceUpdate } from "../presence.js";
@@ -86,12 +86,7 @@ export function buildGroupListItem(g, onChange) {
   }
 
   const avatarEl = groupAvatar(g, 48);
-  avatarEl.style.cursor = "zoom-in";
-  avatarEl.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const img = avatarEl.querySelector("img");
-    if (img) showFullscreenImage(img.src, g.name || "");
-  });
+  enableAvatarFullscreen(avatarEl, () => g.name || "");
 
   const item = el("li", { class: "chatlist-item" },
     avatarEl,
@@ -228,12 +223,8 @@ export async function renderGroup(container, groupId) {
   // concurrently running history/group sync, which contends IndexedDB and can
   // stall these reads; deferring them until after the shell is attached keeps
   // the chat visible instead of leaving just the (sidebar) main screen.
-  const avatarContainer = el("div", { style: "cursor:pointer;margin-right:12px;display:flex;align-items:center;" });
-  avatarContainer.addEventListener("click", () => {
-    const img = avatarContainer.querySelector("img");
-    if (img) showFullscreenImage(img.src, headerGroup.name || "");
-    else showMembersModal(groupId, myId);
-  });
+  const avatarContainer = el("div", { style: "margin-right:12px;display:flex;align-items:center;" });
+  enableAvatarFullscreen(avatarContainer, () => headerGroup.name || "");
 
   const nameEl = el("span", { class: "chat-header-name" }, `Группа ${groupId}`);
 
@@ -978,16 +969,24 @@ async function showMembersModal(groupId, myId) {
 
   // Avatar display
   const avatarInner = el("div", {
-    style: "width:100%;height:100%;border-radius:50%;overflow:hidden;cursor:zoom-in;display:flex;align-items:center;justify-content:center;background:#1a1a2e;"
+    style: "width:100%;height:100%;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#1a1a2e;"
   });
   const editAvatarBtn = el("button", {
-    style: "position:absolute;top:-2px;right:-2px;width:26px;height:26px;border-radius:50%;background:#00e676;border:2px solid #1e1e24;display:none;align-items:center;justify-content:center;cursor:pointer;padding:0;font-size:13px;z-index:3;",
-    title: "Изменить аватар группы",
+    style: "position:absolute;bottom:-2px;right:-2px;width:28px;height:28px;border-radius:50%;background:#00e676;border:2px solid #1e1e24;display:none;align-items:center;justify-content:center;cursor:pointer;padding:0;font-size:14px;z-index:3;",
+    title: "Изменить фото группы",
   }, "📷");
+  const avatarOverlay = el("div", {
+    style: "position:absolute;inset:0;background:rgba(0,0,0,0.5);display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:20px;opacity:0;transition:opacity 0.2s ease;border-radius:50%;cursor:pointer;z-index:2;"
+  }, el("span", {}, "📷"), el("span", { style: "font-size:10px;margin-top:2px;" }, "Изменить"));
+
   const avatarWrapper = el("div", {
-    style: "position:relative;margin: 8px auto 12px;width:80px;height:80px;"
-  }, avatarInner, editAvatarBtn);
-  const fileInput = el("input", { type: "file", accept: "image/*", style: "display:none;" });
+    style: "position:relative;margin:8px auto 12px;width:80px;height:80px;border-radius:50%;box-shadow:0 8px 24px rgba(0,0,0,0.3);"
+  }, avatarInner, avatarOverlay, editAvatarBtn);
+  const fileInput = el("input", {
+    type: "file",
+    accept: "image/png, image/jpeg, image/webp, image/gif",
+    style: "display:none;"
+  });
 
   // No forceTimestamp here: groupAvatar() falls back to the shared
   // groupAvatarUpdateTimestamps cache-buster, which is kept fresh by both a
@@ -995,6 +994,7 @@ async function showMembersModal(groupId, myId) {
   function updateAvatarDisplay() {
     avatarInner.innerHTML = "";
     avatarInner.appendChild(groupAvatar(group, 80));
+    enableAvatarFullscreen(avatarInner, () => group.name || "");
   }
   updateAvatarDisplay();
 
@@ -1047,30 +1047,60 @@ async function showMembersModal(groupId, myId) {
     }
   });
 
-  avatarInner.addEventListener("click", () => {
-    const img = avatarInner.querySelector("img");
-    if (img) showFullscreenImage(img.src, group.name || "");
-  });
-
   editAvatarBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     fileInput.click();
   });
+  avatarOverlay.addEventListener("click", (e) => {
+    e.stopPropagation();
+    fileInput.click();
+  });
+  avatarInner.addEventListener("click", (e) => {
+    const img = avatarInner.querySelector("img");
+    if (!img && isPrivileged(myRole)) {
+      e.stopPropagation();
+      fileInput.click();
+    }
+  });
 
-  fileInput.addEventListener("change", async (e) => {
-    const file = e.target.files[0];
+  avatarWrapper.addEventListener("mouseenter", () => {
+    const hasImg = avatarInner.querySelector("img");
+    if (isPrivileged(myRole) && !hasImg) {
+      avatarOverlay.style.display = "flex";
+      avatarOverlay.style.opacity = "1";
+    }
+  });
+  avatarWrapper.addEventListener("mouseleave", () => {
+    avatarOverlay.style.opacity = "0";
+  });
+
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
     if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      showToast("Размер файла не должен превышать 5МБ", "error");
+      return;
+    }
+
+    avatarOverlay.style.display = "flex";
+    avatarOverlay.style.opacity = "1";
+    avatarOverlay.innerHTML = "";
+    avatarOverlay.appendChild(spinner());
+
     try {
-      avatarInner.style.opacity = "0.5";
       await uploadGroupAvatar(groupId, file);
       groupAvatarUpdateTimestamps.set(String(groupId), Date.now());
       updateAvatarDisplay();
       triggerChatListUpdate();
-      showToast("Аватар группы обновлен!");
+      showToast("Аватар группы успешно обновлен!", "success");
     } catch (err) {
       showToast(err.message || "Не удалось загрузить аватар", "error");
     } finally {
-      avatarInner.style.opacity = "1";
+      avatarOverlay.innerHTML = "";
+      avatarOverlay.append(el("span", {}, "📷"), el("span", { style: "font-size:10px;margin-top:2px;" }, "Изменить"));
+      avatarOverlay.style.opacity = "0";
+      if (!isPrivileged(myRole)) avatarOverlay.style.display = "none";
     }
   });
 
@@ -1170,6 +1200,7 @@ function showMemberProfileModal(m) {
   const nick = m.username || m.nickname;
   const av = avatar(m, 96);
   av.style.margin = "4px auto 12px";
+  enableAvatarFullscreen(av, () => memberName(m));
 
   const presence = formatPresence(m);
   const presenceEl = presence
