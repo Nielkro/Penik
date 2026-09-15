@@ -167,6 +167,18 @@ class GroupChatViewModel @Inject constructor(
         }
     }
 
+    fun retry(messageId: String) {
+        viewModelScope.launch {
+            groupRepository.retryMessage(groupId, messageId)
+        }
+    }
+
+    fun deleteMessage(messageId: String) {
+        viewModelScope.launch {
+            groupRepository.deleteMessage(groupId, messageId)
+        }
+    }
+
     fun sendSticker(sticker: niel.kro.penik.data.network.api.StickerItemResponse, replyToMsgId: String? = null) {
         val isVideo = sticker.fileName.endsWith(".webm", ignoreCase = true) || sticker.url?.endsWith(".webm", ignoreCase = true) == true
         val isAnim = sticker.fileName.endsWith(".tgs", ignoreCase = true) || sticker.url?.endsWith(".tgs", ignoreCase = true) == true

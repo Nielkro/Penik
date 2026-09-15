@@ -391,6 +391,40 @@ class GroupRepository @Inject constructor(
         return messageId
     }
 
+    suspend fun retryPendingMessages() {
+        val pending = dao.getPendingMessages()
+        if (pending.isEmpty()) return
+        Log.d("GroupRepo", "retryPendingMessages: found ${pending.size} pending group messages")
+        for (msg in pending) {
+            runCatching {
+                sendMessage(
+                    groupId = msg.groupId,
+                    text = msg.text,
+                    replyToMsgId = msg.replyToMsgId,
+                    existingMessageId = msg.messageId
+                )
+            }.onFailure { e ->
+                Log.e("GroupRepo", "Failed to retry pending group message ${msg.messageId}", e)
+            }
+        }
+    }
+
+    suspend fun retryMessage(groupId: Long, messageId: String): Boolean {
+        val msg = dao.getMessage(groupId, messageId) ?: return false
+        return runCatching {
+            sendMessage(
+                groupId = groupId,
+                text = msg.text,
+                replyToMsgId = msg.replyToMsgId,
+                existingMessageId = msg.messageId
+            ) != null
+        }.getOrDefault(false)
+    }
+
+    suspend fun deleteMessage(groupId: Long, messageId: String) {
+        dao.deleteMessage(groupId, messageId)
+    }
+
     private suspend fun currentVersion(groupId: Long): Long {
         api.getGroup(groupId).body()?.let {
             dao.getGroup(groupId)?.let { g -> dao.upsertGroup(g.copy(currentKeyVersion = it.currentKeyVersion)) }

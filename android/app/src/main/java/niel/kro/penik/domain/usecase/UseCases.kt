@@ -232,6 +232,10 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 niel.kro.penik.data.repository.PresenceBus.update(event.userId, event.online, event.lastSeen)
             }
             is WebSocketEvent.Connected -> {
+                // Immediately retry any pending direct and group messages queued while offline
+                runCatching { messageRepository.retryPendingMessages() }
+                runCatching { groupRepository.retryPendingMessages() }
+
                 val now = System.currentTimeMillis()
                 if (now - lastFullSyncTime > 15_000L) {
                     lastFullSyncTime = now

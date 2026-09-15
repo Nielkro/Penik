@@ -3,6 +3,7 @@ package niel.kro.penik.ui.screen.groups
 import niel.kro.penik.ui.theme.LocalAppColors
 
 import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -200,6 +201,8 @@ fun GroupChatScreen(
     var messageToForwardSender by remember { mutableStateOf<String?>(null) }
     var showStickerPicker by remember { mutableStateOf(false) }
     var selectedStickerPackId by remember { mutableStateOf<String?>(null) }
+    var messageToDeleteId by remember { mutableStateOf<String?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     val contactsList by viewModel.contacts.collectAsState(initial = emptyList())
     val groupsList by viewModel.groupRepository.observeGroups().collectAsState(initial = emptyList())
@@ -240,6 +243,29 @@ fun GroupChatScreen(
                 messageToForwardText = null
                 messageToForwardSender = null
             }
+        )
+    }
+
+    if (showDeleteDialog && messageToDeleteId != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false; messageToDeleteId = null },
+            title = { Text("Удалить сообщение?", color = LocalAppColors.current.textPrimary) },
+            text = { Text("Вы действительно хотите удалить это сообщение?", color = LocalAppColors.current.textMuted) },
+            confirmButton = {
+                TextButton(onClick = {
+                    messageToDeleteId?.let { viewModel.deleteMessage(it) }
+                    showDeleteDialog = false
+                    messageToDeleteId = null
+                }) {
+                    Text("Удалить", color = Color(0xFFEF5350), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false; messageToDeleteId = null }) {
+                    Text("Отмена", color = LocalAppColors.current.textMuted)
+                }
+            },
+            containerColor = LocalAppColors.current.panelSecondary
         )
     }
 
@@ -451,6 +477,13 @@ fun GroupChatScreen(
                                     onForward = {
                                         messageToForwardText = msg.text
                                         messageToForwardSender = displayName
+                                    },
+                                    onDelete = {
+                                        messageToDeleteId = msg.messageId
+                                        showDeleteDialog = true
+                                    },
+                                    onRetry = {
+                                        viewModel.retry(msg.messageId)
                                     },
                                     onStickerClick = { packId ->
                                         selectedStickerPackId = packId

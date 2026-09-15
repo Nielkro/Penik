@@ -245,6 +245,12 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
+    fun retryMessage(localId: String) {
+        viewModelScope.launch {
+            messageRepository.retryMessage(localId)
+        }
+    }
+
     fun sendSticker(sticker: niel.kro.penik.data.network.api.StickerItemResponse, replyToMsgId: String? = null) {
         val isVideo = sticker.fileName.endsWith(".webm", ignoreCase = true) || sticker.url?.endsWith(".webm", ignoreCase = true) == true
         val isAnim = sticker.fileName.endsWith(".tgs", ignoreCase = true) || sticker.url?.endsWith(".tgs", ignoreCase = true) == true

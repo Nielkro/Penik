@@ -75,4 +75,10 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE chatUserId = :chatUserId AND text != '[DELETED]' ORDER BY timestamp DESC LIMIT 1")
     fun observeLastMessageForChat(chatUserId: Long): Flow<MessageEntity?>
+
+    @Query("SELECT * FROM messages WHERE serverId IS NULL AND sentByMe = 1 AND text != '[DELETED]' ORDER BY timestamp ASC")
+    suspend fun getPendingMessages(): List<MessageEntity>
+
+    @Query("DELETE FROM messages WHERE localId = :localId")
+    suspend fun deleteMessagePermanently(localId: String)
 }

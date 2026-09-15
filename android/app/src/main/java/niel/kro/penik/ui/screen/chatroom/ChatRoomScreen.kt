@@ -1306,13 +1306,17 @@ fun ChatRoomScreen(
                                     },
                                     onDelete = {
                                         val isUndecrypted = message.text.startsWith("[Сообщение не расшифровано") || message.text.startsWith("[Ошибка расшифрован")
-                                        if (isUndecrypted) {
-                                            viewModel.deleteMessage(message.localId, deleteForEveryone = false)
+                                        val isPendingOrFailed = message.sentByMe && (message.serverId == null || message.serverId == 0L)
+                                        if (isUndecrypted || isPendingOrFailed) {
+                                            canDeleteForEveryone = false
                                         } else {
-                                            deleteForEveryoneChecked = false
                                             canDeleteForEveryone = true
-                                            messageToDeleteLocalId = message.localId
                                         }
+                                        deleteForEveryoneChecked = false
+                                        messageToDeleteLocalId = message.localId
+                                    },
+                                    onRetry = {
+                                        viewModel.retryMessage(message.localId)
                                     },
                                     onForward = {
                                         messageToForwardText = message.text
