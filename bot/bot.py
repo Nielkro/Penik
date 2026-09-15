@@ -356,8 +356,12 @@ class PenikBot:
 
         client_msg_id = str(uuid.uuid4())
         now = int(time.time())
+        # In a production bot (e.g. written in Go/Rust), timestamps should ideally be sent
+        # with millisecond precision. In this standalone Python prototype, ensuring now >= min_ts + 1
+        # guarantees strictly monotonic ordering across all legacy and current clients.
         if min_ts > 0 and now <= min_ts:
             now = min_ts + 1
+
 
         devices_payload = []
         for dev in devices:
