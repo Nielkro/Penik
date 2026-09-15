@@ -39,3 +39,8 @@ chore: untrack uploaded files, ignore server/data/upload
 - ALL new cryptographic features (ciphers, key exchanges, PQ keys, streaming, chunking, AAD formats, zeroization) MUST be implemented exclusively in the Rust core (`rust/penik-crypto`) and exposed via:
   - Android JNI (`penik_crypto.so` via `RustCryptoCore`)
   - WebAssembly (`penik_crypto.wasm` via `pkg/penik-crypto-wasm`)
+
+## 6. One-Time Keys (OTK) Policy (DEPRECATED)
+- **One-Time Keys (OTK) / Prekeys are strictly DEPRECATED and obsolete.**
+- Do NOT generate, publish, require, or architect new features relying on OTK or prekey pools. They are legacy and scheduled for removal. Direct X25519 identity key exchange with ephemeral sender keys is standard.
+
