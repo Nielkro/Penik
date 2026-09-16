@@ -984,14 +984,14 @@ def create_bot_via_api(server_url: str, user_token: str, name: str, nickname: st
 
 def main():
     parser = argparse.ArgumentParser(description="Penik E2EE DeepSeek AI Bot")
-    parser.add_argument("--server", default=os.getenv("PENIK_SERVER_URL", "http://localhost:8143"), help="Server base URL")
-    parser.add_argument("--token", default=os.getenv("PENIK_BOT_TOKEN", ""), help="Bot API Token (bot_...)")
-    parser.add_argument("--identity", default="ai_bot_identity.json", help="Path to bot identity keyfile")
+    parser.add_argument("--server", "-s", default=os.getenv("PENIK_SERVER_URL", "http://localhost:8143"), help="Server base URL")
+    parser.add_argument("--token", "-t", default=os.getenv("PENIK_BOT_TOKEN", ""), help="Bot API Token (bot_...)")
+    parser.add_argument("--identity", "-i", default="ai_bot_identity.json", help="Path to bot identity keyfile")
 
     # OpenAI-compatible API configurations
-    parser.add_argument("--openai-base-url", default=os.getenv("OPENAI_BASE_URL", "https://plusvibeapi.ru/v1"), help="AI API Base URL")
-    parser.add_argument("--openai-api-key", default=os.getenv("OPENAI_API_KEY", ""), help="AI API Key")
-    parser.add_argument("--model", default=os.getenv("AI_MODEL", "deepseek-v4.1-flash"), help="Model name")
+    parser.add_argument("--openai-base-url", "--base-url", default=os.getenv("OPENAI_BASE_URL", "https://plusvibeapi.ru/v1"), help="AI API Base URL")
+    parser.add_argument("--openai-api-key", "--api-key", "--key", "-k", default=os.getenv("OPENAI_API_KEY", ""), help="AI API Key")
+    parser.add_argument("--model", "-m", default=os.getenv("AI_MODEL", "deepseek-v4.1-flash"), help="Model name")
     parser.add_argument("--searxng-url", default=os.getenv("SEARXNG_URL", "https://search.home.slavchat.ru/search"), help="SearXNG Search URL")
 
     # Arguments for creating a new bot

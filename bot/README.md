@@ -27,18 +27,34 @@ python3 bot/bot.py --server http://localhost:8143 --create --user-token <YOUR_US
 
 This will print the generated API token (`bot_...`).
 
-### 2. Run the Bot
+### 2. Run the Echo Bot
 
-Run the bot using its API token:
+Run the echo bot using its API token:
 
 ```bash
 python3 bot/bot.py --server http://localhost:8143 --token <BOT_TOKEN>
 ```
 
-Or via environment variables:
+### 3. Run the AI Bot (DeepSeek / OpenAI API)
+
+Run the intelligent E2EE AI bot by passing the bot token and the AI API key directly via command line arguments or environment variables:
 
 ```bash
-export PENIK_SERVER_URL="http://localhost:8143"
-export PENIK_BOT_TOKEN="bot_..."
-python3 bot/bot.py
+python3 bot/ai_bot.py \
+  --server http://localhost:8143 \
+  --token <BOT_TOKEN> \
+  --key <OPENAI_OR_DEEPSEEK_API_KEY> \
+  --base-url https://plusvibeapi.ru/v1 \
+  --model deepseek-v4.1-flash \
+  --searxng-url https://search.home.slavchat.ru/search
 ```
+
+#### CLI Arguments:
+- `--token`, `-t`: Bot API token (`bot_...`)
+- `--key`, `--api-key`, `--openai-api-key`, `-k`: AI provider API key (or `OPENAI_API_KEY` env)
+- `--base-url`, `--openai-base-url`: OpenAI-compatible API base URL (default: `https://plusvibeapi.ru/v1`)
+- `--model`, `-m`: Model name (default: `deepseek-v4.1-flash`)
+- `--server`, `-s`: Penik server URL (default: `http://localhost:8143`)
+- `--searxng-url`: SearXNG search endpoint for live web searches (default: `https://search.home.slavchat.ru/search`)
+- `--identity`, `-i`: Identity key storage path (default: `ai_bot_identity.json`)
+
