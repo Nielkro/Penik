@@ -204,6 +204,7 @@ fun GroupChatScreen(
     var memberToRemove by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
     var selectedMemberForActions by remember { mutableStateOf<niel.kro.penik.data.local.entity.GroupMemberEntity?>(null) }
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
+    val userAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.userAvatarKeys.collectAsState()
     var messageToForwardText by remember { mutableStateOf<String?>(null) }
     var messageToForwardSender by remember { mutableStateOf<String?>(null) }
     var showStickerPicker by remember { mutableStateOf(false) }
@@ -464,6 +465,11 @@ fun GroupChatScreen(
                                     isPending = isOwn && (msg.serverId == 0L),
                                     senderName = displayName,
                                     senderUserId = msg.senderUserId,
+                                    showSenderAvatar = true,
+                                    senderAvatarKey = userAvatarKeys[msg.senderUserId],
+                                    onAvatarClick = {
+                                        fullscreenAvatarUrl = avatarUrlFor(false, msg.senderUserId, userAvatarKeys[msg.senderUserId])
+                                    },
                                     replyToMsgId = msg.replyToMsgId,
                                     replySender = replySender,
                                     replyText = replyText,

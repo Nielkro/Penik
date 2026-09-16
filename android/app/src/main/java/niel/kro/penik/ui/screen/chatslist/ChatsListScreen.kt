@@ -197,6 +197,7 @@ fun ChatsListContent(
                         name = user.name,
                         userId = user.id,
                         nickname = user.nickname,
+                        avatarKey = userAvatarKeys[user.id],
                         onClick = {
                             onChatClick(user.id, user.name.ifBlank { user.nickname })
                         }

@@ -234,9 +234,13 @@ fun UserAvatar(
     size: Dp = 48.dp,
     modifier: Modifier = Modifier,
     avatarKey: Any? = null,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    onAvatarLoaded: ((Boolean) -> Unit)? = null
 ) {
     if (name == "Избранное") {
+        LaunchedEffect(Unit) {
+            onAvatarLoaded?.invoke(false)
+        }
         Box(
             modifier = modifier
                 .size(size)
@@ -278,7 +282,14 @@ fun UserAvatar(
         modifier = modifier
             .size(size)
             .clip(CircleShape),
-        contentScale = ContentScale.Crop
+        contentScale = ContentScale.Crop,
+        onState = { state ->
+            if (state is coil.compose.AsyncImagePainter.State.Success) {
+                onAvatarLoaded?.invoke(true)
+            } else if (state is coil.compose.AsyncImagePainter.State.Error) {
+                onAvatarLoaded?.invoke(false)
+            }
+        }
     ) {
         val state = painter.state
         if (state is coil.compose.AsyncImagePainter.State.Success) {
@@ -307,7 +318,8 @@ fun GroupAvatar(
     size: Dp = 48.dp,
     modifier: Modifier = Modifier,
     avatarKey: Any? = null,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    onAvatarLoaded: ((Boolean) -> Unit)? = null
 ) {
     val avatarUrl = avatarUrlFor(isGroup = true, id = groupId, avatarKey = avatarKey)
 
@@ -318,7 +330,14 @@ fun GroupAvatar(
             modifier = Modifier
                 .size(size)
                 .clip(CircleShape),
-            contentScale = ContentScale.Crop
+            contentScale = ContentScale.Crop,
+            onState = { state ->
+                if (state is coil.compose.AsyncImagePainter.State.Success) {
+                    onAvatarLoaded?.invoke(true)
+                } else if (state is coil.compose.AsyncImagePainter.State.Error) {
+                    onAvatarLoaded?.invoke(false)
+                }
+            }
         ) {
             val state = painter.state
             if (state is coil.compose.AsyncImagePainter.State.Success) {
@@ -463,6 +482,8 @@ fun ChatListItem(
     onClick: () -> Unit,
     onAvatarClick: ((String) -> Unit)? = null
 ) {
+    var hasCustomAvatar by remember(userId, avatarKey) { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -482,7 +503,8 @@ fun ChatListItem(
                 name = name,
                 size = 48.dp,
                 avatarKey = avatarKey,
-                onClick = handleAvatarClick
+                onClick = handleAvatarClick,
+                onAvatarLoaded = { hasCustomAvatar = it }
             )
         } else {
             UserAvatar(
@@ -490,7 +512,8 @@ fun ChatListItem(
                 name = name,
                 size = 48.dp,
                 avatarKey = avatarKey,
-                onClick = handleAvatarClick
+                onClick = handleAvatarClick,
+                onAvatarLoaded = { hasCustomAvatar = it }
             )
         }
 
@@ -506,7 +529,7 @@ fun ChatListItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = name,
-                    color = initialsColor(userId, name),
+                    color = if (hasCustomAvatar) LocalAppColors.current.textPrimary else initialsColor(userId, name),
                     fontWeight = FontWeight.Medium,
                     fontSize = 16.sp,
                     maxLines = 1,
@@ -569,8 +592,11 @@ fun SearchUserItem(
     nickname: String,
     lastMessage: String? = null,
     timestamp: Long? = null,
+    avatarKey: Any? = null,
     onClick: () -> Unit
 ) {
+    var hasCustomAvatar by remember(userId, avatarKey) { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -578,7 +604,13 @@ fun SearchUserItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        InitialsAvatar(name = name, id = userId, size = 48.dp)
+        UserAvatar(
+            userId = userId,
+            name = name,
+            size = 48.dp,
+            avatarKey = avatarKey,
+            onAvatarLoaded = { hasCustomAvatar = it }
+        )
 
         Spacer(modifier = Modifier.width(12.dp))
 
@@ -586,7 +618,7 @@ fun SearchUserItem(
             val displayName = name.ifBlank { nickname }
             Text(
                 text = displayName,
-                color = initialsColor(userId, displayName),
+                color = if (hasCustomAvatar) LocalAppColors.current.textPrimary else initialsColor(userId, displayName),
                 fontWeight = FontWeight.Medium,
                 fontSize = 16.sp,
                 maxLines = 1,
@@ -2127,6 +2159,9 @@ fun MessageBubble(
     isPending: Boolean = false,
     senderName: String? = null,
     senderUserId: Long? = null,
+    showSenderAvatar: Boolean = false,
+    senderAvatarKey: Any? = null,
+    onAvatarClick: (() -> Unit)? = null,
     isSelfChat: Boolean = false,
     replyToMsgId: String? = null,
     replySender: String? = null,
@@ -2238,6 +2273,8 @@ fun MessageBubble(
     var offsetX by remember { mutableStateOf(0f) }
     var triggered by remember { mutableStateOf(false) }
 
+    val showAvatar = showSenderAvatar && !isSentByMe && senderUserId != null && senderUserId > 0L
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -2248,9 +2285,26 @@ fun MessageBubble(
         val isMediaNoCaption = (attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/")) && attachment.caption.isNullOrBlank() && !hasHeader) || isSticker
         val maxBubbleWidth = if (attachment != null && (attachment.mime.startsWith("image/") || attachment.mime.startsWith("video/"))) 300.dp else if (isSticker) 200.dp else if (isEmojiOnly) 320.dp else 280.dp
 
-        Box(
-            modifier = Modifier
-                .offset { androidx.compose.ui.unit.IntOffset(offsetX.toInt(), 0) }
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            modifier = Modifier.padding(
+                start = if (showAvatar) 6.dp else 0.dp
+            )
+        ) {
+            if (showAvatar) {
+                UserAvatar(
+                    userId = senderUserId!!,
+                    name = senderName ?: "",
+                    size = 32.dp,
+                    avatarKey = senderAvatarKey,
+                    onClick = onAvatarClick,
+                    modifier = Modifier.padding(end = 6.dp, bottom = 2.dp)
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .offset { androidx.compose.ui.unit.IntOffset(offsetX.toInt(), 0) }
                 .pointerInput(Unit) {
                     detectHorizontalDragGestures(
                         onDragStart = {
@@ -2705,6 +2759,7 @@ fun MessageBubble(
                         }
                     }
                 }
+                }
             }
         }
     }
@@ -3113,6 +3168,7 @@ fun ForwardTargetDialog(
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
                     items(filtered, key = { "${if (it.isGroup) "g" else "u"}_${it.id}" }) { item ->
+                        var hasCustomAvatar by remember(item.id, item.avatarKey) { mutableStateOf(false) }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -3121,14 +3177,14 @@ fun ForwardTargetDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             if (item.isGroup) {
-                                GroupAvatar(groupId = item.id, name = item.name, size = 40.dp, avatarKey = item.avatarKey)
+                                GroupAvatar(groupId = item.id, name = item.name, size = 40.dp, avatarKey = item.avatarKey, onAvatarLoaded = { hasCustomAvatar = it })
                             } else {
-                                UserAvatar(userId = item.id, name = item.name, size = 40.dp, avatarKey = item.avatarKey)
+                                UserAvatar(userId = item.id, name = item.name, size = 40.dp, avatarKey = item.avatarKey, onAvatarLoaded = { hasCustomAvatar = it })
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 text = item.name,
-                                color = initialsColor(item.id, item.name),
+                                color = if (hasCustomAvatar) LocalAppColors.current.textPrimary else initialsColor(item.id, item.name),
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 15.sp,
                                 maxLines = 1,

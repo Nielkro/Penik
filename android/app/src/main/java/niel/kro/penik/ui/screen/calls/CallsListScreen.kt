@@ -242,11 +242,14 @@ fun CallHistoryItemRow(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        var hasCustomAvatar by remember(call.peerId, avatarKey) { mutableStateOf(false) }
+
         UserAvatar(
             userId = call.peerId,
             name = peerName,
             size = 48.dp,
-            avatarKey = avatarKey
+            avatarKey = avatarKey,
+            onAvatarLoaded = { hasCustomAvatar = it }
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -256,7 +259,7 @@ fun CallHistoryItemRow(
                 text = peerName,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp,
-                color = if (isMissed) Color(0xFFEF5350) else niel.kro.penik.ui.components.initialsColor(call.peerId, peerName),
+                color = if (isMissed) Color(0xFFEF5350) else if (hasCustomAvatar) LocalAppColors.current.textPrimary else niel.kro.penik.ui.components.initialsColor(call.peerId, peerName),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

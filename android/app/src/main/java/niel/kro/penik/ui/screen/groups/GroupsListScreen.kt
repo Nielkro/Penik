@@ -118,6 +118,7 @@ fun GroupsListScreen(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            var hasCustomAvatar by remember(group.id, groupAvatarKeys[group.id]) { mutableStateOf(false) }
                             GroupAvatar(
                                 groupId = group.id,
                                 name = group.name,
@@ -126,10 +127,16 @@ fun GroupsListScreen(
                                 avatarKey = groupAvatarKeys[group.id],
                                 onClick = {
                                     fullscreenAvatarUrl = avatarUrlFor(true, group.id, groupAvatarKeys[group.id])
-                                }
+                                },
+                                onAvatarLoaded = { hasCustomAvatar = it }
                             )
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(group.name, color = niel.kro.penik.ui.components.initialsColor(group.id, group.name), fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                                Text(
+                                    group.name,
+                                    color = if (hasCustomAvatar) LocalAppColors.current.textPrimary else niel.kro.penik.ui.components.initialsColor(group.id, group.name),
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 16.sp
+                                )
                                 Text(
                                     if (isPending) "Приглашение в группу" else "Группа",
                                     color = LocalAppColors.current.textMuted,
