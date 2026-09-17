@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/build-sw.js",
+    "build:desktop": "vite build && node scripts/build-sw.js && node scripts/sync-desktop.js",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.sw.json"
   },
   "keywords": [],

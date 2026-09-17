@@ -253,22 +253,40 @@ export async function importHistoryFromBackup(backupJsonString, passphrase) {
   };
 }
 
+import { isDesktop, saveDesktopFileDialog, writeDesktopFile } from "./desktop.js";
+
 /**
- * Triggers a browser file download of the backup envelope.
+ * Triggers a file download or native save dialog for the backup envelope.
  * @param {string} jsonString - The .penikbackup JSON content
  * @param {string} filename - Optional file name
  */
-export function downloadBackupFile(jsonString, filename = null) {
+export async function downloadBackupFile(jsonString, filename = null) {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, "0");
   const dateStr = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-  const defaultName = `penik_backup_${dateStr}.penikbackup`;
+  const defaultName = filename || `penik_backup_${dateStr}.penikbackup`;
+
+  if (isDesktop()) {
+    try {
+      const savePath = await saveDesktopFileDialog("Сохранить резервную копию", defaultName, [
+        { displayName: "Penik Backup (*.penikbackup)", pattern: "*.penikbackup" },
+        { displayName: "All Files (*.*)", pattern: "*.*" }
+      ]);
+      if (savePath) {
+        const b64 = btoa(unescape(encodeURIComponent(jsonString)));
+        const saved = await writeDesktopFile(savePath, b64);
+        if (saved) return;
+      }
+    } catch (e) {
+      console.warn("[desktop] Native save failed, falling back to browser download:", e);
+    }
+  }
 
   const blob = new Blob([jsonString], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename || defaultName;
+  a.download = defaultName;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

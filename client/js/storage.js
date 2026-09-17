@@ -794,12 +794,19 @@ export function getPersistentDeviceName() {
 // the user's devices screen.
 export function getClientPlatform() {
   const ua = navigator.userAgent || "";
+  const isDesktop = typeof window !== 'undefined' && (Boolean(window.__PENIK_DESKTOP__) || Boolean(window.go && window.go.main && window.go.main.App) || window.location.protocol === 'wails:' || window.location.hostname === 'wails.localhost');
+
   let os = "";
   if (/Android/i.test(ua)) os = "Android";
   else if (/Windows/i.test(ua)) os = "Windows";
   else if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
   else if (/Mac OS X|Macintosh/i.test(ua)) os = "macOS";
   else if (/Linux/i.test(ua)) os = "Linux";
+
+  if (isDesktop) {
+    if (os) return `${os} Desktop`;
+    return "Desktop Client";
+  }
 
   let browser = "";
   if (/Firefox\//i.test(ua)) browser = "Firefox";

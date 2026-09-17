@@ -277,7 +277,7 @@ class WSManager {
   }
 
   _doConnect(token) {
-    const url = WS_URL;
+    const url = getWsUrl();
     this._lastConnectTime = Date.now();
 
     // Any socket still lingering from an earlier generation is replaced here, so

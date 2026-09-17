@@ -31,6 +31,7 @@ import { emitPresenceUpdate, emitTypingUpdate } from './presence.js';
 import { getCachedMedia } from './storage.js';
 import { callManager } from './call.js';
 import { initCallUI } from './ui/call_modal.js';
+import { initDesktop, isDesktop, sendDesktopNotification } from './desktop.js';
 
 // Service Worker registration for HTTP 206 Partial Content Range streaming
 if ('serviceWorker' in navigator) {
@@ -439,6 +440,7 @@ function handleRoute() {
 
 /* ── Bootstrap ── */
 async function boot() {
+  await initDesktop();
   initTheme();
   localStorage.removeItem("penik_sign_jwk");
   await openDB();
@@ -757,16 +759,22 @@ async function onMsgRecvGlobal(payload) {
 }
 
 export function showDesktopNotification(title, body, tag, onClick) {
+  const textPreview = getMessagePreview(body) || body;
+
+  if (isDesktop()) {
+    sendDesktopNotification(title, textPreview);
+    return;
+  }
+
   if (!("Notification" in window) || Notification.permission !== "granted") {
     return;
   }
   try {
-    const textPreview = getMessagePreview(body) || body;
     const notification = new Notification(title, {
       body: textPreview,
-      icon: '/img/logo.png',
+      icon: '/assets/favicon-32x32.png',
       tag: tag || 'penik_msg',
-      badge: '/img/logo.png',
+      badge: '/assets/favicon-32x32.png',
       silent: true
     });
     if (onClick) {

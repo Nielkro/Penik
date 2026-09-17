@@ -8,4 +8,7 @@ interface Window {
   _streamMediaCache?: Map<string, string>;
   __PENIK_API_ORIGIN__?: string;
   __PENIK_API_HOST__?: string;
+  __PENIK_DESKTOP__?: boolean;
+  go?: any;
+  runtime?: any;
 }

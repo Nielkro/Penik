@@ -2,10 +2,30 @@ export function getApiOrigin() {
   if (typeof window !== 'undefined' && window.__PENIK_API_ORIGIN__) {
     return window.__PENIK_API_ORIGIN__;
   }
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const saved = window.localStorage.getItem('penik_api_origin');
+    if (saved) return saved;
+  }
   if (typeof window !== 'undefined') {
+    if (window.location.protocol === 'wails:' || window.location.hostname === 'wails.localhost' || window.location.protocol === 'file:') {
+      return 'https://api.penik.ru';
+    }
     return `${window.location.protocol}//${window.location.host}`;
   }
   return '';
+}
+
+export function setApiOrigin(origin) {
+  if (typeof window !== 'undefined') {
+    window.__PENIK_API_ORIGIN__ = origin;
+    if (window.localStorage) {
+      window.localStorage.setItem('penik_api_origin', origin);
+    }
+  }
+}
+
+export function getBaseUrl() {
+  return `${getApiOrigin()}/api/v1`;
 }
 
 export const BASE = `${getApiOrigin()}/api/v1`;
@@ -94,7 +114,7 @@ async function request(method, path, body, opts = {}) {
 
   let res;
   try {
-    res = await fetch(BASE + path, init);
+    res = await fetch(getBaseUrl() + path, init);
   } catch (e) {
     throw new ApiError('Нет соединения с сервером (CORS или сервер недоступен)', 0);
   }
@@ -173,7 +193,7 @@ export async function uploadAvatar(file) {
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}/avatar`, {
+  const res = await fetch(`${getBaseUrl()}/avatar`, {
     method: 'PUT',
     headers,
     body: formData
@@ -205,7 +225,7 @@ export async function uploadAttachment(encryptedFileBlob, filename = 'encrypted.
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${BASE}/attachments/upload`, true);
+    xhr.open('POST', `${getBaseUrl()}/attachments/upload`, true);
     if (token) {
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     }
@@ -302,7 +322,7 @@ export async function uploadGroupAvatar(groupId, file) {
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}/groups/${groupId}/avatar`, {
+  const res = await fetch(`${getBaseUrl()}/groups/${groupId}/avatar`, {
     method: 'PUT',
     headers,
     body: formData
@@ -359,7 +379,7 @@ let _timeSynced = false;
 export async function syncServerTime() {
   try {
     const t0 = Date.now();
-    const res = await fetch(`${BASE}/time`);
+    const res = await fetch(`${getBaseUrl()}/time`);
     if (!res.ok) return;
     const data = await res.json();
     const t1 = Date.now();

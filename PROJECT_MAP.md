@@ -45,6 +45,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `.github/workflows/docker.yml` — GitHub Actions workflow building and publishing `penik-server` container image to GitHub Container Registry (`ghcr.io`), coordinated with crypto releases via `workflow_run`, running parallel E2E integration test verification before deployment, with post-deployment health verification and automatic rollback.
 - `.github/workflows/security.yml` — GitHub Actions workflow running scheduled and push-triggered `govulncheck` vulnerability audits for Go dependencies.
 - `.github/workflows/android.yml` — GitHub Actions workflow assembling `app-debug.apk`, computing SHA256 checksums, publishing rolling `android-latest` prereleases on every push to `master`, and publishing immutable `android-v<version>` GitHub releases on `version.json` bumps.
+- `.github/workflows/desktop.yml` — GitHub Actions workflow building Linux (WebKitGTK) and Windows (WebView2) desktop binaries, computing SHA256 checksums, and publishing rolling `desktop-latest` prereleases.
 - `penik.caddy` — Caddy site config for `/etc/caddy/sites-enabled/penik.caddy` routing `penik.ru` (landing), `web.penik.ru` (SPA web client), and `api.penik.ru` (reverse proxy to 127.0.0.1:8143).
 - `landing/index.html` — Standalone landing page promoting the messenger, providing web client entry and Android APK download links.
 - `version.json` — Canonical version policy JSON template specifying minimum/latest Android version codes, crypto version requirement, APK download URL, and release notes.
@@ -52,9 +53,11 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ### Browser client transport
 
 - `client/js/api.js` — Unified browser REST client: attaches tokens, serializes JSON, parses errors, and exports APIs for users, messages, pairing, and groups.
+- `client/js/desktop.js` — Wails v2 desktop bridge helpers: runtime detection, server URL sync, native notifications, file dialogs, and file read/write.
+- `client/scripts/sync-desktop.js` — Build helper copying built Vite client artifacts into `desktop/frontend/dist` for Go embedding.
 - `client/js/call.js` — LiveKit Web SDK integration and call state manager supporting primary and fallback endpoints, signed ephemeral Diffie-Hellman E2EE encryption via WebRTC Insertable Streams worker, identity key authentication tags, safety words verification, multi-device ring handling (call_id matching and `CALL_TAKEN`), and reconnect recovery: full track resync after `RoomEvent.Reconnected`, camera restore retry, and media flags derived from actual publications.
 - `client/js/sounds.js` — Web Audio API synthesizer for call sounds: melodious incoming ringtone, outgoing dial tone, connect/disconnect chimes, and busy signal.
--`client/js/pairing.js` — Decrypts and imports history transferred from Android into the browser IndexedDB stores.
+- `client/js/pairing.js` — Decrypts and imports history transferred from Android into the browser IndexedDB stores.
 - `client/js/backup.js` — Exports and imports encrypted full history envelopes (.penikbackup) and key backups using AES-256-GCM / PBKDF2 with mnemonic seed phrase support.
 - `client/js/ws.js` — Manages the browser WebSocket connection: encodes/decodes MsgPack frames, supports opcodes, ping/pong, request queuing, and exponential backoff reconnection; `connect()` is idempotent and each socket generation is fenced so a stale socket cannot open a second parallel session.
 - `client/js/presence.js` — Publishes user presence events and provides handlers for online status updates.
@@ -91,6 +94,14 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/js/ui/call_modal.js` — Renders the active/incoming/dialing call overlay modal, participant placeholders, video/screenshare layout swapping, in-call media control buttons, reconnect/peer-link status badge, and E2EE verified / safety words indicators.
 - `client/js/ui/components.js` — Shared UI components: avatars, time formatting, hover tooltip for full timestamp, message copy menu, scroll-down button, toasts, modals, and safe Markdown parsing and rendering (fenced code blocks with language badge & copy button, tables, inline code, quotes, headers, bold, italic, strikethrough, and lists).
 - `client/js/globals.d.ts` — Ambient type declarations for globals the app attaches to `window`; type-checking only, emits no JavaScript.
+
+### Desktop client (Wails)
+
+- `desktop/go.mod` — Go module definition for Penik Desktop Wails application.
+- `desktop/main.go` — Desktop entry point: Wails app options, single-instance lock, system tray menu, and platform-specific WebKitGTK / WebView2 flags.
+- `desktop/app.go` — Wails bridge methods exposed to frontend: server URL configuration, version info, native file dialogs, base64 file I/O, OS notifications, and window controls.
+- `desktop/config.go` — Desktop persistent configuration manager storing server URL and tray preferences in OS-standard config directories (`os.UserConfigDir()`).
+- `desktop/wails.json` — Wails project configuration linking frontend build to the web client.
 
 ### Android client
 
