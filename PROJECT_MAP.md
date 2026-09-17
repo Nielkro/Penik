@@ -101,6 +101,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `desktop/main.go` — Desktop entry point: Wails app options, single-instance lock, system tray menu, and platform-specific WebKitGTK / WebView2 flags.
 - `desktop/app.go` — Wails bridge methods exposed to frontend: server URL configuration, version info, native file dialogs, base64 file I/O, OS notifications, and window controls.
 - `desktop/config.go` — Desktop persistent configuration manager storing server URL and tray preferences in OS-standard config directories (`os.UserConfigDir()`).
+- `desktop/tray.go` — Native system tray integration (KDE/AppIndicator/Windows) for background execution and quick window actions.
 - `desktop/wails.json` — Wails project configuration linking frontend build to the web client.
 
 ### Android client

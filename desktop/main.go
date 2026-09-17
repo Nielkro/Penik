@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"log"
 	"os"
@@ -58,7 +59,10 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		OnStartup:     app.startup,
+		OnStartup: func(ctx context.Context) {
+			app.startup(ctx)
+			initSystemTray(app)
+		},
 		OnBeforeClose: app.beforeClose,
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "penik-desktop-single-instance",

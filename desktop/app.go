@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"github.com/getlantern/systray"
 )
 
 const AppVersion = "1.0.0"
@@ -232,5 +234,6 @@ func (a *App) ToggleWindow() {
 // Quit terminates the application bypassing minimize-to-tray
 func (a *App) Quit() {
 	a.quitting = true
+	systray.Quit()
 	wruntime.Quit(a.ctx)
 }
