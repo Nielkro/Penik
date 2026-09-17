@@ -3,6 +3,8 @@ package main
 import (
 	"embed"
 	"log"
+	"os"
+	"runtime"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
@@ -18,6 +20,15 @@ var assets embed.FS
 
 //go:embed build/appicon.png
 var icon []byte
+
+func init() {
+	if runtime.GOOS == "linux" {
+		// Workaround for WebKitGTK DMA-BUF / Wayland protocol error 71 on NVIDIA drivers
+		if os.Getenv("WEBKIT_DISABLE_DMABUF_RENDERER") == "" {
+			_ = os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+		}
+	}
+}
 
 func main() {
 	app := NewApp()
@@ -66,7 +77,7 @@ func main() {
 		Linux: &linux.Options{
 			Icon:                icon,
 			WindowIsTranslucent: false,
-			WebviewGpuPolicy:    linux.WebviewGpuPolicyAlways,
+			WebviewGpuPolicy:    linux.WebviewGpuPolicyOnDemand,
 		},
 	})
 
