@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Penik
+Comment=Secure E2EE Messenger
+Exec=penik
+Icon=penik
+Terminal=false
+Type=Application
+Categories=Network;InstantMessaging;Chat;
+StartupWMClass=penik
