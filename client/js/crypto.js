@@ -837,10 +837,12 @@ export async function decryptKeyBackup(encryptedBlob, salt, iv, passphrase) {
       );
       return new Uint8Array(decrypted);
     } catch (e) {
-      if (iterations === LEGACY_KDF_ITERATIONS) throw e;
+      if (iterations === LEGACY_KDF_ITERATIONS) {
+        throw new Error("Неверный E2EE-пароль или мнемоническая фраза (ошибка расшифрования)");
+      }
     }
   }
-  throw new Error("Не удалось расшифровать резервную копию ключа");
+  throw new Error("Не удалось расшифровать резервную копию ключа (неверный пароль или мнемоника)");
 }
 
 // ── Group E2EE ──

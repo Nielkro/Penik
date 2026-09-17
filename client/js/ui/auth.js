@@ -580,9 +580,9 @@ export function renderAuth(container, initialMode = "welcome") {
       });
 
       const wrapper = el("div", { style: "position:relative; width:100%; margin-bottom:16px;" }, input, toggleBtn);
-      const restoreBtn = el("button", { class: "btn-primary", style: "margin-bottom:12px; cursor:pointer;" }, "Восстановить переписку");
-      
-      const resetLink = el("a", { class: "auth-switch-link", style: "display:block; text-align:center; font-size:13px; cursor:pointer;" }, "Забыли пароль / фразу? (Начать с чистого листа)");
+      const restoreBtn = el("button", { class: "btn-primary", style: "margin-bottom:10px; cursor:pointer;" }, "Восстановить переписку");
+      const skipBtn = el("button", { class: "btn-secondary", style: "width:100%; margin-bottom:12px; padding:10px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#ddd; font-size:13px; cursor:pointer;" }, "Пропустить (новый ключ для устройства)");
+      const resetLink = el("a", { class: "auth-switch-link", style: "display:block; text-align:center; font-size:12px; color:#888; cursor:pointer;" }, "Забыли пароль? (Сбросить бэкап на сервере)");
 
       // Action 1: Restore backup
       const handleRestore = async () => {
@@ -616,11 +616,38 @@ export function renderAuth(container, initialMode = "welcome") {
         }
       };
 
-      // Action 2: Reset backup (Forgotten E2EE password)
+      // Action 2: Skip restore (Generate standalone device keypair without touching server backup)
+      const handleSkip = async () => {
+        skipBtn.disabled = true;
+        clearErr();
+        try {
+          // Generate new identity keypair for this device only
+          const ik = await generateKeyPair();
+          await saveIKPrivate(ik.privateKey);
+          await saveIKPublic(ik.publicKey);
+
+          const user = await getUserById(state.tempUserId);
+          if (user) {
+            user.user_id = user.id;
+            user.username = user.nickname;
+            setCurrentUser(user.user || user);
+          }
+
+          showToast("Создан локальный ключ устройства", "info");
+          navigate("#chats");
+        } catch (err) {
+          console.error("Skip error:", err);
+          showErr(err.message || "Ошибка генерации ключей устройства.");
+        } finally {
+          skipBtn.disabled = false;
+        }
+      };
+
+      // Action 3: Reset backup (Forgotten E2EE password - overwrites server backup)
       const handleReset = async () => {
         const confirmed = await showConfirmModal(
           "Сброс E2EE ключей",
-          "Вы уверены? Старые сообщения на этом устройстве не смогут быть расшифрованы. Все новые сообщения будут зашифрованы новым ключом.",
+          "Вы уверены? Старый бэкап на сервере будет перезаписан. Другие устройства не смогут восстановить старые ключи.",
           "Сбросить ключи",
           "Отмена",
           true
@@ -649,7 +676,6 @@ export function renderAuth(container, initialMode = "welcome") {
           await backupE2EEKeys(newPass);
 
           // Upload public key to database (server will register this)
-          // ws handles key publish on connect, so navigate will trigger connection and publish it automatically.
           const user = await getUserById(state.tempUserId);
           if (user) {
             user.user_id = user.id;
@@ -666,12 +692,14 @@ export function renderAuth(container, initialMode = "welcome") {
 
       restoreBtn.addEventListener("click", handleRestore);
       input.addEventListener("keydown", e => { if (e.key === "Enter") handleRestore(); });
+      skipBtn.addEventListener("click", handleSkip);
       resetLink.addEventListener("click", handleReset);
 
       card.appendChild(title);
       card.appendChild(subtitle);
       card.appendChild(wrapper);
       card.appendChild(restoreBtn);
+      card.appendChild(skipBtn);
       card.appendChild(resetLink);
       input.focus();
     }

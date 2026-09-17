@@ -1717,7 +1717,15 @@ export async function restoreE2EEKeys(passphrase) {
   const salt = toUint8Array(backup.salt);
   const iv = toUint8Array(backup.iv);
 
-  const decrypted = await decryptKeyBackup(encryptedBlob, salt, iv, passphrase);
+  let decrypted;
+  try {
+    decrypted = await decryptKeyBackup(encryptedBlob, salt, iv, passphrase);
+  } catch (err) {
+    if (err.name === "OperationError" || (err.message && (err.message.includes("operation-specific") || err.message.includes("OperationError")))) {
+      throw new Error("Неверный E2EE-пароль или мнемоническая фраза");
+    }
+    throw err;
+  }
   let privBytes = decrypted;
   if (decrypted.length > 0 && decrypted[0] === 123 /* '{' */) {
     try {
