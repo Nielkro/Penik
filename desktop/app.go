@@ -237,7 +237,7 @@ func (a *App) getAvatarIconPath(avatarURL string) string {
 	_ = os.MkdirAll(avatarDir, 0755)
 
 	hash := fmt.Sprintf("%x", md5.Sum([]byte(fullURL)))
-	localPath := filepath.Join(avatarDir, hash+".png")
+	localPath := filepath.Join(avatarDir, hash+"_circle_v2.png")
 
 	if fi, err := os.Stat(localPath); err == nil && time.Since(fi.ModTime()) < 1*time.Hour && fi.Size() > 0 {
 		return localPath
