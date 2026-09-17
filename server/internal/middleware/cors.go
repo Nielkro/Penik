@@ -70,6 +70,9 @@ func parseOrigins(raw string) []string {
 }
 
 func isAllowedOrigin(allowed []string, origin string) bool {
+	if origin == "wails://wails" || origin == "http://wails.localhost" || origin == "https://wails.localhost" {
+		return true
+	}
 	for _, a := range allowed {
 		if a == origin {
 			return true

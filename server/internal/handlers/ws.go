@@ -35,7 +35,7 @@ func WebSocketHandler(hub *ws.Hub, database *db.DB, cfg *config.Config) http.Han
 			}
 		}
 	}
-	originPatterns = append(originPatterns, "localhost*", "127.0.0.1*")
+	originPatterns = append(originPatterns, "localhost*", "127.0.0.1*", "wails*", "*wails.localhost*")
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
