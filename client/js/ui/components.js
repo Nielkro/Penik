@@ -1438,16 +1438,19 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
 
       if (!blobUrl) {
         const token = getToken();
-        let parsed;
+        let pathname = "";
+        let search = "";
         try {
-          parsed = new URL(fileInfo.url, window.location.origin);
+          const parsed = new URL(fileInfo.url, getApiOrigin() || window.location.origin);
+          pathname = parsed.pathname;
+          search = parsed.search;
         } catch {
           throw new AttachmentError("Invalid attachment URL");
         }
-        if (parsed.origin !== window.location.origin || !parsed.pathname.startsWith("/api/v1/attachments/file/")) {
+        if (!pathname.startsWith("/api/v1/attachments/file/")) {
           throw new AttachmentError("Untrusted attachment URL source");
         }
-        const fetchUrl = parsed.pathname + parsed.search;
+        const fetchUrl = getFullApiUrl(pathname + search);
         /** @type {Record<string, string>} */
         const headers = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
