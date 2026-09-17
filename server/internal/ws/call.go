@@ -326,6 +326,14 @@ func (c *Client) handleCallOffer(payload []byte) error {
 
 	callsMu.Lock()
 	if existingCallID, inCall := userCalls[c.userID]; inCall {
+		if existingCall, ok := activeCalls[existingCallID]; ok {
+			// If this exact device is already ringing the same callee for this pending call,
+			// ignore duplicate offer frame instead of rejecting the active call.
+			if existingCall.CallerDeviceID == c.deviceID && existingCall.CalleeID == offer.ToUserID && !existingCall.Accepted {
+				callsMu.Unlock()
+				return nil
+			}
+		}
 		callsMu.Unlock()
 		// Caller is already in a call
 		rejectPayload, _ := msgpack.Marshal(CallReject{

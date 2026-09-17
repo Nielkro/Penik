@@ -106,6 +106,7 @@ export class CallManager {
     this.onActiveSpeakersChange = null;
     this.onTimerTick = null;
 
+    this._startingCall = false;
     this._myEphemeral = null;
     this._authSecret = null;
     this._derivedMasterKey = null;
@@ -142,13 +143,22 @@ export class CallManager {
    * True when a server frame refers to the call we are currently in. The server
    * rings every device of the callee, so a frame about a call this device is not
    * (or no longer) part of must not tear down what is on screen.
-   * @param {{call_id?: string}} payload
+   * @param {{call_id?: string, to_user_id?: number, from_user_id?: number}} payload
    */
   _isCurrentCall(payload) {
     if (!this.currentCall) return false;
     const incomingId = payload && payload.call_id;
-    if (!incomingId || !this.currentCall.callId) return true;
-    return incomingId === this.currentCall.callId;
+    if (incomingId && this.currentCall.callId) {
+      return incomingId === this.currentCall.callId;
+    }
+    const peerId = payload && (payload.to_user_id || payload.from_user_id);
+    if (peerId) {
+      const myPeerId = this.currentCall.toUserId || this.currentCall.fromUserId;
+      if (myPeerId && Number(peerId) !== Number(myPeerId)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   async _resolveContact(userId) {
@@ -170,65 +180,73 @@ export class CallManager {
   }
 
   async startCall(toUserId, isVideo = false) {
-    if (this.currentCall) {
+    if (this.currentCall || this._startingCall) {
       showToast('Вы уже находитесь в звонке', 'error');
       return;
     }
+    this._startingCall = true;
 
-    const peerContact = await this._resolveContact(toUserId);
-
-    let outgoingKey = '';
     try {
-      const kp = await generateKeyPair();
-      this._myEphemeral = kp;
-      const myEkPubHex = bytesToHex(kp.publicKey);
-      outgoingKey = `dh:1:${myEkPubHex}`;
+      const peerContact = await this._resolveContact(toUserId);
 
-      const myIkPriv = await getIKPrivate();
-      const peerIkPub = await fetchPeerIdentityKey(toUserId);
-      if (myIkPriv && peerIkPub) {
-        const secret = await deriveSharedSecret(myIkPriv, peerIkPub);
-        if (secret) {
-          this._authSecret = secret;
-          const tag = await computeAuthTag(secret, 'CALL_OFFER:', myEkPubHex);
-          outgoingKey = `dh:2:${myEkPubHex}:${tag}`;
+      let outgoingKey = '';
+      try {
+        const kp = await generateKeyPair();
+        this._myEphemeral = kp;
+        const myEkPubHex = bytesToHex(kp.publicKey);
+        outgoingKey = `dh:1:${myEkPubHex}`;
+
+        const myIkPriv = await getIKPrivate();
+        const peerIkPub = await fetchPeerIdentityKey(toUserId);
+        if (myIkPriv && peerIkPub) {
+          const secret = await deriveSharedSecret(myIkPriv, peerIkPub);
+          if (secret) {
+            this._authSecret = secret;
+            const tag = await computeAuthTag(secret, 'CALL_OFFER:', myEkPubHex);
+            outgoingKey = `dh:2:${myEkPubHex}:${tag}`;
+          }
         }
+      } catch (e) {
+        console.warn('[call] Ephemeral DH setup failed, falling back to random key:', e);
+        const keyBytes = new Uint8Array(32);
+        crypto.getRandomValues(keyBytes);
+        outgoingKey = bytesToHex(keyBytes);
       }
+
+      this.currentCall = {
+        state: 'DIALING',
+        toUserId,
+        isVideo,
+        callId: null,
+        peerContact,
+        callKey: outgoingKey,
+        isE2EE: true,
+        isE2EEVerified: false,
+        safetyWords: [],
+      };
+
+      callSounds.playDialing();
+
+      ws.send(OP.CALL_OFFER, {
+        to_user_id: toUserId,
+        is_video: isVideo,
+        call_key: outgoingKey,
+      });
+
+      this._dialTimeout = setTimeout(() => {
+        if (this.currentCall && this.currentCall.state === 'DIALING') {
+          showToast('Нет ответа', 'info');
+          this.rejectCall('declined');
+        }
+      }, 90_000);
+
+      this._notifyState();
     } catch (e) {
-      console.warn('[call] Ephemeral DH setup failed, falling back to random key:', e);
-      const keyBytes = new Uint8Array(32);
-      crypto.getRandomValues(keyBytes);
-      outgoingKey = bytesToHex(keyBytes);
+      console.error('[call] startCall failed:', e);
+      this.cleanup();
+    } finally {
+      this._startingCall = false;
     }
-
-    this.currentCall = {
-      state: 'DIALING',
-      toUserId,
-      isVideo,
-      callId: null,
-      peerContact,
-      callKey: outgoingKey,
-      isE2EE: true,
-      isE2EEVerified: false,
-      safetyWords: [],
-    };
-
-    callSounds.playDialing();
-
-    ws.send(OP.CALL_OFFER, {
-      to_user_id: toUserId,
-      is_video: isVideo,
-      call_key: outgoingKey,
-    });
-
-    this._dialTimeout = setTimeout(() => {
-      if (this.currentCall && this.currentCall.state === 'DIALING') {
-        showToast('Нет ответа', 'info');
-        this.rejectCall('declined');
-      }
-    }, 90_000);
-
-    this._notifyState();
   }
 
   async acceptCall() {
@@ -455,6 +473,7 @@ export class CallManager {
     this._stopTimer();
     this._releaseTileListeners();
     clearTimeout(this._dialTimeout);
+    this._startingCall = false;
     if (this.room) {
       try {
         this.room.removeAllListeners();

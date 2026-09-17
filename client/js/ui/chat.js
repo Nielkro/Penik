@@ -368,10 +368,18 @@ export async function renderChat(container, userId) {
     style: "margin-left: auto; cursor: pointer; background: transparent; border: none; opacity: 0.7; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; padding: 4px;"
   }, svgIcon("M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z", 20, "var(--text-muted)"));
 
+  let lastCallClick = 0;
+  const safeStartCall = (isVideo) => {
+    const now = Date.now();
+    if (now - lastCallClick < 1000) return;
+    lastCallClick = now;
+    callManager.startCall(Number(userId), isVideo);
+  };
+
   if (audioCallBtn) {
     audioCallBtn.addEventListener("mouseenter", () => { audioCallBtn.style.opacity = "1"; });
     audioCallBtn.addEventListener("mouseleave", () => { audioCallBtn.style.opacity = "0.7"; });
-    audioCallBtn.addEventListener("click", () => callManager.startCall(Number(userId), false));
+    audioCallBtn.addEventListener("click", () => safeStartCall(false));
   }
 
   const videoCallBtn = isSelfChat ? null : el("button", {
@@ -383,7 +391,7 @@ export async function renderChat(container, userId) {
   if (videoCallBtn) {
     videoCallBtn.addEventListener("mouseenter", () => { videoCallBtn.style.opacity = "1"; });
     videoCallBtn.addEventListener("mouseleave", () => { videoCallBtn.style.opacity = "0.7"; });
-    videoCallBtn.addEventListener("click", () => callManager.startCall(Number(userId), true));
+    videoCallBtn.addEventListener("click", () => safeStartCall(true));
   }
 
   const safetyBtn = isSelfChat ? null : el("button", {

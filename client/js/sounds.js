@@ -5,6 +5,10 @@ class CallSoundEffects {
     this.ctx = null;
     this._currentLoop = null;
     this._loopTimeout = null;
+    /** @type {Set<OscillatorNode>} */
+    this._activeOscillators = new Set();
+    /** @type {Set<GainNode>} */
+    this._activeGains = new Set();
   }
 
   _getAudioContext() {
@@ -20,6 +24,10 @@ class CallSoundEffects {
     return this.ctx;
   }
 
+  warmup() {
+    this._getAudioContext();
+  }
+
   stopAll() {
     if (this._loopTimeout) {
       clearTimeout(this._loopTimeout);
@@ -31,6 +39,21 @@ class CallSoundEffects {
       } catch (_) {}
       this._currentLoop = null;
     }
+    for (const osc of this._activeOscillators) {
+      try {
+        osc.stop();
+        osc.disconnect();
+      } catch (_) {}
+    }
+    this._activeOscillators.clear();
+
+    for (const gain of this._activeGains) {
+      try {
+        gain.gain.setValueAtTime(0, this.ctx ? this.ctx.currentTime : 0);
+        gain.disconnect();
+      } catch (_) {}
+    }
+    this._activeGains.clear();
   }
 
   /**
@@ -59,9 +82,26 @@ class CallSoundEffects {
       ];
 
       notes.forEach(([freq, offset, dur]) => {
+        if (isStopped) return;
         const osc = ctx.createOscillator();
         const osc2 = ctx.createOscillator();
         const gain = ctx.createGain();
+
+        this._activeOscillators.add(osc);
+        this._activeOscillators.add(osc2);
+        this._activeGains.add(gain);
+
+        const cleanupNodes = () => {
+          this._activeOscillators.delete(osc);
+          this._activeOscillators.delete(osc2);
+          this._activeGains.delete(gain);
+          try {
+            osc.disconnect();
+            osc2.disconnect();
+            gain.disconnect();
+          } catch (_) {}
+        };
+        osc.onended = cleanupNodes;
 
         // Primary tone: warm sine
         osc.type = 'sine';
@@ -118,6 +158,22 @@ class CallSoundEffects {
       const osc2 = ctx.createOscillator();
       const gain = ctx.createGain();
 
+      this._activeOscillators.add(osc);
+      this._activeOscillators.add(osc2);
+      this._activeGains.add(gain);
+
+      const cleanupNodes = () => {
+        this._activeOscillators.delete(osc);
+        this._activeOscillators.delete(osc2);
+        this._activeGains.delete(gain);
+        try {
+          osc.disconnect();
+          osc2.disconnect();
+          gain.disconnect();
+        } catch (_) {}
+      };
+      osc.onended = cleanupNodes;
+
       // Dual tone: 425Hz + subtle 450Hz for depth
       osc.type = 'sine';
       osc.frequency.setValueAtTime(425, now);
@@ -173,6 +229,19 @@ class CallSoundEffects {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
+      this._activeOscillators.add(osc);
+      this._activeGains.add(gain);
+
+      const cleanupNodes = () => {
+        this._activeOscillators.delete(osc);
+        this._activeGains.delete(gain);
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch (_) {}
+      };
+      osc.onended = cleanupNodes;
+
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, now + offset);
 
@@ -206,6 +275,19 @@ class CallSoundEffects {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
+      this._activeOscillators.add(osc);
+      this._activeGains.add(gain);
+
+      const cleanupNodes = () => {
+        this._activeOscillators.delete(osc);
+        this._activeGains.delete(gain);
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch (_) {}
+      };
+      osc.onended = cleanupNodes;
+
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, now + offset);
 
@@ -234,6 +316,19 @@ class CallSoundEffects {
       const offset = i * 0.40;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+
+      this._activeOscillators.add(osc);
+      this._activeGains.add(gain);
+
+      const cleanupNodes = () => {
+        this._activeOscillators.delete(osc);
+        this._activeGains.delete(gain);
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch (_) {}
+      };
+      osc.onended = cleanupNodes;
 
       osc.type = 'sine';
       osc.frequency.setValueAtTime(425, now + offset);
@@ -268,6 +363,19 @@ class CallSoundEffects {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
+      this._activeOscillators.add(osc);
+      this._activeGains.add(gain);
+
+      const cleanupNodes = () => {
+        this._activeOscillators.delete(osc);
+        this._activeGains.delete(gain);
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch (_) {}
+      };
+      osc.onended = cleanupNodes;
+
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, now + offset);
 
@@ -294,6 +402,19 @@ class CallSoundEffects {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
+    this._activeOscillators.add(osc);
+    this._activeGains.add(gain);
+
+    const cleanupNodes = () => {
+      this._activeOscillators.delete(osc);
+      this._activeGains.delete(gain);
+      try {
+        osc.disconnect();
+        gain.disconnect();
+      } catch (_) {}
+    };
+    osc.onended = cleanupNodes;
+
     osc.type = 'sine';
     osc.frequency.setValueAtTime(587.33, now);
     osc.frequency.exponentialRampToValueAtTime(880.0, now + 0.06);
@@ -312,4 +433,19 @@ class CallSoundEffects {
 
 export const callSounds = new CallSoundEffects();
 export const appSounds = callSounds;
+
+// Auto-unlock Web Audio API context on first user interaction in browser/desktop
+if (typeof window !== 'undefined') {
+  const unlockAudio = () => {
+    callSounds.warmup();
+    window.removeEventListener('pointerdown', unlockAudio);
+    window.removeEventListener('keydown', unlockAudio);
+    window.removeEventListener('touchstart', unlockAudio);
+    window.removeEventListener('click', unlockAudio);
+  };
+  window.addEventListener('pointerdown', unlockAudio, { passive: true });
+  window.addEventListener('keydown', unlockAudio, { passive: true });
+  window.addEventListener('touchstart', unlockAudio, { passive: true });
+  window.addEventListener('click', unlockAudio, { passive: true });
+}
 
