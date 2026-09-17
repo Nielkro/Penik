@@ -15,8 +15,9 @@ export async function importPairingHistory(encoded, sharedSecret) {
   const envelope = JSON.parse(new TextDecoder().decode(decodeB64Url(encoded)));
   const data = await decryptPairingHistory(envelope, sharedSecret);
 
+  const lastMsgByChat = new Map();
   for (const message of data.messages || []) {
-    await saveMessage({
+    const saved = {
       ...message,
       msg_id: message.msg_id ?? message.server_id ?? `import-${message.created_at}`,
       chat_id: String(message.chat_id ?? message.chat_user_id),
@@ -24,9 +25,23 @@ export async function importPairingHistory(encoded, sharedSecret) {
       sender_id: Number(message.sender_id),
       recipient_id: Number(message.recipient_id),
       plaintext: message.text ?? message.plaintext ?? "",
+    };
+    await saveMessage(saved);
+    const peerId = saved.chat_user_id;
+    const existingLast = lastMsgByChat.get(peerId);
+    if (!existingLast || (saved.created_at || 0) >= (existingLast.created_at || 0)) {
+      lastMsgByChat.set(peerId, saved);
+    }
+  }
+  for (const contact of data.contacts || []) {
+    const peerId = Number(contact.user_id || contact.id);
+    const lastMsg = lastMsgByChat.get(peerId);
+    await saveContact({
+      ...contact,
+      last_message: contact.last_message || (lastMsg ? (lastMsg.plaintext || lastMsg.text || "") : ""),
+      last_ts: contact.last_ts || (lastMsg ? (lastMsg.created_at || 0) : 0),
     });
   }
-  for (const contact of data.contacts || []) await saveContact(contact);
   for (const group of data.groups || []) await saveGroup(group);
 
   const membersByGroup = new Map();

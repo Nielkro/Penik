@@ -123,7 +123,22 @@ export async function renderChatList(container) {
     try {
       let all = await getAllContacts();
       if (myId) all = all.filter(c => String(c.user_id) !== String(myId));
-      return all.map(c => ({ ...c, _kind: "chat" }));
+      const enriched = await Promise.all(all.map(async (c) => {
+        let last_message = c.last_message || "";
+        let last_ts = c.last_ts || 0;
+        if (!last_message || !last_ts) {
+          try {
+            const msgs = await getMessages(c.user_id, 1);
+            if (msgs && msgs.length > 0) {
+              const last = msgs[msgs.length - 1];
+              if (!last_message) last_message = getMessagePreview(last.plaintext || last.text || "");
+              if (!last_ts) last_ts = last.created_at || 0;
+            }
+          } catch {}
+        }
+        return { ...c, _kind: "chat", last_message, last_ts };
+      }));
+      return enriched;
     } catch {
       return [];
     }
