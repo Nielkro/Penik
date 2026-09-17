@@ -22,6 +22,10 @@ export function Hide() {
   return window['go']['main']['App']['Hide']();
 }
 
+export function HttpBinaryRequest(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['HttpBinaryRequest'](arg1, arg2, arg3, arg4);
+}
+
 export function HttpRequest(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['HttpRequest'](arg1, arg2, arg3, arg4);
 }

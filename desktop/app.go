@@ -31,6 +31,13 @@ type HttpResponse struct {
 	Body       string            `json:"body"`
 }
 
+type HttpBinaryResponse struct {
+	Status     int               `json:"status"`
+	StatusText string            `json:"statusText"`
+	Headers    map[string]string `json:"headers"`
+	BodyBase64 string            `json:"bodyBase64"`
+}
+
 type VersionInfo struct {
 	Version    string `json:"version"`
 	Platform   string `json:"platform"`
@@ -291,6 +298,52 @@ func (a *App) HttpRequest(method string, urlStr string, headers map[string]strin
 		StatusText: resp.Status,
 		Headers:    respHeaders,
 		Body:       string(respBody),
+	}, nil
+}
+
+// HttpBinaryRequest performs a native HTTP request from Go and returns the body as base64
+func (a *App) HttpBinaryRequest(method string, urlStr string, headers map[string]string, body string) (*HttpBinaryResponse, error) {
+	var bodyReader io.Reader
+	if body != "" {
+		bodyReader = strings.NewReader(body)
+	}
+
+	req, err := http.NewRequestWithContext(a.ctx, method, urlStr, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	client := &http.Client{
+		Timeout: 60 * time.Second,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	respHeaders := make(map[string]string)
+	for k, v := range resp.Header {
+		if len(v) > 0 {
+			respHeaders[strings.ToLower(k)] = v[0]
+		}
+	}
+
+	return &HttpBinaryResponse{
+		Status:     resp.StatusCode,
+		StatusText: resp.Status,
+		Headers:    respHeaders,
+		BodyBase64: base64.StdEncoding.EncodeToString(respBody),
 	}, nil
 }
 

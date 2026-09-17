@@ -139,3 +139,15 @@ export async function desktopFetch(method, url, headers = {}, body = '') {
     return null;
   }
 }
+
+export async function desktopBinaryFetch(method, url, headers = {}, body = '') {
+  if (!isDesktop() || !window.go?.main?.App?.HttpBinaryRequest) {
+    return null;
+  }
+  try {
+    return await window.go.main.App.HttpBinaryRequest(method, url, headers, typeof body === 'string' ? body : JSON.stringify(body));
+  } catch (e) {
+    console.error('[desktop] HttpBinaryRequest bridge error:', e);
+    return null;
+  }
+}

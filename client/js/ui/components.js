@@ -4,6 +4,7 @@ import { getCachedMedia, saveCachedMedia, getAllContacts, getAllGroups } from ".
 import { sendGroupMessage } from "../groups.js";
 import { sendDirectMessageToUser } from "./chat.js";
 import { showStickerPackModal, getLocalStickerBlobUrl, getLocalStickerEntry, preloadPackBundle } from "./stickers.js";
+import { isDesktop, desktopBinaryFetch } from "../desktop.js";
 
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -1455,17 +1456,35 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
         const headers = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
-        const resp = await fetch(fetchUrl, { headers });
-        if (!resp.ok) {
-          let detail = `HTTP ${resp.status}`;
-          try {
-            const errBody = await resp.json();
-            if (errBody && errBody.error) detail = errBody.error;
-          } catch (e) {/* non-JSON error body */}
-          throw new AttachmentError(detail, resp.status === 404 ? "not_found" : undefined);
+        let encryptedBytes;
+        if (isDesktop()) {
+          const resp = await desktopBinaryFetch("GET", fetchUrl, headers);
+          if (!resp) throw new AttachmentError("Ошибка связи с сервером через десктоп-мост");
+          if (resp.status !== 200 && resp.status !== 206) {
+            let detail = `HTTP ${resp.status}`;
+            try {
+              const errBody = JSON.parse(atob(resp.bodyBase64));
+              if (errBody && errBody.error) detail = errBody.error;
+            } catch {}
+            throw new AttachmentError(detail, resp.status === 404 ? "not_found" : undefined);
+          }
+          const binaryStr = atob(resp.bodyBase64);
+          encryptedBytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) encryptedBytes[i] = binaryStr.charCodeAt(i);
+        } else {
+          const resp = await fetch(fetchUrl, { headers });
+          if (!resp.ok) {
+            let detail = `HTTP ${resp.status}`;
+            try {
+              const errBody = await resp.json();
+              if (errBody && errBody.error) detail = errBody.error;
+            } catch (e) {/* non-JSON error body */}
+            throw new AttachmentError(detail, resp.status === 404 ? "not_found" : undefined);
+          }
+          const encryptedBuf = await resp.arrayBuffer();
+          encryptedBytes = new Uint8Array(encryptedBuf);
         }
-        const encryptedBuf = await resp.arrayBuffer();
-        const encryptedBytes = new Uint8Array(encryptedBuf);
+
         if (encryptedBytes.length === 0) {
           throw new AttachmentError("Сервер вернул пустой файл (0 байт)");
         }
