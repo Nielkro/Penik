@@ -38,10 +38,10 @@ func (d *DB) UsersShareChat(ctx context.Context, a, b int64) (bool, error) {
 // 2. viewerID and uploaderID have a chat record in the chats table.
 // 3. viewerID and uploaderID share membership in any common group.
 func (d *DB) CanAccessAttachment(ctx context.Context, viewerID, uploaderID int64) (bool, error) {
-	if viewerID == 0 || uploaderID == 0 {
+	if viewerID == 0 {
 		return false, nil
 	}
-	if viewerID == uploaderID {
+	if uploaderID == 0 || viewerID == uploaderID {
 		return true, nil
 	}
 	var allowed bool

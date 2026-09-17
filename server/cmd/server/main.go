@@ -48,6 +48,10 @@ func main() {
 		log.Printf("avatar migration error: %v", err)
 	}
 
+	if err := backfillLegacyAttachments(database, cfg.UploadDir); err != nil {
+		log.Printf("legacy attachments backfill error: %v", err)
+	}
+
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
@@ -347,3 +351,47 @@ func migrateAvatarsToDisk(database *db.DB, uploadDir string) error {
 	log.Printf("Successfully migrated %d avatars to disk and cleared database columns.", len(records))
 	return nil
 }
+
+// backfillLegacyAttachments registers any existing on-disk .bin attachments that
+// were created before the attachments ACL table existed.
+func backfillLegacyAttachments(database *db.DB, uploadDir string) error {
+	if database == nil || uploadDir == "" {
+		return nil
+	}
+	attachDir := filepath.Join(uploadDir, "attachments")
+	entries, err := os.ReadDir(attachDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	backfilled := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".bin") {
+			continue
+		}
+		id := strings.TrimSuffix(entry.Name(), ".bin")
+		if len(id) == 32 {
+			info, err := entry.Info()
+			createdAt := time.Now().Unix()
+			if err == nil {
+				createdAt = info.ModTime().Unix()
+			}
+			res, err := database.Exec(
+				`INSERT OR IGNORE INTO attachments(id, uploader_user_id, created_at) VALUES(?, 0, ?)`,
+				id, createdAt)
+			if err == nil {
+				if rows, _ := res.RowsAffected(); rows > 0 {
+					backfilled++
+				}
+			}
+		}
+	}
+	if backfilled > 0 {
+		log.Printf("Backfilled %d legacy attachments into database table.", backfilled)
+	}
+	return nil
+}
+
