@@ -258,4 +258,5 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `Docs/CALLS.md` — LiveKit 1:1 calls architecture, signaling opcodes (0x24-0x29), environment variables, fail-closed validation, and client failover algorithm.
 - `plan/micro_rust_core_plan.md` — Architecture plan for unifying cryptography in a Rust micro-core (`penik-crypto`) with WebAssembly and UniFFI bindings.
 - `plan/new_device_key_invalidation_plan.md` — Architecture plan for handling key bundle invalidation and retry flows when users add new devices.
+- `plan/wails_desktop_plan.md` — Plan for a Windows + Linux desktop client on Wails (Go + WebView2/WebKitGTK) reusing the web `client/` frontend.
 
