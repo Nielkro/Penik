@@ -280,11 +280,11 @@ func (a *App) Notify(title string, body string, tag string, avatarUrl string) er
 	case "linux":
 		go func() {
 			iconPath := a.getAvatarIconPath(avatarUrl)
-			cmd := exec.Command("notify-send", "--action=default=Открыть", "-a", "Penik", "-i", iconPath, title, body)
+			cmd := exec.Command("notify-send", "--action=default=Открыть", "-a", "Penik", "-n", "penik", "-h", "string:desktop-entry:penik", "-i", iconPath, title, body)
 			out, err := cmd.Output()
 			if err != nil {
 				// Fallback without --action if flag is not supported on legacy libnotify
-				_ = exec.Command("notify-send", "-a", "Penik", "-i", iconPath, title, body).Run()
+				_ = exec.Command("notify-send", "-a", "Penik", "-n", "penik", "-h", "string:desktop-entry:penik", "-i", iconPath, title, body).Run()
 				return
 			}
 			if strings.TrimSpace(string(out)) == "default" {
