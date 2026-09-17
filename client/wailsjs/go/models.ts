@@ -14,6 +14,24 @@ export namespace main {
 	        this.pattern = source["pattern"];
 	    }
 	}
+	export class HttpResponse {
+	    status: number;
+	    statusText: string;
+	    headers: Record<string, string>;
+	    body: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new HttpResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.statusText = source["statusText"];
+	        this.headers = source["headers"];
+	        this.body = source["body"];
+	    }
+	}
 	export class VersionInfo {
 	    version: string;
 	    platform: string;

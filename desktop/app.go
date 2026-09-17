@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -19,6 +22,13 @@ const AppVersion = "1.0.0"
 type FileFilter struct {
 	DisplayName string `json:"displayName"`
 	Pattern     string `json:"pattern"`
+}
+
+type HttpResponse struct {
+	Status     int               `json:"status"`
+	StatusText string            `json:"statusText"`
+	Headers    map[string]string `json:"headers"`
+	Body       string            `json:"body"`
 }
 
 type VersionInfo struct {
@@ -237,3 +247,50 @@ func (a *App) Quit() {
 	systray.Quit()
 	wruntime.Quit(a.ctx)
 }
+
+// HttpRequest performs a native HTTP request from Go, bypassing browser CORS
+func (a *App) HttpRequest(method string, urlStr string, headers map[string]string, body string) (*HttpResponse, error) {
+	var bodyReader io.Reader
+	if body != "" {
+		bodyReader = strings.NewReader(body)
+	}
+
+	req, err := http.NewRequestWithContext(a.ctx, method, urlStr, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	respHeaders := make(map[string]string)
+	for k, v := range resp.Header {
+		if len(v) > 0 {
+			respHeaders[strings.ToLower(k)] = v[0]
+		}
+	}
+
+	return &HttpResponse{
+		Status:     resp.StatusCode,
+		StatusText: resp.Status,
+		Headers:    respHeaders,
+		Body:       string(respBody),
+	}, nil
+}
+

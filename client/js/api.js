@@ -58,6 +58,7 @@ export class ApiError extends Error {
 }
 
 import { saveSessionToken, getSessionToken, deleteSessionToken } from './storage.js';
+import { isDesktop, desktopFetch } from './desktop.js';
 
 let _token = null;
 
@@ -110,6 +111,30 @@ async function request(method, path, body, opts = {}) {
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
+  }
+
+  if (isDesktop() && window.go?.main?.App?.HttpRequest) {
+    const fullUrl = getBaseUrl() + path;
+    const bodyStr = body !== undefined ? JSON.stringify(body) : '';
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    const resp = await desktopFetch(method, fullUrl, headers, bodyStr);
+    if (resp) {
+      if (resp.status >= 200 && resp.status < 300) {
+        window.dispatchEvent(new Event('penik:rest-success'));
+        if (resp.status === 204 || !resp.body) return null;
+        try {
+          return JSON.parse(resp.body);
+        } catch {
+          return resp.body;
+        }
+      }
+      let msg = `HTTP ${resp.status}`;
+      try {
+        const errObj = JSON.parse(resp.body);
+        if (errObj && errObj.error) msg = errObj.error;
+      } catch {}
+      throw new ApiError(msg, resp.status);
+    }
   }
 
   let res;
@@ -379,9 +404,16 @@ let _timeSynced = false;
 export async function syncServerTime() {
   try {
     const t0 = Date.now();
-    const res = await fetch(`${getBaseUrl()}/time`);
-    if (!res.ok) return;
-    const data = await res.json();
+    let data;
+    if (isDesktop() && window.go?.main?.App?.HttpRequest) {
+      const resp = await desktopFetch('GET', `${getBaseUrl()}/time`);
+      if (!resp || resp.status !== 200) return;
+      data = JSON.parse(resp.body);
+    } else {
+      const res = await fetch(`${getBaseUrl()}/time`);
+      if (!res.ok) return;
+      data = await res.json();
+    }
     const t1 = Date.now();
     const latency = Math.round((t1 - t0) / 2);
     const serverTimeMs = data.server_time_ms || (data.server_time * 1000);

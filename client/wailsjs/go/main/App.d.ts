@@ -12,6 +12,8 @@ export function GetVersionInfo():Promise<main.VersionInfo>;
 
 export function Hide():Promise<void>;
 
+export function HttpRequest(arg1:string,arg2:string,arg3:Record<string, string>,arg4:string):Promise<main.HttpResponse>;
+
 export function Notify(arg1:string,arg2:string):Promise<void>;
 
 export function OpenFileDialog(arg1:string,arg2:Array<main.FileFilter>):Promise<string>;

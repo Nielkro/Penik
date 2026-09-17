@@ -127,3 +127,15 @@ export async function readDesktopFile(filePath) {
     return null;
   }
 }
+
+export async function desktopFetch(method, url, headers = {}, body = '') {
+  if (!isDesktop() || !window.go?.main?.App?.HttpRequest) {
+    return null;
+  }
+  try {
+    return await window.go.main.App.HttpRequest(method, url, headers, typeof body === 'string' ? body : JSON.stringify(body));
+  } catch (e) {
+    console.error('[desktop] HttpRequest bridge error:', e);
+    return null;
+  }
+}
