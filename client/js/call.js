@@ -5,6 +5,7 @@ import { getUserById, apiGet } from './api.js';
 import { callSounds } from './sounds.js';
 import { generateKeyPair, deriveSharedSecret, decodeKey } from './crypto.js';
 import { defaultWordCoder } from './wordcoder.js';
+import { isDesktop, sendDesktopNotification } from './desktop.js';
 
 let _livekitModule = null;
 async function getLiveKit() {
@@ -565,6 +566,17 @@ export class CallManager {
 
     callSounds.playRingtone();
     this._notifyState();
+
+    if (isDesktop()) {
+      if (window.go?.main?.App?.Show) {
+        try { window.go.main.App.Show(); } catch (_) {}
+      }
+      sendDesktopNotification(
+        'Входящий звонок',
+        `${peerContact.name || peerContact.nickname || 'Пользователь'} звонит вам...`,
+        `chat_${payload.from_user_id}`
+      );
+    }
   }
 
   async _handleCallAccepted(payload) {

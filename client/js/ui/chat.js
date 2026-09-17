@@ -1929,8 +1929,11 @@ export async function renderChat(container, userId) {
 
   const socket = getWS();
   const unsubCallLog = socket?.on(OP.CALL_LOG, (log) => {
-    if (!log) return;
-    if (String(log.caller_id) === String(userId) || String(log.callee_id) === String(userId)) {
+    if (!log || isSelfChat) return;
+    const isThisChatCall =
+      (Number(log.caller_id) === Number(myId) && Number(log.callee_id) === Number(userId)) ||
+      (Number(log.caller_id) === Number(userId) && Number(log.callee_id) === Number(myId));
+    if (isThisChatCall) {
       appendCallLog(log);
       scrollDown.scrollToBottom();
     }

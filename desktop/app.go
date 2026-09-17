@@ -142,32 +142,50 @@ func (a *App) GetVersionInfo() VersionInfo {
 	}
 }
 
-// Notify triggers a native desktop notification
-func (a *App) Notify(title string, body string) error {
+// Notify triggers a native desktop notification with optional tag for click routing
+func (a *App) Notify(title string, body string, tag string) error {
 	if title == "" {
 		title = "Penik"
 	}
 
 	switch runtime.GOOS {
 	case "linux":
-		cmd := exec.Command("notify-send", "-a", "Penik", "-i", "penik", title, body)
-		return cmd.Start()
+		go func() {
+			cmd := exec.Command("notify-send", "--action=default=Открыть", "-a", "Penik", "-i", "penik", title, body)
+			out, err := cmd.Output()
+			if err != nil {
+				// Fallback without --action if flag is not supported on legacy libnotify
+				_ = exec.Command("notify-send", "-a", "Penik", "-i", "penik", title, body).Run()
+				return
+			}
+			if strings.TrimSpace(string(out)) == "default" {
+				a.Show()
+				if tag != "" && a.ctx != nil {
+					wruntime.EventsEmit(a.ctx, "desktop:notification_clicked", tag)
+				}
+			}
+		}()
+		return nil
 	case "windows":
-		// PowerShell toast notification fallback
-		psScript := fmt.Sprintf(
-			`[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; `+
-				`$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); `+
-				`$textNodes = $template.GetElementsByTagName('text'); `+
-				`$textNodes.Item(0).AppendChild($template.CreateTextNode('%s')) > $null; `+
-				`$textNodes.Item(1).AppendChild($template.CreateTextNode('%s')) > $null; `+
-				`$notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Penik'); `+
-				`$notification = [Windows.UI.Notifications.ToastNotification]::new($template); `+
-				`$notifier.Show($notification);`,
-			strings.ReplaceAll(title, "'", "''"),
-			strings.ReplaceAll(body, "'", "''"),
-		)
-		cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psScript)
-		return cmd.Start()
+		go func() {
+			// PowerShell toast notification fallback
+			psScript := fmt.Sprintf(
+				`[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; `+
+					`$template = [Windows.UI.Notifications.ToastTemplateType]::ToastText02; `+
+					`$xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template); `+
+					`$textNodes = $xml.GetElementsByTagName('text'); `+
+					`$textNodes.Item(0).AppendChild($xml.CreateTextNode('%s')) > $null; `+
+					`$textNodes.Item(1).AppendChild($xml.CreateTextNode('%s')) > $null; `+
+					`$notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Penik'); `+
+					`$notification = [Windows.UI.Notifications.ToastNotification]::new($xml); `+
+					`$notifier.Show($notification);`,
+				strings.ReplaceAll(title, "'", "''"),
+				strings.ReplaceAll(body, "'", "''"),
+			)
+			cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psScript)
+			_ = cmd.Run()
+		}()
+		return nil
 	default:
 		return nil
 	}

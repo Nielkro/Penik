@@ -762,7 +762,7 @@ export function showDesktopNotification(title, body, tag, onClick) {
   const textPreview = getMessagePreview(body) || body;
 
   if (isDesktop()) {
-    sendDesktopNotification(title, textPreview);
+    sendDesktopNotification(title, textPreview, tag);
     return;
   }
 

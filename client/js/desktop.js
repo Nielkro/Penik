@@ -13,6 +13,21 @@ export async function initDesktop() {
 
   window.__PENIK_DESKTOP__ = true;
 
+  // Listen to Wails notification click events to navigate to corresponding chat
+  if (window.runtime && typeof window.runtime.EventsOn === 'function') {
+    window.runtime.EventsOn('desktop:notification_clicked', (tag) => {
+      if (typeof tag === 'string') {
+        if (tag.startsWith('chat_')) {
+          const userId = tag.replace('chat_', '');
+          window.location.hash = `#/chat/${userId}`;
+        } else if (tag.startsWith('group_')) {
+          const groupId = tag.replace('group_', '');
+          window.location.hash = `#/group/${groupId}`;
+        }
+      }
+    });
+  }
+
   // If Wails App bindings are available, sync server URL and platform info
   if (window.go && window.go.main && window.go.main.App) {
     try {
@@ -54,12 +69,23 @@ export async function setDesktopServerURL(url) {
   }
 }
 
-export async function sendDesktopNotification(title, body) {
+export async function sendDesktopNotification(title, body, tag = '') {
   if (!isDesktop() || !window.go?.main?.App?.Notify) {
     // Fallback to Web Notification API if permitted
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       try {
-        new Notification(title, { body, icon: '/assets/favicon-32x32.png' });
+        const notif = new Notification(title, { body, icon: '/assets/favicon-32x32.png', tag });
+        if (tag) {
+          notif.onclick = () => {
+            window.focus();
+            if (tag.startsWith('chat_')) {
+              window.location.hash = `#/chat/${tag.replace('chat_', '')}`;
+            } else if (tag.startsWith('group_')) {
+              window.location.hash = `#/group/${tag.replace('group_', '')}`;
+            }
+            notif.close();
+          };
+        }
         return true;
       } catch (e) {
         return false;
@@ -69,7 +95,7 @@ export async function sendDesktopNotification(title, body) {
   }
 
   try {
-    await window.go.main.App.Notify(title, body);
+    await window.go.main.App.Notify(title, body, tag);
     return true;
   } catch (e) {
     console.warn('[desktop] Notification error:', e);

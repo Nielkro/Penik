@@ -127,7 +127,13 @@ class ChatRoomViewModel @Inject constructor(
             webSocketManager.events.collect { event ->
                 if (event is niel.kro.penik.data.network.websocket.WebSocketEvent.CallLog) {
                     val log = event.event
-                    if (log.callerId == chatUserId || log.calleeId == chatUserId) {
+                    val myId = tokenStorage.getUserId()
+                    val isSelfChat = chatUserId == myId
+                    val isThisChat = !isSelfChat && (
+                        (log.callerId == myId && log.calleeId == chatUserId) ||
+                        (log.callerId == chatUserId && log.calleeId == myId)
+                    )
+                    if (isThisChat) {
                         val current = _peerCalls.value
                         if (current.none { it.callId == log.callId }) {
                             _peerCalls.value = current + niel.kro.penik.data.network.api.CallLogItemResponse(
@@ -141,7 +147,7 @@ class ChatRoomViewModel @Inject constructor(
                                 endedAt = log.endedAt,
                                 duration = log.duration,
                                 peerId = chatUserId,
-                                isOutgoing = log.callerId == tokenStorage.getUserId()
+                                isOutgoing = log.callerId == myId
                             )
                         }
                     }
