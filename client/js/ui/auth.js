@@ -564,9 +564,9 @@ export function renderAuth(container, initialMode = "welcome") {
     else if (step === 3) {
       // Step 4: E2EE Password / Restore / Reset
       const title = el("h1", { class: "auth-title" }, "Восстановление ключей");
-      const subtitle = el("p", { style: "text-align:center; color:#aaa; font-size:13px; margin-bottom:20px; line-height:1.4;" }, "Введите e2ee-пароль для расшифрования сообщений");
+      const subtitle = el("p", { style: "text-align:center; color:#aaa; font-size:13px; margin-bottom:20px; line-height:1.4;" }, "Введите ваш E2EE-пароль или мнемоническую фразу (12 слов) для расшифрования сообщений");
 
-      const input = el("input", { type: "password", placeholder: "Ваш e2ee-пароль", class: "profile-input", value: state.e2eePassword, style: "width:100%; padding:12px; padding-right:36px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#fff;" });
+      const input = el("input", { type: "password", placeholder: "E2EE-пароль или мнемоническая фраза", class: "profile-input", value: state.e2eePassword, style: "width:100%; padding:12px; padding-right:36px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#fff;" });
       
       const toggleBtn = el("button", { type: "button", style: "position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; border:none; color:#aaa; cursor:pointer; font-size:16px; padding:4px;" }, "👁️");
       toggleBtn.addEventListener("click", () => {
@@ -582,12 +582,12 @@ export function renderAuth(container, initialMode = "welcome") {
       const wrapper = el("div", { style: "position:relative; width:100%; margin-bottom:16px;" }, input, toggleBtn);
       const restoreBtn = el("button", { class: "btn-primary", style: "margin-bottom:12px; cursor:pointer;" }, "Восстановить переписку");
       
-      const resetLink = el("a", { class: "auth-switch-link", style: "display:block; text-align:center; font-size:13px; cursor:pointer;" }, "Забыли e2ee-пароль? (Начать с чистого листа)");
+      const resetLink = el("a", { class: "auth-switch-link", style: "display:block; text-align:center; font-size:13px; cursor:pointer;" }, "Забыли пароль / фразу? (Начать с чистого листа)");
 
       // Action 1: Restore backup
       const handleRestore = async () => {
-        const passphrase = input.value;
-        if (!passphrase) return showErr("Введите e2ee-пароль.");
+        const passphrase = input.value ? input.value.trim().replace(/\s+/g, ' ') : '';
+        if (!passphrase) return showErr("Введите E2EE-пароль или мнемоническую фразу.");
 
         restoreBtn.disabled = true;
         restoreBtn.innerHTML = "";
@@ -608,7 +608,8 @@ export function renderAuth(container, initialMode = "welcome") {
           showToast("Связка ключей успешно восстановлена!", "success");
           navigate("#chats");
         } catch (err) {
-          showErr(err.message || "Неверный e2ee-пароль или ошибка восстановления.");
+          console.error("Restore error:", err);
+          showErr(err.message || "Неверный E2EE-пароль / мнемоническая фраза или ошибка расшифрования.");
         } finally {
           restoreBtn.disabled = false;
           restoreBtn.textContent = "Восстановить переписку";

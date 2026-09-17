@@ -98,6 +98,52 @@ export function getToken() {
   return _token;
 }
 
+function formatHttpError(status, dataOrBody) {
+  let serverMsg = '';
+  if (typeof dataOrBody === 'object' && dataOrBody?.error) {
+    serverMsg = dataOrBody.error;
+  } else if (typeof dataOrBody === 'string') {
+    try {
+      const parsed = JSON.parse(dataOrBody);
+      if (parsed && parsed.error) serverMsg = parsed.error;
+    } catch {}
+    if (!serverMsg && dataOrBody && !dataOrBody.startsWith('<')) {
+      serverMsg = dataOrBody.trim();
+    }
+  }
+
+  if (serverMsg) {
+    if (serverMsg === 'unauthorized' || serverMsg === 'invalid username or password') {
+      return 'Неверный логин, пароль или сессия истекла';
+    }
+    if (serverMsg === 'bad request') {
+      return 'Некорректные данные запроса';
+    }
+    if (serverMsg === 'user not found') {
+      return 'Пользователь не найден';
+    }
+    if (serverMsg === 'backup_not_found' || serverMsg === 'backup not found') {
+      return 'Резервная копия не найдена';
+    }
+    return serverMsg;
+  }
+
+  switch (status) {
+    case 400: return 'Некорректный запрос';
+    case 401: return 'Неверный пароль или сессия завершена';
+    case 403: return 'Доступ запрещен (CORS или недостаточно прав)';
+    case 404: return 'Запрашиваемый ресурс не найден';
+    case 409: return 'Запись уже существует';
+    case 413: return 'Файл превышает допустимый размер';
+    case 429: return 'Слишком много запросов. Пожалуйста, подождите';
+    case 500: return 'Внутренняя ошибка сервера';
+    case 502:
+    case 503:
+    case 504: return 'Сервер временно недоступен';
+    default: return `Ошибка запроса (${status})`;
+  }
+}
+
 async function request(method, path, body, opts = {}) {
   const token = opts.token ?? getToken();
   /** @type {Record<string, string>} */
@@ -128,11 +174,7 @@ async function request(method, path, body, opts = {}) {
           return resp.body;
         }
       }
-      let msg = `HTTP ${resp.status}`;
-      try {
-        const errObj = JSON.parse(resp.body);
-        if (errObj && errObj.error) msg = errObj.error;
-      } catch {}
+      const msg = formatHttpError(resp.status, resp.body);
       throw new ApiError(msg, resp.status);
     }
   }
@@ -154,8 +196,6 @@ async function request(method, path, body, opts = {}) {
     data = await res.json();
   } else {
     const text = await res.text();
-    // Some reverse proxies strip Content-Type from JSON responses. Parse
-    // JSON-looking bodies anyway so callers still receive an object.
     try {
       data = JSON.parse(text);
     } catch {
@@ -164,8 +204,7 @@ async function request(method, path, body, opts = {}) {
   }
 
   if (!res.ok) {
-    const msg = (typeof data === 'object' && data?.error) ? data.error
-      : (typeof data === 'string' ? data : `HTTP ${res.status}`);
+    const msg = formatHttpError(res.status, data);
     throw new ApiError(msg, res.status);
   }
 
