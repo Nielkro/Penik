@@ -1,11 +1,16 @@
-package main
-
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/base64"
 	"fmt"
+	"image"
+	"image/color"
+	_ "image/gif"
+	_ "image/jpeg"
+	"image/png"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -14,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	_ "golang.org/x/image/webp"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/getlantern/systray"
@@ -144,7 +150,70 @@ func (a *App) GetVersionInfo() VersionInfo {
 	}
 }
 
-// getAvatarIconPath downloads and caches user/group avatar for notification icon
+// cropCircle takes raw image bytes (JPEG, PNG, WebP), crops to a center square, masks to a smooth circle, and encodes as PNG.
+func cropCircle(raw []byte) ([]byte, error) {
+	src, _, err := image.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+
+	bounds := src.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+	size := w
+	if h < size {
+		size = h
+	}
+	if size <= 0 {
+		return nil, fmt.Errorf("invalid image dimensions")
+	}
+
+	offsetX := (w - size) / 2
+	offsetY := (h - size) / 2
+
+	dst := image.NewRGBA(image.Rect(0, 0, size, size))
+	radius := float64(size) / 2.0
+	centerX := radius
+	centerY := radius
+
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			dx := float64(x) + 0.5 - centerX
+			dy := float64(y) + 0.5 - centerY
+			distSq := dx*dx + dy*dy
+			rSq := radius * radius
+
+			if distSq > rSq {
+				dst.SetRGBA(x, y, color.RGBA{0, 0, 0, 0})
+			} else {
+				srcColor := src.At(bounds.Min.X+offsetX+x, bounds.Min.Y+offsetY+y)
+				r, g, b, a := srcColor.RGBA()
+
+				edgeDist := radius - math.Sqrt(distSq)
+				alphaMult := 1.0
+				if edgeDist < 1.0 && edgeDist >= 0.0 {
+					alphaMult = edgeDist
+				}
+
+				origAlpha := float64(a) / 65535.0
+				finalAlpha := uint8(origAlpha * alphaMult * 255.0)
+				dst.SetRGBA(x, y, color.RGBA{
+					R: uint8((r * 255) / 65535),
+					G: uint8((g * 255) / 65535),
+					B: uint8((b * 255) / 65535),
+					A: finalAlpha,
+				})
+			}
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, dst); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// getAvatarIconPath downloads and caches user/group avatar as a circle for notification icon
 func (a *App) getAvatarIconPath(avatarURL string) string {
 	if avatarURL == "" {
 		return "penik"
@@ -190,7 +259,12 @@ func (a *App) getAvatarIconPath(avatarURL string) string {
 		return "penik"
 	}
 
-	_ = os.WriteFile(localPath, data, 0644)
+	// Crop downloaded avatar into a smooth circular PNG with transparent background
+	if circleData, err := cropCircle(data); err == nil && len(circleData) > 0 {
+		_ = os.WriteFile(localPath, circleData, 0644)
+	} else {
+		_ = os.WriteFile(localPath, data, 0644)
+	}
 	return localPath
 }
 
