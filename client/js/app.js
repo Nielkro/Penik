@@ -1,4 +1,4 @@
-import { getToken, setToken, primeToken, getUserById, apiGet, apiPost, syncServerTime, getServerTimeMs, getServerTimeSec } from './api.js';
+import { getToken, setToken, primeToken, getUserById, apiGet, apiPost, syncServerTime, getServerTimeMs, getServerTimeSec, getApiOrigin } from './api.js';
 import {
   openDB, saveMessage, updateMessageRead, updateMessageText,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
@@ -739,10 +739,11 @@ async function onMsgRecvGlobal(payload) {
     appSounds.playMessageReceived();
     const isCurrentChatOpen = _activeChatCallback && String(_activeChatCallback.userId) === String(chatPartnerId) && !document.hidden;
     if (!isCurrentChatOpen) {
+      const avatarUrl = contact?.avatar_url || `${getApiOrigin()}/api/v1/avatar/${chatPartnerId}`;
       showDesktopNotification(contact?.name || "Пользователь", plaintext, `chat_${chatPartnerId}`, () => {
         window.focus();
         location.hash = `#/chat/${chatPartnerId}`;
-      });
+      }, avatarUrl);
     }
   }
 
@@ -758,11 +759,11 @@ async function onMsgRecvGlobal(payload) {
   }
 }
 
-export function showDesktopNotification(title, body, tag, onClick) {
+export function showDesktopNotification(title, body, tag, onClick, avatarUrl = '') {
   const textPreview = getMessagePreview(body) || body;
 
   if (isDesktop()) {
-    sendDesktopNotification(title, textPreview, tag);
+    sendDesktopNotification(title, textPreview, tag, avatarUrl);
     return;
   }
 
@@ -772,7 +773,7 @@ export function showDesktopNotification(title, body, tag, onClick) {
   try {
     const notification = new Notification(title, {
       body: textPreview,
-      icon: '/assets/favicon-32x32.png',
+      icon: avatarUrl || '/assets/favicon-32x32.png',
       tag: tag || 'penik_msg',
       badge: '/assets/favicon-32x32.png',
       silent: true

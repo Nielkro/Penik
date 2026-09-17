@@ -26,6 +26,7 @@ import {
   renameGroup as apiRenameGroup,
   uploadGroupAvatar,
   getServerTimeSec,
+  getApiOrigin,
 } from './api.js';
 import {
   deriveSharedSecret,
@@ -724,10 +725,11 @@ export function registerGroupWSListeners() {
         const g = await dbGetGroup(record.group_id);
         const title = g?.name || 'Группа';
         const sender = record.sender_name ? `${record.sender_name}: ` : '';
+        const avatarUrl = `${getApiOrigin()}/api/v1/groups/${record.group_id}/avatar`;
         showDesktopNotification(title, sender + (record.text || ''), `group_${record.group_id}`, () => {
           window.focus();
           location.hash = `#/group/${record.group_id}`;
-        });
+        }, avatarUrl);
       }
       emit({ type: 'message', groupId: record.group_id, message: record });
     }

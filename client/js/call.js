@@ -1,7 +1,7 @@
 import { ws, OP } from './ws.js';
 import { showToast } from './ui/components.js';
 import { getContact, saveContact, getIKPrivate } from './storage.js';
-import { getUserById, apiGet } from './api.js';
+import { getUserById, apiGet, getApiOrigin } from './api.js';
 import { callSounds } from './sounds.js';
 import { generateKeyPair, deriveSharedSecret, decodeKey } from './crypto.js';
 import { defaultWordCoder } from './wordcoder.js';
@@ -571,10 +571,12 @@ export class CallManager {
       if (window.go?.main?.App?.Show) {
         try { window.go.main.App.Show(); } catch (_) {}
       }
+      const avatarUrl = peerContact.avatar_url || `${getApiOrigin()}/api/v1/avatar/${payload.from_user_id}`;
       sendDesktopNotification(
         'Входящий звонок',
         `${peerContact.name || peerContact.nickname || 'Пользователь'} звонит вам...`,
-        `chat_${payload.from_user_id}`
+        `chat_${payload.from_user_id}`,
+        avatarUrl
       );
     }
   }

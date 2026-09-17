@@ -69,12 +69,16 @@ export async function setDesktopServerURL(url) {
   }
 }
 
-export async function sendDesktopNotification(title, body, tag = '') {
+export async function sendDesktopNotification(title, body, tag = '', avatarUrl = '') {
   if (!isDesktop() || !window.go?.main?.App?.Notify) {
     // Fallback to Web Notification API if permitted
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       try {
-        const notif = new Notification(title, { body, icon: '/assets/favicon-32x32.png', tag });
+        const notif = new Notification(title, {
+          body,
+          icon: avatarUrl || '/assets/favicon-32x32.png',
+          tag
+        });
         if (tag) {
           notif.onclick = () => {
             window.focus();
@@ -95,7 +99,7 @@ export async function sendDesktopNotification(title, body, tag = '') {
   }
 
   try {
-    await window.go.main.App.Notify(title, body, tag);
+    await window.go.main.App.Notify(title, body, tag, avatarUrl || '');
     return true;
   } catch (e) {
     console.warn('[desktop] Notification error:', e);

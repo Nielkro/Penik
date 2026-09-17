@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -142,8 +144,58 @@ func (a *App) GetVersionInfo() VersionInfo {
 	}
 }
 
-// Notify triggers a native desktop notification with optional tag for click routing
-func (a *App) Notify(title string, body string, tag string) error {
+// getAvatarIconPath downloads and caches user/group avatar for notification icon
+func (a *App) getAvatarIconPath(avatarURL string) string {
+	if avatarURL == "" {
+		return "penik"
+	}
+	serverURL := a.GetServerURL()
+	fullURL := avatarURL
+	if strings.HasPrefix(avatarURL, "/") {
+		fullURL = strings.TrimRight(serverURL, "/") + avatarURL
+	}
+	if !strings.HasPrefix(fullURL, "http://") && !strings.HasPrefix(fullURL, "https://") {
+		return "penik"
+	}
+
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		cacheDir = os.TempDir()
+	}
+	avatarDir := filepath.Join(cacheDir, "penik", "avatars")
+	_ = os.MkdirAll(avatarDir, 0755)
+
+	hash := fmt.Sprintf("%x", md5.Sum([]byte(fullURL)))
+	localPath := filepath.Join(avatarDir, hash+".png")
+
+	if fi, err := os.Stat(localPath); err == nil && time.Since(fi.ModTime()) < 1*time.Hour && fi.Size() > 0 {
+		return localPath
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fullURL)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		if _, err := os.Stat(localPath); err == nil {
+			return localPath
+		}
+		return "penik"
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil || len(data) == 0 {
+		return "penik"
+	}
+
+	_ = os.WriteFile(localPath, data, 0644)
+	return localPath
+}
+
+// Notify triggers a native desktop notification with optional tag and avatar
+func (a *App) Notify(title string, body string, tag string, avatarUrl string) error {
 	if title == "" {
 		title = "Penik"
 	}
@@ -151,11 +203,12 @@ func (a *App) Notify(title string, body string, tag string) error {
 	switch runtime.GOOS {
 	case "linux":
 		go func() {
-			cmd := exec.Command("notify-send", "--action=default=Открыть", "-a", "Penik", "-i", "penik", title, body)
+			iconPath := a.getAvatarIconPath(avatarUrl)
+			cmd := exec.Command("notify-send", "--action=default=Открыть", "-a", "Penik", "-i", iconPath, title, body)
 			out, err := cmd.Output()
 			if err != nil {
 				// Fallback without --action if flag is not supported on legacy libnotify
-				_ = exec.Command("notify-send", "-a", "Penik", "-i", "penik", title, body).Run()
+				_ = exec.Command("notify-send", "-a", "Penik", "-i", iconPath, title, body).Run()
 				return
 			}
 			if strings.TrimSpace(string(out)) == "default" {
@@ -168,20 +221,42 @@ func (a *App) Notify(title string, body string, tag string) error {
 		return nil
 	case "windows":
 		go func() {
-			// PowerShell toast notification fallback
-			psScript := fmt.Sprintf(
-				`[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; `+
-					`$template = [Windows.UI.Notifications.ToastTemplateType]::ToastText02; `+
-					`$xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template); `+
-					`$textNodes = $xml.GetElementsByTagName('text'); `+
-					`$textNodes.Item(0).AppendChild($xml.CreateTextNode('%s')) > $null; `+
-					`$textNodes.Item(1).AppendChild($xml.CreateTextNode('%s')) > $null; `+
-					`$notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Penik'); `+
-					`$notification = [Windows.UI.Notifications.ToastNotification]::new($xml); `+
-					`$notifier.Show($notification);`,
-				strings.ReplaceAll(title, "'", "''"),
-				strings.ReplaceAll(body, "'", "''"),
-			)
+			iconPath := a.getAvatarIconPath(avatarUrl)
+			var psScript string
+			if iconPath != "penik" {
+				absIconPath, _ := filepath.Abs(iconPath)
+				fileUri := "file:///" + filepath.ToSlash(absIconPath)
+				psScript = fmt.Sprintf(
+					`[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; `+
+						`$template = [Windows.UI.Notifications.ToastTemplateType]::ToastImageAndText02; `+
+						`$xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template); `+
+						`$textNodes = $xml.GetElementsByTagName('text'); `+
+						`$textNodes.Item(0).AppendChild($xml.CreateTextNode('%s')) > $null; `+
+						`$textNodes.Item(1).AppendChild($xml.CreateTextNode('%s')) > $null; `+
+						`$imageNodes = $xml.GetElementsByTagName('image'); `+
+						`$imageNodes.Item(0).Attributes.GetNamedItem('src').NodeValue = '%s'; `+
+						`$notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Penik'); `+
+						`$notification = [Windows.UI.Notifications.ToastNotification]::new($xml); `+
+						`$notifier.Show($notification);`,
+					strings.ReplaceAll(title, "'", "''"),
+					strings.ReplaceAll(body, "'", "''"),
+					strings.ReplaceAll(fileUri, "'", "''"),
+				)
+			} else {
+				psScript = fmt.Sprintf(
+					`[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; `+
+						`$template = [Windows.UI.Notifications.ToastTemplateType]::ToastText02; `+
+						`$xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template); `+
+						`$textNodes = $xml.GetElementsByTagName('text'); `+
+						`$textNodes.Item(0).AppendChild($xml.CreateTextNode('%s')) > $null; `+
+						`$textNodes.Item(1).AppendChild($xml.CreateTextNode('%s')) > $null; `+
+						`$notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Penik'); `+
+						`$notification = [Windows.UI.Notifications.ToastNotification]::new($xml); `+
+						`$notifier.Show($notification);`,
+					strings.ReplaceAll(title, "'", "''"),
+					strings.ReplaceAll(body, "'", "''"),
+				)
+			}
 			cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psScript)
 			_ = cmd.Run()
 		}()
