@@ -148,3 +148,9 @@ func (a *App) StopScreenCapture() error {
 func (a *App) GetCaptureSources() ([]CaptureSource, error) {
 	return getPlatformCaptureSources()
 }
+
+// GetSourceThumbnail returns a base64 thumbnail for a source ID.
+func (a *App) GetSourceThumbnail(sourceID string) (string, error) {
+	return getPlatformSourceThumbnail(sourceID)
+}
+

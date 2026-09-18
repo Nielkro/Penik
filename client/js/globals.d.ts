@@ -9,6 +9,7 @@ interface Window {
   __PENIK_API_ORIGIN__?: string;
   __PENIK_API_HOST__?: string;
   __PENIK_DESKTOP__?: boolean;
+  __PENIK_DESKTOP_PLATFORM__?: string;
   go?: any;
   runtime?: any;
 }

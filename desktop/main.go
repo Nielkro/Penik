@@ -68,7 +68,6 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			app.startup(ctx)
 			initSystemTray(app)
-			startScreenShareNotificationSuppressor(ctx)
 		},
 		OnBeforeClose: app.beforeClose,
 		SingleInstanceLock: &options.SingleInstanceLock{

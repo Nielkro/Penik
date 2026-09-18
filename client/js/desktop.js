@@ -8,6 +8,19 @@ export function isDesktop() {
   return false;
 }
 
+export function isWindowsDesktop() {
+  if (!isDesktop()) return false;
+  if (typeof window !== 'undefined' && window.__PENIK_DESKTOP_PLATFORM__) {
+    return window.__PENIK_DESKTOP_PLATFORM__ === 'windows';
+  }
+  if (typeof navigator !== 'undefined') {
+    const ua = (navigator.userAgent || '').toLowerCase();
+    const platform = (navigator.platform || '').toLowerCase();
+    if (ua.includes('windows') || platform.includes('win')) return true;
+  }
+  return false;
+}
+
 export async function initDesktop() {
   if (!isDesktop()) return;
 
@@ -31,6 +44,9 @@ export async function initDesktop() {
   // If Wails App bindings are available, sync server URL and platform info
   if (window.go && window.go.main && window.go.main.App) {
     try {
+      if (typeof window.go.main.App.GetPlatform === 'function') {
+        window.__PENIK_DESKTOP_PLATFORM__ = await window.go.main.App.GetPlatform();
+      }
       const serverUrl = await window.go.main.App.GetServerURL();
       if (serverUrl && !window.__PENIK_API_ORIGIN__) {
         window.__PENIK_API_ORIGIN__ = serverUrl;

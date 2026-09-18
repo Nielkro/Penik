@@ -17,17 +17,23 @@ import (
 )
 
 var (
+	user32  = syscall.NewLazyDLL("user32.dll")
 	gdi32   = syscall.NewLazyDLL("gdi32.dll")
 	dwmapi  = syscall.NewLazyDLL("dwmapi.dll")
 
-	procGetDC               = user32.NewProc("GetDC")
-	procReleaseDC           = user32.NewProc("ReleaseDC")
-	procGetWindowRect       = user32.NewProc("GetWindowRect")
-	procGetSystemMetrics    = user32.NewProc("GetSystemMetrics")
-	procIsIconic            = user32.NewProc("IsIconic")
-	procPrintWindow         = user32.NewProc("PrintWindow")
-	procEnumDisplayMonitors = user32.NewProc("EnumDisplayMonitors")
-	procGetMonitorInfoW     = user32.NewProc("GetMonitorInfoW")
+	procGetDC                 = user32.NewProc("GetDC")
+	procReleaseDC             = user32.NewProc("ReleaseDC")
+	procGetWindowRect         = user32.NewProc("GetWindowRect")
+	procGetSystemMetrics      = user32.NewProc("GetSystemMetrics")
+	procIsIconic              = user32.NewProc("IsIconic")
+	procIsWindowVisible       = user32.NewProc("IsWindowVisible")
+	procEnumWindows           = user32.NewProc("EnumWindows")
+	procGetWindowTextW         = user32.NewProc("GetWindowTextW")
+	procGetWindowTextLengthW   = user32.NewProc("GetWindowTextLengthW")
+	procGetClassNameW          = user32.NewProc("GetClassNameW")
+	procPrintWindow           = user32.NewProc("PrintWindow")
+	procEnumDisplayMonitors   = user32.NewProc("EnumDisplayMonitors")
+	procGetMonitorInfoW       = user32.NewProc("GetMonitorInfoW")
 
 	procCreateCompatibleDC     = gdi32.NewProc("CreateCompatibleDC")
 	procDeleteDC               = gdi32.NewProc("DeleteDC")
@@ -39,6 +45,23 @@ var (
 
 	procDwmGetWindowAttribute  = dwmapi.NewProc("DwmGetWindowAttribute")
 )
+
+func getWindowText(hwnd uintptr) string {
+	lenRes, _, _ := procGetWindowTextLengthW.Call(hwnd)
+	textLen := int(lenRes)
+	if textLen == 0 {
+		return ""
+	}
+	buf := make([]uint16, textLen+1)
+	procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(textLen+1))
+	return syscall.UTF16ToString(buf)
+}
+
+func getWindowClassName(hwnd uintptr) string {
+	buf := make([]uint16, 256)
+	procGetClassNameW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	return syscall.UTF16ToString(buf)
+}
 
 const (
 	smCxScreen         = 0
@@ -176,17 +199,19 @@ func getPlatformCaptureSources() ([]CaptureSource, error) {
 	})
 	procEnumWindows.Call(enumWinCb, 0)
 
-	// Generate low-res preview thumbnails for top sources
+	// Generate low-res preview thumbnails only for screens (fast, 1-2 displays)
 	for i := range sources {
-		if thumb, err := captureSourceThumbnail(sources[i].ID); err == nil && thumb != "" {
-			sources[i].Thumbnail = thumb
+		if sources[i].Type == "screen" {
+			if thumb, err := getPlatformSourceThumbnail(sources[i].ID); err == nil && thumb != "" {
+				sources[i].Thumbnail = thumb
+			}
 		}
 	}
 
 	return sources, nil
 }
 
-func captureSourceThumbnail(sourceID string) (string, error) {
+func getPlatformSourceThumbnail(sourceID string) (string, error) {
 	img, err := captureRawImage(sourceID)
 	if err != nil || img == nil {
 		return "", err

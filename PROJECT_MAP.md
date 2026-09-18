@@ -106,8 +106,6 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `desktop/screencap_other.go` — Non-Windows fallback stub for screen capture.
 - `desktop/config.go` — Desktop persistent configuration manager storing server URL and tray preferences in OS-standard config directories (`os.UserConfigDir()`).
 - `desktop/tray.go` — Native system tray integration (KDE/AppIndicator/Windows) for background execution and quick window actions.
-- `desktop/screen_share_windows.go` — Windows Win32 background watcher automatically suppressing Chromium/WebView2 screen capture notification overlays.
-- `desktop/screen_share_other.go` — No-op screen share notification suppressor stub for non-Windows platforms.
 - `desktop/build/linux/penik.desktop` — Linux desktop entry registering application name, icon, and categories for Wayland/X11 compositors.
 - `desktop/wails.json` — Wails project configuration linking frontend build to the web client.
 

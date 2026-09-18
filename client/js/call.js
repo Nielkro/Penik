@@ -5,7 +5,7 @@ import { getUserById, apiGet, getApiOrigin } from './api.js';
 import { callSounds } from './sounds.js';
 import { generateKeyPair, deriveSharedSecret, decodeKey } from './crypto.js';
 import { defaultWordCoder } from './wordcoder.js';
-import { isDesktop, sendDesktopNotification, startDesktopScreenCapture, stopDesktopScreenCapture } from './desktop.js';
+import { isDesktop, isWindowsDesktop, sendDesktopNotification, startDesktopScreenCapture, stopDesktopScreenCapture } from './desktop.js';
 import { openScreenPickerModal } from './ui/screenshare_modal.js';
 
 let _livekitModule = null;
@@ -379,7 +379,7 @@ export class CallManager {
   async toggleScreenShare() {
     if (!this.room) return;
 
-    if (isDesktop()) {
+    if (isWindowsDesktop()) {
       if (this.isScreenShareOn) {
         // Stop desktop capture
         if (this._desktopScreenWS) {
@@ -607,7 +607,7 @@ export class CallManager {
       try { this._desktopScreenWS.close(); } catch (_) {}
       this._desktopScreenWS = null;
     }
-    if (isDesktop()) {
+    if (isWindowsDesktop()) {
       stopDesktopScreenCapture().catch(() => {});
     }
     this._desktopScreenTrack = null;
