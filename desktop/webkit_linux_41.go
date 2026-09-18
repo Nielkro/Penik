@@ -12,7 +12,7 @@ package main
 
 static gboolean on_permission_request(WebKitWebView *web_view, WebKitPermissionRequest *request, gpointer user_data) {
 	if (request != NULL) {
-		printf("[penik-webkit] Auto-allowing permission request\n");
+		printf("[penik-webkit] Auto-allowing media/camera/microphone permission request\n");
 		webkit_permission_request_allow(request);
 		return TRUE;
 	}
@@ -27,6 +27,7 @@ static void enable_all_webrtc_features(WebKitSettings *settings) {
 	webkit_settings_set_enable_developer_extras(settings, TRUE);
 	webkit_settings_set_disable_web_security(settings, TRUE);
 	webkit_settings_set_allow_universal_access_from_file_urls(settings, TRUE);
+	webkit_settings_set_allow_file_access_from_file_urls(settings, TRUE);
 
 	WebKitFeatureList *features = webkit_settings_get_all_features();
 	if (features) {
@@ -34,7 +35,7 @@ static void enable_all_webrtc_features(WebKitSettings *settings) {
 		for (gsize i = 0; i < len; i++) {
 			WebKitFeature *f = webkit_feature_list_get(features, i);
 			const char *id = webkit_feature_get_identifier(f);
-			if (id && (strstr(id, "webrtc") || strstr(id, "media") || strstr(id, "peer") || strstr(id, "stream") || strstr(id, "rtc"))) {
+			if (id && (strstr(id, "webrtc") || strstr(id, "media") || strstr(id, "peer") || strstr(id, "stream") || strstr(id, "rtc") || strstr(id, "capture"))) {
 				webkit_settings_set_feature_enabled(settings, f, TRUE);
 				printf("[penik-webkit] Enabled WebKit feature: %s\n", id);
 			}
@@ -43,7 +44,10 @@ static void enable_all_webrtc_features(WebKitSettings *settings) {
 	}
 }
 
+static int g_webview_found = 0;
+
 static void configure_webview_widget(GtkWidget *widget, gpointer data) {
+	if (widget == NULL) return;
 	if (WEBKIT_IS_WEB_VIEW(widget)) {
 		WebKitWebView *webview = WEBKIT_WEB_VIEW(widget);
 		gpointer configured = g_object_get_data(G_OBJECT(webview), "penik-webrtc-configured");
@@ -52,21 +56,15 @@ static void configure_webview_widget(GtkWidget *widget, gpointer data) {
 			WebKitSettings *settings = webkit_web_view_get_settings(webview);
 			enable_all_webrtc_features(settings);
 			g_signal_connect(webview, "permission-request", G_CALLBACK(on_permission_request), NULL);
-			printf("[penik-webkit] Configured WebKitWebView and reloading WebProcess for WebRTC...\n");
-			webkit_web_view_reload(webview);
+			printf("[penik-webkit] Successfully configured WebKitWebView for WebRTC!\n");
+			g_webview_found = 1;
 		}
 	} else if (GTK_IS_CONTAINER(widget)) {
-		GList *children = gtk_container_get_children(GTK_CONTAINER(widget));
-		for (GList *c = children; c != NULL; c = c->next) {
-			configure_webview_widget(GTK_WIDGET(c->data), data);
-		}
-		if (children) {
-			g_list_free(children);
-		}
+		gtk_container_forall(GTK_CONTAINER(widget), configure_webview_widget, data);
 	}
 }
 
-static void configure_all_webviews() {
+static gboolean configure_webviews_timer(gpointer data) {
 	GList *toplevels = gtk_window_list_toplevels();
 	for (GList *l = toplevels; l != NULL; l = l->next) {
 		if (GTK_IS_WINDOW(l->data)) {
@@ -76,11 +74,10 @@ static void configure_all_webviews() {
 	if (toplevels) {
 		g_list_free(toplevels);
 	}
-}
-
-static gboolean configure_webviews_idle(gpointer data) {
-	configure_all_webviews();
-	return G_SOURCE_REMOVE;
+	if (g_webview_found) {
+		return G_SOURCE_REMOVE;
+	}
+	return G_SOURCE_CONTINUE;
 }
 
 void InitLinuxWebKitEarly() {
@@ -98,7 +95,7 @@ void InitLinuxWebKitEarly() {
 
 void SetupLinuxWebKit() {
 	InitLinuxWebKitEarly();
-	g_idle_add(configure_webviews_idle, NULL);
+	g_timeout_add(50, configure_webviews_timer, NULL);
 }
 */
 import "C"
