@@ -7,7 +7,15 @@ package main
 #include <stdlib.h>
 
 static OpusEncoder* create_opus_encoder(int sample_rate, int channels, int *err) {
-	return opus_encoder_create(sample_rate, channels, OPUS_APPLICATION_VOIP, err);
+	OpusEncoder *enc = opus_encoder_create(sample_rate, channels, OPUS_APPLICATION_VOIP, err);
+	if (enc && *err == OPUS_OK) {
+		opus_encoder_ctl(enc, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
+		opus_encoder_ctl(enc, OPUS_SET_DTX(1));
+		opus_encoder_ctl(enc, OPUS_SET_INBAND_FEC(1));
+		opus_encoder_ctl(enc, OPUS_SET_COMPLEXITY(8));
+		opus_encoder_ctl(enc, OPUS_SET_BITRATE(32000));
+	}
+	return enc;
 }
 
 static int encode_opus_frame(OpusEncoder *enc, const short *pcm, int frame_size, unsigned char *out, int max_bytes) {

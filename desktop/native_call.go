@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"image/jpeg"
+	"math"
 	"sync"
 	"time"
 
@@ -264,6 +265,9 @@ func (m *NativeCallManager) startAudioHardware(ctx context.Context) error {
 		pcmSamples := make([]int16, frameSamples)
 		opusBuf := make([]byte, 1000)
 
+		var hpfPrevIn, hpfPrevOut float64
+		gateHangover := 0
+
 		ticker := time.NewTicker(20 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -286,9 +290,38 @@ func (m *NativeCallManager) startAudioHardware(ctx context.Context) error {
 					continue
 				}
 
-				// Direct, zero-allocation binary unpacking
+				// High-pass filter (~80Hz) and RMS energy calculation for noise gate
+				var sumSq float64
 				for i := 0; i < frameSamples; i++ {
-					pcmSamples[i] = int16(binary.LittleEndian.Uint16(pcmChunk[i*2 : i*2+2]))
+					inVal := float64(int16(binary.LittleEndian.Uint16(pcmChunk[i*2 : i*2+2])))
+					// 1-pole high pass filter: y[n] = 0.989 * (y[n-1] + x[n] - x[n-1])
+					outVal := 0.989 * (hpfPrevOut + inVal - hpfPrevIn)
+					hpfPrevIn = inVal
+					hpfPrevOut = outVal
+
+					if outVal > 32767 {
+						outVal = 32767
+					} else if outVal < -32768 {
+						outVal = -32768
+					}
+
+					pcmSamples[i] = int16(outVal)
+					sumSq += outVal * outVal
+				}
+
+				rms := math.Sqrt(sumSq / float64(frameSamples))
+
+				// Noise Gate threshold: ~300 in 16-bit range suppresses room static, breathing, AC hum
+				const noiseThreshold = 300.0
+				if rms >= noiseThreshold {
+					gateHangover = 10 // keep gate open for ~200ms after speech ends to avoid clipping
+				} else if gateHangover > 0 {
+					gateHangover--
+				} else {
+					// Attenuate background room noise when not speaking
+					for i := 0; i < frameSamples; i++ {
+						pcmSamples[i] = 0
+					}
 				}
 
 				n, err := encoder.Encode(pcmSamples, opusBuf)
