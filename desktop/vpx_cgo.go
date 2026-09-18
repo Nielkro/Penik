@@ -16,7 +16,10 @@ typedef struct {
 static NativeVP8Decoder* create_vp8_decoder() {
     NativeVP8Decoder *dec = (NativeVP8Decoder*)calloc(1, sizeof(NativeVP8Decoder));
     if (!dec) return NULL;
-    if (vpx_codec_dec_init(&dec->ctx, vpx_codec_vp8_dx(), NULL, 0) != VPX_CODEC_OK) {
+    vpx_codec_dec_cfg_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.threads = 2;
+    if (vpx_codec_dec_init(&dec->ctx, vpx_codec_vp8_dx(), &cfg, 0) != VPX_CODEC_OK) {
         free(dec);
         return NULL;
     }
@@ -92,6 +95,11 @@ static NativeVP8Encoder* create_vp8_encoder(int width, int height, int fps, int 
         free(enc);
         return NULL;
     }
+
+    vpx_codec_control(&enc->ctx, VP8E_SET_CPUUSED, 8);
+    vpx_codec_control(&enc->ctx, VP8E_SET_STATIC_THRESHOLD, 100);
+    vpx_codec_control(&enc->ctx, VP8E_SET_TOKEN_PARTITIONS, VP8_ONE_TOKENPARTITION);
+    vpx_codec_control(&enc->ctx, VP8E_SET_NOISE_SENSITIVITY, 0);
 
     if (!vpx_img_alloc(&enc->raw, VPX_IMG_FMT_I420, width, height, 1)) {
         vpx_codec_destroy(&enc->ctx);
