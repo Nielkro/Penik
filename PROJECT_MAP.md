@@ -62,6 +62,18 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/js/ws.js` — Manages the browser WebSocket connection: encodes/decodes MsgPack frames, supports opcodes, ping/pong, request queuing, and exponential backoff reconnection; `connect()` is idempotent and each socket generation is fenced so a stale socket cannot open a second parallel session.
 - `client/js/presence.js` — Publishes user presence events and provides handlers for online status updates.
 
+### Desktop client (Wails v2)
+
+- `desktop/main.go` — Wails application entry point configuring window options, single-instance lock, tray menu, asset server, and WebKit/WebView2 customizations.
+- `desktop/app.go` — Backend methods exposed to JavaScript (config persistence, window control, native notifications, file dialogs, update checking).
+- `desktop/screencap.go` — High-performance desktop screen and window capture engine serving JPEG frames over local loopback WebSocket for borderless screen sharing.
+- `desktop/screencap_windows.go` — Windows GDI / DWM implementation for screen and window capture.
+- `desktop/screencap_other.go` — Stub implementation for non-Windows screen capture.
+- `desktop/webkit_linux_41.go` — WebKitGTK 4.1 initialization for Linux: enables WebRTC, MediaStream, media source, developer extras, and handles permission requests.
+- `desktop/webkit_linux_40.go` — WebKitGTK 4.0 initialization for Linux: enables WebRTC and MediaStream.
+- `desktop/webkit_other.go` — No-op WebKit setup for non-Linux platforms.
+- `desktop/tray_linux.go` / `desktop/tray_windows.go` / `desktop/tray_darwin.go` — Platform-specific system tray lifecycle and context menus.
+
 ### Android client transport
 
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiConfig.kt` — Central network configuration object holding server host, port, scheme, base URL, and avatar URL generators.

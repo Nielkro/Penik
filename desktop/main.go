@@ -69,6 +69,10 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			app.startup(ctx)
 			initSystemTray(app)
+			setupPlatformWebview()
+		},
+		OnDomReady: func(ctx context.Context) {
+			setupPlatformWebview()
 		},
 		OnBeforeClose: app.beforeClose,
 		SingleInstanceLock: &options.SingleInstanceLock{
