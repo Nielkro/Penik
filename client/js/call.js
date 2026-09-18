@@ -150,6 +150,26 @@ export class CallManager {
   }
 
   init() {
+    this.isNativeCallActive = false;
+    if (typeof window !== 'undefined' && window.runtime && typeof window.runtime.EventsOn === 'function') {
+      window.runtime.EventsOn('native_call_speakers', (speakers) => {
+        if (Array.isArray(speakers)) {
+          this.activeSpeakers.clear();
+          speakers.forEach((id) => this.activeSpeakers.add(id));
+          if (typeof this.onActiveSpeakersChange === 'function') {
+            this.onActiveSpeakersChange(this.activeSpeakers);
+          }
+        }
+      });
+      window.runtime.EventsOn('native_call_state', (payload) => {
+        if (payload?.state === 'DISCONNECTED') {
+          if (this.currentCall && this.currentCall.state === 'ACTIVE') {
+            this.cleanup();
+          }
+        }
+      });
+    }
+
     ws.on(OP.CALL_INCOMING, (payload) => this._handleIncomingCall(payload));
     ws.on(OP.CALL_ACCEPTED, (payload) => this._handleCallAccepted(payload));
     ws.on(OP.CALL_REJECT, (payload) => this._handleCallReject(payload));
@@ -999,10 +1019,14 @@ export class CallManager {
           if (ok) {
             console.log('[call] Go native LiveKit call connected successfully!');
             this.isNativeCallActive = true;
+            callSounds.playConnected();
             if (this.currentCall) {
               this.currentCall.isE2EE = true;
+              this.currentCall.state = 'ACTIVE';
+              this.isVideoOff = !this.currentCall.isVideo;
+              this._startTimer();
+              this._notifyState();
             }
-            this._notifyState();
             return;
           }
         } catch (nativeErr) {
