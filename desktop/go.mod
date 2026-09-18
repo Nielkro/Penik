@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/gen2brain/malgo v0.11.26
 	github.com/getlantern/systray v1.2.2
+	github.com/godbus/dbus/v5 v5.1.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/livekit/protocol v1.49.0
 	github.com/livekit/server-sdk-go/v2 v2.18.1
@@ -39,7 +40,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
-	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/cel-go v0.28.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect

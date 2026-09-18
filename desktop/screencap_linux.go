@@ -11,6 +11,16 @@ package main
 #include <stdlib.h>
 #include <string.h>
 
+static int x11_silent_error_handler(Display *d, XErrorEvent *e) {
+    (void)d;
+    (void)e;
+    return 0;
+}
+
+static void init_x11_error_handling() {
+    XSetErrorHandler(x11_silent_error_handler);
+}
+
 typedef struct {
     Display *display;
     Window root;
@@ -20,6 +30,7 @@ typedef struct {
 } X11Context;
 
 static X11Context* init_x11() {
+    init_x11_error_handling();
     Display *d = XOpenDisplay(NULL);
     if (!d) return NULL;
     X11Context *ctx = (X11Context*)calloc(1, sizeof(X11Context));
@@ -41,8 +52,9 @@ static void close_x11(X11Context *ctx) {
 // Captures a region from X11 window into allocated RGBA buffer.
 // Returns 1 on success, 0 on error.
 static int capture_x11_window(X11Context *ctx, Window win, int x, int y, int width, int height, unsigned char **out_rgba) {
-    if (!ctx || !ctx->display) return 0;
+    if (!ctx || !ctx->display || width <= 0 || height <= 0) return 0;
 
+    init_x11_error_handling();
     XImage *image = XGetImage(ctx->display, win, x, y, width, height, AllPlanes, ZPixmap);
     if (!image) return 0;
 
@@ -101,7 +113,9 @@ import "C"
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"image"
 	"image/color"
@@ -112,6 +126,8 @@ import (
 	"strings"
 	"time"
 	"unsafe"
+
+	"github.com/godbus/dbus/v5"
 )
 
 func isWaylandSession() bool {
@@ -124,91 +140,86 @@ func isWaylandSession() bool {
 }
 
 func getPlatformCaptureSources() ([]CaptureSource, error) {
-	sources := make([]CaptureSource, 0)
-
-	// 1. If Wayland, provide primary Wayland capture entries
+	// 1. If Wayland session, use Wayland portal as the primary and only safe source.
+	// In Wayland, X11 XGetImage is restricted and causes protocol errors / black frames.
 	if isWaylandSession() {
-		sources = append(sources, CaptureSource{
-			ID:        "wayland:screen",
-			Name:      "Экран (Wayland)",
-			Type:      "screen",
-			Width:     1920,
-			Height:    1080,
-			Thumbnail: getSimpleIconBase64(),
-		})
-		sources = append(sources, CaptureSource{
-			ID:        "wayland:window",
-			Name:      "Окно приложения (Wayland)",
-			Type:      "window",
-			Width:     1920,
-			Height:    1080,
-			Thumbnail: getSimpleIconBase64(),
-		})
+		return []CaptureSource{
+			{
+				ID:        "wayland:portal",
+				Name:      "Выбрать экран или окно (Wayland)",
+				Type:      "screen",
+				Width:     1920,
+				Height:    1080,
+				Thumbnail: getSimpleIconBase64(),
+			},
+		}, nil
 	}
 
-	// 2. Query X11 Display for physical screens and windows (works on X11 & Xwayland)
+	// 2. Pure X11 Display enumeration
+	sources := make([]CaptureSource, 0)
 	ctx := C.init_x11()
-	if ctx != nil {
-		defer C.close_x11(ctx)
+	if ctx == nil {
+		return sources, nil
+	}
+	defer C.close_x11(ctx)
 
-		w := int(ctx.width)
-		h := int(ctx.height)
+	w := int(ctx.width)
+	h := int(ctx.height)
 
-		// Main screen
-		thumb := captureX11Thumbnail(ctx, ctx.root, 0, 0, w, h)
-		sources = append(sources, CaptureSource{
-			ID:        "screen:0",
-			Name:      fmt.Sprintf("Экран (%d×%d)", w, h),
-			Type:      "screen",
-			Width:     w,
-			Height:    h,
-			Thumbnail: thumb,
-		})
+	// Main screen
+	thumb := captureX11Thumbnail(ctx, ctx.root, 0, 0, w, h)
+	sources = append(sources, CaptureSource{
+		ID:        "screen:0",
+		Name:      fmt.Sprintf("Экран (%d×%d)", w, h),
+		Type:      "screen",
+		Width:     w,
+		Height:    h,
+		Thumbnail: thumb,
+	})
 
-		// Windows enumeration
-		var rootRet, parentRet C.Window
-		var children *C.Window
-		var nChildren C.uint
+	// Windows enumeration
+	var rootRet, parentRet C.Window
+	var children *C.Window
+	var nChildren C.uint
 
-		if C.XQueryTree(ctx.display, ctx.root, &rootRet, &parentRet, &children, &nChildren) != 0 && children != nil {
-			defer C.XFree(unsafe.Pointer(children))
+	if C.XQueryTree(ctx.display, ctx.root, &rootRet, &parentRet, &children, &nChildren) != 0 && children != nil {
+		defer C.XFree(unsafe.Pointer(children))
 
-			cSlice := unsafe.Slice(children, int(nChildren))
-			for i := len(cSlice) - 1; i >= 0; i-- {
-				win := cSlice[i]
-				var attrs C.XWindowAttributes
-				if C.XGetWindowAttributes(ctx.display, win, &attrs) == 0 {
-					continue
-				}
-
-				if attrs.map_state != C.IsViewable || attrs.width < 100 || attrs.height < 100 {
-					continue
-				}
-
-				cTitle := C.get_window_title(ctx.display, win)
-				if cTitle == nil {
-					continue
-				}
-				title := C.GoString(cTitle)
-				C.free(unsafe.Pointer(cTitle))
-
-				if title == "" || title == "Desktop" || title == "Desktop Window" {
-					continue
-				}
-
-				winW := int(attrs.width)
-				winH := int(attrs.height)
-				winThumb := captureX11Thumbnail(ctx, win, 0, 0, winW, winH)
-
-				sources = append(sources, CaptureSource{
-					ID:        fmt.Sprintf("window:%d", uint64(win)),
-					Name:      title,
-					Type:      "window",
-					Width:     winW,
-					Height:    winH,
-					Thumbnail: winThumb,
-				})
+		cSlice := unsafe.Slice(children, int(nChildren))
+		for i := len(cSlice) - 1; i >= 0; i-- {
+			win := cSlice[i]
+			var attrs C.XWindowAttributes
+			if C.XGetWindowAttributes(ctx.display, win, &attrs) == 0 {
+				continue
 			}
+
+			if attrs.map_state != C.IsViewable || attrs.width < 100 || attrs.height < 100 {
+				continue
+			}
+
+			cTitle := C.get_window_title(ctx.display, win)
+			if cTitle == nil {
+				continue
+			}
+			title := C.GoString(cTitle)
+			C.free(unsafe.Pointer(cTitle))
+
+			if title == "" || title == "Desktop" || title == "Desktop Window" {
+				continue
+			}
+
+			winW := int(attrs.width)
+			winH := int(attrs.height)
+			winThumb := captureX11Thumbnail(ctx, win, 0, 0, winW, winH)
+
+			sources = append(sources, CaptureSource{
+				ID:        fmt.Sprintf("window:%d", uint64(win)),
+				Name:      title,
+				Type:      "window",
+				Width:     winW,
+				Height:    winH,
+				Thumbnail: winThumb,
+			})
 		}
 	}
 
@@ -240,6 +251,10 @@ func captureX11Thumbnail(ctx *C.X11Context, win C.Window, x, y, width, height in
 }
 
 func getPlatformSourceThumbnail(sourceID string) (string, error) {
+	if isWaylandSession() || strings.HasPrefix(sourceID, "wayland:") {
+		return getSimpleIconBase64(), nil
+	}
+
 	ctx := C.init_x11()
 	if ctx == nil {
 		return getSimpleIconBase64(), nil
@@ -265,15 +280,235 @@ func getPlatformSourceThumbnail(sourceID string) (string, error) {
 }
 
 func startPlatformCapture(ctx context.Context, sourceID string, onFrame func([]byte)) {
-	// If Wayland source selected, use GStreamer pipewire pipeline
-	if strings.HasPrefix(sourceID, "wayland:") || (isWaylandSession() && strings.HasPrefix(sourceID, "screen:")) {
-		if startGStreamerPipewireCapture(ctx, onFrame) {
+	if isWaylandSession() || strings.HasPrefix(sourceID, "wayland:") {
+		if startWaylandPortalCapture(ctx, onFrame) {
 			return
 		}
 	}
 
 	// Fallback to X11 direct loop
 	startX11Capture(ctx, sourceID, onFrame)
+}
+
+func randomToken(prefix string) string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return prefix + hex.EncodeToString(b)
+}
+
+func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
+	gstPath, err := exec.LookPath("gst-launch-1.0")
+	if err != nil {
+		return false
+	}
+
+	conn, err := dbus.ConnectSessionBus()
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+
+	senderName := strings.ReplaceAll(strings.TrimPrefix(conn.Names()[0], ":"), ".", "_")
+	portalObj := conn.Object("org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop")
+
+	signalChan := make(chan *dbus.Signal, 20)
+	conn.Signal(signalChan)
+	defer conn.RemoveSignal(signalChan)
+
+	waitForResponse := func(reqPath dbus.ObjectPath) (uint32, map[string]dbus.Variant, error) {
+		for {
+			select {
+			case <-ctx.Done():
+				return 2, nil, ctx.Err()
+			case sig, ok := <-signalChan:
+				if !ok {
+					return 2, nil, fmt.Errorf("signal closed")
+				}
+				if sig.Path == reqPath && strings.HasSuffix(sig.Name, ".Response") {
+					if len(sig.Body) >= 2 {
+						code, _ := sig.Body[0].(uint32)
+						results, _ := sig.Body[1].(map[string]dbus.Variant)
+						return code, results, nil
+					}
+					return 2, nil, fmt.Errorf("malformed portal response")
+				}
+			}
+		}
+	}
+
+	// 1. CreateSession
+	sessionToken := randomToken("s_")
+	createReqToken := randomToken("r_")
+	createReqPath := dbus.ObjectPath(fmt.Sprintf("/org/freedesktop/portal/desktop/request/%s/%s", senderName, createReqToken))
+
+	var createRespPath dbus.ObjectPath
+	err = portalObj.CallWithContext(ctx, "org.freedesktop.portal.ScreenCast.CreateSession", 0, map[string]dbus.Variant{
+		"handle_token":         dbus.MakeVariant(createReqToken),
+		"session_handle_token": dbus.MakeVariant(sessionToken),
+	}).Store(&createRespPath)
+	if err != nil {
+		return false
+	}
+
+	code, results, err := waitForResponse(createReqPath)
+	if err != nil || code != 0 {
+		return false
+	}
+
+	sessionHandleStr, ok := results["session_handle"].Value().(string)
+	if !ok || sessionHandleStr == "" {
+		return false
+	}
+	sessionHandle := dbus.ObjectPath(sessionHandleStr)
+
+	defer func() {
+		sessionObj := conn.Object("org.freedesktop.portal.Desktop", sessionHandle)
+		sessionObj.Call("org.freedesktop.portal.Session.Close", 0)
+	}()
+
+	// 2. SelectSources
+	selectReqToken := randomToken("r_")
+	selectReqPath := dbus.ObjectPath(fmt.Sprintf("/org/freedesktop/portal/desktop/request/%s/%s", senderName, selectReqToken))
+
+	var selectRespPath dbus.ObjectPath
+	err = portalObj.CallWithContext(ctx, "org.freedesktop.portal.ScreenCast.SelectSources", 0, sessionHandle, map[string]dbus.Variant{
+		"handle_token": dbus.MakeVariant(selectReqToken),
+		"types":        dbus.MakeVariant(uint32(3)), // 1=Screen, 2=Window, 3=Both
+		"multiple":     dbus.MakeVariant(false),
+		"cursor_mode":  dbus.MakeVariant(uint32(2)), // Embedded cursor
+	}).Store(&selectRespPath)
+	if err != nil {
+		return false
+	}
+
+	code, _, err = waitForResponse(selectReqPath)
+	if err != nil || code != 0 {
+		return false
+	}
+
+	// 3. Start
+	startReqToken := randomToken("r_")
+	startReqPath := dbus.ObjectPath(fmt.Sprintf("/org/freedesktop/portal/desktop/request/%s/%s", senderName, startReqToken))
+
+	var startRespPath dbus.ObjectPath
+	err = portalObj.CallWithContext(ctx, "org.freedesktop.portal.ScreenCast.Start", 0, sessionHandle, "", map[string]dbus.Variant{
+		"handle_token": dbus.MakeVariant(startReqToken),
+	}).Store(&startRespPath)
+	if err != nil {
+		return false
+	}
+
+	code, startResults, err := waitForResponse(startReqPath)
+	if err != nil || code != 0 {
+		return false
+	}
+
+	// Extract stream node_id if provided
+	var nodeID uint32
+	if streamsVal, ok := startResults["streams"]; ok {
+		if streamsSlice, ok := streamsVal.Value().([][]interface{}); ok && len(streamsSlice) > 0 {
+			if id, ok := streamsSlice[0][0].(uint32); ok {
+				nodeID = id
+			}
+		} else if rawSlice, ok := streamsVal.Value().([]interface{}); ok && len(rawSlice) > 0 {
+			if tuple, ok := rawSlice[0].([]interface{}); ok && len(tuple) > 0 {
+				if id, ok := tuple[0].(uint32); ok {
+					nodeID = id
+				}
+			}
+		}
+	}
+
+	// 4. OpenPipeWireRemote
+	var unixFD dbus.UnixFD
+	err = portalObj.CallWithContext(ctx, "org.freedesktop.portal.ScreenCast.OpenPipeWireRemote", 0, sessionHandle, map[string]dbus.Variant{}).Store(&unixFD)
+	if err != nil || unixFD < 0 {
+		return false
+	}
+	pwFile := os.NewFile(uintptr(unixFD), "pipewire_remote")
+	defer pwFile.Close()
+
+	// 5. GStreamer pipeline with pipewiresrc
+	var pipewireArgs []string
+	if nodeID > 0 {
+		pipewireArgs = []string{
+			"-q",
+			"pipewiresrc", "fd=3", fmt.Sprintf("path=%d", nodeID), "do-timestamp=true",
+			"!", "videoconvert",
+			"!", "video/x-raw,format=I420,framerate=30/1",
+			"!", "jpegenc", "quality=70",
+			"!", "fdsink", "fd=1",
+		}
+	} else {
+		pipewireArgs = []string{
+			"-q",
+			"pipewiresrc", "fd=3", "do-timestamp=true",
+			"!", "videoconvert",
+			"!", "video/x-raw,format=I420,framerate=30/1",
+			"!", "jpegenc", "quality=70",
+			"!", "fdsink", "fd=1",
+		}
+	}
+
+	cmd := exec.CommandContext(ctx, gstPath, pipewireArgs...)
+	cmd.ExtraFiles = []*os.File{pwFile}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return false
+	}
+
+	if err := cmd.Start(); err != nil {
+		return false
+	}
+
+	header := []byte{0xFF, 0xD8}
+	footer := []byte{0xFF, 0xD9}
+	rawBuf := make([]byte, 65536)
+	frameAcc := make([]byte, 0, 500000)
+
+	doneChan := make(chan struct{})
+	go func() {
+		defer close(doneChan)
+		defer cmd.Wait()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				n, err := stdout.Read(rawBuf)
+				if err != nil || n == 0 {
+					return
+				}
+				frameAcc = append(frameAcc, rawBuf[:n]...)
+
+				for {
+					start := bytes.Index(frameAcc, header)
+					if start == -1 {
+						frameAcc = frameAcc[:0]
+						break
+					}
+					end := bytes.Index(frameAcc[start+2:], footer)
+					if end == -1 {
+						if start > 0 {
+							frameAcc = frameAcc[start:]
+						}
+						break
+					}
+					fullEnd := start + 2 + end + 2
+					jpegBytes := frameAcc[start:fullEnd]
+					onFrame(jpegBytes)
+					frameAcc = frameAcc[fullEnd:]
+				}
+			}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+	case <-doneChan:
+	}
+	return true
 }
 
 func startX11Capture(ctx context.Context, sourceID string, onFrame func([]byte)) {
@@ -331,75 +566,6 @@ func startX11Capture(ctx context.Context, sourceID string, onFrame func([]byte))
 			}
 		}
 	}
-}
-
-func startGStreamerPipewireCapture(ctx context.Context, onFrame func([]byte)) bool {
-	// Check if gst-launch-1.0 is available
-	gstPath, err := exec.LookPath("gst-launch-1.0")
-	if err != nil {
-		return false
-	}
-
-	cmd := exec.CommandContext(ctx, gstPath,
-		"-q",
-		"pipewiresrc", "do-timestamp=true",
-		"!", "videoconvert",
-		"!", "video/x-raw,format=I420,framerate=30/1",
-		"!", "jpegenc", "quality=70",
-		"!", "fdsink", "fd=1",
-	)
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return false
-	}
-
-	if err := cmd.Start(); err != nil {
-		return false
-	}
-
-	go func() {
-		defer cmd.Wait()
-		// Read MJPEG stream from stdout
-		header := []byte{0xFF, 0xD8}
-		footer := []byte{0xFF, 0xD9}
-		rawBuf := make([]byte, 65536)
-		frameAcc := make([]byte, 0, 500000)
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				n, err := stdout.Read(rawBuf)
-				if err != nil || n == 0 {
-					return
-				}
-				frameAcc = append(frameAcc, rawBuf[:n]...)
-
-				for {
-					start := bytes.Index(frameAcc, header)
-					if start == -1 {
-						frameAcc = frameAcc[:0]
-						break
-					}
-					end := bytes.Index(frameAcc[start+2:], footer)
-					if end == -1 {
-						if start > 0 {
-							frameAcc = frameAcc[start:]
-						}
-						break
-					}
-					fullEnd := start + 2 + end + 2
-					jpegBytes := frameAcc[start:fullEnd]
-					onFrame(jpegBytes)
-					frameAcc = frameAcc[fullEnd:]
-				}
-			}
-		}
-	}()
-
-	return true
 }
 
 func getSimpleIconBase64() string {
