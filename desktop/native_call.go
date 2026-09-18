@@ -1,15 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
+	"image/jpeg"
 	"sync"
 	"time"
 
 	"github.com/gen2brain/malgo"
+	"github.com/gorilla/websocket"
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -85,9 +89,12 @@ type NativeCallManager struct {
 	room         *lksdk.Room
 	localAudio   *lksdk.LocalSampleTrack
 	audioPub     *lksdk.LocalTrackPublication
+	videoTrack   *lksdk.LocalSampleTrack
+	videoPub     *lksdk.LocalTrackPublication
 	isMuted      bool
 	isVideo      bool
 	cancelFn     context.CancelFunc
+	cancelScreen context.CancelFunc
 	activeCallID string
 
 	// Selected device IDs
@@ -417,13 +424,18 @@ func (a *App) NativeCallConnect(url, token string, isVideo bool) (*NativeCallCon
 
 	cb.OnTrackSubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 		trackSID := ""
+		source := "camera"
 		if pub != nil {
 			trackSID = pub.SID()
+			if pub.Source() == livekit.TrackSource_SCREEN_SHARE {
+				source = "screen_share"
+			}
 		}
 		wruntime.EventsEmit(a.ctx, "native_call_track", map[string]interface{}{
 			"event":    "SUBSCRIBED",
 			"kind":     track.Kind().String(),
 			"sid":      trackSID,
+			"source":   source,
 			"identity": rp.Identity(),
 		})
 
@@ -458,7 +470,64 @@ func (a *App) NativeCallConnect(url, token string, isVideo bool) (*NativeCallCon
 					}
 				}
 			}()
+		} else if track.Kind() == webrtc.RTPCodecTypeVideo {
+			go func() {
+				decoder, err := NewNativeVP8Decoder()
+				if err != nil {
+					fmt.Printf("[native_call] Failed to create VP8 decoder: %v\n", err)
+					return
+				}
+				defer decoder.Close()
+
+				var vp8Packet codecs.VP8Packet
+				frameBuffer := make([]byte, 0, 512*1024)
+
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						pkt, _, err := track.ReadRTP()
+						if err != nil {
+							return
+						}
+						if len(pkt.Payload) > 0 {
+							vp8Payload, err := vp8Packet.Unmarshal(pkt.Payload)
+							if err == nil {
+								frameBuffer = append(frameBuffer, vp8Payload...)
+								if pkt.Marker {
+									if len(frameBuffer) > 0 {
+										jpegBytes, _, _, err := decoder.DecodeJPEG(frameBuffer)
+										if err == nil && len(jpegBytes) > 0 {
+											globalScreenCapServer.broadcastRemoteVideo(jpegBytes)
+										}
+										frameBuffer = frameBuffer[:0]
+									}
+								}
+							}
+						}
+					}
+				}
+			}()
 		}
+	}
+
+	cb.OnTrackUnsubscribed = func(track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
+		trackSID := ""
+		source := "camera"
+		if pub != nil {
+			trackSID = pub.SID()
+			if pub.Source() == livekit.TrackSource_SCREEN_SHARE {
+				source = "screen_share"
+			}
+		}
+		wruntime.EventsEmit(a.ctx, "native_call_track", map[string]interface{}{
+			"event":    "UNSUBSCRIBED",
+			"kind":     track.Kind().String(),
+			"sid":      trackSID,
+			"source":   source,
+			"identity": rp.Identity(),
+		})
 	}
 
 	room, err := lksdk.ConnectToRoomWithToken(url, token, cb,
@@ -512,17 +581,163 @@ func (a *App) NativeCallDisconnect() bool {
 		globalCallManager.cancelFn = nil
 	}
 
+	if globalCallManager.cancelScreen != nil {
+		globalCallManager.cancelScreen()
+		globalCallManager.cancelScreen = nil
+	}
+
 	if globalCallManager.room != nil {
 		globalCallManager.room.Disconnect()
 		globalCallManager.room = nil
 	}
 	globalCallManager.localAudio = nil
 	globalCallManager.audioPub = nil
+	globalCallManager.videoTrack = nil
+	globalCallManager.videoPub = nil
 	globalCallManager.stopAudioHardware()
+	_ = a.StopScreenCapture()
 
 	wruntime.EventsEmit(a.ctx, "native_call_state", map[string]interface{}{
 		"state": "DISCONNECTED",
 	})
+	return true
+}
+
+// NativeCallStartScreenShare starts publishing the selected screen/window to the LiveKit room.
+func (a *App) NativeCallStartScreenShare(sourceID string) (string, error) {
+	if globalCallManager == nil || globalCallManager.room == nil {
+		return "", fmt.Errorf("no active call")
+	}
+
+	globalCallManager.mu.Lock()
+	defer globalCallManager.mu.Unlock()
+
+	if globalCallManager.videoTrack != nil {
+		if globalCallManager.cancelScreen != nil {
+			globalCallManager.cancelScreen()
+			globalCallManager.cancelScreen = nil
+		}
+		if globalCallManager.videoPub != nil {
+			_ = globalCallManager.room.LocalParticipant.UnpublishTrack(globalCallManager.videoTrack.ID())
+			globalCallManager.videoPub = nil
+			globalCallManager.videoTrack = nil
+		}
+	}
+
+	streamURL, err := a.StartScreenCapture(sourceID)
+	if err != nil {
+		return "", err
+	}
+
+	videoTrack, err := lksdk.NewLocalSampleTrack(webrtc.RTPCodecCapability{
+		MimeType:  webrtc.MimeTypeVP8,
+		ClockRate: 90000,
+	})
+	if err != nil {
+		_ = a.StopScreenCapture()
+		return "", fmt.Errorf("failed to create video track: %w", err)
+	}
+
+	pub, err := globalCallManager.room.LocalParticipant.PublishTrack(videoTrack, &lksdk.TrackPublicationOptions{
+		Name:   "screen_share",
+		Source: livekit.TrackSource_SCREEN_SHARE,
+	})
+	if err != nil {
+		_ = a.StopScreenCapture()
+		return "", fmt.Errorf("failed to publish screen share track: %w", err)
+	}
+
+	globalCallManager.videoTrack = videoTrack
+	globalCallManager.videoPub = pub
+
+	capCtx, capCancel := context.WithCancel(context.Background())
+	globalCallManager.cancelScreen = capCancel
+
+	go func() {
+		wsURL := fmt.Sprintf("ws://127.0.0.1:%d/stream/screenshare", globalScreenCapServer.port)
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		var encoder *NativeVP8Encoder
+		var curW, curH int
+		vp8Buf := make([]byte, 1024*1024)
+		frameIdx := 0
+
+		for {
+			select {
+			case <-capCtx.Done():
+				if encoder != nil {
+					encoder.Close()
+				}
+				return
+			default:
+				_, msg, err := conn.ReadMessage()
+				if err != nil {
+					return
+				}
+				if len(msg) == 0 {
+					continue
+				}
+
+				img, err := jpeg.Decode(bytes.NewReader(msg))
+				if err != nil {
+					continue
+				}
+
+				rgbaBytes, w, h := ImageToRGBABytes(img)
+				if w != curW || h != curH || encoder == nil {
+					if encoder != nil {
+						encoder.Close()
+					}
+					enc, err := NewNativeVP8Encoder(w, h, 30, 2500)
+					if err != nil {
+						continue
+					}
+					encoder = enc
+					curW, curH = w, h
+				}
+
+				forceKey := (frameIdx%60 == 0)
+				frameIdx++
+
+				n, err := encoder.EncodeRGBA(rgbaBytes, vp8Buf, forceKey)
+				if err == nil && n > 0 {
+					_ = videoTrack.WriteSample(media.Sample{
+						Data:     vp8Buf[:n],
+						Duration: 33 * time.Millisecond,
+					}, nil)
+				}
+			}
+		}
+	}()
+
+	return streamURL, nil
+}
+
+// NativeCallStopScreenShare unpublishes the screen share video track.
+func (a *App) NativeCallStopScreenShare() bool {
+	if globalCallManager == nil {
+		return true
+	}
+
+	globalCallManager.mu.Lock()
+	defer globalCallManager.mu.Unlock()
+
+	if globalCallManager.cancelScreen != nil {
+		globalCallManager.cancelScreen()
+		globalCallManager.cancelScreen = nil
+	}
+
+	if globalCallManager.videoPub != nil && globalCallManager.room != nil {
+		_ = globalCallManager.room.LocalParticipant.UnpublishTrack(globalCallManager.videoTrack.ID())
+		globalCallManager.videoPub = nil
+		globalCallManager.videoTrack = nil
+	}
+
+	_ = a.StopScreenCapture()
 	return true
 }
 

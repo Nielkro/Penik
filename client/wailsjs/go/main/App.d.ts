@@ -10,6 +10,8 @@ export function GetDeviceName():Promise<string>;
 
 export function GetPlatform():Promise<string>;
 
+export function GetRemoteVideoStreamURL():Promise<string>;
+
 export function GetServerURL():Promise<string>;
 
 export function GetSourceThumbnail(arg1:string):Promise<string>;
@@ -29,6 +31,10 @@ export function NativeCallDisconnect():Promise<boolean>;
 export function NativeCallIsActive():Promise<boolean>;
 
 export function NativeCallSetMute(arg1:boolean):Promise<boolean>;
+
+export function NativeCallStartScreenShare(arg1:string):Promise<string>;
+
+export function NativeCallStopScreenShare():Promise<boolean>;
 
 export function Notify(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 

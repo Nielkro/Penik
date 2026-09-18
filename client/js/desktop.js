@@ -284,3 +284,32 @@ export async function setDesktopAudioDevices(playbackId, captureId) {
     console.error('[desktop] SetAudioDevices error:', e);
   }
 }
+
+export async function nativeCallStartScreenShare(sourceId) {
+  if (!window.go?.main?.App?.NativeCallStartScreenShare) {
+    throw new Error('Native screen sharing not supported');
+  }
+  return await window.go.main.App.NativeCallStartScreenShare(sourceId);
+}
+
+export async function nativeCallStopScreenShare() {
+  if (!window.go?.main?.App?.NativeCallStopScreenShare) return;
+  try {
+    await window.go.main.App.NativeCallStopScreenShare();
+  } catch (e) {
+    console.warn('[desktop] NativeCallStopScreenShare error:', e);
+  }
+}
+
+export async function getRemoteVideoStreamURL() {
+  if (!isDesktop() || !window.go?.main?.App?.GetRemoteVideoStreamURL) {
+    return null;
+  }
+  try {
+    return await window.go.main.App.GetRemoteVideoStreamURL();
+  } catch (e) {
+    console.error('[desktop] GetRemoteVideoStreamURL error:', e);
+    return null;
+  }
+}
+

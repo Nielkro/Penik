@@ -18,6 +18,10 @@ export function GetPlatform() {
   return window['go']['main']['App']['GetPlatform']();
 }
 
+export function GetRemoteVideoStreamURL() {
+  return window['go']['main']['App']['GetRemoteVideoStreamURL']();
+}
+
 export function GetServerURL() {
   return window['go']['main']['App']['GetServerURL']();
 }
@@ -56,6 +60,14 @@ export function NativeCallIsActive() {
 
 export function NativeCallSetMute(arg1) {
   return window['go']['main']['App']['NativeCallSetMute'](arg1);
+}
+
+export function NativeCallStartScreenShare(arg1) {
+  return window['go']['main']['App']['NativeCallStartScreenShare'](arg1);
+}
+
+export function NativeCallStopScreenShare() {
+  return window['go']['main']['App']['NativeCallStopScreenShare']();
 }
 
 export function Notify(arg1, arg2, arg3, arg4) {

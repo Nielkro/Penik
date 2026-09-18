@@ -69,8 +69,10 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `desktop/native_call.go` — Native Go LiveKit call engine powered by server-sdk-go/v2 and Pion WebRTC for zero-lag, browser-independent desktop voice and video calls.
 - `desktop/opus_cgo.go` — Direct CGO bindings to libopus for high-fidelity 48kHz VoIP audio encoding and decoding.
 - `desktop/screencap.go` — High-performance desktop screen and window capture engine serving JPEG frames over local loopback WebSocket for borderless screen sharing.
+- `desktop/screencap_linux.go` — Linux Wayland (PipeWire / GStreamer portal) and X11 screen and window capture implementation.
 - `desktop/screencap_windows.go` — Windows GDI / DWM implementation for screen and window capture.
-- `desktop/screencap_other.go` — Stub implementation for non-Windows screen capture.
+- `desktop/screencap_other.go` — Stub implementation for non-Windows, non-Linux screen capture.
+- `desktop/vpx_cgo.go` — Direct CGO bindings to libvpx for native VP8 video encoding (screen sharing) and decoding (remote video/screen streams).
 - `desktop/webkit_linux_41.go` — WebKitGTK 4.1 initialization for Linux: enables WebRTC, MediaStream, media source, developer extras, and handles permission requests.
 - `desktop/webkit_linux_40.go` — WebKitGTK 4.0 initialization for Linux: enables WebRTC and MediaStream.
 - `desktop/webkit_other.go` — No-op WebKit setup for non-Linux platforms.

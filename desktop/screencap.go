@@ -29,17 +29,19 @@ var upgrader = websocket.Upgrader{
 
 // ScreenCapServer manages the local WebSocket stream of captured screen/window frames.
 type ScreenCapServer struct {
-	mu           sync.Mutex
-	listener     net.Listener
-	server       *http.Server
-	clients      map[*websocket.Conn]bool
-	activeSource string
-	cancelCap    context.CancelFunc
-	port         int
+	mu            sync.Mutex
+	listener      net.Listener
+	server        *http.Server
+	clients       map[*websocket.Conn]bool
+	remoteClients map[*websocket.Conn]bool
+	activeSource  string
+	cancelCap     context.CancelFunc
+	port          int
 }
 
 var globalScreenCapServer = &ScreenCapServer{
-	clients: make(map[*websocket.Conn]bool),
+	clients:       make(map[*websocket.Conn]bool),
+	remoteClients: make(map[*websocket.Conn]bool),
 }
 
 func (s *ScreenCapServer) ensureServerRunning() (int, error) {
@@ -59,6 +61,7 @@ func (s *ScreenCapServer) ensureServerRunning() (int, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/stream/screenshare", s.handleWS)
+	mux.HandleFunc("/stream/remote_video", s.handleRemoteWS)
 
 	s.server = &http.Server{
 		Handler: mux,
@@ -96,12 +99,46 @@ func (s *ScreenCapServer) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *ScreenCapServer) handleRemoteWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+
+	s.mu.Lock()
+	s.remoteClients[conn] = true
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		delete(s.remoteClients, conn)
+		s.mu.Unlock()
+		_ = conn.Close()
+	}()
+
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			break
+		}
+	}
+}
+
 // broadcastFrame sends a binary JPEG frame to all connected local clients.
 func (s *ScreenCapServer) broadcastFrame(frameBytes []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for client := range s.clients {
+		_ = client.WriteMessage(websocket.BinaryMessage, frameBytes)
+	}
+}
+
+// broadcastRemoteVideo sends a binary JPEG frame of remote video to all connected local clients.
+func (s *ScreenCapServer) broadcastRemoteVideo(frameBytes []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for client := range s.remoteClients {
 		_ = client.WriteMessage(websocket.BinaryMessage, frameBytes)
 	}
 }
@@ -152,5 +189,14 @@ func (a *App) GetCaptureSources() ([]CaptureSource, error) {
 // GetSourceThumbnail returns a base64 thumbnail for a source ID.
 func (a *App) GetSourceThumbnail(sourceID string) (string, error) {
 	return getPlatformSourceThumbnail(sourceID)
+}
+
+// GetRemoteVideoStreamURL returns the local websocket stream URL for remote video/screenshare.
+func (a *App) GetRemoteVideoStreamURL() (string, error) {
+	port, err := globalScreenCapServer.ensureServerRunning()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("ws://127.0.0.1:%d/stream/remote_video", port), nil
 }
 

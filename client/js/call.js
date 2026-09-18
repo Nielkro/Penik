@@ -17,6 +17,9 @@ import {
   nativeCallSetMute,
   getDesktopAudioDevices,
   setDesktopAudioDevices,
+  nativeCallStartScreenShare,
+  nativeCallStopScreenShare,
+  getRemoteVideoStreamURL,
 } from './desktop.js';
 import { openScreenPickerModal } from './ui/screenshare_modal.js';
 
@@ -167,6 +170,16 @@ export class CallManager {
         if (payload?.state === 'DISCONNECTED') {
           if (this.currentCall && this.currentCall.state === 'ACTIVE') {
             this.cleanup();
+          }
+        }
+      });
+      window.runtime.EventsOn('native_call_track', async (data) => {
+        if (!this.isNativeCallActive) return;
+        if (data?.kind === 'video') {
+          if (data.event === 'SUBSCRIBED') {
+            await this._attachRemoteNativeVideo(data.source || 'camera');
+          } else if (data.event === 'UNSUBSCRIBED') {
+            this._detachRemoteNativeVideo();
           }
         }
       });
@@ -418,10 +431,167 @@ export class CallManager {
     this._syncLocalVideoState();
   }
 
+  async _attachRemoteNativeVideo(source = 'camera') {
+    const container = document.getElementById('remote-video-container');
+    if (!container) return;
+
+    this._detachRemoteNativeVideo();
+
+    const streamUrl = await getRemoteVideoStreamURL();
+    if (!streamUrl) return;
+
+    let tile = /** @type {HTMLElement|null} */ (container.querySelector('[data-track-sid="native-remote-video"]'));
+    if (!tile) {
+      tile = document.createElement('div');
+      tile.className = 'video-tile remote-tile primary-tile';
+      tile.dataset.trackSid = 'native-remote-video';
+      tile.dataset.source = source;
+      tile.dataset.participantId = 'remote';
+      container.appendChild(tile);
+    } else {
+      tile.innerHTML = '';
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'video-stream-element';
+    canvas.width = 1280;
+    canvas.height = 720;
+    const ctx = canvas.getContext('2d');
+    tile.appendChild(canvas);
+
+    tile.onclick = (e) => {
+      e.stopPropagation();
+      this._setPrimaryTile(tile);
+    };
+
+    const wsUrl = new WebSocket(streamUrl);
+    wsUrl.binaryType = 'arraybuffer';
+    this._remoteNativeVideoWS = wsUrl;
+
+    wsUrl.onmessage = async (event) => {
+      try {
+        const blob = new Blob([event.data], { type: 'image/jpeg' });
+        const bitmap = await createImageBitmap(blob);
+        if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+        }
+        if (ctx) {
+          ctx.drawImage(bitmap, 0, 0);
+        }
+        bitmap.close();
+      } catch (_) {}
+    };
+
+    wsUrl.onerror = (e) => {
+      console.warn('[call] Remote native video WS error:', e);
+    };
+
+    this.hasRemoteVideo = true;
+    this._updateTileLayout();
+    this._notifyMediaState();
+  }
+
+  _detachRemoteNativeVideo() {
+    if (this._remoteNativeVideoWS) {
+      try { this._remoteNativeVideoWS.close(); } catch (_) {}
+      this._remoteNativeVideoWS = null;
+    }
+    const container = document.getElementById('remote-video-container');
+    if (container) {
+      container.querySelectorAll('[data-track-sid="native-remote-video"]').forEach((el) => el.remove());
+    }
+    this.hasRemoteVideo = false;
+    this._updateTileLayout();
+    this._notifyMediaState();
+  }
+
   async toggleScreenShare() {
+    if (this.isNativeCallActive) {
+      if (this.isScreenShareOn) {
+        if (this._desktopScreenWS) {
+          try { this._desktopScreenWS.close(); } catch (_) {}
+          this._desktopScreenWS = null;
+        }
+        await nativeCallStopScreenShare();
+        this.isScreenShareOn = false;
+        const container = document.getElementById('local-video-container');
+        if (container) container.innerHTML = '';
+        this._updateTileLayout();
+        this._notifyMediaState();
+        return;
+      }
+
+      const selectedSource = await openScreenPickerModal();
+      if (!selectedSource) {
+        return;
+      }
+
+      try {
+        const streamUrl = await nativeCallStartScreenShare(selectedSource.id);
+        if (!streamUrl) {
+          showToast('Не удалось запустить демонстрацию экрана', 'error');
+          return;
+        }
+
+        const container = document.getElementById('local-video-container');
+        if (container) {
+          container.innerHTML = '';
+          const tile = document.createElement('div');
+          tile.className = 'video-tile local-tile';
+          tile.dataset.trackSid = 'native-local-screen';
+          tile.dataset.source = 'screen_share';
+          tile.dataset.participantId = 'local';
+
+          const canvas = document.createElement('canvas');
+          canvas.className = 'video-stream-element';
+          canvas.width = selectedSource.width || 1280;
+          canvas.height = selectedSource.height || 720;
+          const ctx = canvas.getContext('2d');
+          tile.appendChild(canvas);
+          container.appendChild(tile);
+          this._makeTileDraggable(tile);
+
+          const wsUrl = new WebSocket(streamUrl);
+          wsUrl.binaryType = 'arraybuffer';
+          wsUrl.onmessage = async (event) => {
+            try {
+              const blob = new Blob([event.data], { type: 'image/jpeg' });
+              const bitmap = await createImageBitmap(blob);
+              if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+                canvas.width = bitmap.width;
+                canvas.height = bitmap.height;
+              }
+              if (ctx) {
+                ctx.drawImage(bitmap, 0, 0);
+              }
+              bitmap.close();
+            } catch (_) {}
+          };
+          this._desktopScreenWS = wsUrl;
+        }
+
+        this.isScreenShareOn = true;
+        this._updateTileLayout();
+        this._notifyMediaState();
+      } catch (err) {
+        console.error('[call] Native screen capture error:', err);
+        showToast('Ошибка демонстрации экрана', 'error');
+        await nativeCallStopScreenShare();
+        if (this._desktopScreenWS) {
+          try { this._desktopScreenWS.close(); } catch (_) {}
+          this._desktopScreenWS = null;
+        }
+        this.isScreenShareOn = false;
+        this._updateTileLayout();
+        this._notifyMediaState();
+      }
+      return;
+    }
+
     if (!this.room) return;
 
-    if (isWindowsDesktop()) {
+    if (isDesktop()) {
       if (this.isScreenShareOn) {
         // Stop desktop capture
         if (this._desktopScreenWS) {
@@ -688,7 +858,8 @@ export class CallManager {
       try { this._desktopScreenWS.close(); } catch (_) {}
       this._desktopScreenWS = null;
     }
-    if (isWindowsDesktop()) {
+    this._detachRemoteNativeVideo();
+    if (isDesktop()) {
       stopDesktopScreenCapture().catch(() => {});
     }
     this._desktopScreenTrack = null;
