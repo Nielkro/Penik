@@ -62,6 +62,7 @@ func main() {
 		StartHidden:       app.config != nil && app.config.StartMinimized,
 		HideWindowOnClose: app.config != nil && app.config.MinimizeToTray,
 		BackgroundColour:  &options.RGBA{R: 13, G: 13, B: 18, A: 255},
+		EnableDefaultContextMenu: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

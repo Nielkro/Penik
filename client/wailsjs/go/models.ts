@@ -1,5 +1,27 @@
 export namespace main {
 	
+	export class CaptureSource {
+	    id: string;
+	    name: string;
+	    type: string;
+	    thumbnail: string;
+	    width: number;
+	    height: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CaptureSource(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.type = source["type"];
+	        this.thumbnail = source["thumbnail"];
+	        this.width = source["width"];
+	        this.height = source["height"];
+	    }
+	}
 	export class FileFilter {
 	    displayName: string;
 	    pattern: string;
