@@ -15,6 +15,8 @@ import {
   nativeCallConnect,
   nativeCallDisconnect,
   nativeCallSetMute,
+  getDesktopAudioDevices,
+  setDesktopAudioDevices,
 } from './desktop.js';
 import { openScreenPickerModal } from './ui/screenshare_modal.js';
 
@@ -550,6 +552,35 @@ export class CallManager {
   }
 
   async getDevices() {
+    if (isDesktop()) {
+      const nativeDevs = await getDesktopAudioDevices();
+      let browserDevs = { audioInputs: [], audioOutputs: [], videoInputs: [] };
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.enumerateDevices) {
+        try {
+          const devs = await navigator.mediaDevices.enumerateDevices();
+          browserDevs = {
+            audioInputs: devs.filter(d => d.kind === 'audioinput'),
+            audioOutputs: devs.filter(d => d.kind === 'audiooutput'),
+            videoInputs: devs.filter(d => d.kind === 'videoinput'),
+          };
+        } catch (_) {}
+      }
+
+      const audioInputs = (nativeDevs?.inputs && nativeDevs.inputs.length > 0)
+        ? nativeDevs.inputs.map(d => ({ deviceId: d.id, label: d.name, kind: 'audioinput' }))
+        : browserDevs.audioInputs;
+
+      const audioOutputs = (nativeDevs?.outputs && nativeDevs.outputs.length > 0)
+        ? nativeDevs.outputs.map(d => ({ deviceId: d.id, label: d.name, kind: 'audiooutput' }))
+        : browserDevs.audioOutputs;
+
+      return {
+        audioInputs,
+        audioOutputs,
+        videoInputs: browserDevs.videoInputs,
+      };
+    }
+
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       return {
@@ -565,6 +596,9 @@ export class CallManager {
 
   async setAudioInputDevice(deviceId) {
     this.selectedAudioInputId = deviceId;
+    if (isDesktop()) {
+      await setDesktopAudioDevices(this.selectedAudioOutputId, deviceId);
+    }
     if (this.room) {
       await this.room.switchActiveDevice('audioinput', deviceId);
     }
@@ -572,6 +606,9 @@ export class CallManager {
 
   async setAudioOutputDevice(deviceId) {
     this.selectedAudioOutputId = deviceId;
+    if (isDesktop()) {
+      await setDesktopAudioDevices(deviceId, this.selectedAudioInputId);
+    }
     if (this.room) {
       await this.room.switchActiveDevice('audiooutput', deviceId);
     }

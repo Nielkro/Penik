@@ -262,6 +262,25 @@ export async function nativeCallSetMute(muted) {
   }
 }
 
+export async function getDesktopAudioDevices() {
+  if (!isDesktop() || !window.go?.main?.App?.GetAudioDevices) {
+    return { inputs: [], outputs: [] };
+  }
+  try {
+    return (await window.go.main.App.GetAudioDevices()) || { inputs: [], outputs: [] };
+  } catch (e) {
+    console.error('[desktop] GetAudioDevices error:', e);
+    return { inputs: [], outputs: [] };
+  }
+}
 
-
-
+export async function setDesktopAudioDevices(playbackId, captureId) {
+  if (!isDesktop() || !window.go?.main?.App?.SetAudioDevices) {
+    return;
+  }
+  try {
+    await window.go.main.App.SetAudioDevices(playbackId || '', captureId || '');
+  } catch (e) {
+    console.error('[desktop] SetAudioDevices error:', e);
+  }
+}
