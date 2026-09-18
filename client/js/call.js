@@ -9,6 +9,10 @@ import { isDesktop, isWindowsDesktop, sendDesktopNotification, startDesktopScree
 import { openScreenPickerModal } from './ui/screenshare_modal.js';
 
 let _livekitModule = null;
+if (typeof window !== 'undefined' && !window.RTCPeerConnection && 'webkitRTCPeerConnection' in window) {
+  // @ts-ignore
+  window.RTCPeerConnection = window['webkitRTCPeerConnection'];
+}
 async function getLiveKit() {
   if (!_livekitModule) {
     _livekitModule = await import('livekit-client');

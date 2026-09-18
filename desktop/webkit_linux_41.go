@@ -7,10 +7,14 @@ package main
 
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
+#include <stdio.h>
 
 static gboolean on_permission_request(WebKitWebView *web_view, WebKitPermissionRequest *request, gpointer user_data) {
-	webkit_permission_request_allow(request);
-	return TRUE;
+	if (request != NULL) {
+		webkit_permission_request_allow(request);
+		return TRUE;
+	}
+	return FALSE;
 }
 
 static void configure_webview_widget(GtkWidget *widget, gpointer data) {
@@ -25,7 +29,13 @@ static void configure_webview_widget(GtkWidget *widget, gpointer data) {
 		}
 		g_signal_connect(webview, "permission-request", G_CALLBACK(on_permission_request), NULL);
 	} else if (GTK_IS_CONTAINER(widget)) {
-		gtk_container_forall(GTK_CONTAINER(widget), configure_webview_widget, data);
+		GList *children = gtk_container_get_children(GTK_CONTAINER(widget));
+		for (GList *c = children; c != NULL; c = c->next) {
+			configure_webview_widget(GTK_WIDGET(c->data), data);
+		}
+		if (children) {
+			g_list_free(children);
+		}
 	}
 }
 
@@ -46,11 +56,28 @@ static gboolean configure_webviews_idle(gpointer data) {
 	return G_SOURCE_REMOVE;
 }
 
+void InitLinuxWebKitEarly() {
+	WebKitWebContext *context = webkit_web_context_get_default();
+	if (context) {
+		WebKitSecurityManager *sec = webkit_web_context_get_security_manager(context);
+		if (sec) {
+			webkit_security_manager_register_uri_scheme_as_secure(sec, "wails");
+			webkit_security_manager_register_uri_scheme_as_cors_enabled(sec, "wails");
+			webkit_security_manager_register_uri_scheme_as_local(sec, "wails");
+		}
+	}
+}
+
 void SetupLinuxWebKit() {
+	InitLinuxWebKitEarly();
 	g_idle_add(configure_webviews_idle, NULL);
 }
 */
 import "C"
+
+func init() {
+	C.InitLinuxWebKitEarly()
+}
 
 func setupPlatformWebview() {
 	C.SetupLinuxWebKit()
