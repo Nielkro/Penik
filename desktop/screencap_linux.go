@@ -465,7 +465,11 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 			"-q",
 			"pipewiresrc", "fd=3", fmt.Sprintf("path=%d", nodeID), "do-timestamp=true",
 			"!", "videoconvert",
-			"!", "jpegenc", "quality=70",
+			"!", "videoscale",
+			"!", "video/x-raw,width=1280,height=720",
+			"!", "videorate",
+			"!", "video/x-raw,framerate=30/1",
+			"!", "jpegenc", "quality=55",
 			"!", "fdsink", "fd=1",
 		}
 	} else {
@@ -473,7 +477,11 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 			"-q",
 			"pipewiresrc", "fd=3", "do-timestamp=true",
 			"!", "videoconvert",
-			"!", "jpegenc", "quality=70",
+			"!", "videoscale",
+			"!", "video/x-raw,width=1280,height=720",
+			"!", "videorate",
+			"!", "video/x-raw,framerate=30/1",
+			"!", "jpegenc", "quality=55",
 			"!", "fdsink", "fd=1",
 		}
 	}

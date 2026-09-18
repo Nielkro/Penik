@@ -730,7 +730,8 @@ func (a *App) NativeCallStartScreenShare(sourceID string) (string, error) {
 					continue
 				}
 
-				rgbaBytes, w, h := ImageToRGBABytes(img)
+				bounds := img.Bounds()
+				w, h := bounds.Dx(), bounds.Dy()
 				if w != curW || h != curH || encoder == nil {
 					if encoder != nil {
 						encoder.Close()
@@ -746,7 +747,7 @@ func (a *App) NativeCallStartScreenShare(sourceID string) (string, error) {
 				forceKey := (frameIdx%60 == 0)
 				frameIdx++
 
-				n, err := encoder.EncodeRGBA(rgbaBytes, vp8Buf, forceKey)
+				n, err := encoder.EncodeImage(img, vp8Buf, forceKey)
 				if err == nil && n > 0 {
 					_ = videoTrack.WriteSample(media.Sample{
 						Data:     vp8Buf[:n],

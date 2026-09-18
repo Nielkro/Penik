@@ -174,6 +174,59 @@ static int encode_vp8_frame(NativeVP8Encoder *enc, const unsigned char *rgba, un
     }
     return 0;
 }
+
+static int encode_vp8_yuv(
+    NativeVP8Encoder *enc,
+    const unsigned char *y,
+    const unsigned char *u,
+    const unsigned char *v,
+    int stride_y,
+    int stride_u,
+    int stride_v,
+    unsigned char *out_buf,
+    int max_out,
+    int force_keyframe
+) {
+    if (!enc || !y || !u || !v || !out_buf) return 0;
+
+    unsigned char *dst_y = enc->raw.planes[VPX_PLANE_Y];
+    unsigned char *dst_u = enc->raw.planes[VPX_PLANE_U];
+    unsigned char *dst_v = enc->raw.planes[VPX_PLANE_V];
+    int dst_stride_y = enc->raw.stride[VPX_PLANE_Y];
+    int dst_stride_u = enc->raw.stride[VPX_PLANE_U];
+    int dst_stride_v = enc->raw.stride[VPX_PLANE_V];
+    int h = enc->height;
+    int w = enc->width;
+
+    for (int r = 0; r < h; r++) {
+        memcpy(dst_y + r * dst_stride_y, y + r * stride_y, w);
+    }
+    int uv_h = (h + 1) / 2;
+    int uv_w = (w + 1) / 2;
+    for (int r = 0; r < uv_h; r++) {
+        memcpy(dst_u + r * dst_stride_u, u + r * stride_u, uv_w);
+        memcpy(dst_v + r * dst_stride_v, v + r * stride_v, uv_w);
+    }
+
+    vpx_enc_frame_flags_t flags = 0;
+    if (force_keyframe) {
+        flags |= VPX_EFLAG_FORCE_KF;
+    }
+
+    if (vpx_codec_encode(&enc->ctx, &enc->raw, enc->pts++, 1, flags, VPX_DL_REALTIME) != VPX_CODEC_OK) {
+        return 0;
+    }
+
+    vpx_codec_iter_t iter = NULL;
+    const vpx_codec_cx_pkt_t *pkt = vpx_codec_get_cx_data(&enc->ctx, &iter);
+    if (pkt && pkt->kind == VPX_CODEC_CX_FRAME_PKT) {
+        if ((int)pkt->data.frame.sz <= max_out) {
+            memcpy(out_buf, pkt->data.frame.buf, pkt->data.frame.sz);
+            return (int)pkt->data.frame.sz;
+        }
+    }
+    return 0;
+}
 */
 import "C"
 import (
@@ -290,6 +343,97 @@ func (e *NativeVP8Encoder) EncodeRGBA(rgba []byte, out []byte, forceKeyframe boo
 	return int(n), nil
 }
 
+func (e *NativeVP8Encoder) EncodeYCbCr(y, u, v []byte, strideY, strideU, strideV int, out []byte, forceKeyframe bool) (int, error) {
+	if len(y) == 0 || len(u) == 0 || len(v) == 0 || len(out) == 0 || e.enc == nil {
+		return 0, nil
+	}
+	key := C.int(0)
+	if forceKeyframe {
+		key = 1
+	}
+	n := C.encode_vp8_yuv(
+		e.enc,
+		(*C.uchar)(unsafe.Pointer(&y[0])),
+		(*C.uchar)(unsafe.Pointer(&u[0])),
+		(*C.uchar)(unsafe.Pointer(&v[0])),
+		C.int(strideY),
+		C.int(strideU),
+		C.int(strideV),
+		(*C.uchar)(unsafe.Pointer(&out[0])),
+		C.int(len(out)),
+		key,
+	)
+	if n <= 0 {
+		return 0, fmt.Errorf("VP8 YUV encode failed")
+	}
+	return int(n), nil
+}
+
+// EncodeImage automatically encodes image.Image directly without intermediate allocations or format conversions.
+func (e *NativeVP8Encoder) EncodeImage(img image.Image, out []byte, forceKeyframe bool) (int, error) {
+	if img == nil || len(out) == 0 || e.enc == nil {
+		return 0, nil
+	}
+	key := C.int(0)
+	if forceKeyframe {
+		key = 1
+	}
+
+	switch m := img.(type) {
+	case *image.YCbCr:
+		if m.SubsampleRatio == image.YCbCrSubsampleRatio420 && len(m.Y) > 0 && len(m.Cb) > 0 && len(m.Cr) > 0 {
+			n := C.encode_vp8_yuv(
+				e.enc,
+				(*C.uchar)(unsafe.Pointer(&m.Y[0])),
+				(*C.uchar)(unsafe.Pointer(&m.Cb[0])),
+				(*C.uchar)(unsafe.Pointer(&m.Cr[0])),
+				C.int(m.YStride),
+				C.int(m.CStride),
+				C.int(m.CStride),
+				(*C.uchar)(unsafe.Pointer(&out[0])),
+				C.int(len(out)),
+				key,
+			)
+			if n > 0 {
+				return int(n), nil
+			}
+			return 0, fmt.Errorf("VP8 YUV encode failed")
+		}
+	case *image.RGBA:
+		if len(m.Pix) > 0 {
+			n := C.encode_vp8_frame(
+				e.enc,
+				(*C.uchar)(unsafe.Pointer(&m.Pix[0])),
+				(*C.uchar)(unsafe.Pointer(&out[0])),
+				C.int(len(out)),
+				key,
+			)
+			if n > 0 {
+				return int(n), nil
+			}
+			return 0, fmt.Errorf("VP8 RGBA encode failed")
+		}
+	case *image.NRGBA:
+		if len(m.Pix) > 0 {
+			n := C.encode_vp8_frame(
+				e.enc,
+				(*C.uchar)(unsafe.Pointer(&m.Pix[0])),
+				(*C.uchar)(unsafe.Pointer(&out[0])),
+				C.int(len(out)),
+				key,
+			)
+			if n > 0 {
+				return int(n), nil
+			}
+			return 0, fmt.Errorf("VP8 NRGBA encode failed")
+		}
+	}
+
+	// Fallback for custom image types
+	rgbaBytes, _, _ := ImageToRGBABytes(img)
+	return e.EncodeRGBA(rgbaBytes, out, forceKeyframe)
+}
+
 func (e *NativeVP8Encoder) Close() {
 	if e.enc != nil {
 		C.destroy_vp8_encoder(e.enc)
@@ -301,6 +445,12 @@ func (e *NativeVP8Encoder) Close() {
 func ImageToRGBABytes(img image.Image) ([]byte, int, int) {
 	bounds := img.Bounds()
 	w, h := bounds.Dx(), bounds.Dy()
+	if rgba, ok := img.(*image.RGBA); ok && rgba.Stride == w*4 {
+		return rgba.Pix, w, h
+	}
+	if nrgba, ok := img.(*image.NRGBA); ok && nrgba.Stride == w*4 {
+		return nrgba.Pix, w, h
+	}
 	rgba := make([]byte, w*h*4)
 	idx := 0
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
