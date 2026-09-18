@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -399,8 +400,7 @@ func startPlatformCapture(ctx context.Context, sourceID string, onFrame func([]b
 	ticker := time.NewTicker(33 * time.Millisecond) // ~30 FPS
 	defer ticker.Stop()
 
-	var buf bytes.Buffer
-	jpegOpts := &jpeg.Options{Quality: 75}
+	var packetBuf []byte
 
 	for {
 		select {
@@ -412,12 +412,20 @@ func startPlatformCapture(ctx context.Context, sourceID string, onFrame func([]b
 				continue
 			}
 
-			buf.Reset()
-			if err := jpeg.Encode(&buf, img, jpegOpts); err != nil {
-				continue
+			w := img.Bounds().Dx()
+			h := img.Bounds().Dy()
+			neededSize := 8 + len(img.Pix)
+
+			if len(packetBuf) != neededSize {
+				packetBuf = make([]byte, neededSize)
 			}
 
-			onFrame(buf.Bytes())
+			// 8-byte header: uint32 width, uint32 height (little endian)
+			binary.LittleEndian.PutUint32(packetBuf[0:4], uint32(w))
+			binary.LittleEndian.PutUint32(packetBuf[4:8], uint32(h))
+			copy(packetBuf[8:], img.Pix)
+
+			onFrame(packetBuf)
 		}
 	}
 }
