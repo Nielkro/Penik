@@ -11,6 +11,7 @@ package main
 
 static gboolean on_permission_request(WebKitWebView *web_view, WebKitPermissionRequest *request, gpointer user_data) {
 	if (request != NULL) {
+		printf("[penik-webkit] Auto-allowing permission request\n");
 		webkit_permission_request_allow(request);
 		return TRUE;
 	}
@@ -28,6 +29,9 @@ static void configure_webview_widget(GtkWidget *widget, gpointer data) {
 			webkit_settings_set_enable_developer_extras(settings, TRUE);
 			webkit_settings_set_disable_web_security(settings, TRUE);
 			webkit_settings_set_allow_universal_access_from_file_urls(settings, TRUE);
+			printf("[penik-webkit] Applied WebKit settings: WebRTC=%d MediaStream=%d\n",
+				webkit_settings_get_enable_webrtc(settings),
+				webkit_settings_get_enable_media_stream(settings));
 		}
 		g_signal_connect(webview, "permission-request", G_CALLBACK(on_permission_request), NULL);
 	} else if (GTK_IS_CONTAINER(widget)) {
@@ -66,6 +70,7 @@ void InitLinuxWebKitEarly() {
 			webkit_security_manager_register_uri_scheme_as_secure(sec, "wails");
 			webkit_security_manager_register_uri_scheme_as_cors_enabled(sec, "wails");
 			webkit_security_manager_register_uri_scheme_as_local(sec, "wails");
+			printf("[penik-webkit] WebKitSecurityManager initialized for wails://\n");
 		}
 	}
 }

@@ -955,6 +955,14 @@ export class CallManager {
 
     const { Room, RoomEvent, VideoPresets, ExternalE2EEKeyProvider, isE2EESupported } = await getLiveKit();
 
+    console.log('[call debug] WebRTC Support Check:', {
+      isSecureContext: typeof window !== 'undefined' ? window.isSecureContext : undefined,
+      hasRTCPeerConnection: typeof RTCPeerConnection !== 'undefined',
+      hasAddTransceiver: typeof RTCPeerConnection !== 'undefined' && 'addTransceiver' in RTCPeerConnection.prototype,
+      hasAddTrack: typeof RTCPeerConnection !== 'undefined' && 'addTrack' in RTCPeerConnection.prototype,
+      hasMediaDevices: typeof navigator !== 'undefined' && !!navigator.mediaDevices,
+    });
+
     const urlsToTry = [primaryUrl];
     if (fallbackUrl && fallbackUrl !== primaryUrl) {
       urlsToTry.push(fallbackUrl);
