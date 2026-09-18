@@ -92,6 +92,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/js/ui/search.js` — User search screen and initiator for direct chats.
 - `client/js/ui/stickers.js` — Sticker picker popup, recent stickers persistence, sticker pack viewer modal, and Telegram sticker pack import dialog.
 - `client/js/ui/call_modal.js` — Renders the active/incoming/dialing call overlay modal, participant placeholders, video/screenshare layout swapping, in-call media control buttons, reconnect/peer-link status badge, and E2EE verified / safety words indicators.
+- `client/js/ui/screenshare_modal.js` — Discord-style modal for choosing screen or application window with live previews and resolution details.
 - `client/js/ui/components.js` — Shared UI components: avatars, time formatting, hover tooltip for full timestamp, message copy menu, scroll-down button, toasts, modals, and safe Markdown parsing and rendering (fenced code blocks with language badge & copy button, tables, inline code, quotes, headers, bold, italic, strikethrough, and lists).
 - `client/js/globals.d.ts` — Ambient type declarations for globals the app attaches to `window`; type-checking only, emits no JavaScript.
 
@@ -100,6 +101,9 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `desktop/go.mod` — Go module definition for Penik Desktop Wails application.
 - `desktop/main.go` — Desktop entry point: Wails app options, single-instance lock, system tray menu, and platform-specific WebKitGTK / WebView2 flags.
 - `desktop/app.go` — Wails bridge methods exposed to frontend: server URL configuration, version info, native file dialogs, base64 file I/O, OS notifications, and window controls.
+- `desktop/screencap.go` — Native desktop screen and window capture server broadcasting binary frame streams over local WebSocket.
+- `desktop/screencap_windows.go` — Windows GDI/DWM screen and application window capture implementation.
+- `desktop/screencap_other.go` — Non-Windows fallback stub for screen capture.
 - `desktop/config.go` — Desktop persistent configuration manager storing server URL and tray preferences in OS-standard config directories (`os.UserConfigDir()`).
 - `desktop/tray.go` — Native system tray integration (KDE/AppIndicator/Windows) for background execution and quick window actions.
 - `desktop/screen_share_windows.go` — Windows Win32 background watcher automatically suppressing Chromium/WebView2 screen capture notification overlays.

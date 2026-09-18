@@ -181,3 +181,39 @@ export async function desktopBinaryFetch(method, url, headers = {}, body = '') {
     return null;
   }
 }
+
+export async function getDesktopCaptureSources() {
+  if (!isDesktop() || !window.go?.main?.App?.GetCaptureSources) {
+    return [];
+  }
+  try {
+    return (await window.go.main.App.GetCaptureSources()) || [];
+  } catch (e) {
+    console.error('[desktop] GetCaptureSources error:', e);
+    return [];
+  }
+}
+
+export async function startDesktopScreenCapture(sourceId) {
+  if (!isDesktop() || !window.go?.main?.App?.StartScreenCapture) {
+    return null;
+  }
+  try {
+    return await window.go.main.App.StartScreenCapture(sourceId);
+  } catch (e) {
+    console.error('[desktop] StartScreenCapture error:', e);
+    return null;
+  }
+}
+
+export async function stopDesktopScreenCapture() {
+  if (!isDesktop() || !window.go?.main?.App?.StopScreenCapture) {
+    return;
+  }
+  try {
+    await window.go.main.App.StopScreenCapture();
+  } catch (e) {
+    console.error('[desktop] StopScreenCapture error:', e);
+  }
+}
+

@@ -3059,6 +3059,185 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   to { transform: scale(1.02); opacity: 1; }
 }
 
+/* ==========================================================================
+   Discord-style Screen & Window Picker Modal
+   ========================================================================== */
+
+.screen-picker-overlay {
+  z-index: 10050;
+  backdrop-filter: blur(12px);
+  background: rgba(10, 10, 15, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.screen-picker-card-container {
+  width: 90%;
+  max-width: 680px;
+  max-height: 85vh;
+  background: #18191c;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.screen-picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.screen-picker-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #f2f3f5;
+}
+
+.screen-picker-close-btn {
+  background: transparent;
+  border: none;
+  color: #b5bac1;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.screen-picker-close-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.screen-picker-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: #1e1f22;
+}
+
+.screen-picker-tab {
+  background: transparent;
+  border: none;
+  color: #949ba4;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.screen-picker-tab:hover {
+  color: #dbdee1;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.screen-picker-tab.active {
+  color: #fff;
+  background: #35373c;
+  font-weight: 600;
+}
+
+.screen-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+  padding: 20px 24px;
+  overflow-y: auto;
+  max-height: 420px;
+  min-height: 200px;
+}
+
+.screen-picker-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: #949ba4;
+  padding: 40px 0;
+  font-size: 14px;
+}
+
+.screen-picker-card {
+  background: #2b2d31;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+}
+
+.screen-picker-card:hover {
+  transform: translateY(-2px);
+  background: #313338;
+  border-color: rgba(88, 101, 242, 0.4);
+}
+
+.screen-picker-card.selected {
+  border-color: #5865f2;
+  box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.3);
+  background: #313338;
+}
+
+.screen-picker-thumb-wrapper {
+  width: 100%;
+  height: 110px;
+  background: #111214;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.screen-picker-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.screen-picker-card-info {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.screen-picker-card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #dbdee1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.screen-picker-card-res {
+  font-size: 11px;
+  color: #80848e;
+}
+
+.screen-picker-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: #1e1f22;
+}
+
+
 
 
 

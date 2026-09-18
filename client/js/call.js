@@ -5,7 +5,8 @@ import { getUserById, apiGet, getApiOrigin } from './api.js';
 import { callSounds } from './sounds.js';
 import { generateKeyPair, deriveSharedSecret, decodeKey } from './crypto.js';
 import { defaultWordCoder } from './wordcoder.js';
-import { isDesktop, sendDesktopNotification } from './desktop.js';
+import { isDesktop, sendDesktopNotification, startDesktopScreenCapture, stopDesktopScreenCapture } from './desktop.js';
+import { openScreenPickerModal } from './ui/screenshare_modal.js';
 
 let _livekitModule = null;
 async function getLiveKit() {
@@ -112,6 +113,10 @@ export class CallManager {
     this._authSecret = null;
     this._derivedMasterKey = null;
     this._peerEkPub = null;
+
+    this._desktopScreenWS = null;
+    this._desktopScreenTrack = null;
+    this._desktopScreenCanvas = null;
 
     // Teardown callbacks for window-level listeners registered per video tile.
     // Tiles are recreated on every track publish, so without this the listeners
@@ -373,6 +378,109 @@ export class CallManager {
 
   async toggleScreenShare() {
     if (!this.room) return;
+
+    if (isDesktop()) {
+      if (this.isScreenShareOn) {
+        // Stop desktop capture
+        if (this._desktopScreenWS) {
+          try { this._desktopScreenWS.close(); } catch (_) {}
+          this._desktopScreenWS = null;
+        }
+        await stopDesktopScreenCapture();
+        if (this._desktopScreenTrack) {
+          try {
+            await this.room.localParticipant.unpublishTrack(this._desktopScreenTrack);
+          } catch (e) {
+            console.warn('[call] Failed to unpublish desktop screen track:', e);
+          }
+          this._desktopScreenTrack = null;
+        }
+        this.isScreenShareOn = false;
+        if (this.isVideoOff) {
+          const container = document.getElementById('local-video-container');
+          if (container) container.innerHTML = '';
+        }
+        this._notifyMediaState();
+        return;
+      }
+
+      // Open Discord-style screen picker
+      const selectedSource = await openScreenPickerModal();
+      if (!selectedSource) {
+        return; // User cancelled
+      }
+
+      try {
+        const streamUrl = await startDesktopScreenCapture(selectedSource.id);
+        if (!streamUrl) {
+          showToast('Не удалось запустить захват экрана', 'error');
+          return;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = selectedSource.width || 1920;
+        canvas.height = selectedSource.height || 1080;
+        const ctx = canvas.getContext('2d');
+        this._desktopScreenCanvas = canvas;
+
+        const wsUrl = new WebSocket(streamUrl);
+        wsUrl.binaryType = 'arraybuffer';
+
+        wsUrl.onmessage = async (event) => {
+          try {
+            const blob = new Blob([event.data], { type: 'image/jpeg' });
+            const bitmap = await createImageBitmap(blob);
+            if (ctx) {
+              ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+            }
+            bitmap.close();
+          } catch (_) {}
+        };
+
+        wsUrl.onerror = (e) => {
+          console.warn('[call] Desktop screen WS error:', e);
+        };
+
+        wsUrl.onclose = () => {
+          if (this.isScreenShareOn) {
+            this.toggleScreenShare();
+          }
+        };
+
+        this._desktopScreenWS = wsUrl;
+
+        // Capture canvas stream at 30 FPS
+        const stream = canvas.captureStream(30);
+        const videoTrack = stream.getVideoTracks()[0];
+        if (!videoTrack) {
+          throw new Error('Failed to create canvas video track');
+        }
+
+        const pub = await this.room.localParticipant.publishTrack(videoTrack, {
+          name: 'screen_share',
+          source: 'screen_share',
+        });
+
+        this._desktopScreenTrack = pub?.track || videoTrack;
+        this.isScreenShareOn = true;
+        if (pub?.track) {
+          this._attachLocalTrack(pub.track);
+        }
+        this._notifyMediaState();
+      } catch (err) {
+        console.error('[call] Native screen capture error:', err);
+        showToast('Ошибка демонстрации экрана', 'error');
+        await stopDesktopScreenCapture();
+        if (this._desktopScreenWS) {
+          try { this._desktopScreenWS.close(); } catch (_) {}
+          this._desktopScreenWS = null;
+        }
+        this.isScreenShareOn = false;
+        this._notifyMediaState();
+      }
+      return;
+    }
+
     try {
       const nextState = !this.isScreenShareOn;
       await this.room.localParticipant.setScreenShareEnabled(nextState, {
@@ -490,6 +598,16 @@ export class CallManager {
     this._authSecret = null;
     this._derivedMasterKey = null;
     this._peerEkPub = null;
+
+    if (this._desktopScreenWS) {
+      try { this._desktopScreenWS.close(); } catch (_) {}
+      this._desktopScreenWS = null;
+    }
+    if (isDesktop()) {
+      stopDesktopScreenCapture().catch(() => {});
+    }
+    this._desktopScreenTrack = null;
+    this._desktopScreenCanvas = null;
 
     this.currentCall = null;
     this.isMuted = false;
