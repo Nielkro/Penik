@@ -77,6 +77,7 @@ func main() {
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
 			DisableWindowIcon:    false,
+			AdditionalBrowserArgs: "--disable-features=WebRtcAllowWgcScreenCapturer,WebRtcAllowWgcWindowCapturer",
 		},
 		Linux: &linux.Options{
 			Icon:                icon,
