@@ -123,6 +123,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -142,7 +143,6 @@ func isWaylandSession() bool {
 
 func getPlatformCaptureSources() ([]CaptureSource, error) {
 	// 1. If Wayland session, use Wayland portal as the primary and only safe source.
-	// In Wayland, X11 XGetImage is restricted and causes protocol errors / black frames.
 	if isWaylandSession() {
 		return []CaptureSource{
 			{
@@ -297,6 +297,31 @@ func randomToken(prefix string) string {
 	return prefix + hex.EncodeToString(b)
 }
 
+func extractNodeID(val interface{}) uint32 {
+	if val == nil {
+		return 0
+	}
+	v := reflect.ValueOf(val)
+	if v.Kind() == reflect.Slice && v.Len() > 0 {
+		firstElem := v.Index(0)
+		if firstElem.Kind() == reflect.Slice && firstElem.Len() > 0 {
+			elem0 := firstElem.Index(0)
+			if elem0.Kind() == reflect.Interface {
+				elem0 = elem0.Elem()
+			}
+			if id, ok := elem0.Interface().(uint32); ok {
+				return id
+			}
+		}
+		if firstElem.Kind() == reflect.Struct && firstElem.NumField() > 0 {
+			if id, ok := firstElem.Field(0).Interface().(uint32); ok {
+				return id
+			}
+		}
+	}
+	return 0
+}
+
 func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 	gstPath, err := exec.LookPath("gst-launch-1.0")
 	if err != nil {
@@ -420,17 +445,7 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 	// Extract stream node_id if provided
 	var nodeID uint32
 	if streamsVal, ok := startResults["streams"]; ok {
-		if streamsSlice, ok := streamsVal.Value().([][]interface{}); ok && len(streamsSlice) > 0 {
-			if id, ok := streamsSlice[0][0].(uint32); ok {
-				nodeID = id
-			}
-		} else if rawSlice, ok := streamsVal.Value().([]interface{}); ok && len(rawSlice) > 0 {
-			if tuple, ok := rawSlice[0].([]interface{}); ok && len(tuple) > 0 {
-				if id, ok := tuple[0].(uint32); ok {
-					nodeID = id
-				}
-			}
-		}
+		nodeID = extractNodeID(streamsVal.Value())
 	}
 
 	// 4. OpenPipeWireRemote
@@ -450,7 +465,6 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 			"-q",
 			"pipewiresrc", "fd=3", fmt.Sprintf("path=%d", nodeID), "do-timestamp=true",
 			"!", "videoconvert",
-			"!", "video/x-raw,format=I420,framerate=30/1",
 			"!", "jpegenc", "quality=70",
 			"!", "fdsink", "fd=1",
 		}
@@ -459,7 +473,6 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 			"-q",
 			"pipewiresrc", "fd=3", "do-timestamp=true",
 			"!", "videoconvert",
-			"!", "video/x-raw,format=I420,framerate=30/1",
 			"!", "jpegenc", "quality=70",
 			"!", "fdsink", "fd=1",
 		}
