@@ -20,7 +20,7 @@ export function HttpBinaryRequest(arg1:string,arg2:string,arg3:Record<string, st
 
 export function HttpRequest(arg1:string,arg2:string,arg3:Record<string, string>,arg4:string):Promise<main.HttpResponse>;
 
-export function NativeCallConnect(arg1:string,arg2:string,arg3:boolean):Promise<boolean>;
+export function NativeCallConnect(arg1:string,arg2:string,arg3:boolean):Promise<main.NativeCallConnectResult>;
 
 export function NativeCallDisconnect():Promise<boolean>;
 

@@ -72,6 +72,20 @@ export namespace main {
 	        this.body = source["body"];
 	    }
 	}
+	export class NativeCallConnectResult {
+	    ok: boolean;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new NativeCallConnectResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ok = source["ok"];
+	        this.error = source["error"];
+	    }
+	}
 	export class VersionInfo {
 	    version: string;
 	    platform: string;

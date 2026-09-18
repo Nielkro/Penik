@@ -1,14 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
-	"net"
-	"net/http"
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/gen2brain/malgo"
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/pion/webrtc/v4"
@@ -18,8 +18,56 @@ import (
 
 type NativeCallConnectResult struct {
 	Ok    bool   `json:"ok"`
-	WsURL string `json:"wsUrl"`
 	Error string `json:"error,omitempty"`
+}
+
+type AudioRingBuffer struct {
+	mu     sync.Mutex
+	buf    []byte
+	maxLen int
+}
+
+func NewAudioRingBuffer(maxLen int) *AudioRingBuffer {
+	return &AudioRingBuffer{
+		buf:    make([]byte, 0, maxLen),
+		maxLen: maxLen,
+	}
+}
+
+func (r *AudioRingBuffer) Write(data []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if len(r.buf)+len(data) > r.maxLen {
+		overflow := len(r.buf) + len(data) - r.maxLen
+		if overflow >= len(r.buf) {
+			r.buf = r.buf[:0]
+		} else {
+			r.buf = r.buf[overflow:]
+		}
+	}
+	r.buf = append(r.buf, data...)
+}
+
+func (r *AudioRingBuffer) Read(out []byte) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	n := copy(out, r.buf)
+	if n < len(out) {
+		// Fill remaining with silence
+		for i := n; i < len(out); i++ {
+			out[i] = 0
+		}
+	}
+	r.buf = r.buf[n:]
+	return n
+}
+
+func (r *AudioRingBuffer) Available() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.buf)
 }
 
 type NativeCallManager struct {
@@ -33,109 +81,155 @@ type NativeCallManager struct {
 	cancelFn     context.CancelFunc
 	activeCallID string
 
-	// Loopback audio WebSocket server
-	audioListener net.Listener
-	audioServer   *http.Server
-	audioPort     int
-	wsClients     map[*websocket.Conn]bool
-	wsMu          sync.Mutex
+	// Native malgo audio context and devices
+	malgoCtx       *malgo.AllocatedContext
+	playbackDevice *malgo.Device
+	captureDevice  *malgo.Device
+	playbackRing   *AudioRingBuffer
+	captureRing    *AudioRingBuffer
 }
 
 var globalCallManager *NativeCallManager
 
 func initCallManager(app *App) {
 	globalCallManager = &NativeCallManager{
-		app:       app,
-		wsClients: make(map[*websocket.Conn]bool),
+		app:          app,
+		playbackRing: NewAudioRingBuffer(48000 * 2 * 2), // 2 seconds capacity (48kHz 16-bit mono)
+		captureRing:  NewAudioRingBuffer(48000 * 2 * 2),
 	}
 }
 
-func (m *NativeCallManager) ensureAudioServer() (int, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.audioServer != nil && m.audioPort > 0 {
-		return m.audioPort, nil
+func (m *NativeCallManager) stopAudioHardware() {
+	if m.playbackDevice != nil {
+		m.playbackDevice.Uninit()
+		m.playbackDevice = nil
 	}
+	if m.captureDevice != nil {
+		m.captureDevice.Uninit()
+		m.captureDevice = nil
+	}
+	if m.malgoCtx != nil {
+		_ = m.malgoCtx.Uninit()
+		m.malgoCtx.Free()
+		m.malgoCtx = nil
+	}
+}
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+func (m *NativeCallManager) startAudioHardware(ctx context.Context) error {
+	m.stopAudioHardware()
+
+	malgoCtx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
 	if err != nil {
-		return 0, fmt.Errorf("failed to bind audio bridge server: %w", err)
+		return fmt.Errorf("failed to init malgo audio context: %w", err)
 	}
-	m.audioListener = ln
-	m.audioPort = ln.Addr().(*net.TCPAddr).Port
+	m.malgoCtx = malgoCtx
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/stream/call_audio", m.handleAudioWebSocket)
+	// 1. Playback device (Speakers / Headphones)
+	playbackConfig := malgo.DefaultDeviceConfig(malgo.Playback)
+	playbackConfig.Playback.Format = malgo.FormatS16
+	playbackConfig.Playback.Channels = 1
+	playbackConfig.SampleRate = 48000
+	playbackConfig.Alsa.NoMMap = 1
 
-	m.audioServer = &http.Server{
-		Handler: mux,
+	playbackDevice, err := malgo.InitDevice(malgoCtx.Context, playbackConfig, malgo.DeviceCallbacks{
+		Data: func(pOutputSample, pInputSamples []byte, frameCount uint32) {
+			m.playbackRing.Read(pOutputSample)
+		},
+	})
+	if err != nil {
+		m.stopAudioHardware()
+		return fmt.Errorf("failed to init playback device: %w", err)
 	}
+	if err := playbackDevice.Start(); err != nil {
+		m.stopAudioHardware()
+		return fmt.Errorf("failed to start playback device: %w", err)
+	}
+	m.playbackDevice = playbackDevice
 
+	// 2. Capture device (Microphone)
+	captureConfig := malgo.DefaultDeviceConfig(malgo.Capture)
+	captureConfig.Capture.Format = malgo.FormatS16
+	captureConfig.Capture.Channels = 1
+	captureConfig.SampleRate = 48000
+	captureConfig.Alsa.NoMMap = 1
+
+	captureDevice, err := malgo.InitDevice(malgoCtx.Context, captureConfig, malgo.DeviceCallbacks{
+		Data: func(pOutputSample, pInputSamples []byte, frameCount uint32) {
+			if len(pInputSamples) > 0 {
+				m.captureRing.Write(pInputSamples)
+			}
+		},
+	})
+	if err != nil {
+		m.stopAudioHardware()
+		return fmt.Errorf("failed to init capture device: %w", err)
+	}
+	if err := captureDevice.Start(); err != nil {
+		m.stopAudioHardware()
+		return fmt.Errorf("failed to start capture device: %w", err)
+	}
+	m.captureDevice = captureDevice
+
+	// 3. Background microphone Opus encoding pump
 	go func() {
-		_ = m.audioServer.Serve(ln)
-	}()
-
-	return m.audioPort, nil
-}
-
-func (m *NativeCallManager) handleAudioWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		return
-	}
-
-	m.wsMu.Lock()
-	m.wsClients[conn] = true
-	m.wsMu.Unlock()
-
-	defer func() {
-		m.wsMu.Lock()
-		delete(m.wsClients, conn)
-		m.wsMu.Unlock()
-		_ = conn.Close()
-	}()
-
-	// Read mic PCM/audio data from Web Audio and publish to LiveKit
-	for {
-		messageType, data, err := conn.ReadMessage()
+		encoder, err := NewNativeOpusEncoder(48000, 1)
 		if err != nil {
-			break
+			return
 		}
-		if messageType == websocket.BinaryMessage && len(data) > 0 {
-			m.mu.Lock()
-			track := m.localAudio
-			muted := m.isMuted
-			m.mu.Unlock()
+		defer encoder.Close()
 
-			if track != nil && !muted {
-				_ = track.WriteSample(media.Sample{
-					Data:     data,
-					Duration: 20 * time.Millisecond,
-				}, nil)
+		const frameSamples = 960 // 20ms at 48kHz
+		const frameBytes = frameSamples * 2 // 16-bit mono PCM = 1920 bytes
+		pcmChunk := make([]byte, frameBytes)
+		pcmSamples := make([]int16, frameSamples)
+		opusBuf := make([]byte, 1000)
+
+		ticker := time.NewTicker(20 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if m.captureRing.Available() < frameBytes {
+					continue
+				}
+				m.captureRing.Read(pcmChunk)
+
+				m.mu.Lock()
+				track := m.localAudio
+				muted := m.isMuted
+				m.mu.Unlock()
+
+				if track == nil || muted {
+					continue
+				}
+
+				// Convert bytes to int16
+				bufReader := bytes.NewReader(pcmChunk)
+				if err := binary.Read(bufReader, binary.LittleEndian, &pcmSamples); err != nil {
+					continue
+				}
+
+				n, err := encoder.Encode(pcmSamples, opusBuf)
+				if err == nil && n > 0 {
+					_ = track.WriteSample(media.Sample{
+						Data:     opusBuf[:n],
+						Duration: 20 * time.Millisecond,
+					}, nil)
+				}
 			}
 		}
-	}
-}
+	}()
 
-func (m *NativeCallManager) broadcastRemoteAudio(data []byte) {
-	m.wsMu.Lock()
-	defer m.wsMu.Unlock()
-
-	for client := range m.wsClients {
-		_ = client.WriteMessage(websocket.BinaryMessage, data)
-	}
+	return nil
 }
 
 // NativeCallConnect connects the Go desktop backend directly to LiveKit SFU via Pion WebRTC.
 func (a *App) NativeCallConnect(url, token string, isVideo bool) (*NativeCallConnectResult, error) {
 	if globalCallManager == nil {
 		initCallManager(a)
-	}
-
-	port, err := globalCallManager.ensureAudioServer()
-	if err != nil {
-		return &NativeCallConnectResult{Ok: false, Error: err.Error()}, err
 	}
 
 	globalCallManager.mu.Lock()
@@ -151,6 +245,11 @@ func (a *App) NativeCallConnect(url, token string, isVideo bool) (*NativeCallCon
 	globalCallManager.cancelFn = cancel
 	globalCallManager.isVideo = isVideo
 	globalCallManager.isMuted = false
+
+	// Start native hardware audio capture and playback
+	if err := globalCallManager.startAudioHardware(ctx); err != nil {
+		fmt.Printf("[native_call] Audio hardware warning: %v\n", err)
+	}
 
 	cb := lksdk.NewRoomCallback()
 
@@ -195,24 +294,39 @@ func (a *App) NativeCallConnect(url, token string, isVideo bool) (*NativeCallCon
 			"identity": rp.Identity(),
 		})
 
-		// Stream incoming audio frames to the local audio bridge
-		go func() {
-			buf := make([]byte, 1500)
-			for {
-				select {
-				case <-ctx.Done():
+		// Decode remote Opus audio packets and send to playback ring buffer
+		if track.Kind() == webrtc.RTPCodecTypeAudio {
+			go func() {
+				decoder, err := NewNativeOpusDecoder(48000, 1)
+				if err != nil {
 					return
-				default:
-					n, _, err := track.Read(buf)
-					if err != nil {
+				}
+				defer decoder.Close()
+				pcmSamples := make([]int16, 960)
+				pcmBytes := make([]byte, 960*2)
+
+				for {
+					select {
+					case <-ctx.Done():
 						return
-					}
-					if n > 0 && track.Kind() == webrtc.RTPCodecTypeAudio {
-						globalCallManager.broadcastRemoteAudio(buf[:n])
+					default:
+						pkt, _, err := track.ReadRTP()
+						if err != nil {
+							return
+						}
+						if len(pkt.Payload) > 0 {
+							n, err := decoder.Decode(pkt.Payload, pcmSamples)
+							if err == nil && n > 0 {
+								bufWriter := bytes.NewBuffer(pcmBytes[:0])
+								if err := binary.Write(bufWriter, binary.LittleEndian, pcmSamples[:n]); err == nil {
+									globalCallManager.playbackRing.Write(bufWriter.Bytes())
+								}
+							}
+						}
 					}
 				}
-			}
-		}()
+			}()
+		}
 	}
 
 	room, err := lksdk.ConnectToRoomWithToken(url, token, cb,
@@ -221,6 +335,7 @@ func (a *App) NativeCallConnect(url, token string, isVideo bool) (*NativeCallCon
 	)
 	if err != nil {
 		cancel()
+		globalCallManager.stopAudioHardware()
 		return &NativeCallConnectResult{Ok: false, Error: err.Error()}, fmt.Errorf("failed to connect to LiveKit: %w", err)
 	}
 
@@ -247,10 +362,8 @@ func (a *App) NativeCallConnect(url, token string, isVideo bool) (*NativeCallCon
 		"state": "CONNECTED",
 	})
 
-	wsURL := fmt.Sprintf("ws://127.0.0.1:%d/stream/call_audio", port)
 	return &NativeCallConnectResult{
-		Ok:    true,
-		WsURL: wsURL,
+		Ok: true,
 	}, nil
 }
 
@@ -274,6 +387,7 @@ func (a *App) NativeCallDisconnect() bool {
 	}
 	globalCallManager.localAudio = nil
 	globalCallManager.audioPub = nil
+	globalCallManager.stopAudioHardware()
 
 	wruntime.EventsEmit(a.ctx, "native_call_state", map[string]interface{}{
 		"state": "DISCONNECTED",

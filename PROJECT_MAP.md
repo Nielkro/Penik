@@ -67,6 +67,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `desktop/main.go` — Wails application entry point configuring window options, single-instance lock, tray menu, asset server, and WebKit/WebView2 customizations.
 -`desktop/app.go` — Backend methods exposed to JavaScript (config persistence, window control, native notifications, file dialogs, update checking).
 - `desktop/native_call.go` — Native Go LiveKit call engine powered by server-sdk-go/v2 and Pion WebRTC for zero-lag, browser-independent desktop voice and video calls.
+- `desktop/opus_cgo.go` — Direct CGO bindings to libopus for high-fidelity 48kHz VoIP audio encoding and decoding.
 - `desktop/screencap.go` — High-performance desktop screen and window capture engine serving JPEG frames over local loopback WebSocket for borderless screen sharing.
 - `desktop/screencap_windows.go` — Windows GDI / DWM implementation for screen and window capture.
 - `desktop/screencap_other.go` — Stub implementation for non-Windows screen capture.

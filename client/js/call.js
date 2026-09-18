@@ -15,8 +15,6 @@ import {
   nativeCallConnect,
   nativeCallDisconnect,
   nativeCallSetMute,
-  startDesktopAudioBridge,
-  stopDesktopAudioBridge,
 } from './desktop.js';
 import { openScreenPickerModal } from './ui/screenshare_modal.js';
 
@@ -631,7 +629,6 @@ export class CallManager {
     this._startingCall = false;
     if (this.isNativeCallActive) {
       this.isNativeCallActive = false;
-      stopDesktopAudioBridge();
       nativeCallDisconnect();
     }
     if (this.room) {
@@ -1022,9 +1019,6 @@ export class CallManager {
           if (res && res.ok) {
             console.log('[call] Go native LiveKit call connected successfully!');
             this.isNativeCallActive = true;
-            if (res.wsUrl) {
-              await startDesktopAudioBridge(res.wsUrl);
-            }
             callSounds.playConnected();
             if (this.currentCall) {
               this.currentCall.isE2EE = true;
