@@ -8,6 +8,7 @@ package main
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
 #include <stdio.h>
+#include <string.h>
 
 static gboolean on_permission_request(WebKitWebView *web_view, WebKitPermissionRequest *request, gpointer user_data) {
 	if (request != NULL) {
@@ -18,22 +19,42 @@ static gboolean on_permission_request(WebKitWebView *web_view, WebKitPermissionR
 	return FALSE;
 }
 
+static void enable_all_webrtc_features(WebKitSettings *settings) {
+	if (!settings) return;
+	webkit_settings_set_enable_webrtc(settings, TRUE);
+	webkit_settings_set_enable_media_stream(settings, TRUE);
+	webkit_settings_set_enable_mediasource(settings, TRUE);
+	webkit_settings_set_enable_developer_extras(settings, TRUE);
+	webkit_settings_set_disable_web_security(settings, TRUE);
+	webkit_settings_set_allow_universal_access_from_file_urls(settings, TRUE);
+
+	WebKitFeatureList *features = webkit_settings_get_all_features();
+	if (features) {
+		gsize len = webkit_feature_list_get_length(features);
+		for (gsize i = 0; i < len; i++) {
+			WebKitFeature *f = webkit_feature_list_get(features, i);
+			const char *id = webkit_feature_get_identifier(f);
+			if (id && (strstr(id, "webrtc") || strstr(id, "media") || strstr(id, "peer") || strstr(id, "stream") || strstr(id, "rtc"))) {
+				webkit_settings_set_feature_enabled(settings, f, TRUE);
+				printf("[penik-webkit] Enabled WebKit feature: %s\n", id);
+			}
+		}
+		webkit_feature_list_unref(features);
+	}
+}
+
 static void configure_webview_widget(GtkWidget *widget, gpointer data) {
 	if (WEBKIT_IS_WEB_VIEW(widget)) {
 		WebKitWebView *webview = WEBKIT_WEB_VIEW(widget);
-		WebKitSettings *settings = webkit_web_view_get_settings(webview);
-		if (settings) {
-			webkit_settings_set_enable_webrtc(settings, TRUE);
-			webkit_settings_set_enable_media_stream(settings, TRUE);
-			webkit_settings_set_enable_mediasource(settings, TRUE);
-			webkit_settings_set_enable_developer_extras(settings, TRUE);
-			webkit_settings_set_disable_web_security(settings, TRUE);
-			webkit_settings_set_allow_universal_access_from_file_urls(settings, TRUE);
-			printf("[penik-webkit] Applied WebKit settings: WebRTC=%d MediaStream=%d\n",
-				webkit_settings_get_enable_webrtc(settings),
-				webkit_settings_get_enable_media_stream(settings));
+		gpointer configured = g_object_get_data(G_OBJECT(webview), "penik-webrtc-configured");
+		if (!configured) {
+			g_object_set_data(G_OBJECT(webview), "penik-webrtc-configured", GINT_TO_POINTER(1));
+			WebKitSettings *settings = webkit_web_view_get_settings(webview);
+			enable_all_webrtc_features(settings);
+			g_signal_connect(webview, "permission-request", G_CALLBACK(on_permission_request), NULL);
+			printf("[penik-webkit] Configured WebKitWebView and reloading WebProcess for WebRTC...\n");
+			webkit_web_view_reload(webview);
 		}
-		g_signal_connect(webview, "permission-request", G_CALLBACK(on_permission_request), NULL);
 	} else if (GTK_IS_CONTAINER(widget)) {
 		GList *children = gtk_container_get_children(GTK_CONTAINER(widget));
 		for (GList *c = children; c != NULL; c = c->next) {

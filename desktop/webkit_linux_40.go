@@ -11,6 +11,7 @@ package main
 
 static gboolean on_permission_request(WebKitWebView *web_view, WebKitPermissionRequest *request, gpointer user_data) {
 	if (request != NULL) {
+		printf("[penik-webkit] Auto-allowing permission request\n");
 		webkit_permission_request_allow(request);
 		return TRUE;
 	}
@@ -20,16 +21,22 @@ static gboolean on_permission_request(WebKitWebView *web_view, WebKitPermissionR
 static void configure_webview_widget(GtkWidget *widget, gpointer data) {
 	if (WEBKIT_IS_WEB_VIEW(widget)) {
 		WebKitWebView *webview = WEBKIT_WEB_VIEW(widget);
-		WebKitSettings *settings = webkit_web_view_get_settings(webview);
-		if (settings) {
-			webkit_settings_set_enable_webrtc(settings, TRUE);
-			webkit_settings_set_enable_media_stream(settings, TRUE);
-			webkit_settings_set_enable_mediasource(settings, TRUE);
-			webkit_settings_set_enable_developer_extras(settings, TRUE);
-			webkit_settings_set_disable_web_security(settings, TRUE);
-			webkit_settings_set_allow_universal_access_from_file_urls(settings, TRUE);
+		gpointer configured = g_object_get_data(G_OBJECT(webview), "penik-webrtc-configured");
+		if (!configured) {
+			g_object_set_data(G_OBJECT(webview), "penik-webrtc-configured", GINT_TO_POINTER(1));
+			WebKitSettings *settings = webkit_web_view_get_settings(webview);
+			if (settings) {
+				webkit_settings_set_enable_webrtc(settings, TRUE);
+				webkit_settings_set_enable_media_stream(settings, TRUE);
+				webkit_settings_set_enable_mediasource(settings, TRUE);
+				webkit_settings_set_enable_developer_extras(settings, TRUE);
+				webkit_settings_set_disable_web_security(settings, TRUE);
+				webkit_settings_set_allow_universal_access_from_file_urls(settings, TRUE);
+			}
+			g_signal_connect(webview, "permission-request", G_CALLBACK(on_permission_request), NULL);
+			printf("[penik-webkit] Configured WebKitWebView and reloading WebProcess for WebRTC...\n");
+			webkit_web_view_reload(webview);
 		}
-		g_signal_connect(webview, "permission-request", G_CALLBACK(on_permission_request), NULL);
 	} else if (GTK_IS_CONTAINER(widget)) {
 		GList *children = gtk_container_get_children(GTK_CONTAINER(widget));
 		for (GList *c = children; c != NULL; c = c->next) {
