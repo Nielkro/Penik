@@ -64,6 +64,7 @@ void InitLinuxWebKitEarly() {
 		WebKitSecurityManager *sec = webkit_web_context_get_security_manager(context);
 		if (sec) {
 			webkit_security_manager_register_uri_scheme_as_secure(sec, "wails");
+			webkit_security_manager_register_uri_scheme_as_cors_enabled(sec, "wails");
 			webkit_security_manager_register_uri_scheme_as_local(sec, "wails");
 		}
 	}
