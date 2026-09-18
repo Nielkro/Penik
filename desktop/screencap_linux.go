@@ -120,6 +120,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"log"
 	"os"
 	"os/exec"
 	"strconv"
@@ -146,7 +147,7 @@ func getPlatformCaptureSources() ([]CaptureSource, error) {
 		return []CaptureSource{
 			{
 				ID:        "wayland:portal",
-				Name:      "Выбрать экран или окно (Wayland)",
+				Name:      "Экран или окно (Wayland)",
 				Type:      "screen",
 				Width:     1920,
 				Height:    1080,
@@ -299,21 +300,30 @@ func randomToken(prefix string) string {
 func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 	gstPath, err := exec.LookPath("gst-launch-1.0")
 	if err != nil {
+		log.Printf("[screencap] gst-launch-1.0 not found: %v", err)
 		return false
 	}
 
 	conn, err := dbus.ConnectSessionBus()
 	if err != nil {
+		log.Printf("[screencap] DBus session bus connect error: %v", err)
 		return false
 	}
 	defer conn.Close()
 
-	senderName := strings.ReplaceAll(strings.TrimPrefix(conn.Names()[0], ":"), ".", "_")
-	portalObj := conn.Object("org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop")
+	// Register match rule so DBus daemon sends signal to our client
+	matchRule := "type='signal',interface='org.freedesktop.portal.Request',member='Response'"
+	call := conn.BusObject().Call("org.freedesktop.DBus.AddMatch", 0, matchRule)
+	if call.Err != nil {
+		log.Printf("[screencap] DBus AddMatch error: %v", call.Err)
+		return false
+	}
 
 	signalChan := make(chan *dbus.Signal, 20)
 	conn.Signal(signalChan)
 	defer conn.RemoveSignal(signalChan)
+
+	portalObj := conn.Object("org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop")
 
 	waitForResponse := func(reqPath dbus.ObjectPath) (uint32, map[string]dbus.Variant, error) {
 		for {
@@ -339,7 +349,6 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 	// 1. CreateSession
 	sessionToken := randomToken("s_")
 	createReqToken := randomToken("r_")
-	createReqPath := dbus.ObjectPath(fmt.Sprintf("/org/freedesktop/portal/desktop/request/%s/%s", senderName, createReqToken))
 
 	var createRespPath dbus.ObjectPath
 	err = portalObj.CallWithContext(ctx, "org.freedesktop.portal.ScreenCast.CreateSession", 0, map[string]dbus.Variant{
@@ -347,16 +356,19 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 		"session_handle_token": dbus.MakeVariant(sessionToken),
 	}).Store(&createRespPath)
 	if err != nil {
+		log.Printf("[screencap] CreateSession call error: %v", err)
 		return false
 	}
 
-	code, results, err := waitForResponse(createReqPath)
+	code, results, err := waitForResponse(createRespPath)
 	if err != nil || code != 0 {
+		log.Printf("[screencap] CreateSession failed: code=%d err=%v", code, err)
 		return false
 	}
 
 	sessionHandleStr, ok := results["session_handle"].Value().(string)
 	if !ok || sessionHandleStr == "" {
+		log.Printf("[screencap] Invalid session handle in response: %+v", results)
 		return false
 	}
 	sessionHandle := dbus.ObjectPath(sessionHandleStr)
@@ -368,7 +380,6 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 
 	// 2. SelectSources
 	selectReqToken := randomToken("r_")
-	selectReqPath := dbus.ObjectPath(fmt.Sprintf("/org/freedesktop/portal/desktop/request/%s/%s", senderName, selectReqToken))
 
 	var selectRespPath dbus.ObjectPath
 	err = portalObj.CallWithContext(ctx, "org.freedesktop.portal.ScreenCast.SelectSources", 0, sessionHandle, map[string]dbus.Variant{
@@ -378,28 +389,31 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 		"cursor_mode":  dbus.MakeVariant(uint32(2)), // Embedded cursor
 	}).Store(&selectRespPath)
 	if err != nil {
+		log.Printf("[screencap] SelectSources call error: %v", err)
 		return false
 	}
 
-	code, _, err = waitForResponse(selectReqPath)
+	code, _, err = waitForResponse(selectRespPath)
 	if err != nil || code != 0 {
+		log.Printf("[screencap] SelectSources failed: code=%d err=%v", code, err)
 		return false
 	}
 
 	// 3. Start
 	startReqToken := randomToken("r_")
-	startReqPath := dbus.ObjectPath(fmt.Sprintf("/org/freedesktop/portal/desktop/request/%s/%s", senderName, startReqToken))
 
 	var startRespPath dbus.ObjectPath
 	err = portalObj.CallWithContext(ctx, "org.freedesktop.portal.ScreenCast.Start", 0, sessionHandle, "", map[string]dbus.Variant{
 		"handle_token": dbus.MakeVariant(startReqToken),
 	}).Store(&startRespPath)
 	if err != nil {
+		log.Printf("[screencap] Start call error: %v", err)
 		return false
 	}
 
-	code, startResults, err := waitForResponse(startReqPath)
+	code, startResults, err := waitForResponse(startRespPath)
 	if err != nil || code != 0 {
+		log.Printf("[screencap] Start failed (user cancelled or error): code=%d err=%v", code, err)
 		return false
 	}
 
@@ -423,6 +437,7 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 	var unixFD dbus.UnixFD
 	err = portalObj.CallWithContext(ctx, "org.freedesktop.portal.ScreenCast.OpenPipeWireRemote", 0, sessionHandle, map[string]dbus.Variant{}).Store(&unixFD)
 	if err != nil || unixFD < 0 {
+		log.Printf("[screencap] OpenPipeWireRemote error: %v fd=%d", err, unixFD)
 		return false
 	}
 	pwFile := os.NewFile(uintptr(unixFD), "pipewire_remote")
@@ -455,12 +470,16 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		log.Printf("[screencap] StdoutPipe error: %v", err)
 		return false
 	}
 
 	if err := cmd.Start(); err != nil {
+		log.Printf("[screencap] GStreamer start error: %v", err)
 		return false
 	}
+
+	log.Printf("[screencap] Wayland portal screencast active (nodeID=%d, fd=%d)", nodeID, unixFD)
 
 	header := []byte{0xFF, 0xD8}
 	footer := []byte{0xFF, 0xD9}
