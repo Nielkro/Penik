@@ -29,6 +29,12 @@ func init() {
 			_ = os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
 		}
 	}
+	if runtime.GOOS == "windows" {
+		// Disable WGC capturer in WebView2 to prevent yellow border on Windows screen capture
+		if os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") == "" {
+			_ = os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-features=WebRtcAllowWgcScreenCapturer,WebRtcAllowWgcWindowCapturer")
+		}
+	}
 }
 
 func main() {
@@ -62,6 +68,7 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			app.startup(ctx)
 			initSystemTray(app)
+			startScreenShareNotificationSuppressor(ctx)
 		},
 		OnBeforeClose: app.beforeClose,
 		SingleInstanceLock: &options.SingleInstanceLock{
@@ -77,7 +84,6 @@ func main() {
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
 			DisableWindowIcon:    false,
-			AdditionalBrowserArgs: "--disable-features=WebRtcAllowWgcScreenCapturer,WebRtcAllowWgcWindowCapturer",
 		},
 		Linux: &linux.Options{
 			Icon:                icon,
