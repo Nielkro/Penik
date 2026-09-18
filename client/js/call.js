@@ -426,25 +426,18 @@ export class CallManager {
         const wsUrl = new WebSocket(streamUrl);
         wsUrl.binaryType = 'arraybuffer';
 
-        wsUrl.onmessage = (event) => {
+        wsUrl.onmessage = async (event) => {
           try {
-            const data = event.data;
-            if (data.byteLength < 8) return;
-            const dv = new DataView(data);
-            const width = dv.getUint32(0, true);
-            const height = dv.getUint32(4, true);
-            if (width === 0 || height === 0) return;
-
-            if (canvas.width !== width || canvas.height !== height) {
-              canvas.width = width;
-              canvas.height = height;
+            const blob = new Blob([event.data], { type: 'image/jpeg' });
+            const bitmap = await createImageBitmap(blob);
+            if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+              canvas.width = bitmap.width;
+              canvas.height = bitmap.height;
             }
-
-            const pixels = new Uint8ClampedArray(data, 8, width * height * 4);
-            const imgData = new ImageData(pixels, width, height);
             if (ctx) {
-              ctx.putImageData(imgData, 0, 0);
+              ctx.drawImage(bitmap, 0, 0);
             }
+            bitmap.close();
           } catch (_) {}
         };
 
