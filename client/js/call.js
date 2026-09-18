@@ -844,6 +844,105 @@ export class CallManager {
     this._notifyMediaState();
   }
 
+  _bindRoomListeners(room, keyProvider, RoomEvent) {
+    room
+      .on(RoomEvent.ParticipantConnected, (participant) => {
+        if (keyProvider && room?.e2eeManager) {
+          room.e2eeManager.setParticipantCryptorEnabled(true, participant.identity);
+        }
+      })
+      .on(RoomEvent.TrackPublished, (publication, participant) => {
+        if (keyProvider && room?.e2eeManager) {
+          room.e2eeManager.setParticipantCryptorEnabled(true, participant.identity);
+        }
+      })
+      .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+        if (keyProvider && room?.e2eeManager) {
+          room.e2eeManager.setParticipantCryptorEnabled(true, participant.identity);
+        }
+        this._attachRemoteTrack(track, participant);
+      })
+      .on(RoomEvent.EncryptionError, (error, participant) => {
+        console.warn('[call] E2EE decryption/encryption error:', error, participant?.identity);
+      })
+      .on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+        track.detach();
+        const elements = document.querySelectorAll(`[data-track-sid="${track.sid}"]`);
+        elements.forEach((el) => el.remove());
+        this._checkRemoteTracks();
+      })
+      .on(RoomEvent.TrackUnpublished, (publication, participant) => {
+        if (publication.track) {
+          publication.track.detach();
+        }
+        this._removeTilesForPublication(publication);
+        this._checkRemoteTracks();
+      })
+      .on(RoomEvent.TrackMuted, (publication, participant) => {
+        if (publication.kind === 'video' && participant !== room?.localParticipant) {
+          this._removeTilesForPublication(publication);
+          this._checkRemoteTracks();
+        }
+      })
+      .on(RoomEvent.TrackUnmuted, (publication, participant) => {
+        if (participant !== room?.localParticipant && publication.track) {
+          this._attachRemoteTrack(publication.track, participant);
+          if (publication.kind === 'video') {
+            this._checkRemoteTracks();
+          }
+        }
+      })
+      .on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+        this.activeSpeakers.clear();
+        for (const sp of speakers) {
+          this.activeSpeakers.add(sp.identity);
+        }
+        if (typeof this.onActiveSpeakersChange === 'function') {
+          this.onActiveSpeakersChange(this.activeSpeakers);
+        }
+      })
+      .on(RoomEvent.LocalTrackPublished, (publication) => {
+        if (publication.track) {
+          this._attachLocalTrack(publication.track);
+        }
+      })
+      .on(RoomEvent.LocalTrackUnpublished, (publication) => {
+        if (publication.track) {
+          publication.track.detach();
+        }
+        this._removeTilesForPublication(publication);
+        if (publication.source === 'screen_share') {
+          this.isScreenShareOn = false;
+          if (this.isVideoOff) {
+            const container = document.getElementById('local-video-container');
+            if (container) container.innerHTML = '';
+          }
+        }
+        this._notifyMediaState();
+      })
+      .on(RoomEvent.Reconnecting, () => {
+        this.isReconnecting = true;
+        this._notifyMediaState();
+      })
+      .on(RoomEvent.Reconnected, () => {
+        this.isReconnecting = false;
+        const wantCamera = !this.isVideoOff;
+        this._resyncTracks();
+        this._restoreCameraIfNeeded(wantCamera);
+      })
+      .on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        if (room && !room.canPlaybackAudio) {
+          room.startAudio().catch(console.warn);
+        }
+      })
+      .on(RoomEvent.Disconnected, (reason) => {
+        if (this.currentCall && this.currentCall.state === 'ACTIVE') {
+          console.warn('[call] LiveKit room disconnected:', reason);
+          this.cleanup();
+        }
+      });
+  }
+
   async _connectLiveKit(primaryUrl, fallbackUrl, token) {
     if (!token && typeof fallbackUrl === 'string' && !fallbackUrl.startsWith('ws://') && !fallbackUrl.startsWith('wss://')) {
       token = fallbackUrl;
@@ -860,29 +959,42 @@ export class CallManager {
     let lastErr = null;
     for (let attempt = 0; attempt < urlsToTry.length; attempt++) {
       const url = urlsToTry[attempt];
-      try {
+
+      const tryConnectRoom = async (enableE2EE) => {
         let keyProvider = null;
         let worker = null;
         const mediaKey = this._derivedMasterKey || (this.currentCall?.callKey && !this.currentCall.callKey.startsWith('dh:') ? this.currentCall.callKey : null);
-        if (mediaKey && typeof Worker !== 'undefined') {
+
+        if (enableE2EE && mediaKey && typeof Worker !== 'undefined') {
           try {
             const supported = typeof isE2EESupported === 'function' ? isE2EESupported() : true;
             if (supported && typeof ExternalE2EEKeyProvider === 'function') {
+              try {
+                const workerRes = await fetch('/livekit-client.e2ee.worker.js');
+                if (workerRes.ok) {
+                  const workerCode = await workerRes.text();
+                  const blob = new Blob([workerCode], { type: 'application/javascript' });
+                  worker = new Worker(URL.createObjectURL(blob));
+                } else {
+                  worker = new Worker('/livekit-client.e2ee.worker.js');
+                }
+              } catch (_) {
+                worker = new Worker('/livekit-client.e2ee.worker.js');
+              }
               keyProvider = new ExternalE2EEKeyProvider();
-              worker = new Worker('/livekit-client.e2ee.worker.js');
               await keyProvider.setKey(mediaKey);
             }
           } catch (e) {
             console.warn('[call] Failed to setup E2EE key provider:', e);
             keyProvider = null;
             if (worker) {
-              worker.terminate();
+              try { worker.terminate(); } catch (_) {}
               worker = null;
             }
           }
         }
 
-        this.room = new Room({
+        const room = new Room({
           disconnectOnPageLeave: false,
           adaptiveStream: {
             pixelDensity: 2,
@@ -924,134 +1036,23 @@ export class CallManager {
           ...(keyProvider && worker ? { e2ee: { keyProvider, worker } } : {}),
         });
 
-        this.room
-          .on(RoomEvent.ParticipantConnected, (participant) => {
-            if (keyProvider && this.room?.e2eeManager) {
-              this.room.e2eeManager.setParticipantCryptorEnabled(true, participant.identity);
-            }
-          })
-          .on(RoomEvent.TrackPublished, (publication, participant) => {
-            if (keyProvider && this.room?.e2eeManager) {
-              this.room.e2eeManager.setParticipantCryptorEnabled(true, participant.identity);
-            }
-          })
-          .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-            if (keyProvider && this.room?.e2eeManager) {
-              this.room.e2eeManager.setParticipantCryptorEnabled(true, participant.identity);
-            }
-            this._attachRemoteTrack(track, participant);
-          })
-          .on(RoomEvent.EncryptionError, (error, participant) => {
-            console.warn('[call] E2EE decryption/encryption error:', error, participant?.identity);
-          })
-          .on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
-            track.detach();
-            const elements = document.querySelectorAll(`[data-track-sid="${track.sid}"]`);
-            elements.forEach(el => el.remove());
-            this._checkRemoteTracks();
-          })
-          .on(RoomEvent.TrackUnpublished, (publication, participant) => {
-            if (publication.track) {
-              publication.track.detach();
-            }
-            this._removeTilesForPublication(publication);
-            this._checkRemoteTracks();
-          })
-          .on(RoomEvent.TrackMuted, (publication, participant) => {
-            if (publication.kind === 'video' && participant !== this.room?.localParticipant) {
-              this._removeTilesForPublication(publication);
-              this._checkRemoteTracks();
-            }
-          })
-          .on(RoomEvent.TrackUnmuted, (publication, participant) => {
-            if (participant !== this.room?.localParticipant && publication.track) {
-              this._attachRemoteTrack(publication.track, participant);
-              if (publication.kind === 'video') {
-                this._checkRemoteTracks();
-              }
-            }
-          })
-          .on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
-            this.activeSpeakers.clear();
-            for (const sp of speakers) {
-              this.activeSpeakers.add(sp.identity);
-            }
-            if (typeof this.onActiveSpeakersChange === 'function') {
-              this.onActiveSpeakersChange(this.activeSpeakers);
-            }
-          })
-          .on(RoomEvent.LocalTrackPublished, (publication) => {
-            if (publication.track) {
-              this._attachLocalTrack(publication.track);
-            }
-          })
-          .on(RoomEvent.LocalTrackUnpublished, (publication) => {
-            if (publication.track) {
-              publication.track.detach();
-            }
-            // A full LiveKit reconnect republishes every local track under a new
-            // SID. Without removing the old tile the dead one keeps its
-            // primary-tile class and _updateTileLayout leaves a black rectangle
-            // as the main view while the live track is demoted to PiP.
-            this._removeTilesForPublication(publication);
-            if (publication.source === 'screen_share') {
-              this.isScreenShareOn = false;
-              if (this.isVideoOff) {
-                const container = document.getElementById('local-video-container');
-                if (container) container.innerHTML = '';
-              }
-            }
-            this._notifyMediaState();
-          })
-          .on(RoomEvent.Reconnecting, () => {
-            // Media is re-negotiating; keep the call up and say so.
-            this.isReconnecting = true;
-            this._notifyMediaState();
-          })
-          .on(RoomEvent.Reconnected, () => {
-            this.isReconnecting = false;
-            const wantCamera = !this.isVideoOff;
-            // Events for tracks that were (re)published while the socket was
-            // down are not replayed, so rebuild the whole video state from the
-            // room instead of waiting for notifications that will never come.
-            this._resyncTracks();
-            this._restoreCameraIfNeeded(wantCamera);
-          })
-          .on(RoomEvent.AudioPlaybackStatusChanged, () => {
-            if (this.room && !this.room.canPlaybackAudio) {
-              this.room.startAudio().catch(console.warn);
-            }
-          })
-          .on(RoomEvent.Disconnected, (reason) => {
-            // Do not treat a background tab freeze/pagehide as a hangup.
-            // With disconnectOnPageLeave=false LiveKit no longer disconnects on
-            // freeze/pagehide, but a transient network glitch still fires this
-            // event - that should not send CALL_END to the peer. The server
-            // will end the call via WS CleanupDeviceCalls only after the Penik
-            // WS actually drops, and the user can explicitly hang up via endCall().
-            if (this.currentCall && this.currentCall.state === 'ACTIVE') {
-              console.warn('[call] LiveKit room disconnected:', reason);
-              // Keep peer in call; just tear down local media. If the user
-              // really closed the tab, the Penik WS close will trigger the
-              // server-side CallEnd for the peer.
-              this.cleanup();
-            }
-          });
+        this._bindRoomListeners(room, keyProvider, RoomEvent);
+        this.room = room;
 
-        await this.room.connect(url, token);
-        if (this.room && !this.room.canPlaybackAudio) {
-          await this.room.startAudio().catch(console.warn);
+        await room.connect(url, token);
+        if (room && !room.canPlaybackAudio) {
+          await room.startAudio().catch(console.warn);
         }
 
         if (keyProvider && worker) {
           try {
-            await this.room.setE2EEEnabled(true);
+            await room.setE2EEEnabled(true);
             if (this.currentCall) {
               this.currentCall.isE2EE = true;
             }
-            if (this.room.e2eeManager) {
-              for (const participant of this.room.remoteParticipants.values()) {
-                this.room.e2eeManager.setParticipantCryptorEnabled(true, participant.identity);
+            if (room.e2eeManager) {
+              for (const participant of room.remoteParticipants.values()) {
+                room.e2eeManager.setParticipantCryptorEnabled(true, participant.identity);
               }
             }
           } catch (e) {
@@ -1071,28 +1072,51 @@ export class CallManager {
           this._notifyState();
         }
 
-        await this.room.localParticipant.setMicrophoneEnabled(true);
-        if (this.currentCall && this.currentCall.isVideo) {
-          await this.room.localParticipant.setCameraEnabled(true);
+        try {
+          await room.localParticipant.setMicrophoneEnabled(true);
+        } catch (micErr) {
+          console.warn('[call] Failed to enable microphone:', micErr);
         }
-        // Tracks the peer published before this modal existed produced tiles
-        // that had nowhere to go, so rebuild once the DOM is in place.
+
+        if (this.currentCall && this.currentCall.isVideo) {
+          try {
+            await room.localParticipant.setCameraEnabled(true);
+          } catch (camErr) {
+            console.warn('[call] Failed to enable camera:', camErr);
+          }
+        }
+
         this._resyncTracks();
+      };
+
+      try {
+        await tryConnectRoom(true);
         return;
-      } catch (err) {
-        console.warn(`Failed to connect to LiveKit URL ${url}:`, err);
-        lastErr = err;
+      } catch (errWithE2EE) {
+        console.warn(`[call] Connect with E2EE failed on ${url}, retrying without E2EE:`, errWithE2EE);
         if (this.room) {
           try { this.room.removeAllListeners(); } catch (_) {}
           try { this.room.disconnect(); } catch (_) {}
           this.room = null;
+        }
+
+        try {
+          await tryConnectRoom(false);
+          return;
+        } catch (errWithoutE2EE) {
+          console.warn(`[call] Connect without E2EE failed on ${url}:`, errWithoutE2EE);
+          lastErr = errWithoutE2EE;
+          if (this.room) {
+            try { this.room.removeAllListeners(); } catch (_) {}
+            try { this.room.disconnect(); } catch (_) {}
+            this.room = null;
+          }
         }
       }
     }
 
     console.error('LiveKit connection error across all endpoints:', lastErr);
     showToast('Ошибка подключения к серверу звонка', 'error');
-    // Notify the server so both users leave the busy state.
     if (this.currentCall) {
       ws.send(OP.CALL_REJECT, {
         call_id: this.currentCall.callId || '',
