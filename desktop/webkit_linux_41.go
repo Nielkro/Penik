@@ -26,6 +26,8 @@ static void configure_webview_widget(GtkWidget *widget, gpointer data) {
 			webkit_settings_set_enable_media_stream(settings, TRUE);
 			webkit_settings_set_enable_mediasource(settings, TRUE);
 			webkit_settings_set_enable_developer_extras(settings, TRUE);
+			webkit_settings_set_disable_web_security(settings, TRUE);
+			webkit_settings_set_allow_universal_access_from_file_urls(settings, TRUE);
 		}
 		g_signal_connect(webview, "permission-request", G_CALLBACK(on_permission_request), NULL);
 	} else if (GTK_IS_CONTAINER(widget)) {
@@ -62,7 +64,6 @@ void InitLinuxWebKitEarly() {
 		WebKitSecurityManager *sec = webkit_web_context_get_security_manager(context);
 		if (sec) {
 			webkit_security_manager_register_uri_scheme_as_secure(sec, "wails");
-			webkit_security_manager_register_uri_scheme_as_cors_enabled(sec, "wails");
 			webkit_security_manager_register_uri_scheme_as_local(sec, "wails");
 		}
 	}
