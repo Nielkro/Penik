@@ -3,14 +3,24 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/pion/webrtc/v4"
+	"github.com/pion/webrtc/v4/pkg/media"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+type NativeCallConnectResult struct {
+	Ok    bool   `json:"ok"`
+	WsURL string `json:"wsUrl"`
+	Error string `json:"error,omitempty"`
+}
 
 type NativeCallManager struct {
 	mu           sync.Mutex
@@ -22,20 +32,110 @@ type NativeCallManager struct {
 	isVideo      bool
 	cancelFn     context.CancelFunc
 	activeCallID string
+
+	// Loopback audio WebSocket server
+	audioListener net.Listener
+	audioServer   *http.Server
+	audioPort     int
+	wsClients     map[*websocket.Conn]bool
+	wsMu          sync.Mutex
 }
 
 var globalCallManager *NativeCallManager
 
 func initCallManager(app *App) {
 	globalCallManager = &NativeCallManager{
-		app: app,
+		app:       app,
+		wsClients: make(map[*websocket.Conn]bool),
+	}
+}
+
+func (m *NativeCallManager) ensureAudioServer() (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.audioServer != nil && m.audioPort > 0 {
+		return m.audioPort, nil
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, fmt.Errorf("failed to bind audio bridge server: %w", err)
+	}
+	m.audioListener = ln
+	m.audioPort = ln.Addr().(*net.TCPAddr).Port
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/stream/call_audio", m.handleAudioWebSocket)
+
+	m.audioServer = &http.Server{
+		Handler: mux,
+	}
+
+	go func() {
+		_ = m.audioServer.Serve(ln)
+	}()
+
+	return m.audioPort, nil
+}
+
+func (m *NativeCallManager) handleAudioWebSocket(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+
+	m.wsMu.Lock()
+	m.wsClients[conn] = true
+	m.wsMu.Unlock()
+
+	defer func() {
+		m.wsMu.Lock()
+		delete(m.wsClients, conn)
+		m.wsMu.Unlock()
+		_ = conn.Close()
+	}()
+
+	// Read mic PCM/audio data from Web Audio and publish to LiveKit
+	for {
+		messageType, data, err := conn.ReadMessage()
+		if err != nil {
+			break
+		}
+		if messageType == websocket.BinaryMessage && len(data) > 0 {
+			m.mu.Lock()
+			track := m.localAudio
+			muted := m.isMuted
+			m.mu.Unlock()
+
+			if track != nil && !muted {
+				_ = track.WriteSample(media.Sample{
+					Data:     data,
+					Duration: 20 * time.Millisecond,
+				}, nil)
+			}
+		}
+	}
+}
+
+func (m *NativeCallManager) broadcastRemoteAudio(data []byte) {
+	m.wsMu.Lock()
+	defer m.wsMu.Unlock()
+
+	for client := range m.wsClients {
+		_ = client.WriteMessage(websocket.BinaryMessage, data)
 	}
 }
 
 // NativeCallConnect connects the Go desktop backend directly to LiveKit SFU via Pion WebRTC.
-func (a *App) NativeCallConnect(url, token string, isVideo bool) (bool, error) {
+func (a *App) NativeCallConnect(url, token string, isVideo bool) (*NativeCallConnectResult, error) {
 	if globalCallManager == nil {
 		initCallManager(a)
+	}
+
+	port, err := globalCallManager.ensureAudioServer()
+	if err != nil {
+		return &NativeCallConnectResult{Ok: false, Error: err.Error()}, err
 	}
 
 	globalCallManager.mu.Lock()
@@ -95,7 +195,7 @@ func (a *App) NativeCallConnect(url, token string, isVideo bool) (bool, error) {
 			"identity": rp.Identity(),
 		})
 
-		// Read RTP packets in the background to keep the pipeline alive
+		// Stream incoming audio frames to the local audio bridge
 		go func() {
 			buf := make([]byte, 1500)
 			for {
@@ -103,9 +203,12 @@ func (a *App) NativeCallConnect(url, token string, isVideo bool) (bool, error) {
 				case <-ctx.Done():
 					return
 				default:
-					_, _, err := track.Read(buf)
+					n, _, err := track.Read(buf)
 					if err != nil {
 						return
+					}
+					if n > 0 && track.Kind() == webrtc.RTPCodecTypeAudio {
+						globalCallManager.broadcastRemoteAudio(buf[:n])
 					}
 				}
 			}
@@ -118,7 +221,7 @@ func (a *App) NativeCallConnect(url, token string, isVideo bool) (bool, error) {
 	)
 	if err != nil {
 		cancel()
-		return false, fmt.Errorf("failed to connect to LiveKit: %w", err)
+		return &NativeCallConnectResult{Ok: false, Error: err.Error()}, fmt.Errorf("failed to connect to LiveKit: %w", err)
 	}
 
 	globalCallManager.room = room
@@ -144,7 +247,11 @@ func (a *App) NativeCallConnect(url, token string, isVideo bool) (bool, error) {
 		"state": "CONNECTED",
 	})
 
-	return true, nil
+	wsURL := fmt.Sprintf("ws://127.0.0.1:%d/stream/call_audio", port)
+	return &NativeCallConnectResult{
+		Ok:    true,
+		WsURL: wsURL,
+	}, nil
 }
 
 // NativeCallDisconnect disconnects the active native LiveKit call.
