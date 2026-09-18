@@ -20,6 +20,14 @@ export function HttpBinaryRequest(arg1:string,arg2:string,arg3:Record<string, st
 
 export function HttpRequest(arg1:string,arg2:string,arg3:Record<string, string>,arg4:string):Promise<main.HttpResponse>;
 
+export function NativeCallConnect(arg1:string,arg2:string,arg3:boolean):Promise<boolean>;
+
+export function NativeCallDisconnect():Promise<boolean>;
+
+export function NativeCallIsActive():Promise<boolean>;
+
+export function NativeCallSetMute(arg1:boolean):Promise<boolean>;
+
 export function Notify(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 
 export function OpenFileDialog(arg1:string,arg2:Array<main.FileFilter>):Promise<string>;

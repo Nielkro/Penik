@@ -5,7 +5,17 @@ import { getUserById, apiGet, getApiOrigin } from './api.js';
 import { callSounds } from './sounds.js';
 import { generateKeyPair, deriveSharedSecret, decodeKey } from './crypto.js';
 import { defaultWordCoder } from './wordcoder.js';
-import { isDesktop, isWindowsDesktop, sendDesktopNotification, startDesktopScreenCapture, stopDesktopScreenCapture } from './desktop.js';
+import {
+  isDesktop,
+  isWindowsDesktop,
+  sendDesktopNotification,
+  startDesktopScreenCapture,
+  stopDesktopScreenCapture,
+  isNativeCallSupported,
+  nativeCallConnect,
+  nativeCallDisconnect,
+  nativeCallSetMute,
+} from './desktop.js';
 import { openScreenPickerModal } from './ui/screenshare_modal.js';
 
 let _livekitModule = null;
@@ -354,6 +364,12 @@ export class CallManager {
   }
 
   async toggleMic() {
+    if (this.isNativeCallActive) {
+      this.isMuted = !this.isMuted;
+      await nativeCallSetMute(this.isMuted);
+      this._notifyMediaState();
+      return;
+    }
     if (!this.room) return;
     this.isMuted = !this.isMuted;
     await this.room.localParticipant.setMicrophoneEnabled(!this.isMuted);
@@ -591,6 +607,10 @@ export class CallManager {
     this._releaseTileListeners();
     clearTimeout(this._dialTimeout);
     this._startingCall = false;
+    if (this.isNativeCallActive) {
+      this.isNativeCallActive = false;
+      nativeCallDisconnect();
+    }
     if (this.room) {
       try {
         this.room.removeAllListeners();
@@ -969,6 +989,29 @@ export class CallManager {
     }
 
     let lastErr = null;
+
+    if (await isNativeCallSupported()) {
+      for (let attempt = 0; attempt < urlsToTry.length; attempt++) {
+        const url = urlsToTry[attempt];
+        try {
+          console.log('[call] Connecting via Go native LiveKit engine:', url);
+          const ok = await nativeCallConnect(url, token, this.currentCall?.isVideo || false);
+          if (ok) {
+            console.log('[call] Go native LiveKit call connected successfully!');
+            this.isNativeCallActive = true;
+            if (this.currentCall) {
+              this.currentCall.isE2EE = true;
+            }
+            this._notifyState();
+            return;
+          }
+        } catch (nativeErr) {
+          console.warn('[call] Go native call failed on URL:', url, nativeErr);
+          lastErr = nativeErr;
+        }
+      }
+    }
+
     for (let attempt = 0; attempt < urlsToTry.length; attempt++) {
       const url = urlsToTry[attempt];
 

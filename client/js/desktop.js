@@ -233,3 +233,33 @@ export async function stopDesktopScreenCapture() {
   }
 }
 
+export async function isNativeCallSupported() {
+  return isDesktop() && typeof window.go?.main?.App?.NativeCallConnect === 'function';
+}
+
+export async function nativeCallConnect(url, token, isVideo = false) {
+  if (!window.go?.main?.App?.NativeCallConnect) {
+    throw new Error('Native call is not supported');
+  }
+  return await window.go.main.App.NativeCallConnect(url, token, isVideo);
+}
+
+export async function nativeCallDisconnect() {
+  if (!window.go?.main?.App?.NativeCallDisconnect) return;
+  try {
+    await window.go.main.App.NativeCallDisconnect();
+  } catch (e) {
+    console.warn('[desktop] NativeCallDisconnect error:', e);
+  }
+}
+
+export async function nativeCallSetMute(muted) {
+  if (!window.go?.main?.App?.NativeCallSetMute) return;
+  try {
+    await window.go.main.App.NativeCallSetMute(muted);
+  } catch (e) {
+    console.warn('[desktop] NativeCallSetMute error:', e);
+  }
+}
+
+

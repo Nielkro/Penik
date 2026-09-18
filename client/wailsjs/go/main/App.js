@@ -38,6 +38,22 @@ export function HttpRequest(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['HttpRequest'](arg1, arg2, arg3, arg4);
 }
 
+export function NativeCallConnect(arg1, arg2, arg3) {
+  return window['go']['main']['App']['NativeCallConnect'](arg1, arg2, arg3);
+}
+
+export function NativeCallDisconnect() {
+  return window['go']['main']['App']['NativeCallDisconnect']();
+}
+
+export function NativeCallIsActive() {
+  return window['go']['main']['App']['NativeCallIsActive']();
+}
+
+export function NativeCallSetMute(arg1) {
+  return window['go']['main']['App']['NativeCallSetMute'](arg1);
+}
+
 export function Notify(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['Notify'](arg1, arg2, arg3, arg4);
 }
