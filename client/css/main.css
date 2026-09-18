@@ -2191,9 +2191,9 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   display: none !important;
 }
 
-.call-active-window.no-remote-video .call-participant-placeholder {
+.call-active-window.no-remote-video:not(.has-any-video) .call-participant-placeholder {
   z-index: 5;
-  display: flex !important;
+  display: flex;
 }
 
 .video-tile {

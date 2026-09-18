@@ -100,6 +100,44 @@ async function fetchPeerIdentityKey(userId) {
   return null;
 }
 
+function bindCanvasWebSocketStream(wsUrl, canvas, ctx) {
+  wsUrl.binaryType = 'arraybuffer';
+  let isDecoding = false;
+  let latestData = null;
+
+  const renderNext = async () => {
+    if (!latestData || isDecoding) return;
+    isDecoding = true;
+    const data = latestData;
+    latestData = null;
+
+    try {
+      const blob = new Blob([data], { type: 'image/jpeg' });
+      const bitmap = await createImageBitmap(blob);
+      if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+      }
+      if (ctx) {
+        ctx.drawImage(bitmap, 0, 0);
+      }
+      bitmap.close();
+    } catch (_) {}
+
+    isDecoding = false;
+    if (latestData) {
+      requestAnimationFrame(renderNext);
+    }
+  };
+
+  wsUrl.onmessage = (event) => {
+    latestData = event.data;
+    if (!isDecoding) {
+      requestAnimationFrame(renderNext);
+    }
+  };
+}
+
 export class CallManager {
   constructor() {
     this.currentCall = null;
@@ -432,6 +470,7 @@ export class CallManager {
     this._syncLocalVideoState();
   }
 
+
   async _attachRemoteNativeVideo(source = 'camera') {
     const container = document.getElementById('remote-video-container');
     if (!container) return;
@@ -469,20 +508,7 @@ export class CallManager {
     wsUrl.binaryType = 'arraybuffer';
     this._remoteNativeVideoWS = wsUrl;
 
-    wsUrl.onmessage = async (event) => {
-      try {
-        const blob = new Blob([event.data], { type: 'image/jpeg' });
-        const bitmap = await createImageBitmap(blob);
-        if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-          canvas.width = bitmap.width;
-          canvas.height = bitmap.height;
-        }
-        if (ctx) {
-          ctx.drawImage(bitmap, 0, 0);
-        }
-        bitmap.close();
-      } catch (_) {}
-    };
+    bindCanvasWebSocketStream(wsUrl, canvas, ctx);
 
     wsUrl.onerror = (e) => {
       console.warn('[call] Remote native video WS error:', e);
@@ -568,21 +594,7 @@ export class CallManager {
           this._makeTileDraggable(tile);
 
           const wsUrl = new WebSocket(streamUrl);
-          wsUrl.binaryType = 'arraybuffer';
-          wsUrl.onmessage = async (event) => {
-            try {
-              const blob = new Blob([event.data], { type: 'image/jpeg' });
-              const bitmap = await createImageBitmap(blob);
-              if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-                canvas.width = bitmap.width;
-                canvas.height = bitmap.height;
-              }
-              if (ctx) {
-                ctx.drawImage(bitmap, 0, 0);
-              }
-              bitmap.close();
-            } catch (_) {}
-          };
+          bindCanvasWebSocketStream(wsUrl, canvas, ctx);
           this._desktopScreenWS = wsUrl;
         }
 

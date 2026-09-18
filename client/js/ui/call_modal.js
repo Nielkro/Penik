@@ -199,9 +199,10 @@ function renderCallModal(callState, mediaState) {
   if (callState.state === 'ACTIVE') {
     const hasLocalVideo = !mediaState.isVideoOff || mediaState.isScreenShareOn;
     const hasRemoteVideo = !!mediaState.hasRemoteVideo;
+    const hasAnyVideo = hasRemoteVideo || hasLocalVideo;
 
     callModalEl.innerHTML = `
-      <div class="call-active-window ${!hasRemoteVideo ? 'no-remote-video' : ''}">
+      <div class="call-active-window ${!hasRemoteVideo ? 'no-remote-video' : ''} ${hasAnyVideo ? 'has-any-video' : ''}">
         <div class="call-header-bar">
           <div class="call-header-info">
             <span class="call-peer-title">${esc(peerDisplayName)}</span>
@@ -233,7 +234,7 @@ function renderCallModal(callState, mediaState) {
           </div>
         ` : ''}
         <div id="remote-video-container" class="remote-video-container ${!hasRemoteVideo ? 'hidden' : ''}"></div>
-        <div id="remote-placeholder-container" class="call-participant-placeholder ${hasRemoteVideo ? 'hidden' : ''}">
+        <div id="remote-placeholder-container" class="call-participant-placeholder ${hasAnyVideo ? 'hidden' : ''}">
           <div class="call-active-avatar-wrap pulsing" id="active-peer-avatar-slot"></div>
           <div class="call-active-peer-name">${esc(peerDisplayName)}</div>
           <div class="call-voice-wave-container">
@@ -437,19 +438,27 @@ function updateMediaControlsUI(mediaState) {
   }
 
   const hasRemoteVideo = !!mediaState.hasRemoteVideo;
+  const hasAnyVideo = hasRemoteVideo || hasLocalVideo;
   if (remoteContainer && remotePlaceholder && activeWin) {
-    if (hasRemoteVideo) {
-      remoteContainer.classList.remove('hidden');
+    if (hasAnyVideo) {
       remotePlaceholder.classList.add('hidden');
       activeWin.classList.remove('no-remote-video');
+      activeWin.classList.add('has-any-video');
+    } else {
+      remotePlaceholder.classList.remove('hidden');
+      activeWin.classList.add('no-remote-video');
+      activeWin.classList.remove('has-any-video');
+      activeWin.classList.remove('swapped-layout');
+    }
+
+    if (hasRemoteVideo) {
+      remoteContainer.classList.remove('hidden');
     } else {
       remoteContainer.classList.add('hidden');
       remoteContainer.innerHTML = '';
-      remotePlaceholder.classList.remove('hidden');
-      activeWin.classList.add('no-remote-video');
-      activeWin.classList.remove('swapped-layout');
     }
-    setupControlsAutoHide(hasRemoteVideo);
+
+    setupControlsAutoHide(hasAnyVideo);
   }
 
   updateLinkStatus(mediaState);
