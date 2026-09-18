@@ -17,6 +17,7 @@ import {
   nativeCallSetMute,
   getDesktopAudioDevices,
   setDesktopAudioDevices,
+  getDesktopCaptureSources,
   nativeCallStartScreenShare,
   nativeCallStopScreenShare,
   getRemoteVideoStreamURL,
@@ -522,13 +523,27 @@ export class CallManager {
         return;
       }
 
-      const selectedSource = await openScreenPickerModal();
-      if (!selectedSource) {
-        return;
+      let selectedSourceId = 'wayland:portal';
+      let selectedSourceWidth = 1920;
+      let selectedSourceHeight = 1080;
+
+      const sources = await getDesktopCaptureSources();
+      if (sources.length > 1) {
+        const selectedSource = await openScreenPickerModal();
+        if (!selectedSource) {
+          return;
+        }
+        selectedSourceId = selectedSource.id;
+        selectedSourceWidth = selectedSource.width || 1920;
+        selectedSourceHeight = selectedSource.height || 1080;
+      } else if (sources.length === 1 && !sources[0].id.startsWith('wayland:')) {
+        selectedSourceId = sources[0].id;
+        selectedSourceWidth = sources[0].width || 1920;
+        selectedSourceHeight = sources[0].height || 1080;
       }
 
       try {
-        const streamUrl = await nativeCallStartScreenShare(selectedSource.id);
+        const streamUrl = await nativeCallStartScreenShare(selectedSourceId);
         if (!streamUrl) {
           showToast('Не удалось запустить демонстрацию экрана', 'error');
           return;
@@ -545,8 +560,8 @@ export class CallManager {
 
           const canvas = document.createElement('canvas');
           canvas.className = 'video-stream-element';
-          canvas.width = selectedSource.width || 1280;
-          canvas.height = selectedSource.height || 720;
+          canvas.width = selectedSourceWidth || 1280;
+          canvas.height = selectedSourceHeight || 720;
           const ctx = canvas.getContext('2d');
           tile.appendChild(canvas);
           container.appendChild(tile);
