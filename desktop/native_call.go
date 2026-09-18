@@ -96,6 +96,7 @@ type NativeCallManager struct {
 
 	// Native malgo audio context and devices
 	malgoCtx       *malgo.AllocatedContext
+	duplexDevice   *malgo.Device
 	playbackDevice *malgo.Device
 	captureDevice  *malgo.Device
 	playbackRing   *AudioRingBuffer
@@ -113,6 +114,10 @@ func initCallManager(app *App) {
 }
 
 func (m *NativeCallManager) stopAudioHardware() {
+	if m.duplexDevice != nil {
+		m.duplexDevice.Uninit()
+		m.duplexDevice = nil
+	}
 	if m.playbackDevice != nil {
 		m.playbackDevice.Uninit()
 		m.playbackDevice = nil
@@ -137,71 +142,105 @@ func (m *NativeCallManager) startAudioHardware(ctx context.Context) error {
 	}
 	m.malgoCtx = malgoCtx
 
-	// 1. Playback device (Speakers / Headphones)
-	playbackConfig := malgo.DefaultDeviceConfig(malgo.Playback)
-	playbackConfig.Playback.Format = malgo.FormatS16
-	playbackConfig.Playback.Channels = 1
-	playbackConfig.SampleRate = 48000
-	playbackConfig.Alsa.NoMMap = 1
+	m.playbackRing = NewAudioRingBuffer(48000 * 2 * 2)
+	m.captureRing = NewAudioRingBuffer(48000 * 2 * 2)
+
+	onAudioData := func(pOutputSample, pInputSamples []byte, frameCount uint32) {
+		if len(pOutputSample) > 0 {
+			m.playbackRing.Read(pOutputSample)
+		}
+		if len(pInputSamples) > 0 {
+			m.captureRing.Write(pInputSamples)
+		}
+	}
+
+	// 1. Try Full Duplex device first
+	duplexConfig := malgo.DefaultDeviceConfig(malgo.Duplex)
+	duplexConfig.Playback.Format = malgo.FormatS16
+	duplexConfig.Playback.Channels = 1
+	duplexConfig.Capture.Format = malgo.FormatS16
+	duplexConfig.Capture.Channels = 1
+	duplexConfig.SampleRate = 48000
+	duplexConfig.Alsa.NoMMap = 1
 
 	if m.selectedPlaybackDeviceID != "" {
 		playbackDevices, _ := malgoCtx.Devices(malgo.Playback)
 		for i := range playbackDevices {
 			if playbackDevices[i].ID.String() == m.selectedPlaybackDeviceID || playbackDevices[i].Name() == m.selectedPlaybackDeviceID {
-				playbackConfig.Playback.DeviceID = playbackDevices[i].ID.Pointer()
+				duplexConfig.Playback.DeviceID = playbackDevices[i].ID.Pointer()
 				break
 			}
 		}
 	}
-
-	playbackDevice, err := malgo.InitDevice(malgoCtx.Context, playbackConfig, malgo.DeviceCallbacks{
-		Data: func(pOutputSample, pInputSamples []byte, frameCount uint32) {
-			m.playbackRing.Read(pOutputSample)
-		},
-	})
-	if err != nil {
-		m.stopAudioHardware()
-		return fmt.Errorf("failed to init playback device: %w", err)
-	}
-	if err := playbackDevice.Start(); err != nil {
-		m.stopAudioHardware()
-		return fmt.Errorf("failed to start playback device: %w", err)
-	}
-	m.playbackDevice = playbackDevice
-
-	// 2. Capture device (Microphone)
-	captureConfig := malgo.DefaultDeviceConfig(malgo.Capture)
-	captureConfig.Capture.Format = malgo.FormatS16
-	captureConfig.Capture.Channels = 1
-	captureConfig.SampleRate = 48000
-	captureConfig.Alsa.NoMMap = 1
-
 	if m.selectedCaptureDeviceID != "" {
 		captureDevices, _ := malgoCtx.Devices(malgo.Capture)
 		for i := range captureDevices {
 			if captureDevices[i].ID.String() == m.selectedCaptureDeviceID || captureDevices[i].Name() == m.selectedCaptureDeviceID {
-				captureConfig.Capture.DeviceID = captureDevices[i].ID.Pointer()
+				duplexConfig.Capture.DeviceID = captureDevices[i].ID.Pointer()
 				break
 			}
 		}
 	}
 
-	captureDevice, err := malgo.InitDevice(malgoCtx.Context, captureConfig, malgo.DeviceCallbacks{
-		Data: func(pOutputSample, pInputSamples []byte, frameCount uint32) {
-			if len(pInputSamples) > 0 {
-				m.captureRing.Write(pInputSamples)
-			}
-		},
+	duplexDev, err := malgo.InitDevice(malgoCtx.Context, duplexConfig, malgo.DeviceCallbacks{
+		Data: onAudioData,
 	})
-	if err != nil {
-		m.stopAudioHardware()
-		return fmt.Errorf("failed to init capture device: %w", err)
+	if err == nil {
+		if err := duplexDev.Start(); err == nil {
+			m.duplexDevice = duplexDev
+		} else {
+			duplexDev.Uninit()
+		}
 	}
-	if err := captureDevice.Start(); err != nil {
-		m.stopAudioHardware()
-		return fmt.Errorf("failed to start capture device: %w", err)
+
+	// 2. If duplex is not active, fallback to separate Playback and Capture devices
+	if m.duplexDevice == nil {
+		playbackConfig := malgo.DefaultDeviceConfig(malgo.Playback)
+		playbackConfig.Playback.Format = malgo.FormatS16
+		playbackConfig.Playback.Channels = 1
+		playbackConfig.SampleRate = 48000
+		playbackConfig.Alsa.NoMMap = 1
+		if m.selectedPlaybackDeviceID != "" {
+			playbackDevices, _ := malgoCtx.Devices(malgo.Playback)
+			for i := range playbackDevices {
+				if playbackDevices[i].ID.String() == m.selectedPlaybackDeviceID || playbackDevices[i].Name() == m.selectedPlaybackDeviceID {
+					playbackConfig.Playback.DeviceID = playbackDevices[i].ID.Pointer()
+					break
+				}
+			}
+		}
+		playbackDev, err := malgo.InitDevice(malgoCtx.Context, playbackConfig, malgo.DeviceCallbacks{
+			Data: onAudioData,
+		})
+		if err == nil {
+			if err := playbackDev.Start(); err == nil {
+				m.playbackDevice = playbackDev
+			}
+		}
+
+		captureConfig := malgo.DefaultDeviceConfig(malgo.Capture)
+		captureConfig.Capture.Format = malgo.FormatS16
+		captureConfig.Capture.Channels = 1
+		captureConfig.SampleRate = 48000
+		captureConfig.Alsa.NoMMap = 1
+		if m.selectedCaptureDeviceID != "" {
+			captureDevices, _ := malgoCtx.Devices(malgo.Capture)
+			for i := range captureDevices {
+				if captureDevices[i].ID.String() == m.selectedCaptureDeviceID || captureDevices[i].Name() == m.selectedCaptureDeviceID {
+					captureConfig.Capture.DeviceID = captureDevices[i].ID.Pointer()
+					break
+				}
+			}
+		}
+		captureDev, err := malgo.InitDevice(malgoCtx.Context, captureConfig, malgo.DeviceCallbacks{
+			Data: onAudioData,
+		})
+		if err == nil {
+			if err := captureDev.Start(); err == nil {
+				m.captureDevice = captureDev
+			}
+		}
 	}
-	m.captureDevice = captureDevice
 
 	// 3. Background microphone Opus encoding pump
 	go func() {
@@ -212,7 +251,7 @@ func (m *NativeCallManager) startAudioHardware(ctx context.Context) error {
 		}
 		defer encoder.Close()
 
-		const frameSamples = 960 // 20ms at 48kHz
+		const frameSamples = 960            // 20ms at 48kHz
 		const frameBytes = frameSamples * 2 // 16-bit mono PCM = 1920 bytes
 		pcmChunk := make([]byte, frameBytes)
 		pcmSamples := make([]int16, frameSamples)
@@ -437,7 +476,7 @@ func (a *App) NativeCallConnect(url, token string, isVideo bool) (*NativeCallCon
 	audioTrack, err := lksdk.NewLocalSampleTrack(webrtc.RTPCodecCapability{
 		MimeType:  webrtc.MimeTypeOpus,
 		ClockRate: 48000,
-		Channels:  1,
+		Channels:  2, // RFC 7587 requires Channels: 2 in SDP for Opus
 	})
 	if err == nil {
 		globalCallManager.localAudio = audioTrack
