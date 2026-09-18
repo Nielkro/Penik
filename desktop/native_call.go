@@ -259,6 +259,13 @@ func (m *NativeCallManager) startAudioHardware(ctx context.Context) error {
 		}
 		defer encoder.Close()
 
+		denoiser, err := NewNativeRNNoise()
+		if err != nil {
+			fmt.Printf("[native_call] RNNoise init info: %v\n", err)
+		} else {
+			defer denoiser.Close()
+		}
+
 		const frameSamples = 960            // 20ms at 48kHz
 		const frameBytes = frameSamples * 2 // 16-bit mono PCM = 1920 bytes
 		pcmChunk := make([]byte, frameBytes)
@@ -290,11 +297,10 @@ func (m *NativeCallManager) startAudioHardware(ctx context.Context) error {
 					continue
 				}
 
-				// High-pass filter (~80Hz) and RMS energy calculation for noise gate
+				// 1. High-pass filter (~80Hz) to cut DC offset and mechanical desk/fan rumble
 				var sumSq float64
 				for i := 0; i < frameSamples; i++ {
 					inVal := float64(int16(binary.LittleEndian.Uint16(pcmChunk[i*2 : i*2+2])))
-					// 1-pole high pass filter: y[n] = 0.989 * (y[n-1] + x[n] - x[n-1])
 					outVal := 0.989 * (hpfPrevOut + inVal - hpfPrevIn)
 					hpfPrevIn = inVal
 					hpfPrevOut = outVal
@@ -311,14 +317,18 @@ func (m *NativeCallManager) startAudioHardware(ctx context.Context) error {
 
 				rms := math.Sqrt(sumSq / float64(frameSamples))
 
-				// Noise Gate threshold: ~300 in 16-bit range suppresses room static, breathing, AC hum
-				const noiseThreshold = 300.0
-				if rms >= noiseThreshold {
-					gateHangover = 10 // keep gate open for ~200ms after speech ends to avoid clipping
+				// 2. RNNoise Recurrent Neural Network noise suppression
+				var vad float32 = 1.0
+				if denoiser != nil {
+					vad = denoiser.ProcessFrameDenoise(pcmSamples)
+				}
+
+				// 3. Dual-stage Voice Activity Gate (Neural VAD + RMS energy)
+				if vad >= 0.40 || rms >= 350.0 {
+					gateHangover = 12 // ~240ms hangover to preserve natural speech decay and soft consonants
 				} else if gateHangover > 0 {
 					gateHangover--
 				} else {
-					// Attenuate background room noise when not speaking
 					for i := 0; i < frameSamples; i++ {
 						pcmSamples[i] = 0
 					}

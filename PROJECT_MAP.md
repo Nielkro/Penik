@@ -68,6 +68,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 -`desktop/app.go` — Backend methods exposed to JavaScript (config persistence, window control, native notifications, file dialogs, update checking).
 - `desktop/native_call.go` — Native Go LiveKit call engine powered by server-sdk-go/v2 and Pion WebRTC for zero-lag, browser-independent desktop voice and video calls.
 - `desktop/opus_cgo.go` — Direct CGO bindings to libopus for high-fidelity 48kHz VoIP audio encoding and decoding.
+- `desktop/rnnoise_cgo.go` — Direct CGO bindings to librnnoise for real-time recurrent neural network (RNN) microphone noise suppression.
 - `desktop/screencap.go` — High-performance desktop screen and window capture engine serving JPEG frames over local loopback WebSocket for borderless screen sharing.
 - `desktop/screencap_linux.go` — Linux Wayland (PipeWire / GStreamer portal) and X11 screen and window capture implementation.
 - `desktop/screencap_windows.go` — Windows GDI / DWM implementation for screen and window capture.
