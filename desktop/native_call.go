@@ -658,8 +658,8 @@ func (a *App) NativeCallStartScreenShare(sourceID string) (string, error) {
 			globalCallManager.cancelScreen = nil
 		}
 		globalScreenCapServer.setOnRawFrame(nil)
-		if globalCallManager.videoPub != nil {
-			_ = globalCallManager.room.LocalParticipant.UnpublishTrack(globalCallManager.videoTrack.ID())
+		if globalCallManager.videoPub != nil && globalCallManager.room != nil {
+			_ = globalCallManager.room.LocalParticipant.UnpublishTrack(globalCallManager.videoPub.SID())
 			globalCallManager.videoPub = nil
 			globalCallManager.videoTrack = nil
 		}
@@ -776,7 +776,7 @@ func (a *App) NativeCallStopScreenShare() bool {
 	globalScreenCapServer.setOnRawFrame(nil)
 
 	if globalCallManager.videoPub != nil && globalCallManager.room != nil {
-		_ = globalCallManager.room.LocalParticipant.UnpublishTrack(globalCallManager.videoTrack.ID())
+		_ = globalCallManager.room.LocalParticipant.UnpublishTrack(globalCallManager.videoPub.SID())
 		globalCallManager.videoPub = nil
 		globalCallManager.videoTrack = nil
 	}
