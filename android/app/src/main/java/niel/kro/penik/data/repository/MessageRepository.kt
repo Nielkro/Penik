@@ -56,7 +56,8 @@ class MessageRepository @Inject constructor(
             Log.e("PenikMsg", "Failed to fetch key bundle for $userId", e)
             bundleCache[userId]?.second ?: emptyList()
         }
-        bundleCache[userId] = Pair(now + 2 * 60 * 1000L, devices)
+        val ttl = if (isSelf) 30 * 1000L else 2 * 60 * 1000L
+        bundleCache[userId] = Pair(now + ttl, devices)
         return devices
     }
 
@@ -377,7 +378,10 @@ class MessageRepository @Inject constructor(
         }
 
         val recipientBundles: List<niel.kro.penik.data.network.api.DeviceBundle> = getKeyBundleCached(toUserId, isSelf = isSelfChat)
-        val senderBundles: List<niel.kro.penik.data.network.api.DeviceBundle> = if (isSelfChat) emptyList() else getKeyBundleCached(myId, isSelf = true)
+        var senderBundles: List<niel.kro.penik.data.network.api.DeviceBundle> = if (isSelfChat) emptyList() else getKeyBundleCached(myId, isSelf = true)
+        if (!isSelfChat && senderBundles.size <= 1) {
+            senderBundles = getKeyBundleCached(myId, isSelf = true, forceRefresh = true)
+        }
 
         val myDeviceId = tokenStorage.getDeviceId()
         val allDevices: List<niel.kro.penik.data.network.api.DeviceBundle> = if (isSelfChat) {

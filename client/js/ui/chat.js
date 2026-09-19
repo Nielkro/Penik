@@ -744,10 +744,18 @@ export async function renderChat(container, userId) {
   let messages = [];
   let calls = [];
   try {
-    const [msgs, peerCalls] = await Promise.all([
+    let [msgs, peerCalls] = await Promise.all([
       getMessages(userId, 50).catch(() => []),
       listPeerCalls(userId, 50).catch(() => [])
     ]);
+
+    if (!msgs || msgs.length === 0) {
+      await syncMessageHistory({ chat_user_id: userId, limit: 100 }).catch(() => {});
+      msgs = await getMessages(userId, 50).catch(() => []);
+    } else {
+      syncMessageHistory({ chat_user_id: userId, limit: 100 }).catch(() => {});
+    }
+
     messages = (msgs || []).filter(m => m.plaintext !== "[DELETED]");
     calls = peerCalls || [];
     const socket = getWS();

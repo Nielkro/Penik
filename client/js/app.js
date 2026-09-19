@@ -987,7 +987,7 @@ export async function syncMessageHistory(options = {}) {
       url += `&before_id=${options.before_id}`;
     } else if (options.after_id) {
       url += `&after_id=${options.after_id}`;
-    } else {
+    } else if (!options.chat_user_id) {
       const allLocal = await getAllMessages();
       let maxServerId = 0;
       for (const m of allLocal) {
@@ -1007,7 +1007,7 @@ export async function syncMessageHistory(options = {}) {
     if (!history || !Array.isArray(history) || history.length === 0) return [];
 
     const me = state.currentUser;
-    if (!me) return;
+    if (!me) return [];
     const myId = Number(me.id || me.user_id);
 
     history.sort((a, b) => a.timestamp - b.timestamp);
@@ -1018,21 +1018,20 @@ export async function syncMessageHistory(options = {}) {
       return getCachedKeyBundle(senderId);
     };
 
+    const currentDeviceId = Number(localStorage.getItem("device_id"));
+
     for (const item of history) {
       // History is device-scoped.  Never try to decrypt a fan-out copy that
       // belongs to another device of the same account (for example, the
       // phone copy while this browser is the web device).  Such a copy uses
       // that device's OTPK and can never be decrypted here.
-      const currentDeviceId = Number(localStorage.getItem("device_id"));
       // A fan-out row addressed to the phone must never be processed by the
       // web client, even when the message was sent from this web client.
       // The sender's copy is encrypted with the recipient device's OTPK.
-      const myId = Number(state.currentUser?.id || state.currentUser?.user_id);
-      const isSelfChat = Number(item.sender_id) === myId &&
-        Number(item.recipient_id) === myId;
-      const belongsToThisDevice = isSelfChat || Number(item.sender_id) !== myId
-        ? Number(item.recipient_device_id) === currentDeviceId
-        : Number(item.sender_device_id) === currentDeviceId;
+      const hasDeviceScope = item.recipient_device_id != null || item.sender_device_id != null;
+      const belongsToThisDevice = !hasDeviceScope ||
+        Number(item.recipient_device_id) === currentDeviceId ||
+        Number(item.sender_device_id) === currentDeviceId;
       if (!belongsToThisDevice) {
         continue;
       }
@@ -1059,8 +1058,12 @@ export async function syncMessageHistory(options = {}) {
             text = locallyStored.plaintext;
             throw { __alreadyDecrypted: true };
           }
-          const senderBundle = await getSenderBundle(item.sender_id);
-          const senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
+          let senderBundle = await getSenderBundle(item.sender_id);
+          let senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
+          if (!senderDevice) {
+            senderBundle = await getCachedKeyBundle(item.sender_id, true);
+            senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
+          }
           const fromIdentityKey = senderDevice?.identity_key;
 
           const decrypted = await decryptMessagePayload({
@@ -1070,6 +1073,10 @@ export async function syncMessageHistory(options = {}) {
             from_identity_key: fromIdentityKey,
             sender_user_id: item.sender_id,
             sender_device_id: item.sender_device_id,
+            chat_user_id: peerId,
+            chat_id: String(peerId),
+            to_user_id: Number(item.sender_id) === myId ? peerId : myId,
+            recipient_user_id: Number(item.sender_id) === myId ? peerId : myId,
             client_msg_id: item.client_msg_id,
             timestamp: item.timestamp,
             edited_at: item.edited_at
@@ -1100,8 +1107,10 @@ export async function syncMessageHistory(options = {}) {
         await saveContact({
           ...contact,
           user_id: peerId,
+          name: contact.name,
+          nickname: contact.nickname,
           last_message: currentContact?.last_message || "",
-          last_ts: currentContact?.last_ts || item.timestamp * 1000
+          last_ts: Math.max(currentContact?.last_ts || 0, item.timestamp * 1000)
         });
         continue;
       }
@@ -1157,11 +1166,17 @@ export async function syncMessageHistory(options = {}) {
         edited_at: item.edited_at ? item.edited_at * 1000 : null,
       };
       await saveMessage(storedMsg);
+
+      if (_activeChatCallback && String(_activeChatCallback.userId) === String(peerId)) {
+        _activeChatCallback.fn(storedMsg);
+      }
     }
 
     triggerChatListUpdate();
+    return history;
   } catch (err) {
     console.error("Failed to sync message history:", err);
+    return [];
   }
 }
 
@@ -1376,7 +1391,9 @@ export async function getCachedKeyBundle(userId, forceRefresh = false) {
   const promise = (async () => {
     try {
       const bundle = await apiGet(`/keys/bundle/${userId}`);
-      bundleMemoryCache.set(key, { bundle, expiresAt: Date.now() + 10 * 60 * 1000 });
+      const myId = Number(localStorage.getItem("user_id"));
+      const ttl = Number(userId) === myId ? 30 * 1000 : 5 * 60 * 1000;
+      bundleMemoryCache.set(key, { bundle, expiresAt: Date.now() + ttl });
       return bundle;
     } finally {
       bundleInflight.delete(key);
@@ -1410,6 +1427,10 @@ export async function encryptMessagePayload(text, recipientUserId, clientMsgId =
   if (recipientDevices.length === 0) {
     recipientBundle = await getCachedKeyBundle(recipientUserId, true);
     recipientDevices = recipientBundle?.devices || [];
+  }
+  if (!isSelfChat && senderDevices.length <= 1) {
+    senderBundle = await getCachedKeyBundle(myId, true);
+    senderDevices = senderBundle?.devices || [];
   }
 
   const filteredSenderDevices = isSelfChat ? [] : senderDevices.filter(d => Number(d.device_id) !== myDeviceId);
