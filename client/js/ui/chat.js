@@ -262,7 +262,7 @@ export async function renderChatList(container) {
         (x.nickname || "").toLowerCase().includes(filter)
       );
     }
-    merged.sort((a, b) => (b.last_ts || 0) - (a.last_ts || 0));
+    merged.sort((a, b) => (normalizeTs(b.last_ts) || 0) - (normalizeTs(a.last_ts) || 0));
 
     if (!merged.length && !selfChatEntry) {
       listEl.appendChild(el("li", { class: "chatlist-empty" }, "Пусто. Найдите пользователя или создайте группу."));
@@ -284,7 +284,7 @@ export async function renderChatList(container) {
             el("span", { class: "chatlist-item-name" }, entry.name || entry.nickname || ""),
             el("span", { class: "chatlist-item-preview" }, getMessagePreview(entry.last_message || ""))
           ),
-          el("span", { class: "chatlist-item-time" }, entry.last_ts ? formatTime(entry.last_ts) : "")
+          el("span", { class: "chatlist-item-time" }, entry.last_ts ? formatTime(normalizeTs(entry.last_ts)) : "")
         );
         item.addEventListener("click", () => navigate(`#chat/${entry.user_id}`));
         listEl.appendChild(item);
@@ -340,8 +340,10 @@ async function loadGroupEntries() {
       const msgs = await getGroupMessages(g.id);
       const last = msgs[msgs.length - 1];
       if (last) {
-        last_ts = last.created_at || 0;
+        last_ts = normalizeTs(last.created_at || last.timestamp || 0);
         last_message = getMessagePreview(last.plaintext || "");
+      } else {
+        last_ts = normalizeTs(g.created_at || g.created || 0);
       }
     } catch { /* preview falls back to role/empty */ }
     return { ...g, _kind: "group", last_ts, last_message };

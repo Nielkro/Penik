@@ -638,6 +638,10 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 	}
 
 	for _, d := range deliveries {
+		if recipientUserID == senderUserID {
+			continue
+		}
+
 		var devOwnerID int64
 		_ = c.db.QueryRowContext(ctx, "SELECT user_id FROM devices WHERE id=?", d.deviceID).Scan(&devOwnerID)
 		if devOwnerID != recipientUserID {

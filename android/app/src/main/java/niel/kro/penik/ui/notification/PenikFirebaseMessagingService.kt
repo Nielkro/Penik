@@ -108,6 +108,10 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
                     return@runBlocking
                 }
                 val chatUserId = data["chat_user_id"]?.toLongOrNull() ?: return@runBlocking
+                val myUserId = tokenStorage.getUserId()
+                if (myUserId > 0L && chatUserId == myUserId) {
+                    return@runBlocking
+                }
                 val msgServerId = data["msg_id"]?.toLongOrNull() ?: 0L
 
                 val text = runCatching { messageRepository.resolvePushMessage(msgServerId) }

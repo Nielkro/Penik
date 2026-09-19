@@ -99,8 +99,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
         when (event) {
             is WebSocketEvent.MsgRecv -> {
                 val isIncoming = messageRepository.handleMsgRecv(event)
+                val myId = tokenStorage.getUserId()
                 chatRepository.updateLastMessage(event.chatUserId, event.text, niel.kro.penik.data.repository.toMs(event.ts))
-                if (isIncoming) {
+                if (isIncoming && event.chatUserId != myId) {
                     chatRepository.incrementUnread(event.chatUserId)
                     if (niel.kro.penik.ui.notification.AppNotificationManager.activeChatKey != "direct_${event.chatUserId}") {
                         appNotificationManager.showDirectMessageNotification(event.chatUserId, event.text, niel.kro.penik.data.repository.toMs(event.ts), msgServerId = event.msgId)
@@ -112,8 +113,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 // Skip chat list update when the message was not meant for this device
                 // (self-chat copy encrypted for another device returns empty text).
                 if (text.isNotEmpty()) {
+                    val myId = tokenStorage.getUserId()
                     chatRepository.updateLastMessage(event.chatUserId, text, niel.kro.penik.data.repository.toMs(event.ts))
-                    if (isIncoming) {
+                    if (isIncoming && event.chatUserId != myId) {
                         chatRepository.incrementUnread(event.chatUserId)
                         if (niel.kro.penik.ui.notification.AppNotificationManager.activeChatKey != "direct_${event.chatUserId}") {
                             appNotificationManager.showDirectMessageNotification(event.chatUserId, text, niel.kro.penik.data.repository.toMs(event.ts), msgServerId = event.msgId)
@@ -135,7 +137,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 val myId = tokenStorage.getUserId()
                 event.msgs.forEach { msg ->
                     chatRepository.updateLastMessage(msg.chatUserId, msg.text, niel.kro.penik.data.repository.toMs(msg.ts))
-                    if (msg.fromUserId != myId) {
+                    if (msg.fromUserId != myId && msg.chatUserId != myId) {
                         chatRepository.incrementUnread(msg.chatUserId)
                         if (!niel.kro.penik.ui.notification.AppNotificationManager.isAppInForeground &&
                             niel.kro.penik.ui.notification.AppNotificationManager.activeChatKey != "direct_${msg.chatUserId}") {
@@ -151,9 +153,10 @@ class HandleWebSocketEventUseCase @Inject constructor(
             }
             is WebSocketEvent.OfflineBatchEncrypted -> {
                 val decrypted = messageRepository.handleOfflineBatchEncrypted(event)
+                val myId = tokenStorage.getUserId()
                 decrypted.forEach { msg ->
                     chatRepository.updateLastMessage(msg.chatUserId, msg.text, niel.kro.penik.data.repository.toMs(msg.ts))
-                    if (msg.isIncoming) {
+                    if (msg.isIncoming && msg.chatUserId != myId) {
                         chatRepository.incrementUnread(msg.chatUserId)
                         if (!niel.kro.penik.ui.notification.AppNotificationManager.isAppInForeground &&
                             niel.kro.penik.ui.notification.AppNotificationManager.activeChatKey != "direct_${msg.chatUserId}") {

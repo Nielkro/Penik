@@ -540,6 +540,7 @@ export async function sendGroupMessage(groupId, text, replyToMsgId = null) {
     key_version: version, plaintext: text, created_at: createdAt, delivered: 0,
   };
   await saveGroupMessage(localRecord);
+  emit({ type: 'message', groupId: Number(groupId) });
   window.dispatchEvent(new CustomEvent("local-group-msg-sent", { detail: { groupId: Number(groupId), record: localRecord } }));
 
   ws.send(OP.GROUP_MESSAGE_SEND, {

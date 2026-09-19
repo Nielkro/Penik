@@ -266,10 +266,12 @@ class AppNotificationManager @Inject constructor(
         customAvatarBitmap: Bitmap? = null,
         customImageBitmap: Bitmap? = null
     ) {
+        val myUserId = secureTokenStorage.getUserId() ?: 0L
+        // Do not notify for Saved Messages (Избранное)
+        if (myUserId > 0L && chatUserId == myUserId) return
         // Do not notify if the app is in the foreground or user is viewing this direct chat
         if (isAppInForeground || activeChatKey == "direct_$chatUserId") return
 
-        val myUserId = secureTokenStorage.getUserId() ?: 0L
         val chatEntity = chatDao.getChat(chatUserId)
         val chatName = overrideSenderName ?: chatEntity?.name?.ifBlank { "Пользователь #$chatUserId" } ?: "Пользователь #$chatUserId"
 
