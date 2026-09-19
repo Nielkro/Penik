@@ -120,6 +120,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -280,7 +281,7 @@ func getPlatformSourceThumbnail(sourceID string) (string, error) {
 	return getSimpleIconBase64(), nil
 }
 
-func startPlatformCapture(ctx context.Context, sourceID string, onFrame func([]byte)) {
+func startPlatformCapture(ctx context.Context, sourceID string, onFrame func(*CapturedFrame)) {
 	if isWaylandSession() || strings.HasPrefix(sourceID, "wayland:") {
 		if startWaylandPortalCapture(ctx, onFrame) {
 			return
@@ -322,7 +323,7 @@ func extractNodeID(val interface{}) uint32 {
 	return 0
 }
 
-func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
+func startWaylandPortalCapture(ctx context.Context, onFrame func(*CapturedFrame)) bool {
 	gstPath, err := exec.LookPath("gst-launch-1.0")
 	if err != nil {
 		log.Printf("[screencap] gst-launch-1.0 not found: %v", err)
@@ -458,7 +459,10 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 	pwFile := os.NewFile(uintptr(unixFD), "pipewire_remote")
 	defer pwFile.Close()
 
-	// 5. GStreamer pipeline with pipewiresrc
+	const targetW = 1280
+	const targetH = 720
+	const frameSize = targetW * targetH * 3 / 2 // 1,382,400 bytes for I420 720p
+
 	var pipewireArgs []string
 	if nodeID > 0 {
 		pipewireArgs = []string{
@@ -466,10 +470,8 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 			"pipewiresrc", "fd=3", fmt.Sprintf("path=%d", nodeID), "do-timestamp=true",
 			"!", "videoconvert",
 			"!", "videoscale",
-			"!", "video/x-raw,width=1280,height=720",
 			"!", "videorate",
-			"!", "video/x-raw,framerate=30/1",
-			"!", "jpegenc", "quality=55",
+			"!", "video/x-raw,format=I420,width=1280,height=720,framerate=30/1",
 			"!", "fdsink", "fd=1",
 		}
 	} else {
@@ -478,10 +480,8 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 			"pipewiresrc", "fd=3", "do-timestamp=true",
 			"!", "videoconvert",
 			"!", "videoscale",
-			"!", "video/x-raw,width=1280,height=720",
 			"!", "videorate",
-			"!", "video/x-raw,framerate=30/1",
-			"!", "jpegenc", "quality=55",
+			"!", "video/x-raw,format=I420,width=1280,height=720,framerate=30/1",
 			"!", "fdsink", "fd=1",
 		}
 	}
@@ -502,11 +502,6 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 
 	log.Printf("[screencap] Wayland portal screencast active (nodeID=%d, fd=%d)", nodeID, unixFD)
 
-	header := []byte{0xFF, 0xD8}
-	footer := []byte{0xFF, 0xD9}
-	rawBuf := make([]byte, 65536)
-	frameAcc := make([]byte, 0, 500000)
-
 	doneChan := make(chan struct{})
 	go func() {
 		defer close(doneChan)
@@ -516,30 +511,16 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 			case <-ctx.Done():
 				return
 			default:
-				n, err := stdout.Read(rawBuf)
-				if err != nil || n == 0 {
+				frameBuf := make([]byte, frameSize)
+				if _, err := io.ReadFull(stdout, frameBuf); err != nil {
 					return
 				}
-				frameAcc = append(frameAcc, rawBuf[:n]...)
-
-				for {
-					start := bytes.Index(frameAcc, header)
-					if start == -1 {
-						frameAcc = frameAcc[:0]
-						break
-					}
-					end := bytes.Index(frameAcc[start+2:], footer)
-					if end == -1 {
-						if start > 0 {
-							frameAcc = frameAcc[start:]
-						}
-						break
-					}
-					fullEnd := start + 2 + end + 2
-					jpegBytes := frameAcc[start:fullEnd]
-					onFrame(jpegBytes)
-					frameAcc = frameAcc[fullEnd:]
-				}
+				onFrame(&CapturedFrame{
+					Width:  targetW,
+					Height: targetH,
+					Format: "i420",
+					Data:   frameBuf,
+				})
 			}
 		}
 	}()
@@ -551,7 +532,7 @@ func startWaylandPortalCapture(ctx context.Context, onFrame func([]byte)) bool {
 	return true
 }
 
-func startX11Capture(ctx context.Context, sourceID string, onFrame func([]byte)) {
+func startX11Capture(ctx context.Context, sourceID string, onFrame func(*CapturedFrame)) {
 	x11Ctx := C.init_x11()
 	if x11Ctx == nil {
 		return
@@ -573,8 +554,6 @@ func startX11Capture(ctx context.Context, sourceID string, onFrame func([]byte))
 	ticker := time.NewTicker(33 * time.Millisecond) // ~30 FPS
 	defer ticker.Stop()
 
-	var buf bytes.Buffer
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -591,18 +570,14 @@ func startX11Capture(ctx context.Context, sourceID string, onFrame func([]byte))
 
 			var rgbaPtr *C.uchar
 			if C.capture_x11_window(x11Ctx, targetWin, 0, 0, C.int(targetW), C.int(targetH), &rgbaPtr) != 0 && rgbaPtr != nil {
-				rgbaSlice := unsafe.Slice((*byte)(rgbaPtr), targetW*targetH*4)
-				img := &image.RGBA{
-					Pix:    rgbaSlice,
-					Stride: targetW * 4,
-					Rect:   image.Rect(0, 0, targetW, targetH),
-				}
-
-				buf.Reset()
-				if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 70}); err == nil {
-					onFrame(buf.Bytes())
-				}
+				data := C.GoBytes(unsafe.Pointer(rgbaPtr), C.int(targetW*targetH*4))
 				C.free(unsafe.Pointer(rgbaPtr))
+				onFrame(&CapturedFrame{
+					Width:  targetW,
+					Height: targetH,
+					Format: "rgba",
+					Data:   data,
+				})
 			}
 		}
 	}

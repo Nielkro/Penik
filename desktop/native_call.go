@@ -1,17 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
-	"image/jpeg"
 	"math"
 	"sync"
 	"time"
 
 	"github.com/gen2brain/malgo"
-	"github.com/gorilla/websocket"
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/pion/rtp/codecs"
@@ -660,6 +657,7 @@ func (a *App) NativeCallStartScreenShare(sourceID string) (string, error) {
 			globalCallManager.cancelScreen()
 			globalCallManager.cancelScreen = nil
 		}
+		globalScreenCapServer.setOnRawFrame(nil)
 		if globalCallManager.videoPub != nil {
 			_ = globalCallManager.room.LocalParticipant.UnpublishTrack(globalCallManager.videoTrack.ID())
 			globalCallManager.videoPub = nil
@@ -696,66 +694,67 @@ func (a *App) NativeCallStartScreenShare(sourceID string) (string, error) {
 	capCtx, capCancel := context.WithCancel(context.Background())
 	globalCallManager.cancelScreen = capCancel
 
-	go func() {
-		wsURL := fmt.Sprintf("ws://127.0.0.1:%d/stream/screenshare", globalScreenCapServer.port)
-		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		if err != nil {
+	var encoder *NativeVP8Encoder
+	var curW, curH int
+	vp8Buf := make([]byte, 1024*1024)
+	frameIdx := 0
+	var encMu sync.Mutex
+
+	globalScreenCapServer.setOnRawFrame(func(frame *CapturedFrame) {
+		if frame == nil || len(frame.Data) == 0 {
 			return
 		}
-		defer conn.Close()
 
-		var encoder *NativeVP8Encoder
-		var curW, curH int
-		vp8Buf := make([]byte, 1024*1024)
-		frameIdx := 0
-
-		for {
-			select {
-			case <-capCtx.Done():
-				if encoder != nil {
-					encoder.Close()
-				}
-				return
-			default:
-				_, msg, err := conn.ReadMessage()
-				if err != nil {
-					return
-				}
-				if len(msg) == 0 {
-					continue
-				}
-
-				img, err := jpeg.Decode(bytes.NewReader(msg))
-				if err != nil {
-					continue
-				}
-
-				bounds := img.Bounds()
-				w, h := bounds.Dx(), bounds.Dy()
-				if w != curW || h != curH || encoder == nil {
-					if encoder != nil {
-						encoder.Close()
-					}
-					enc, err := NewNativeVP8Encoder(w, h, 30, 2500)
-					if err != nil {
-						continue
-					}
-					encoder = enc
-					curW, curH = w, h
-				}
-
-				forceKey := (frameIdx%60 == 0)
-				frameIdx++
-
-				n, err := encoder.EncodeImage(img, vp8Buf, forceKey)
-				if err == nil && n > 0 {
-					_ = videoTrack.WriteSample(media.Sample{
-						Data:     vp8Buf[:n],
-						Duration: 33 * time.Millisecond,
-					}, nil)
-				}
-			}
+		select {
+		case <-capCtx.Done():
+			return
+		default:
 		}
+
+		encMu.Lock()
+		defer encMu.Unlock()
+
+		w, h := frame.Width, frame.Height
+		if w != curW || h != curH || encoder == nil {
+			if encoder != nil {
+				encoder.Close()
+			}
+			enc, err := NewNativeVP8Encoder(w, h, 30, 2500)
+			if err != nil {
+				return
+			}
+			encoder = enc
+			curW, curH = w, h
+		}
+
+		forceKey := (frameIdx%60 == 0)
+		frameIdx++
+
+		var n int
+		var err error
+		if frame.Format == "i420" {
+			n, err = encoder.EncodeRawI420(frame.Data, vp8Buf, forceKey)
+		} else if frame.Format == "rgba" {
+			n, err = encoder.EncodeRGBA(frame.Data, vp8Buf, forceKey)
+		}
+
+		if err == nil && n > 0 {
+			_ = videoTrack.WriteSample(media.Sample{
+				Data:     vp8Buf[:n],
+				Duration: 33 * time.Millisecond,
+			}, nil)
+		}
+	})
+
+	go func() {
+		<-capCtx.Done()
+		globalScreenCapServer.setOnRawFrame(nil)
+		encMu.Lock()
+		if encoder != nil {
+			encoder.Close()
+			encoder = nil
+		}
+		encMu.Unlock()
 	}()
 
 	return streamURL, nil
@@ -774,6 +773,7 @@ func (a *App) NativeCallStopScreenShare() bool {
 		globalCallManager.cancelScreen()
 		globalCallManager.cancelScreen = nil
 	}
+	globalScreenCapServer.setOnRawFrame(nil)
 
 	if globalCallManager.videoPub != nil && globalCallManager.room != nil {
 		_ = globalCallManager.room.LocalParticipant.UnpublishTrack(globalCallManager.videoTrack.ID())

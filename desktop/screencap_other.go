@@ -14,6 +14,6 @@ func getPlatformSourceThumbnail(sourceID string) (string, error) {
 	return "", nil
 }
 
-func startPlatformCapture(ctx context.Context, sourceID string, onFrame func([]byte)) {
+func startPlatformCapture(ctx context.Context, sourceID string, onFrame func(*CapturedFrame)) {
 	<-ctx.Done()
 }

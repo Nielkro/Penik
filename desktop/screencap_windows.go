@@ -420,12 +420,9 @@ func bitmapToRGBA(hdc uintptr, hBmp uintptr, w, h int) (*image.RGBA, error) {
 	return img, nil
 }
 
-func startPlatformCapture(ctx context.Context, sourceID string, onFrame func([]byte)) {
+func startPlatformCapture(ctx context.Context, sourceID string, onFrame func(*CapturedFrame)) {
 	ticker := time.NewTicker(33 * time.Millisecond) // ~30 FPS
 	defer ticker.Stop()
-
-	var buf bytes.Buffer
-	jpegOpts := &jpeg.Options{Quality: 82}
 
 	for {
 		select {
@@ -437,12 +434,12 @@ func startPlatformCapture(ctx context.Context, sourceID string, onFrame func([]b
 				continue
 			}
 
-			buf.Reset()
-			if err := jpeg.Encode(&buf, img, jpegOpts); err != nil {
-				continue
-			}
-
-			onFrame(buf.Bytes())
+			onFrame(&CapturedFrame{
+				Width:  img.Rect.Dx(),
+				Height: img.Rect.Dy(),
+				Format: "rgba",
+				Data:   img.Pix,
+			})
 		}
 	}
 }

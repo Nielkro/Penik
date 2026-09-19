@@ -227,6 +227,33 @@ static int encode_vp8_yuv(
     }
     return 0;
 }
+
+static int encode_vp8_raw_i420(
+    NativeVP8Encoder *enc,
+    const unsigned char *i420_data,
+    int data_len,
+    unsigned char *out_buf,
+    int max_out,
+    int force_keyframe
+) {
+    if (!enc || !i420_data || !out_buf) return 0;
+    int w = enc->width;
+    int h = enc->height;
+    int uv_w = (w + 1) / 2;
+    int uv_h = (h + 1) / 2;
+    int expected_len = w * h + 2 * uv_w * uv_h;
+    if (data_len < expected_len) return 0;
+
+    const unsigned char *y = i420_data;
+    const unsigned char *u = y + (w * h);
+    const unsigned char *v = u + (uv_w * uv_h);
+
+    int stride_y = w;
+    int stride_u = uv_w;
+    int stride_v = uv_w;
+
+    return encode_vp8_yuv(enc, y, u, v, stride_y, stride_u, stride_v, out_buf, max_out, force_keyframe);
+}
 */
 import "C"
 import (
@@ -365,6 +392,28 @@ func (e *NativeVP8Encoder) EncodeYCbCr(y, u, v []byte, strideY, strideU, strideV
 	)
 	if n <= 0 {
 		return 0, fmt.Errorf("VP8 YUV encode failed")
+	}
+	return int(n), nil
+}
+
+func (e *NativeVP8Encoder) EncodeRawI420(i420 []byte, out []byte, forceKeyframe bool) (int, error) {
+	if len(i420) == 0 || len(out) == 0 || e.enc == nil {
+		return 0, nil
+	}
+	key := C.int(0)
+	if forceKeyframe {
+		key = 1
+	}
+	n := C.encode_vp8_raw_i420(
+		e.enc,
+		(*C.uchar)(unsafe.Pointer(&i420[0])),
+		C.int(len(i420)),
+		(*C.uchar)(unsafe.Pointer(&out[0])),
+		C.int(len(out)),
+		key,
+	)
+	if n <= 0 {
+		return 0, fmt.Errorf("VP8 raw I420 encode failed")
 	}
 	return int(n), nil
 }

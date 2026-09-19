@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -20,6 +24,14 @@ type CaptureSource struct {
 	Height    int    `json:"height"`
 }
 
+// CapturedFrame represents an uncompressed raw frame from platform screen capture.
+type CapturedFrame struct {
+	Width  int
+	Height int
+	Format string // "i420" or "rgba"
+	Data   []byte
+}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		// Allow local origin (Wails app)
@@ -32,16 +44,83 @@ type ScreenCapServer struct {
 	mu            sync.Mutex
 	listener      net.Listener
 	server        *http.Server
-	clients       map[*websocket.Conn]bool
-	remoteClients map[*websocket.Conn]bool
+	clients       map[*websocket.Conn]chan []byte
+	remoteClients map[*websocket.Conn]chan []byte
 	activeSource  string
 	cancelCap     context.CancelFunc
 	port          int
+	rawMu         sync.RWMutex
+	onRawFrame    func(frame *CapturedFrame)
+	lastPreview   time.Time
 }
 
 var globalScreenCapServer = &ScreenCapServer{
-	clients:       make(map[*websocket.Conn]bool),
-	remoteClients: make(map[*websocket.Conn]bool),
+	clients:       make(map[*websocket.Conn]chan []byte),
+	remoteClients: make(map[*websocket.Conn]chan []byte),
+}
+
+func (s *ScreenCapServer) setOnRawFrame(fn func(frame *CapturedFrame)) {
+	s.rawMu.Lock()
+	defer s.rawMu.Unlock()
+	s.onRawFrame = fn
+}
+
+func (s *ScreenCapServer) handleCapturedFrame(frame *CapturedFrame) {
+	if frame == nil || len(frame.Data) == 0 {
+		return
+	}
+
+	// 1. Deliver raw frame immediately to WebRTC VP8 encoder (real-time, zero-delay)
+	s.rawMu.RLock()
+	rawFn := s.onRawFrame
+	s.rawMu.RUnlock()
+	if rawFn != nil {
+		rawFn(frame)
+	}
+
+	// 2. Local UI preview: throttle strictly to ~2 FPS (500ms), only when UI is listening
+	s.mu.Lock()
+	hasClients := len(s.clients) > 0
+	now := time.Now()
+	due := now.Sub(s.lastPreview) >= 500*time.Millisecond
+	if hasClients && due {
+		s.lastPreview = now
+	}
+	s.mu.Unlock()
+
+	if hasClients && due {
+		if frame.Format == "i420" {
+			yLen := frame.Width * frame.Height
+			uvW := (frame.Width + 1) / 2
+			uvH := (frame.Height + 1) / 2
+			uvLen := uvW * uvH
+			if len(frame.Data) >= yLen+2*uvLen {
+				img := &image.YCbCr{
+					Y:              frame.Data[:yLen],
+					Cb:             frame.Data[yLen : yLen+uvLen],
+					Cr:             frame.Data[yLen+uvLen : yLen+2*uvLen],
+					YStride:        frame.Width,
+					CStride:        uvW,
+					SubsampleRatio: image.YCbCrSubsampleRatio420,
+					Rect:           image.Rect(0, 0, frame.Width, frame.Height),
+				}
+				var buf bytes.Buffer
+				if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 35}); err == nil {
+					s.broadcastFrame(buf.Bytes())
+				}
+			}
+		} else if frame.Format == "rgba" {
+			img := &image.RGBA{
+				Pix:    frame.Data,
+				Stride: frame.Width * 4,
+				Rect:   image.Rect(0, 0, frame.Width, frame.Height),
+			}
+			var buf bytes.Buffer
+			if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 35}); err == nil {
+				s.broadcastFrame(buf.Bytes())
+			}
+		}
+	}
 }
 
 func (s *ScreenCapServer) ensureServerRunning() (int, error) {
@@ -80,15 +159,27 @@ func (s *ScreenCapServer) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	frameCh := make(chan []byte, 1)
+
 	s.mu.Lock()
-	s.clients[conn] = true
+	s.clients[conn] = frameCh
 	s.mu.Unlock()
 
 	defer func() {
 		s.mu.Lock()
 		delete(s.clients, conn)
 		s.mu.Unlock()
+		close(frameCh)
 		_ = conn.Close()
+	}()
+
+	// Non-blocking asynchronous sender: drops if network is busy, zero backlog
+	go func() {
+		for frame := range frameCh {
+			if err := conn.WriteMessage(websocket.BinaryMessage, frame); err != nil {
+				break
+			}
+		}
 	}()
 
 	// Keep alive and read until disconnected
@@ -105,15 +196,26 @@ func (s *ScreenCapServer) handleRemoteWS(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	frameCh := make(chan []byte, 1)
+
 	s.mu.Lock()
-	s.remoteClients[conn] = true
+	s.remoteClients[conn] = frameCh
 	s.mu.Unlock()
 
 	defer func() {
 		s.mu.Lock()
 		delete(s.remoteClients, conn)
 		s.mu.Unlock()
+		close(frameCh)
 		_ = conn.Close()
+	}()
+
+	go func() {
+		for frame := range frameCh {
+			if err := conn.WriteMessage(websocket.BinaryMessage, frame); err != nil {
+				break
+			}
+		}
 	}()
 
 	for {
@@ -123,13 +225,17 @@ func (s *ScreenCapServer) handleRemoteWS(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-// broadcastFrame sends a binary JPEG frame to all connected local clients.
+// broadcastFrame sends a binary JPEG frame to connected preview clients with drop-old policy.
 func (s *ScreenCapServer) broadcastFrame(frameBytes []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for client := range s.clients {
-		_ = client.WriteMessage(websocket.BinaryMessage, frameBytes)
+	for _, ch := range s.clients {
+		select {
+		case ch <- frameBytes:
+		default:
+			// Previous preview frame not consumed yet: drop to prevent any queue buildup
+		}
 	}
 }
 
@@ -138,8 +244,11 @@ func (s *ScreenCapServer) broadcastRemoteVideo(frameBytes []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for client := range s.remoteClients {
-		_ = client.WriteMessage(websocket.BinaryMessage, frameBytes)
+	for _, ch := range s.remoteClients {
+		select {
+		case ch <- frameBytes:
+		default:
+		}
 	}
 }
 
@@ -161,8 +270,8 @@ func (a *App) StartScreenCapture(sourceID string) (string, error) {
 	globalScreenCapServer.mu.Unlock()
 
 	// Launch platform-specific capture loop
-	go startPlatformCapture(ctx, sourceID, func(jpegBytes []byte) {
-		globalScreenCapServer.broadcastFrame(jpegBytes)
+	go startPlatformCapture(ctx, sourceID, func(frame *CapturedFrame) {
+		globalScreenCapServer.handleCapturedFrame(frame)
 	})
 
 	return fmt.Sprintf("ws://127.0.0.1:%d/stream/screenshare", port), nil
