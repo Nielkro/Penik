@@ -1,7 +1,7 @@
 import { ws, OP } from './ws.js';
 import { showToast } from './ui/components.js';
 import { getContact, saveContact, getIKPrivate } from './storage.js';
-import { getUserById, apiGet, getApiOrigin } from './api.js';
+import { getUserById, apiGet, getApiOrigin, invalidateCallsCache } from './api.js';
 import { callSounds } from './sounds.js';
 import { generateKeyPair, deriveSharedSecret, decodeKey } from './crypto.js';
 import { defaultWordCoder } from './wordcoder.js';
@@ -891,6 +891,16 @@ export class CallManager {
     }
     this._desktopScreenTrack = null;
     this._desktopScreenCanvas = null;
+
+    const peerId = this.currentCall?.toUserId || this.currentCall?.fromUserId;
+    if (peerId) {
+      invalidateCallsCache(peerId);
+    } else {
+      invalidateCallsCache();
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('penik-call-ended', { detail: { peerId } }));
+    }
 
     this.currentCall = null;
     this.isMuted = false;

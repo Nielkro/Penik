@@ -52,7 +52,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 ### Browser client transport
 
-- `client/js/api.js` — Unified browser REST client: attaches tokens, serializes JSON, parses errors, and exports APIs for users, messages, pairing, and groups.
+- `client/js/api.js` — Unified browser REST client: attaches tokens, serializes JSON, parses errors, in-memory TTL caching for call history, and exports APIs for users, messages, pairing, and groups.
 - `client/js/desktop.js` — Wails v2 desktop bridge helpers: runtime detection, server URL sync, native notifications, file dialogs, and file read/write.
 - `client/scripts/sync-desktop.js` — Build helper copying built Vite client artifacts into `desktop/frontend/dist` for Go embedding.
 - `client/js/call.js` — LiveKit Web SDK integration and call state manager supporting primary and fallback endpoints, signed ephemeral Diffie-Hellman E2EE encryption via WebRTC Insertable Streams worker, identity key authentication tags, safety words verification, multi-device ring handling (call_id matching and `CALL_TAKEN`), and reconnect recovery: full track resync after `RoomEvent.Reconnected`, camera restore retry, and media flags derived from actual publications.
@@ -100,7 +100,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/css/main.css` — Core browser UI styles: layout, navigation, chats, groups, forms, responsive behavior, and the `.msg-time-tooltip` hover popup.
 - `client/js/app.js` — Main application controller: user state, hash navigation, screen layout, storage initialization, and REST/WebSocket/crypto coordination.
 - `client/js/ui/auth.js` — Renders login/registration screens and binds forms to the auth API.
-- `client/js/ui/chat.js` — Displays the chat list, direct messaging room, messages, delivery/read receipts, and input controls.
+- `client/js/ui/chat.js` — Displays the chat list with live message and call previews, direct messaging room, messages, delivery/read receipts, and input controls.
 - `client/js/ui/calls.js` — Dedicated call history tab in the web client, displaying call records with duration, timestamps, status, and quick redial buttons.
 - `client/js/ui/groups.js` — Displays the group list and group chat room, including messages, invitations, and member actions.
 - `client/js/ui/profile.js` — Profile screen for editing user data and uploading avatars.

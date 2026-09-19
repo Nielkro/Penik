@@ -643,6 +643,7 @@ async function onMsgRecvGlobal(payload) {
           }
         }
       }
+      triggerChatListUpdate();
       return;
     }
   }
@@ -1515,6 +1516,11 @@ async function onMsgEditNotifyGlobal(payload) {
 }
 
 function setupGlobalWSListeners() {
+  if (typeof window !== "undefined") {
+    window.addEventListener("penik-call-ended", () => {
+      triggerChatListUpdate();
+    });
+  }
   ws.on(0x02, onMsgRecvGlobal);
   ws.on(0x16, onMsgRetryReq);
   ws.on(0x03, onMsgAckReceivedGlobal);

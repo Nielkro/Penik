@@ -1,4 +1,4 @@
-import { apiGet, apiDelete, uploadAttachment, listPeerCalls } from "../api.js";
+import { apiGet, apiDelete, uploadAttachment, listCalls, listPeerCalls } from "../api.js";
 import { encryptFileChaCha20, encryptBlobChunked, encryptBlob, encodeKey, computeSafetyNumber, computeSafetyFingerprint } from "../crypto.js";
 import QRCode from "qrcode";
 import {
@@ -89,6 +89,47 @@ export function getMessagePreviewInfo(plaintext) {
   return { text: prefix + payloadStr.replace(/\s+/g, " "), thumb: null, isMedia: false };
 }
 
+export function normalizeTs(raw) {
+  if (!raw) return Date.now();
+  if (typeof raw === "string") {
+    const parsed = Date.parse(raw);
+    if (!isNaN(parsed) && isNaN(Number(raw))) {
+      return parsed;
+    }
+  }
+  const n = Number(raw);
+  if (!n || isNaN(n)) return Date.now();
+  return n < 1e12 ? n * 1000 : n;
+}
+
+export function getCallPreview(call, myUserId) {
+  if (!call) return "";
+  const isVideo = !!call.is_video;
+  const isOutgoing = call.is_outgoing ?? (String(call.caller_id) === String(myUserId));
+  const icon = isVideo ? "📹" : "📞";
+  let title = "";
+
+  switch (call.status) {
+    case "missed":
+    case "cancelled":
+      title = isOutgoing ? "Не отвечен" : "Пропущенный звонок";
+      break;
+    case "declined":
+      title = isOutgoing ? "Звонок отклонён" : "Отклонённый звонок";
+      break;
+    case "busy":
+      title = isOutgoing ? "Абонент занят" : "Пропущенный звонок";
+      break;
+    default:
+      if (isVideo) {
+        title = isOutgoing ? "Исходящий видеозвонок" : "Входящий видеозвонок";
+      } else {
+        title = isOutgoing ? "Исходящий вызов" : "Входящий вызов";
+      }
+  }
+  return `${icon} ${title}`;
+}
+
 export function getMessagePreview(plaintext) {
   return getMessagePreviewInfo(plaintext).text;
 }
@@ -123,19 +164,45 @@ export async function renderChatList(container) {
     try {
       let all = await getAllContacts();
       if (myId) all = all.filter(c => String(c.user_id) !== String(myId));
+
+      let latestCallsByPeer = new Map();
+      try {
+        const callList = await listCalls(50, 0).catch(() => []);
+        if (Array.isArray(callList)) {
+          for (const call of callList) {
+            const peerId = String(call.peer_id || (String(call.caller_id) === String(myId) ? call.callee_id : call.caller_id));
+            if (!latestCallsByPeer.has(peerId)) {
+              latestCallsByPeer.set(peerId, call);
+            }
+          }
+        }
+      } catch (_) {}
+
       const enriched = await Promise.all(all.map(async (c) => {
         let last_message = c.last_message || "";
         let last_ts = c.last_ts || 0;
-        if (!last_message || !last_ts) {
-          try {
-            const msgs = await getMessages(c.user_id, 1);
-            if (msgs && msgs.length > 0) {
-              const last = msgs[msgs.length - 1];
-              if (!last_message) last_message = getMessagePreview(last.plaintext || last.text || "");
-              if (!last_ts) last_ts = last.created_at || 0;
+
+        try {
+          const msgs = await getMessages(c.user_id, 1);
+          if (msgs && msgs.length > 0) {
+            const last = msgs[msgs.length - 1];
+            const msgTs = last.created_at || 0;
+            if (msgTs >= last_ts || !last_message) {
+              last_message = getMessagePreview(last.plaintext || last.text || "");
+              last_ts = msgTs;
             }
-          } catch {}
+          }
+        } catch {}
+
+        const peerCall = latestCallsByPeer.get(String(c.user_id));
+        if (peerCall) {
+          const callTs = normalizeTs(peerCall.started_at);
+          if (callTs >= last_ts) {
+            last_message = getCallPreview(peerCall, myId);
+            last_ts = callTs;
+          }
         }
+
         return { ...c, _kind: "chat", last_message, last_ts };
       }));
       return enriched;
@@ -155,8 +222,8 @@ export async function renderChatList(container) {
   async function loadSelfChat() {
     if (!selfChatEntry) return;
     try {
-      const messages = await getMessages(myId);
-      const last = messages[messages.length - 1];
+      const messages = await getMessages(myId, 1);
+      const last = messages && messages.length > 0 ? messages[messages.length - 1] : null;
       selfChatEntry.last_message = getMessagePreview(last?.plaintext || "");
       selfChatEntry.last_ts = last?.created_at || 0;
     } catch {
@@ -702,18 +769,6 @@ export async function renderChat(container, userId) {
   // divider can be inserted whenever the day changes.
   let lastRenderedDay = null;
 
-  function normalizeTs(raw) {
-    if (!raw) return Date.now();
-    if (typeof raw === "string") {
-      const parsed = Date.parse(raw);
-      if (!isNaN(parsed) && isNaN(Number(raw))) {
-        return parsed;
-      }
-    }
-    const n = Number(raw);
-    if (!n || isNaN(n)) return Date.now();
-    return n < 1e12 ? n * 1000 : n;
-  }
 
   function makeDateDivider(ts) {
     return el("div", { class: "msg-date-divider" },
@@ -1607,6 +1662,7 @@ export async function renderChat(container, userId) {
       };
       await saveMessage(storedMsg);
       await saveContact({ ...contact, last_message: getMessagePreview(payloadStr), last_ts: now });
+      triggerChatListUpdate();
 
       addPendingAck(msgId, { tempId: msgId, userId: userId });
 
@@ -1728,6 +1784,7 @@ export async function renderChat(container, userId) {
     };
     await saveMessage(storedMsg);
     await saveContact({ ...contact, last_message: getMessagePreview(text), last_ts: now });
+    triggerChatListUpdate();
 
     const ws = getWS();
     if (ws && ws.isConnected() && ciphertexts) {
@@ -1791,6 +1848,7 @@ export async function renderChat(container, userId) {
     };
     await saveMessage(storedMsg);
     await saveContact({ ...contact, last_message: getMessagePreview(payload), last_ts: now });
+    triggerChatListUpdate();
 
     const ws = getWS();
     if (ws && ws.isConnected() && ciphertexts) {

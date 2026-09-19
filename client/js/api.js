@@ -356,14 +356,54 @@ export async function getMessageHistory(userId, before, limit = 40) {
   return get(path);
 }
 
-/* ── Call History ── */
+/* ── Call History (with memory caching) ── */
 
-export async function listCalls(limit = 50, offset = 0) {
-  return get(`/calls?limit=${limit}&offset=${offset}`);
+const peerCallsCache = new Map(); // userId -> { ts: number, data: any[] }
+let listCallsCache = null; // { ts: number, key: string, data: any[] }
+const CALLS_CACHE_TTL = 30 * 1000; // 30 seconds
+
+export function invalidateCallsCache(userId = null) {
+  if (userId != null) {
+    peerCallsCache.delete(String(userId));
+  } else {
+    peerCallsCache.clear();
+  }
+  listCallsCache = null;
 }
 
-export async function listPeerCalls(userId, limit = 50) {
-  return get(`/calls/peer/${userId}?limit=${limit}`);
+export async function listCalls(limit = 50, offset = 0, forceRefresh = false) {
+  const cacheKey = `${limit}_${offset}`;
+  const now = Date.now();
+  if (!forceRefresh && listCallsCache && listCallsCache.key === cacheKey && (now - listCallsCache.ts < CALLS_CACHE_TTL)) {
+    return listCallsCache.data;
+  }
+  try {
+    const res = await get(`/calls?limit=${limit}&offset=${offset}`);
+    const data = Array.isArray(res) ? res : [];
+    listCallsCache = { ts: Date.now(), key: cacheKey, data };
+    return data;
+  } catch (err) {
+    if (listCallsCache && listCallsCache.key === cacheKey) return listCallsCache.data;
+    throw err;
+  }
+}
+
+export async function listPeerCalls(userId, limit = 50, forceRefresh = false) {
+  const key = String(userId);
+  const cached = peerCallsCache.get(key);
+  const now = Date.now();
+  if (!forceRefresh && cached && (now - cached.ts < CALLS_CACHE_TTL)) {
+    return cached.data;
+  }
+  try {
+    const res = await get(`/calls/peer/${userId}?limit=${limit}`);
+    const data = Array.isArray(res) ? res : [];
+    peerCallsCache.set(key, { ts: Date.now(), data });
+    return data;
+  } catch (err) {
+    if (cached) return cached.data;
+    throw err;
+  }
 }
 
 export function createPairingSession(body) { return post('/pairing/sessions', body); }
