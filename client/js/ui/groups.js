@@ -1,6 +1,6 @@
 import {
   createGroup, syncGroups, refreshMembers, acceptInvitation, declineInvitation,
-  inviteMember, removeMember, changeMemberRole, sendGroupMessage, editGroupMessage,
+  inviteMember, removeMember, changeMemberRole, sendGroupMessage, editGroupMessage, deleteGroupMsg,
   getAllGroups, getGroupMessages, onGroupUpdate, backfillCurrentKey,
   renameGroup, uploadGroupAvatar, rotateAndDistribute
 } from "../groups.js";
@@ -9,8 +9,8 @@ import { encryptFileChaCha20, encryptBlobChunked, encryptBlob, encodeKey } from 
 import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessage, saveCachedMedia } from "../storage.js";
 import { navigate, getCurrentUser, triggerChatListUpdate, getCachedKeyBundle } from "../app.js";
 import {
-  el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatPresence,
-  showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon, showConfirmModal, showPromptModal, showFullscreenImage, enableAvatarFullscreen, showForwardModal,
+  el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatDate, formatPresence,
+  showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon, showConfirmModal, showPromptModal, showFullscreenImage, enableAvatarFullscreen, showForwardModal, showAvatarCropModal,
   setMsgTextContent, getEmojiOnlyCount, isDirectImageUrl, wireMsgTime, wireMsgCopy, attachScrollDownButton, decryptedBlobCache
 } from "./components.js";
 import { onPresenceUpdate } from "../presence.js";
@@ -420,26 +420,83 @@ export async function renderGroup(container, groupId) {
   })();
 
   const seen = new Set();
+
+  function updateDateDividers() {
+    const rows = Array.from(messagesEl.querySelectorAll(".msg-group-row"));
+    messagesEl.querySelectorAll(".msg-date-divider").forEach(d => d.remove());
+
+    let currentDay = null;
+    for (const r of rows) {
+      const ts = Number(r.dataset.ts);
+      if (!ts) continue;
+      const day = formatDate(ts);
+      if (day && day !== currentDay) {
+        currentDay = day;
+        const divider = el("div", { class: "msg-date-divider" }, el("span", {}, day));
+        messagesEl.insertBefore(divider, r);
+      }
+    }
+  }
+
+  function updateGroupMessageAvatars() {
+    const rows = Array.from(messagesEl.querySelectorAll(".msg-group-row"));
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row.classList.contains("msg-group-row-in")) continue;
+      const slot = row.querySelector(".msg-avatar-slot");
+      if (!slot) continue;
+      const senderId = Number(row.dataset.senderId);
+      const ts = Number(row.dataset.ts);
+      const day = ts ? formatDate(ts) : null;
+
+      let isLastOfBlock = true;
+      if (i + 1 < rows.length) {
+        const nextRow = rows[i + 1];
+        const nextSenderId = Number(nextRow.dataset.senderId);
+        const nextTs = Number(nextRow.dataset.ts);
+        const nextDay = nextTs ? formatDate(nextTs) : null;
+        if (nextRow.classList.contains("msg-group-row-in") && nextSenderId === senderId && nextDay === day) {
+          isLastOfBlock = false;
+        }
+      }
+
+      if (isLastOfBlock) {
+        if (!slot.querySelector(".avatar")) {
+          slot.innerHTML = "";
+          const userObj = { id: senderId, user_id: senderId, name: nameById.get(senderId) || `#${senderId}` };
+          const av = avatar(userObj, 32);
+          enableAvatarFullscreen(av, () => nameById.get(senderId) || `#${senderId}`);
+          slot.appendChild(av);
+        }
+      } else {
+        slot.innerHTML = "";
+      }
+    }
+  }
+
   function appendMessage(msg) {
     if (msg.plaintext === "[DELETED]") return;
     const key = msg.message_id;
     if (seen.has(key)) {
       const existing = messagesEl.querySelector(`[data-mid="${cssEscape(key)}"]`);
       if (existing) {
-        existing._msg = msg;
-        const txt = existing.querySelector(".msg-text");
-        if (txt && msg.plaintext) {
-          setMsgTextContent(txt, msg.plaintext);
-        }
-        const st = existing.querySelector(".msg-status-wrapper, .msg-status");
-        if (st) {
-          if (msg.delivered) {
-            st.className = "msg-status-wrapper";
-            st.innerHTML = '<span class="chk chk-1">✓</span><span class="chk chk-2">✓</span>';
-          } else {
-            st.className = "msg-status-wrapper msg-status-pending";
-            st.title = "Отправляется...";
-            st.replaceChildren(clockIcon(12, "currentColor"));
+        const bubble = existing.classList.contains("msg-bubble") ? existing : existing.querySelector(".msg-bubble");
+        if (bubble) {
+          bubble._msg = msg;
+          const txt = bubble.querySelector(".msg-text");
+          if (txt && msg.plaintext) {
+            setMsgTextContent(txt, msg.plaintext);
+          }
+          const st = bubble.querySelector(".msg-status-wrapper, .msg-status");
+          if (st) {
+            if (msg.delivered) {
+              st.className = "msg-status-wrapper";
+              st.innerHTML = '<span class="chk chk-1">✓</span><span class="chk chk-2">✓</span>';
+            } else {
+              st.className = "msg-status-wrapper msg-status-pending";
+              st.title = "Отправляется...";
+              st.replaceChildren(clockIcon(12, "currentColor"));
+            }
           }
         }
       }
@@ -458,6 +515,7 @@ export async function renderGroup(container, groupId) {
         const resolvedName = usr.name || usr.nickname || `#${senderId}`;
         nameById.set(senderId, resolvedName);
         if (senderNameSpan) senderNameSpan.textContent = resolvedName;
+        updateGroupMessageAvatars();
       }).catch(() => {});
     }
 
@@ -558,6 +616,7 @@ export async function renderGroup(container, groupId) {
       ...bubbleChildren
     );
     bubble._msg = msg;
+
     wireMsgCopy(bubble, () => (bubble._msg ? bubble._msg.plaintext : msg.plaintext) || "", () => {
       const currentText = (bubble._msg ? bubble._msg.plaintext : msg.plaintext) || "";
       const info = getMessagePreviewInfo(currentText);
@@ -567,15 +626,50 @@ export async function renderGroup(container, groupId) {
         thumb: info.thumb,
         sender: mine ? "Вы" : (nameById.get(senderId) || msg.sender_name || `#${senderId}`)
       });
-    }, null, () => {
+    }, mine ? async () => {
+      const ok = await showConfirmModal("Удалить сообщение?", "Вы действительно хотите удалить это сообщение?", "Удалить", "Отмена", true);
+      if (ok) {
+        try {
+          await deleteGroupMsg(groupId, msg.message_id);
+          const bubbleEl = messagesEl.querySelector(`[data-mid="${cssEscape(msg.message_id)}"]`);
+          if (bubbleEl) {
+            const row = bubbleEl.closest(".msg-group-row") || bubbleEl;
+            row.remove();
+            updateDateDividers();
+            updateGroupMessageAvatars();
+          }
+          showToast("Сообщение удалено");
+        } catch (err) {
+          showToast(err.message || "Не удалось удалить сообщение", "error");
+        }
+      }
+    } : null, () => {
       const currentText = (bubble._msg ? bubble._msg.plaintext : msg.plaintext) || "";
       const senderName = mine ? "Вы" : (nameById.get(senderId) || msg.sender_name || `#${senderId}`);
       showForwardModal(currentText, senderName);
     }, (mine && !isStickerMsg) ? () => {
       setActiveEdit(bubble._msg || msg);
     } : null);
+
+    const tsSec = msg.created_at || msg.timestamp || Math.floor(Date.now() / 1000);
+    const tsMs = tsSec < 1e11 ? tsSec * 1000 : tsSec;
+
+    let rowEl = null;
+    if (mine) {
+      rowEl = el("div", { class: "msg-group-row msg-group-row-out", "data-mid": key, "data-ts": tsMs }, bubble);
+    } else {
+      const avatarSlot = el("div", { class: "msg-avatar-slot", "data-sender-id": senderId });
+      rowEl = el("div", { class: "msg-group-row msg-group-row-in", "data-mid": key, "data-sender-id": senderId, "data-ts": tsMs },
+        avatarSlot,
+        bubble
+      );
+    }
+
     const stick = scrollDown.isNearBottom();
-    messagesEl.appendChild(bubble);
+    messagesEl.appendChild(rowEl);
+    updateDateDividers();
+    updateGroupMessageAvatars();
+
     if (stick) scrollDown.scrollToBottom();
     else scrollDown.update();
   }
@@ -635,6 +729,16 @@ export async function renderGroup(container, groupId) {
     if (Number(evt.groupId) !== groupId) return;
     if (evt.type === "message" || evt.type === "ack") appendMessage(evt.message);
     if (evt.type === "edit") updateDomGroupMessageText(evt.messageId, evt.text, evt.editedAt);
+    if (evt.type === "delete") {
+      const escaped = cssEscape(evt.messageId);
+      const target = messagesEl.querySelector(`[data-mid="${escaped}"]`);
+      if (target) {
+        const row = target.closest(".msg-group-row") || target;
+        row.remove();
+        updateDateDividers();
+        updateGroupMessageAvatars();
+      }
+    }
     if (evt.type === "avatar") renderHeaderAvatar();
   });
   const onLocalGroupSent = (e) => {
@@ -1163,35 +1267,58 @@ async function showMembersModal(groupId, myId) {
     avatarOverlay.style.opacity = "0";
   });
 
-  fileInput.addEventListener("change", async () => {
-    const file = fileInput.files?.[0];
+  const handleAvatarFile = (file) => {
     if (!file) return;
-
     if (file.size > 5 * 1024 * 1024) {
       showToast("Размер файла не должен превышать 5МБ", "error");
       return;
     }
-
-    avatarOverlay.style.display = "flex";
-    avatarOverlay.style.opacity = "1";
-    avatarOverlay.innerHTML = "";
-    avatarOverlay.appendChild(spinner());
-
-    try {
-      await uploadGroupAvatar(groupId, file);
-      groupAvatarUpdateTimestamps.set(String(groupId), Date.now());
-      updateAvatarDisplay();
-      triggerChatListUpdate();
-      showToast("Аватар группы успешно обновлен!", "success");
-    } catch (err) {
-      showToast(err.message || "Не удалось загрузить аватар", "error");
-    } finally {
+    showAvatarCropModal(file, async (croppedBlob) => {
+      avatarOverlay.style.display = "flex";
+      avatarOverlay.style.opacity = "1";
       avatarOverlay.innerHTML = "";
-      avatarOverlay.append(el("span", {}, "📷"), el("span", { style: "font-size:10px;margin-top:2px;" }, "Изменить"));
-      avatarOverlay.style.opacity = "0";
-      if (!isPrivileged(myRole)) avatarOverlay.style.display = "none";
-    }
+      avatarOverlay.appendChild(spinner());
+
+      try {
+        const cropFile = new File([croppedBlob], "avatar.jpg", { type: "image/jpeg" });
+        await uploadGroupAvatar(groupId, cropFile);
+        groupAvatarUpdateTimestamps.set(String(groupId), Date.now());
+        updateAvatarDisplay();
+        triggerChatListUpdate();
+        showToast("Аватар группы успешно обновлен!", "success");
+      } catch (err) {
+        showToast(err.message || "Не удалось загрузить аватар", "error");
+      } finally {
+        avatarOverlay.innerHTML = "";
+        avatarOverlay.append(el("span", {}, "📷"), el("span", { style: "font-size:10px;margin-top:2px;" }, "Изменить"));
+        avatarOverlay.style.opacity = "0";
+        if (!isPrivileged(myRole)) avatarOverlay.style.display = "none";
+      }
+    });
+  };
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (file) handleAvatarFile(file);
+    fileInput.value = "";
   });
+
+  const onPaste = (e) => {
+    if (!isPrivileged(myRole)) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.indexOf("image") !== -1) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          handleAvatarFile(file);
+          break;
+        }
+      }
+    }
+  };
+  window.addEventListener("paste", onPaste);
 
   renameBtn.addEventListener("click", async () => {
     const newName = await showPromptModal("Переименовать группу", "Название группы", group.name);
@@ -1211,7 +1338,7 @@ async function showMembersModal(groupId, myId) {
     }
   });
 
-  const close = () => { unsubAvatar(); overlay.remove(); };
+  const close = () => { unsubAvatar(); window.removeEventListener("paste", onPaste); overlay.remove(); };
   closeBtn.addEventListener("click", close);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
 

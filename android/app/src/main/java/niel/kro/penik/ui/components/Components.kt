@@ -2160,6 +2160,7 @@ fun MessageBubble(
     senderName: String? = null,
     senderUserId: Long? = null,
     showSenderAvatar: Boolean = false,
+    reserveAvatarSpace: Boolean = false,
     senderAvatarKey: Any? = null,
     onAvatarClick: (() -> Unit)? = null,
     isSelfChat: Boolean = false,
@@ -2274,6 +2275,7 @@ fun MessageBubble(
     var triggered by remember { mutableStateOf(false) }
 
     val showAvatar = showSenderAvatar && !isSentByMe && senderUserId != null && senderUserId > 0L
+    val shouldReserveAvatar = reserveAvatarSpace && !isSentByMe
 
     Box(
         modifier = Modifier
@@ -2288,7 +2290,7 @@ fun MessageBubble(
         Row(
             verticalAlignment = Alignment.Bottom,
             modifier = Modifier.padding(
-                start = if (showAvatar) 6.dp else 0.dp
+                start = if (showAvatar || shouldReserveAvatar) 6.dp else 0.dp
             )
         ) {
             if (showAvatar) {
@@ -2300,6 +2302,8 @@ fun MessageBubble(
                     onClick = onAvatarClick,
                     modifier = Modifier.padding(end = 6.dp, bottom = 2.dp)
                 )
+            } else if (shouldReserveAvatar) {
+                Spacer(modifier = Modifier.width(38.dp))
             }
 
             Box(

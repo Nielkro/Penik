@@ -958,6 +958,11 @@ export async function updateGroupMessageText(groupId, messageId, newText, edited
   return existing;
 }
 
+export async function deleteGroupMessage(groupId, messageId) {
+  await openDB();
+  return del(tx("group_messages", "readwrite"), [Number(groupId), String(messageId)]);
+}
+
 export async function getGroupMessages(groupId, limit = 50) {
   await openDB();
   const gid = Number(groupId);

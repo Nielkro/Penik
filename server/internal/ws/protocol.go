@@ -46,6 +46,8 @@ const (
 	OpGroupAvatarUpdate       Opcode = 0x28
 	OpGroupMessageEdit        Opcode = 0x29 // client→server: edit group message
 	OpGroupMessageEditNotify  Opcode = 0x2a // server→client: notify group message was edited
+	OpGroupMessageDelete      Opcode = 0x2b // client→server: delete group message
+	OpGroupMessageDeleteNotify Opcode = 0x2c // server→client: notify group message was deleted
 
 	OpCallOffer     Opcode = 0x30
 	OpCallIncoming  Opcode = 0x31
@@ -309,6 +311,16 @@ type GroupMessageEditNotify struct {
 	Salt           []byte `msgpack:"salt"`
 	Nonce          []byte `msgpack:"nonce"`
 	EditedAt       int64  `msgpack:"edited_at"`
+}
+
+type GroupMessageDelete struct {
+	GroupID   int64  `msgpack:"group_id"`
+	MessageID string `msgpack:"message_id"`
+}
+
+type GroupMessageDeleteNotify struct {
+	GroupID   int64  `msgpack:"group_id"`
+	MessageID string `msgpack:"message_id"`
 }
 
 type MsgStatusItem struct {

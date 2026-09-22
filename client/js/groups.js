@@ -42,7 +42,7 @@ import {
   saveGroup, getGroup as dbGetGroup, getAllGroups, deleteGroupData,
   saveGroupMembers, getGroupMembers,
   saveGroupKey, getGroupKey,
-  saveGroupMessage, getGroupMessage, getGroupMessages, updateGroupMessageText,
+  saveGroupMessage, getGroupMessage, getGroupMessages, updateGroupMessageText, deleteGroupMessage,
 } from './storage.js';
 import { ws, OP } from './ws.js';
 import { loadPrivateIK, showDesktopNotification } from './app.js';
@@ -815,6 +815,22 @@ export function registerGroupWSListeners() {
     } catch (e) {
       console.warn('[groups] decrypt edit notify failed', e.message);
     }
+  });
+
+  ws.on(OP.GROUP_MESSAGE_DELETE_NOTIFY, async (frame) => {
+    const groupId = Number(frame.group_id);
+    const messageId = String(frame.message_id);
+    await deleteGroupMessage(groupId, messageId);
+    emit({ type: 'delete', groupId, messageId });
+  });
+}
+
+export async function deleteGroupMsg(groupId, messageId) {
+  await deleteGroupMessage(groupId, messageId);
+  emit({ type: 'delete', groupId: Number(groupId), messageId: String(messageId) });
+  ws.send(OP.GROUP_MESSAGE_DELETE, {
+    group_id: Number(groupId),
+    message_id: String(messageId),
   });
 }
 

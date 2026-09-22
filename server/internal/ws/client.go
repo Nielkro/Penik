@@ -307,6 +307,13 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 		}
 		return c.handleGroupMessageEdit(ctx, &msg)
 
+	case OpGroupMessageDelete:
+		var msg GroupMessageDelete
+		if err := msgpack.Unmarshal(payload, &msg); err != nil {
+			return fmt.Errorf("unmarshal GroupMessageDelete: %w", err)
+		}
+		return c.handleGroupMessageDelete(ctx, &msg)
+
 	case OpChatPurgeAck:
 		var msg ChatPurgeAck
 		if err := msgpack.Unmarshal(payload, &msg); err != nil {

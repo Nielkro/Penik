@@ -423,6 +423,11 @@ class GroupRepository @Inject constructor(
 
     suspend fun deleteMessage(groupId: Long, messageId: String) {
         dao.deleteMessage(groupId, messageId)
+        ws.sendGroupMessageDelete(groupId, messageId)
+    }
+
+    suspend fun handleIncomingDelete(groupId: Long, messageId: String) {
+        dao.deleteMessage(groupId, messageId)
     }
 
     private suspend fun currentVersion(groupId: Long): Long {

@@ -426,7 +426,7 @@ fun GroupChatScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                     reverseLayout = true
                 ) {
-                    items(reversedTimelineItems, key = { it.id }) { item ->
+                    itemsIndexed(reversedTimelineItems, key = { _, item -> item.id }) { index, item ->
                         when (item) {
                             is GroupTimelineItem.DateHeader -> {
                                 niel.kro.penik.ui.components.DateDivider(text = item.dateText)
@@ -438,6 +438,16 @@ fun GroupChatScreen(
                                 val displayName = senderMember?.let {
                                     it.name.ifEmpty { it.nickname.ifEmpty { "#${it.userId}" } }
                                 } ?: "#${msg.senderUserId}"
+
+                                val isLastInBlock = if (index == 0) {
+                                    true
+                                } else {
+                                    val prevItem = reversedTimelineItems[index - 1]
+                                    when (prevItem) {
+                                        is GroupTimelineItem.DateHeader -> true
+                                        is GroupTimelineItem.Message -> prevItem.msg.senderUserId != msg.senderUserId
+                                    }
+                                }
                                 
                                 val parentMsg = msg.replyToMsgId?.let { parentId ->
                                     messages.find { it.messageId == parentId }
@@ -465,7 +475,8 @@ fun GroupChatScreen(
                                     isPending = isOwn && (msg.serverId == 0L),
                                     senderName = displayName,
                                     senderUserId = msg.senderUserId,
-                                    showSenderAvatar = true,
+                                    showSenderAvatar = isLastInBlock,
+                                    reserveAvatarSpace = true,
                                     senderAvatarKey = userAvatarKeys[msg.senderUserId],
                                     onAvatarClick = {
                                         fullscreenAvatarUrl = avatarUrlFor(false, msg.senderUserId, userAvatarKeys[msg.senderUserId])
@@ -485,10 +496,10 @@ fun GroupChatScreen(
                                         viewModel.startEditing(msg)
                                     },
                                     onReplyClick = { parentId ->
-                                        val index = reversedTimelineItems.indexOfFirst { it.id == parentId }
-                                        if (index >= 0) {
+                                        val targetIndex = reversedTimelineItems.indexOfFirst { it.id == parentId }
+                                        if (targetIndex >= 0) {
                                             coroutineScope.launch {
-                                                listState.animateScrollToItem(index)
+                                                listState.animateScrollToItem(targetIndex)
                                             }
                                         }
                                     },
@@ -496,10 +507,12 @@ fun GroupChatScreen(
                                         messageToForwardText = msg.text
                                         messageToForwardSender = displayName
                                     },
-                                    onDelete = {
-                                        messageToDeleteId = msg.messageId
-                                        showDeleteDialog = true
-                                    },
+                                    onDelete = if (isOwn) {
+                                        {
+                                            messageToDeleteId = msg.messageId
+                                            showDeleteDialog = true
+                                        }
+                                    } else null,
                                     onRetry = {
                                         viewModel.retry(msg.messageId)
                                     },

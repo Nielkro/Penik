@@ -351,3 +351,66 @@ func (c *Client) handleGroupMessageEdit(ctx context.Context, msg *GroupMessageEd
 
 	return nil
 }
+
+func (c *Client) handleGroupMessageDelete(ctx context.Context, msg *GroupMessageDelete) error {
+	if msg.GroupID <= 0 || msg.MessageID == "" {
+		return fmt.Errorf("group message delete: invalid parameters")
+	}
+
+	// Verify group message exists and retrieve sender user ID
+	var msgID int64
+	var senderUserID int64
+	err := c.db.QueryRowContext(ctx,
+		`SELECT id, sender_user_id FROM group_messages WHERE group_id=? AND message_id=?`,
+		msg.GroupID, msg.MessageID).Scan(&msgID, &senderUserID)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("group message lookup: %w", err)
+	}
+
+	// Caller must be an active member and either the sender or group owner/admin
+	var callerRole, callerStatus string
+	err = c.db.QueryRowContext(ctx,
+		`SELECT role, status FROM group_members WHERE group_id=? AND user_id=?`,
+		msg.GroupID, c.userID).Scan(&callerRole, &callerStatus)
+	if err != nil || callerStatus != "active" {
+		return fmt.Errorf("unauthorized to delete group message")
+	}
+
+	if c.userID != senderUserID && callerRole != "owner" && callerRole != "admin" {
+		return fmt.Errorf("unauthorized: can only delete own messages")
+	}
+
+	_, err = c.db.ExecContext(ctx, `DELETE FROM group_messages WHERE id=?`, msgID)
+	if err != nil {
+		return fmt.Errorf("delete group message: %w", err)
+	}
+
+	notify := GroupMessageDeleteNotify{
+		GroupID:   msg.GroupID,
+		MessageID: msg.MessageID,
+	}
+	notifyBytes, err := msgpack.Marshal(notify)
+	if err != nil {
+		return fmt.Errorf("marshal group delete notify: %w", err)
+	}
+
+	frame := append([]byte{byte(OpGroupMessageDeleteNotify)}, notifyBytes...)
+
+	rows, err := c.db.QueryContext(ctx,
+		`SELECT user_id FROM group_members WHERE group_id=? AND status='active'`,
+		msg.GroupID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var memberUID int64
+			if err := rows.Scan(&memberUID); err == nil {
+				c.hub.SendToUser(memberUID, frame)
+			}
+		}
+	}
+
+	return nil
+}

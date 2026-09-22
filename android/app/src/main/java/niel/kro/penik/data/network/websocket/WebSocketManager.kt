@@ -164,6 +164,8 @@ sealed class WebSocketEvent {
         override fun hashCode(): Int = messageId.hashCode()
     }
 
+    data class GroupMessageDeleteNotify(val groupId: Long, val messageId: String) : WebSocketEvent()
+
     data class CallIncoming(
         val callId: String,
         val fromUserId: Long,
@@ -253,6 +255,8 @@ object Opcode {
     const val GROUP_AVATAR_UPDATE: Byte = 0x28
     const val GROUP_MESSAGE_EDIT: Byte = 0x29
     const val GROUP_MESSAGE_EDIT_NOTIFY: Byte = 0x2a
+    const val GROUP_MESSAGE_DELETE: Byte = 0x2b
+    const val GROUP_MESSAGE_DELETE_NOTIFY: Byte = 0x2c
     const val CALL_OFFER: Byte = 0x30
     const val CALL_INCOMING: Byte = 0x31
     const val CALL_ACCEPT: Byte = 0x32
@@ -567,6 +571,7 @@ class WebSocketManager @Inject constructor(
             Opcode.GROUP_MEMBER_CHANGED -> handleGroupMemberChanged(payload)
             Opcode.GROUP_AVATAR_UPDATE -> handleGroupAvatarUpdate(payload)
             Opcode.GROUP_MESSAGE_EDIT_NOTIFY -> handleGroupMessageEditNotify(payload)
+            Opcode.GROUP_MESSAGE_DELETE_NOTIFY -> handleGroupMessageDeleteNotify(payload)
             Opcode.CALL_INCOMING -> handleCallIncoming(payload)
             Opcode.CALL_ACCEPTED -> handleCallAccepted(payload)
             Opcode.CALL_REJECT -> handleCallReject(payload)
@@ -1067,6 +1072,20 @@ class WebSocketManager @Inject constructor(
         }
     }
 
+    private fun handleGroupMessageDeleteNotify(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val groupId = (map["group_id"] as? Number)?.toLong() ?: return
+            val messageId = map["message_id"]?.toString().orEmpty()
+            if (messageId.isBlank()) return
+            scope.launch { _events.emit(WebSocketEvent.GroupMessageDeleteNotify(groupId, messageId)) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse GroupMessageDeleteNotify frame", e)
+        }
+    }
+
     private fun handleOfflineBatch(payload: ByteArray) {
         try {
             val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
@@ -1548,6 +1567,20 @@ class WebSocketManager @Inject constructor(
         frame[0] = Opcode.GROUP_MESSAGE_EDIT
         payload.copyInto(frame, 1)
         webSocket?.send(frame.toByteString(0, frame.size))
+    }
+
+    fun sendGroupMessageDelete(groupId: Long, messageId: String) {
+        try {
+            val bos = ByteArrayOutputStream()
+            val packer = MessagePack.newDefaultPacker(bos)
+            packer.packMapHeader(2)
+            packer.packString("group_id"); packer.packLong(groupId)
+            packer.packString("message_id"); packer.packString(messageId)
+            packer.close()
+            sendFrame(Opcode.GROUP_MESSAGE_DELETE, bos.toByteArray())
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to pack sendGroupMessageDelete", e)
+        }
     }
 
     fun destroy() {

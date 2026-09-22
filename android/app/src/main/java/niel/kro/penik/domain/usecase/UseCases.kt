@@ -231,6 +231,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
             is WebSocketEvent.GroupMsgEditNotify -> {
                 groupRepository.handleIncomingEdit(event)
             }
+            is WebSocketEvent.GroupMessageDeleteNotify -> {
+                groupRepository.handleIncomingDelete(event.groupId, event.messageId)
+            }
             is WebSocketEvent.PresenceUpdate -> {
                 niel.kro.penik.data.repository.PresenceBus.update(event.userId, event.online, event.lastSeen)
             }

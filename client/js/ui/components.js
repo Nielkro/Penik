@@ -2571,3 +2571,301 @@ export function showFullscreenMedia(src, isVideo = false) {
   backdrop.append(closeBtn, contentWrap);
   document.body.appendChild(backdrop);
 }
+
+/**
+ * Interactive avatar photo cropping, scaling, panning, and rotating dialog.
+ * @param {File|Blob|string} source - Image source (file, blob, or url)
+ * @param {(blob: Blob) => void} onCropDone - Callback receiving the 512x512 cropped blob
+ */
+export function showAvatarCropModal(source, onCropDone) {
+  const overlay = el("div", {
+    style: "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:10005;padding:16px;box-sizing:border-box;user-select:none;"
+  });
+
+  const card = el("div", {
+    style: "background:#1e1e24;border:1px solid rgba(255,255,255,0.12);border-radius:20px;width:100%;max-width:440px;box-shadow:0 16px 48px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;"
+  });
+
+  const header = el("div", {
+    style: "display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.08);"
+  },
+    el("h3", { style: "margin:0;font-size:17px;font-weight:600;color:#fff;" }, "Кадрирование фото"),
+    el("button", { class: "icon-btn", style: "font-size:20px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);cursor:pointer;", title: "Закрыть" }, "✕")
+  );
+
+  const canvasContainer = el("div", {
+    style: "position:relative;width:100%;height:320px;background:#111;overflow:hidden;cursor:grab;display:flex;align-items:center;justify-content:center;"
+  });
+
+  const previewCanvas = el("canvas", { width: "320", height: "320", style: "width:320px;height:320px;display:block;" });
+  canvasContainer.appendChild(previewCanvas);
+
+  // Controls
+  const zoomSlider = el("input", {
+    type: "range", min: "0.5", max: "4", step: "0.01", value: "1",
+    style: "flex:1;accent-color:var(--accent);cursor:pointer;"
+  });
+
+  const rotateBtn = el("button", {
+    class: "btn-secondary",
+    style: "display:flex;align-items:center;gap:6px;padding:6px 12px;font-size:13px;border-radius:var(--r-sm);"
+  }, el("span", {}, "↷"), el("span", {}, "90°"));
+
+  const resetBtn = el("button", {
+    class: "btn-secondary",
+    style: "display:flex;align-items:center;gap:6px;padding:6px 12px;font-size:13px;border-radius:var(--r-sm);"
+  }, el("span", {}, "↺"), el("span", {}, "Сброс"));
+
+  const controlsRow = el("div", {
+    style: "display:flex;align-items:center;gap:12px;padding:12px 20px;background:rgba(0,0,0,0.2);border-top:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06);"
+  },
+    el("span", { style: "font-size:14px;color:var(--text-muted);" }, "🔍"),
+    zoomSlider,
+    rotateBtn,
+    resetBtn
+  );
+
+  const cancelBtn = el("button", { class: "btn-secondary", style: "flex:1;padding:10px 16px;font-size:14px;" }, "Отмена");
+  const doneBtn = el("button", { class: "btn-primary", style: "flex:1;padding:10px 16px;font-size:14px;" }, "Готово");
+
+  const actionsRow = el("div", {
+    style: "display:flex;gap:12px;padding:16px 20px;"
+  }, cancelBtn, doneBtn);
+
+  card.append(header, canvasContainer, controlsRow, actionsRow);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  let img = new Image();
+  let imgLoaded = false;
+  let scale = 1.0;
+  let userOffset = { x: 0, y: 0 };
+  let rotationDegrees = 0;
+  let isDragging = false;
+  let dragStart = { x: 0, y: 0 };
+  let offsetAtDragStart = { x: 0, y: 0 };
+
+  const ctx = previewCanvas.getContext("2d");
+  const VIEWPORT_SIZE = 320;
+  const CROP_RADIUS = 130; // 260px circle inside 320px
+
+  function render() {
+    if (!imgLoaded) return;
+    ctx.clearRect(0, 0, VIEWPORT_SIZE, VIEWPORT_SIZE);
+
+    // 1. Draw transformed image
+    ctx.save();
+    ctx.translate(VIEWPORT_SIZE / 2 + userOffset.x, VIEWPORT_SIZE / 2 + userOffset.y);
+    ctx.rotate((rotationDegrees * Math.PI) / 180);
+
+    const isRotated90 = (rotationDegrees % 180 !== 0);
+    const effWidth = isRotated90 ? img.naturalHeight : img.naturalWidth;
+    const effHeight = isRotated90 ? img.naturalWidth : img.naturalHeight;
+
+    const baseScale = Math.max((CROP_RADIUS * 2) / effWidth, (CROP_RADIUS * 2) / effHeight);
+    const totalScale = baseScale * scale;
+
+    ctx.scale(totalScale, totalScale);
+    ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+    ctx.restore();
+
+    // 2. Draw circular crop mask
+    ctx.save();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+    ctx.beginPath();
+    ctx.rect(0, 0, VIEWPORT_SIZE, VIEWPORT_SIZE);
+    ctx.arc(VIEWPORT_SIZE / 2, VIEWPORT_SIZE / 2, CROP_RADIUS, 0, Math.PI * 2, true);
+    ctx.fill("evenodd");
+
+    // 3. Draw circle border
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(VIEWPORT_SIZE / 2, VIEWPORT_SIZE / 2, CROP_RADIUS, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function loadImage(src) {
+    imgLoaded = false;
+    img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      imgLoaded = true;
+      scale = 1.0;
+      userOffset = { x: 0, y: 0 };
+      rotationDegrees = 0;
+      zoomSlider.value = "1";
+      render();
+    };
+    if (typeof src === "string") {
+      img.src = src;
+    } else if (src instanceof Blob || src instanceof File) {
+      img.src = URL.createObjectURL(src);
+    }
+  }
+
+  loadImage(source);
+
+  // Mouse / Touch interaction
+  canvasContainer.addEventListener("mousedown", (e) => {
+    isDragging = true;
+    canvasContainer.style.cursor = "grabbing";
+    dragStart = { x: e.clientX, y: e.clientY };
+    offsetAtDragStart = { ...userOffset };
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    userOffset.x = offsetAtDragStart.x + dx;
+    userOffset.y = offsetAtDragStart.y + dy;
+    render();
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (isDragging) {
+      isDragging = false;
+      canvasContainer.style.cursor = "grab";
+    }
+  });
+
+  // Wheel zoom
+  canvasContainer.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const delta = -Math.sign(e.deltaY) * 0.1;
+    scale = Math.max(0.5, Math.min(4.0, scale + delta));
+    zoomSlider.value = String(scale);
+    render();
+  }, { passive: false });
+
+  // Touch handlers
+  let touchStartDist = 0;
+  let touchStartScale = 1;
+  canvasContainer.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 1) {
+      isDragging = true;
+      dragStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      offsetAtDragStart = { ...userOffset };
+    } else if (e.touches.length === 2) {
+      isDragging = false;
+      touchStartDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      touchStartScale = scale;
+    }
+  }, { passive: true });
+
+  canvasContainer.addEventListener("touchmove", (e) => {
+    if (isDragging && e.touches.length === 1) {
+      const dx = e.touches[0].clientX - dragStart.x;
+      const dy = e.touches[0].clientY - dragStart.y;
+      userOffset.x = offsetAtDragStart.x + dx;
+      userOffset.y = offsetAtDragStart.y + dy;
+      render();
+    } else if (e.touches.length === 2 && touchStartDist > 0) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const newScale = touchStartScale * (dist / touchStartDist);
+      scale = Math.max(0.5, Math.min(4.0, newScale));
+      zoomSlider.value = String(scale);
+      render();
+    }
+  }, { passive: true });
+
+  canvasContainer.addEventListener("touchend", () => {
+    isDragging = false;
+  }, { passive: true });
+
+  zoomSlider.addEventListener("input", () => {
+    scale = parseFloat(zoomSlider.value) || 1;
+    render();
+  });
+
+  rotateBtn.addEventListener("click", () => {
+    rotationDegrees = (rotationDegrees + 90) % 360;
+    render();
+  });
+
+  resetBtn.addEventListener("click", () => {
+    scale = 1.0;
+    userOffset = { x: 0, y: 0 };
+    rotationDegrees = 0;
+    zoomSlider.value = "1";
+    render();
+  });
+
+  const close = () => {
+    window.removeEventListener("keydown", onKeyDown);
+    window.removeEventListener("paste", onCropPaste);
+    overlay.remove();
+  };
+
+  header.querySelector(".icon-btn").addEventListener("click", close);
+  cancelBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") close();
+  };
+  window.addEventListener("keydown", onKeyDown);
+
+  // Allow pasting another image while crop modal is open
+  const onCropPaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (items) {
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          const f = item.getAsFile();
+          if (f) {
+            e.preventDefault();
+            loadImage(f);
+            return;
+          }
+        }
+      }
+    }
+  };
+  window.addEventListener("paste", onCropPaste);
+
+  doneBtn.addEventListener("click", async () => {
+    if (!imgLoaded) return;
+    doneBtn.disabled = true;
+
+    // Export 512x512 canvas
+    const TARGET_SIZE = 512;
+    const outCanvas = document.createElement("canvas");
+    outCanvas.width = TARGET_SIZE;
+    outCanvas.height = TARGET_SIZE;
+    const outCtx = outCanvas.getContext("2d");
+
+    outCtx.save();
+    const previewCropDiam = CROP_RADIUS * 2;
+    const ratio = TARGET_SIZE / previewCropDiam;
+
+    outCtx.translate(TARGET_SIZE / 2 + userOffset.x * ratio, TARGET_SIZE / 2 + userOffset.y * ratio);
+    outCtx.rotate((rotationDegrees * Math.PI) / 180);
+
+    const isRotated90 = (rotationDegrees % 180 !== 0);
+    const effWidth = isRotated90 ? img.naturalHeight : img.naturalWidth;
+    const effHeight = isRotated90 ? img.naturalWidth : img.naturalHeight;
+
+    const baseScale = Math.max(previewCropDiam / effWidth, previewCropDiam / effHeight);
+    const totalScale = (baseScale * scale) * ratio;
+
+    outCtx.scale(totalScale, totalScale);
+    outCtx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+    outCtx.restore();
+
+    outCanvas.toBlob((blob) => {
+      close();
+      if (blob && typeof onCropDone === "function") {
+        onCropDone(blob);
+      }
+    }, "image/jpeg", 0.92);
+  });
+}

@@ -1,6 +1,6 @@
 import { apiPut, uploadAvatar, getApiOrigin } from "../api.js";
 import { navigate, getCurrentUser, setCurrentUser, logout, setDevicesBackTarget } from "../app.js";
-import { avatar, el, showToast, spinner, showConfirmModal } from "./components.js";
+import { avatar, el, showToast, spinner, showConfirmModal, showAvatarCropModal } from "./components.js";
 
 export function renderProfile(container) {
   container.innerHTML = "";
@@ -21,7 +21,7 @@ export function renderProfile(container) {
 
   const avatarContainer = el("div", {
     style: "position:relative;cursor:pointer;display:inline-block;border-radius:50%;overflow:hidden;margin-bottom:16px;box-shadow:0 8px 24px rgba(0,0,0,0.3);",
-    title: "Нажмите, чтобы изменить аватар"
+    title: "Нажмите или вставьте (Ctrl+V), чтобы изменить аватар"
   });
 
   const currentAvatarUser = { ...user };
@@ -51,33 +51,60 @@ export function renderProfile(container) {
 
   avatarContainer.addEventListener("click", () => fileInput.click());
 
-  fileInput.addEventListener("change", async () => {
-    const file = fileInput.files?.[0];
+  const handleAvatarFile = (file) => {
     if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      showToast("Размер файла не должен превышать 5МБ", "error");
+    if (file.size > 10 * 1024 * 1024) {
+      showToast("Размер файла не должен превышать 10МБ", "error");
       return;
     }
 
-    avatarOverlay.style.opacity = "1";
-    avatarOverlay.innerHTML = "";
-    avatarOverlay.appendChild(spinner());
+    showAvatarCropModal(file, async (croppedBlob) => {
+      avatarOverlay.style.opacity = "1";
+      avatarOverlay.innerHTML = "";
+      avatarOverlay.appendChild(spinner());
 
-    try {
-      await uploadAvatar(file);
-      const newAvatarUrl = `${origin}/api/v1/avatar/${userId}?t=${Date.now()}`;
-      const updatedUser = { ...user, avatar_url: newAvatarUrl };
-      setCurrentUser(updatedUser);
+      try {
+        await uploadAvatar(croppedBlob);
+        const newAvatarUrl = `${origin}/api/v1/avatar/${userId}?t=${Date.now()}`;
+        const updatedUser = { ...user, avatar_url: newAvatarUrl };
+        setCurrentUser(updatedUser);
 
-      showToast("Аватар успешно обновлён!", "success");
-      renderProfile(container);
-    } catch (err) {
-      showToast(err.message || "Ошибка загрузки аватара", "error");
-      avatarOverlay.style.opacity = "0";
-      avatarOverlay.textContent = "📷";
-    }
+        showToast("Аватар успешно обновлён!", "success");
+        renderProfile(container);
+      } catch (err) {
+        showToast(err.message || "Ошибка загрузки аватара", "error");
+        avatarOverlay.style.opacity = "0";
+        avatarOverlay.textContent = "📷";
+      }
+    });
+  };
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (file) handleAvatarFile(file);
+    fileInput.value = "";
   });
+
+  const onProfilePaste = (e) => {
+    if (!document.body.contains(container)) {
+      window.removeEventListener("paste", onProfilePaste);
+      return;
+    }
+    const items = e.clipboardData?.items;
+    if (items) {
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            handleAvatarFile(file);
+            return;
+          }
+        }
+      }
+    }
+  };
+  window.addEventListener("paste", onProfilePaste);
 
   const nameDisplay = el("span", { class: "profile-name", id: "profile-name-display", style: "font-size:20px;font-weight:700;" }, user.name || "Без имени");
   const nameInput = el("input", {
