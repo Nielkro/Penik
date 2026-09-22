@@ -18,6 +18,7 @@ import (
 
 type keysInitRequest struct {
 	IKPub          []byte   `json:"ik_pub"`
+	SigningKey     []byte   `json:"signing_key"`
 	SPKPub         []byte   `json:"spk_pub"`
 	SPKSig         []byte   `json:"spk_sig"`
 	RegistrationID int64    `json:"registration_id"`
@@ -43,6 +44,10 @@ func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
 			http.Error(w, "malformed identity key material", http.StatusBadRequest)
 			return
 		}
+		if len(req.SigningKey) > 0 && len(req.SigningKey) != 32 {
+			http.Error(w, "malformed signing key material", http.StatusBadRequest)
+			return
+		}
 		if len(req.SPKPub) > 0 || len(req.SPKSig) > 0 {
 			if !validCurveKey(req.SPKPub) || len(req.SPKSig) != 64 {
 				http.Error(w, "malformed identity key material", http.StatusBadRequest)
@@ -57,9 +62,24 @@ func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		_, err = tx.ExecContext(r.Context(),
-			`INSERT OR REPLACE INTO device_public_keys(device_id,x25519_pub,created_at,updated_at) VALUES(?,?,?,?)`,
-			deviceID, req.IKPub, now, now)
+		if len(req.SigningKey) > 0 {
+			_, err = tx.ExecContext(r.Context(),
+				`INSERT INTO device_public_keys(device_id,x25519_pub,ed25519_pub,created_at,updated_at)
+				 VALUES(?,?,?,?,?)
+				 ON CONFLICT(device_id) DO UPDATE SET
+				   x25519_pub=excluded.x25519_pub,
+				   ed25519_pub=excluded.ed25519_pub,
+				   updated_at=excluded.updated_at`,
+				deviceID, req.IKPub, req.SigningKey, now, now)
+		} else {
+			_, err = tx.ExecContext(r.Context(),
+				`INSERT INTO device_public_keys(device_id,x25519_pub,created_at,updated_at)
+				 VALUES(?,?,?,?)
+				 ON CONFLICT(device_id) DO UPDATE SET
+				   x25519_pub=excluded.x25519_pub,
+				   updated_at=excluded.updated_at`,
+				deviceID, req.IKPub, now, now)
+		}
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -107,6 +127,7 @@ func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
 type DeviceBundle struct {
 	DeviceID      int64   `json:"device_id"`
 	IdentityKey   []byte  `json:"identity_key"`
+	SigningKey    []byte  `json:"signing_key,omitempty"`
 	CryptoVersion int     `json:"crypto_version"`
 }
 
@@ -151,7 +172,8 @@ func GetKeyBundle(database *db.DB) http.HandlerFunc {
 			}
 
 			var x25519Pub []byte
-			err := tx.QueryRowContext(r.Context(), `SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, deviceID).Scan(&x25519Pub)
+			var ed25519Pub sql.NullString
+			err := tx.QueryRowContext(r.Context(), `SELECT x25519_pub, ed25519_pub FROM device_public_keys WHERE device_id=?`, deviceID).Scan(&x25519Pub, &ed25519Pub)
 			if err == sql.ErrNoRows {
 				continue
 			} else if err != nil {
@@ -159,9 +181,15 @@ func GetKeyBundle(database *db.DB) http.HandlerFunc {
 				return
 			}
 
+			var signingKeyBytes []byte
+			if ed25519Pub.Valid && len(ed25519Pub.String) > 0 {
+				signingKeyBytes = []byte(ed25519Pub.String)
+			}
+
 			devices = append(devices, DeviceBundle{
 				DeviceID:      deviceID,
 				IdentityKey:   x25519Pub,
+				SigningKey:    signingKeyBytes,
 				CryptoVersion: cryptoVersion,
 			})
 		}

@@ -120,6 +120,27 @@ async function run() {
     'unwrap with wrong version fails'
   );
 
+  // Signed group message tests
+  const { generateSigningKeyPair, deriveVerifyingKey, groupEncryptSigned, groupDecryptVerified } = await import('./crypto.js');
+  const signerKp = await generateSigningKeyPair();
+  const verKey = await deriveVerifyingKey(signerKp.privateKey);
+  assert(bytesEqual(verKey, signerKp.publicKey), 'deriveVerifyingKey returns public key');
+
+  const signedEnc = await groupEncryptSigned(plaintext, signerKp.privateKey, key, 7, 2, 10, 'msg-signed-1', 1700000000);
+  const signedDec = await groupDecryptVerified(signedEnc.ciphertext, verKey, key, signedEnc.salt, signedEnc.nonce, 7, 2, 10, 'msg-signed-1', 1700000000);
+  assert(bytesEqual(signedDec, plaintext), 'signed group decrypt verified recovers plaintext');
+
+  // Verify that an attacker cannot forge senderUserId
+  const fakeSignerKp = await generateSigningKeyPair();
+  await assertThrows(
+    () => groupDecryptVerified(signedEnc.ciphertext, fakeSignerKp.publicKey, key, signedEnc.salt, signedEnc.nonce, 7, 2, 10, 'msg-signed-1', 1700000000),
+    'wrong verifying key fails signature verification'
+  );
+
+  // Legacy unsigned message decrypts cleanly via groupDecryptVerified
+  const legacyDec = await groupDecryptVerified(enc.ciphertext, null, key, enc.salt, enc.nonce, 7, 2, 10, 'msg-1', 1700000000);
+  assert(bytesEqual(legacyDec, plaintext), 'legacy unsigned message decrypts through groupDecryptVerified');
+
   console.log(`\nGroup Crypto Test Summary: ${passed} passed, ${failed} failed`);
   if (failed > 0) throw new Error(`${failed} tests failed`);
 }

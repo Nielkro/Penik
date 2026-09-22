@@ -32,6 +32,8 @@ class SecureTokenStorage @Inject constructor(
         private const val KEY_NICKNAME = "user_nickname"
         private const val KEY_IDENTITY_PRIVATE_KEY = "identity_private_key"
         private const val KEY_IDENTITY_PUBLIC_KEY = "identity_public_key"
+        private const val KEY_SIGNING_PRIVATE_KEY = "signing_private_key"
+        private const val KEY_SIGNING_PUBLIC_KEY = "signing_public_key"
         private const val KEY_DB_PASSPHRASE = "db_passphrase"
     }
 
@@ -85,7 +87,25 @@ class SecureTokenStorage @Inject constructor(
         return java.util.Base64.getDecoder().decode(b64)
     }
 
+    fun saveSigningPrivateKey(signingPrivateKey: ByteArray) {
+        val b64 = java.util.Base64.getEncoder().encodeToString(signingPrivateKey)
+        prefs.edit().putString(KEY_SIGNING_PRIVATE_KEY, b64).apply()
+    }
 
+    fun getSigningPrivateKey(): ByteArray? {
+        val b64 = prefs.getString(KEY_SIGNING_PRIVATE_KEY, null) ?: return null
+        return java.util.Base64.getDecoder().decode(b64)
+    }
+
+    fun saveSigningPublicKey(signingPublicKey: ByteArray) {
+        val b64 = java.util.Base64.getEncoder().encodeToString(signingPublicKey)
+        prefs.edit().putString(KEY_SIGNING_PUBLIC_KEY, b64).apply()
+    }
+
+    fun getSigningPublicKey(): ByteArray? {
+        val b64 = prefs.getString(KEY_SIGNING_PUBLIC_KEY, null) ?: return null
+        return java.util.Base64.getDecoder().decode(b64)
+    }
 
     fun getToken(): String? = prefs.getString(KEY_TOKEN, null)
     fun getUserId(): Long = prefs.getLong(KEY_USER_ID, -1)
@@ -119,6 +139,8 @@ class SecureTokenStorage @Inject constructor(
             .remove(KEY_NICKNAME)
             .remove(KEY_IDENTITY_PRIVATE_KEY)
             .remove(KEY_IDENTITY_PUBLIC_KEY)
+            .remove(KEY_SIGNING_PRIVATE_KEY)
+            .remove(KEY_SIGNING_PUBLIC_KEY)
             .remove("fcm_token_uploaded")
             .apply()
     }

@@ -56,6 +56,29 @@ class AuthRepository @Inject constructor(
         return generateAndSaveKeys()
     }
 
+    fun generateAndSaveSigningKeys(): Pair<ByteArray, ByteArray> {
+        val raw = if (niel.kro.penik.data.crypto.RustCryptoCore.isAvailable()) {
+            niel.kro.penik.data.crypto.RustCryptoCore.generateSigningKeyPair()
+        } else null
+        val (vk, sk) = if (raw != null && raw.size == 64) {
+            val v = raw.copyOfRange(0, 32)
+            val s = raw.copyOfRange(32, 64)
+            Pair(v, s)
+        } else {
+            Pair(ByteArray(32), ByteArray(32))
+        }
+        tokenStorage.saveSigningPrivateKey(sk)
+        tokenStorage.saveSigningPublicKey(vk)
+        return Pair(sk, vk)
+    }
+
+    fun stableSigningKeyPair(): Pair<ByteArray, ByteArray> {
+        val priv = tokenStorage.getSigningPrivateKey()
+        val pub = tokenStorage.getSigningPublicKey()
+        if (priv != null && pub != null) return Pair(priv, pub)
+        return generateAndSaveSigningKeys()
+    }
+
     // clientPlatform reports the Android OS version, e.g. "Android 14", so the
     // devices screen can show a readable platform instead of a raw model code.
     private fun clientPlatform(): String {
@@ -72,9 +95,12 @@ class AuthRepository @Inject constructor(
         return tz.substringAfterLast('/').replace('_', ' ')
     }
 
-    suspend fun login(nickname: String, password: String, deviceName: String): Result<AuthResponse> {        return try {
+    suspend fun login(nickname: String, password: String, deviceName: String): Result<AuthResponse> {
+        return try {
             val (privateKey, publicKey) = stableIdentityKeyPair()
+            val (signingPriv, signingPub) = stableSigningKeyPair()
             val ikPubBase64 = Base64.getEncoder().encodeToString(publicKey)
+            val signingKeyBase64 = Base64.getEncoder().encodeToString(signingPub)
 
             val response = apiService.login(
                 LoginRequestBody(
@@ -83,7 +109,9 @@ class AuthRepository @Inject constructor(
                     deviceName = deviceName,
                     platform = clientPlatform(),
                     location = clientLocation(),
-                    ikPub = ikPubBase64
+                    cryptoVersion = 2,
+                    ikPub = ikPubBase64,
+                    signingKey = signingKeyBase64
                 )
             )
             if (response.isSuccessful) {
@@ -120,7 +148,9 @@ class AuthRepository @Inject constructor(
     suspend fun register(name: String, nickname: String, password: String, deviceName: String): Result<AuthResponse> {
         return try {
             val (privateKey, publicKey) = stableIdentityKeyPair()
+            val (signingPriv, signingPub) = stableSigningKeyPair()
             val ikPubBase64 = Base64.getEncoder().encodeToString(publicKey)
+            val signingKeyBase64 = Base64.getEncoder().encodeToString(signingPub)
 
             val response = apiService.register(
                 RegisterRequestBody(
@@ -130,7 +160,9 @@ class AuthRepository @Inject constructor(
                     deviceName = deviceName,
                     platform = clientPlatform(),
                     location = clientLocation(),
-                    ikPub = ikPubBase64
+                    cryptoVersion = 2,
+                    ikPub = ikPubBase64,
+                    signingKey = signingKeyBase64
                 )
             )
             if (response.isSuccessful) {

@@ -85,6 +85,37 @@ class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
         return e2ee.encrypt(plaintext, groupKey, MESSAGE_INFO, aad)
     }
 
+    fun encryptSignedMessage(
+        plaintext: ByteArray,
+        signingKey: ByteArray,
+        groupKey: ByteArray,
+        groupId: Long,
+        keyVersion: Long,
+        senderUserId: Long,
+        messageId: String,
+        createdAt: Long,
+    ): E2EEncrypted {
+        if (RustCryptoCore.isAvailable()) {
+            val packed = RustCryptoCore.groupEncryptSigned(
+                plaintext = plaintext,
+                signingKey = signingKey,
+                groupKey = groupKey,
+                groupId = groupId,
+                keyVersion = keyVersion,
+                senderUserId = senderUserId,
+                messageId = messageId,
+                createdAt = createdAt
+            )
+            if (packed != null && packed.size >= 44) {
+                val salt = packed.copyOfRange(0, 32)
+                val nonce = packed.copyOfRange(32, 44)
+                val ciphertext = packed.copyOfRange(44, packed.size)
+                return E2EEncrypted(ciphertext, salt, nonce)
+            }
+        }
+        return encryptMessage(plaintext, groupKey, groupId, keyVersion, senderUserId, messageId, createdAt)
+    }
+
     fun decryptMessage(
         ciphertext: ByteArray,
         groupKey: ByteArray,
@@ -98,6 +129,36 @@ class GroupCrypto(private val e2ee: E2EECrypto = E2EECrypto()) {
     ): ByteArray {
         val aad = buildAad(groupId, keyVersion, senderUserId, messageId, createdAt)
         return e2ee.decrypt(ciphertext, groupKey, salt, nonce, MESSAGE_INFO, aad)
+    }
+
+    fun decryptVerifiedMessage(
+        ciphertext: ByteArray,
+        verifyingKey: ByteArray?,
+        groupKey: ByteArray,
+        salt: ByteArray,
+        nonce: ByteArray,
+        groupId: Long,
+        keyVersion: Long,
+        senderUserId: Long,
+        messageId: String,
+        createdAt: Long,
+    ): ByteArray {
+        if (RustCryptoCore.isAvailable()) {
+            val pt = RustCryptoCore.groupDecryptVerified(
+                ciphertext = ciphertext,
+                verifyingKey = verifyingKey,
+                groupKey = groupKey,
+                salt = salt,
+                nonce = nonce,
+                groupId = groupId,
+                keyVersion = keyVersion,
+                senderUserId = senderUserId,
+                messageId = messageId,
+                createdAt = createdAt
+            )
+            if (pt != null) return pt
+        }
+        return decryptMessage(ciphertext, groupKey, salt, nonce, groupId, keyVersion, senderUserId, messageId, createdAt)
     }
 
     /** Wrap a group key for one recipient device using the pairwise shared secret. */

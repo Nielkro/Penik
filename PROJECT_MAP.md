@@ -187,6 +187,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `rust/penik-crypto/src/lib.rs` — Root module of `penik-crypto`, exposing unified crypto API and type re-exports.
 - `rust/penik-crypto/src/errors.rs` — Typed `CryptoError` definitions for cryptographic operations.
 - `rust/penik-crypto/src/keys.rs` — X25519 key pair generation, zeroization, public key normalization, and Diffie-Hellman scalar multiplication.
+- `rust/penik-crypto/src/signing.rs` — Ed25519 digital signatures for group messages (`SIG1` envelope format), message signing, verification, and domain separation.
 - `rust/penik-crypto/src/kdf.rs` — HKDF-SHA256 key derivation.
 - `rust/penik-crypto/src/aad.rs` — Big-endian binary AAD constructors for pairwise and group message framing.
 - `rust/penik-crypto/src/cipher.rs` — ***REDACTED-BY-FILTER-REPO*** encryption, decryption, streaming chunked file encryption/decryption (`PCK1` format), and batch pairwise fan-out message encryption.

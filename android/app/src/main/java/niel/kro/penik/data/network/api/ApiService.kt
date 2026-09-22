@@ -63,6 +63,9 @@ interface ApiService {
     @GET("keys/bundle/{userId}")
     suspend fun getKeyBundleSelf(@Path("userId") userId: Long): Response<KeyBundleResponse>
 
+    @POST("keys/init")
+    suspend fun uploadIdentityKeys(@Body body: KeysInitRequestBody): Response<Unit>
+
     @GET("calls")
     suspend fun listCalls(
         @Query("limit") limit: Int = 50,

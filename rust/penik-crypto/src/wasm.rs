@@ -644,3 +644,160 @@ pub fn wasm_decode_key(b64: &str) -> Result<js_sys::Uint8Array, JsValue> {
 pub fn wasm_penik_crypto_version() -> u32 {
     crate::CRYPTO_CORE_VERSION
 }
+
+#[wasm_bindgen(js_name = generateSigningKeyPair)]
+pub fn wasm_generate_signing_key_pair() -> JsKeyPair {
+    let (sk, vk) = crate::signing::generate_signing_keypair();
+    JsKeyPair {
+        public_key: vk.to_vec(),
+        private_key: sk.to_vec(),
+    }
+}
+
+#[wasm_bindgen(js_name = deriveVerifyingKey)]
+pub fn wasm_derive_verifying_key(signing_key: &[u8]) -> Result<js_sys::Uint8Array, JsValue> {
+    if signing_key.len() != crate::signing::SIGNING_KEY_SIZE {
+        return Err(JsValue::from_str("signing_key must be 32 bytes"));
+    }
+    let mut sk = [0u8; crate::signing::SIGNING_KEY_SIZE];
+    sk.copy_from_slice(signing_key);
+    let vk = crate::signing::derive_verifying_key(&sk);
+    Ok(js_sys::Uint8Array::from(&vk[..]))
+}
+
+#[wasm_bindgen(js_name = signGroupMessage)]
+pub fn wasm_sign_group_message(
+    signing_key: &[u8],
+    group_id: u64,
+    key_version: u64,
+    sender_user_id: u64,
+    message_id: &str,
+    created_at: i64,
+    plaintext: &[u8],
+) -> Result<js_sys::Uint8Array, JsValue> {
+    if signing_key.len() != crate::signing::SIGNING_KEY_SIZE {
+        return Err(JsValue::from_str("signing_key must be 32 bytes"));
+    }
+    let mut sk = [0u8; crate::signing::SIGNING_KEY_SIZE];
+    sk.copy_from_slice(signing_key);
+    let sig = crate::signing::sign_group_message(
+        &sk,
+        group_id,
+        key_version,
+        sender_user_id,
+        message_id,
+        created_at,
+        plaintext,
+    );
+    Ok(js_sys::Uint8Array::from(&sig[..]))
+}
+
+#[wasm_bindgen(js_name = verifyGroupMessage)]
+pub fn wasm_verify_group_message(
+    verifying_key: &[u8],
+    signature: &[u8],
+    group_id: u64,
+    key_version: u64,
+    sender_user_id: u64,
+    message_id: &str,
+    created_at: i64,
+    plaintext: &[u8],
+) -> Result<(), JsValue> {
+    if verifying_key.len() != crate::signing::VERIFYING_KEY_SIZE {
+        return Err(JsValue::from_str("verifying_key must be 32 bytes"));
+    }
+    if signature.len() != crate::signing::SIGNATURE_SIZE {
+        return Err(JsValue::from_str("signature must be 64 bytes"));
+    }
+    let mut vk = [0u8; crate::signing::VERIFYING_KEY_SIZE];
+    vk.copy_from_slice(verifying_key);
+    let mut sig = [0u8; crate::signing::SIGNATURE_SIZE];
+    sig.copy_from_slice(signature);
+
+    crate::signing::verify_group_message(
+        &vk,
+        &sig,
+        group_id,
+        key_version,
+        sender_user_id,
+        message_id,
+        created_at,
+        plaintext,
+    ).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen(js_name = groupEncryptSigned)]
+pub fn wasm_group_encrypt_signed(
+    plaintext: &[u8],
+    signing_key: &[u8],
+    group_key: &[u8],
+    group_id: u64,
+    key_version: u64,
+    sender_user_id: u64,
+    message_id: &str,
+    created_at: i64,
+) -> Result<JsE2EEEncrypted, JsValue> {
+    if signing_key.len() != crate::signing::SIGNING_KEY_SIZE {
+        return Err(JsValue::from_str("signing_key must be 32 bytes"));
+    }
+    let mut sk = [0u8; crate::signing::SIGNING_KEY_SIZE];
+    sk.copy_from_slice(signing_key);
+
+    let enc = crate::signing::group_encrypt_signed(
+        plaintext,
+        &sk,
+        group_key,
+        group_id,
+        key_version,
+        sender_user_id,
+        message_id,
+        created_at,
+    ).map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    Ok(JsE2EEEncrypted {
+        ciphertext: enc.ciphertext,
+        salt: enc.salt.to_vec(),
+        nonce: enc.nonce.to_vec(),
+    })
+}
+
+#[wasm_bindgen(js_name = groupDecryptVerified)]
+pub fn wasm_group_decrypt_verified(
+    ciphertext: &[u8],
+    verifying_key: Option<Vec<u8>>,
+    group_key: &[u8],
+    salt: &[u8],
+    nonce: &[u8],
+    group_id: u64,
+    key_version: u64,
+    sender_user_id: u64,
+    message_id: &str,
+    created_at: i64,
+) -> Result<js_sys::Uint8Array, JsValue> {
+    let vk_arr = if let Some(ref vk_vec) = verifying_key {
+        if vk_vec.len() != crate::signing::VERIFYING_KEY_SIZE {
+            return Err(JsValue::from_str("verifying_key must be 32 bytes"));
+        }
+        let mut arr = [0u8; crate::signing::VERIFYING_KEY_SIZE];
+        arr.copy_from_slice(vk_vec);
+        Some(arr)
+    } else {
+        None
+    };
+
+    let pt = crate::signing::group_decrypt_verified(
+        ciphertext,
+        vk_arr.as_ref(),
+        group_key,
+        salt,
+        nonce,
+        group_id,
+        key_version,
+        sender_user_id,
+        message_id,
+        created_at,
+    ).map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    Ok(js_sys::Uint8Array::from(&pt[..]))
+}
+

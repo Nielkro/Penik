@@ -234,6 +234,11 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate bots table: %w", err)
 	}
 
+	if err := migrateEd25519SigningKey(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate ed25519 signing key: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
 }
 
@@ -1157,6 +1162,20 @@ func migrateBotsTable(database *sql.DB) error {
 	}
 	return nil
 }
+
+func migrateEd25519SigningKey(database *sql.DB) error {
+	has, err := tableHasColumn(database, "device_public_keys", "ed25519_pub")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := database.Exec("ALTER TABLE device_public_keys ADD COLUMN ed25519_pub BLOB DEFAULT NULL"); err != nil {
+			return fmt.Errorf("add ed25519_pub to device_public_keys: %w", err)
+		}
+	}
+	return nil
+}
+
 
 
 

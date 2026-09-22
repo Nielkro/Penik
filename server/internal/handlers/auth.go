@@ -28,6 +28,7 @@ type registerRequest struct {
 	RegistrationID int64    `json:"registration_id"`
 	CryptoVersion  int      `json:"crypto_version"`
 	IKPub          []byte   `json:"ik_pub"`
+	SigningKey     []byte   `json:"signing_key"`
 	SPKPub         []byte   `json:"spk_pub"`
 	SPKSig         []byte   `json:"spk_sig"`
 }
@@ -41,6 +42,7 @@ type loginRequest struct {
 	RegistrationID int64    `json:"registration_id"`
 	CryptoVersion  int      `json:"crypto_version"`
 	IKPub          []byte   `json:"ik_pub"`
+	SigningKey     []byte   `json:"signing_key"`
 	SPKPub         []byte   `json:"spk_pub"`
 	SPKSig         []byte   `json:"spk_sig"`
 }
@@ -103,6 +105,11 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		}
 
 
+		if len(req.SigningKey) > 0 && len(req.SigningKey) != 32 {
+			http.Error(w, "malformed signing key material", http.StatusBadRequest)
+			return
+		}
+
 		hash, err := hashPassword(req.Password)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -143,9 +150,18 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		deviceID, _ := devRes.LastInsertId()
 
 		if len(req.IKPub) > 0 {
+			var signingKey any
+			if len(req.SigningKey) == 32 {
+				signingKey = req.SigningKey
+			}
 			_, err = tx.ExecContext(r.Context(),
-				`INSERT OR REPLACE INTO device_public_keys(device_id,x25519_pub,created_at,updated_at) VALUES(?,?,?,?)`,
-				deviceID, req.IKPub, now, now)
+				`INSERT INTO device_public_keys(device_id,x25519_pub,ed25519_pub,created_at,updated_at)
+				 VALUES(?,?,?,?,?)
+				 ON CONFLICT(device_id) DO UPDATE SET
+				   x25519_pub=excluded.x25519_pub,
+				   ed25519_pub=excluded.ed25519_pub,
+				   updated_at=excluded.updated_at`,
+				deviceID, req.IKPub, signingKey, now, now)
 			if err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
@@ -313,14 +329,28 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			}
 		}
 
+		if len(req.SigningKey) > 0 && len(req.SigningKey) != 32 {
+			http.Error(w, "malformed signing key material", http.StatusBadRequest)
+			return
+		}
+
 		if len(req.IKPub) > 0 {
 			if !validCurveKey(req.IKPub) {
 				http.Error(w, "malformed identity key material", http.StatusBadRequest)
 				return
 			}
+			var signingKey any
+			if len(req.SigningKey) == 32 {
+				signingKey = req.SigningKey
+			}
 			_, err = tx.ExecContext(r.Context(),
-				`INSERT OR REPLACE INTO device_public_keys(device_id,x25519_pub,created_at,updated_at) VALUES(?,?,?,?)`,
-				deviceID, req.IKPub, now, now)
+				`INSERT INTO device_public_keys(device_id,x25519_pub,ed25519_pub,created_at,updated_at)
+				 VALUES(?,?,?,?,?)
+				 ON CONFLICT(device_id) DO UPDATE SET
+				   x25519_pub=excluded.x25519_pub,
+				   ed25519_pub=COALESCE(excluded.ed25519_pub, device_public_keys.ed25519_pub),
+				   updated_at=excluded.updated_at`,
+				deviceID, req.IKPub, signingKey, now, now)
 			if err != nil {
 				loginInternalError(w, "insert device public keys", err)
 				return

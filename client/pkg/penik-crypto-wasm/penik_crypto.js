@@ -1,5 +1,73 @@
 /* @ts-self-types="./penik_crypto.d.ts" */
 
+export class JsChunkedHeader {
+    static __wrap(ptr) {
+        const obj = Object.create(JsChunkedHeader.prototype);
+        obj.__wbg_ptr = ptr;
+        JsChunkedHeaderFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        JsChunkedHeaderFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_jschunkedheader_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get baseNonce() {
+        const ret = wasm.jschunkedheader_baseNonce(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get chunkSize() {
+        const ret = wasm.jschunkedheader_chunkSize(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) JsChunkedHeader.prototype[Symbol.dispose] = JsChunkedHeader.prototype.free;
+
+export class JsChunkedKeyNonce {
+    static __wrap(ptr) {
+        const obj = Object.create(JsChunkedKeyNonce.prototype);
+        obj.__wbg_ptr = ptr;
+        JsChunkedKeyNonceFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        JsChunkedKeyNonceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_jschunkedkeynonce_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get baseNonce() {
+        const ret = wasm.jschunkedkeynonce_baseNonce(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get key() {
+        const ret = wasm.jschunkedkeynonce_key(this.__wbg_ptr);
+        return ret;
+    }
+}
+if (Symbol.dispose) JsChunkedKeyNonce.prototype[Symbol.dispose] = JsChunkedKeyNonce.prototype.free;
+
 export class JsE2EEEncrypted {
     static __wrap(ptr) {
         const obj = Object.create(JsE2EEEncrypted.prototype);
@@ -266,6 +334,19 @@ export function buildPairwiseAAD(sender_user_id, recipient_user_id, client_msg_i
 }
 
 /**
+ * @param {bigint} sender_user_id
+ * @param {bigint} recipient_user_id
+ * @param {string | null} [client_msg_id]
+ * @returns {Uint8Array}
+ */
+export function buildPairwiseAADV2(sender_user_id, recipient_user_id, client_msg_id) {
+    var ptr0 = isLikeNone(client_msg_id) ? 0 : passStringToWasm0(client_msg_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    var len0 = WASM_VECTOR_LEN;
+    const ret = wasm.buildPairwiseAADV2(sender_user_id, recipient_user_id, ptr0, len0);
+    return ret;
+}
+
+/**
  * @param {Uint8Array} key
  * @param {Uint8Array} nonce
  * @param {Uint8Array} ciphertext_and_tag
@@ -352,6 +433,21 @@ export function computeSafetyNumber(keys_a, keys_b) {
 }
 
 /**
+ * @param {Uint8Array} base_nonce
+ * @param {number} chunk_size
+ * @returns {Uint8Array}
+ */
+export function createChunkedFileHeader(base_nonce, chunk_size) {
+    const ptr0 = passArray8ToWasm0(base_nonce, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.createChunkedFileHeader(ptr0, len0, chunk_size);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * @param {string} b64
  * @returns {Uint8Array}
  */
@@ -383,6 +479,28 @@ export function decryptFileChaCha20(encrypted_bytes, key) {
 }
 
 /**
+ * @param {Uint8Array} key
+ * @param {Uint8Array} base_nonce
+ * @param {number} chunk_index
+ * @param {boolean} is_last
+ * @param {Uint8Array} encrypted_chunk
+ * @returns {Uint8Array}
+ */
+export function decryptFileChunk(key, base_nonce, chunk_index, is_last, encrypted_chunk) {
+    const ptr0 = passArray8ToWasm0(key, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(base_nonce, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(encrypted_chunk, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.decryptFileChunk(ptr0, len0, ptr1, len1, chunk_index, is_last, ptr2, len2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * @param {Uint8Array} private_key
  * @returns {Uint8Array}
  */
@@ -407,6 +525,20 @@ export function deriveSharedSecret(private_key, peer_public_key) {
     const ptr1 = passArray8ToWasm0(peer_public_key, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
     const ret = wasm.deriveSharedSecret(ptr0, len0, ptr1, len1);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * @param {Uint8Array} signing_key
+ * @returns {Uint8Array}
+ */
+export function deriveVerifyingKey(signing_key) {
+    const ptr0 = passArray8ToWasm0(signing_key, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.deriveVerifyingKey(ptr0, len0);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -499,10 +631,86 @@ export function encryptFileChaCha20(file_bytes) {
 }
 
 /**
+ * @param {Uint8Array} key
+ * @param {Uint8Array} base_nonce
+ * @param {number} chunk_index
+ * @param {boolean} is_last
+ * @param {Uint8Array} chunk
+ * @returns {Uint8Array}
+ */
+export function encryptFileChunk(key, base_nonce, chunk_index, is_last, chunk) {
+    const ptr0 = passArray8ToWasm0(key, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(base_nonce, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(chunk, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.encryptFileChunk(ptr0, len0, ptr1, len1, chunk_index, is_last, ptr2, len2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * @param {Uint8Array} file_bytes
+ * @returns {JsEncryptedFile}
+ */
+export function encryptFileChunked(file_bytes) {
+    const ptr0 = passArray8ToWasm0(file_bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.encryptFileChunked(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return JsEncryptedFile.__wrap(ret[0]);
+}
+
+/**
+ * @param {Uint8Array} sender_priv_key
+ * @param {bigint} sender_user_id
+ * @param {bigint} recipient_user_id
+ * @param {string} client_msg_id
+ * @param {bigint} timestamp
+ * @param {Uint8Array} plaintext
+ * @param {any} devices
+ * @returns {Array<any>}
+ */
+export function encryptPairwiseBatch(sender_priv_key, sender_user_id, recipient_user_id, client_msg_id, timestamp, plaintext, devices) {
+    const ptr0 = passArray8ToWasm0(sender_priv_key, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(client_msg_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(plaintext, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.encryptPairwiseBatch(ptr0, len0, sender_user_id, recipient_user_id, ptr1, len1, timestamp, ptr2, len2, devices);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * @returns {JsChunkedKeyNonce}
+ */
+export function generateFileKeyAndNonce() {
+    const ret = wasm.generateFileKeyAndNonce();
+    return JsChunkedKeyNonce.__wrap(ret);
+}
+
+/**
  * @returns {JsKeyPair}
  */
 export function generateKeyPair() {
     const ret = wasm.generateKeyPair();
+    return JsKeyPair.__wrap(ret);
+}
+
+/**
+ * @returns {JsKeyPair}
+ */
+export function generateSigningKeyPair() {
+    const ret = wasm.generateSigningKeyPair();
     return JsKeyPair.__wrap(ret);
 }
 
@@ -537,6 +745,39 @@ export function groupDecrypt(ciphertext, group_key, salt, nonce, group_id, key_v
 }
 
 /**
+ * @param {Uint8Array} ciphertext
+ * @param {Uint8Array | null | undefined} verifying_key
+ * @param {Uint8Array} group_key
+ * @param {Uint8Array} salt
+ * @param {Uint8Array} nonce
+ * @param {bigint} group_id
+ * @param {bigint} key_version
+ * @param {bigint} sender_user_id
+ * @param {string} message_id
+ * @param {bigint} created_at
+ * @returns {Uint8Array}
+ */
+export function groupDecryptVerified(ciphertext, verifying_key, group_key, salt, nonce, group_id, key_version, sender_user_id, message_id, created_at) {
+    const ptr0 = passArray8ToWasm0(ciphertext, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    var ptr1 = isLikeNone(verifying_key) ? 0 : passArray8ToWasm0(verifying_key, wasm.__wbindgen_malloc);
+    var len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(group_key, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArray8ToWasm0(salt, wasm.__wbindgen_malloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ptr4 = passArray8ToWasm0(nonce, wasm.__wbindgen_malloc);
+    const len4 = WASM_VECTOR_LEN;
+    const ptr5 = passStringToWasm0(message_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len5 = WASM_VECTOR_LEN;
+    const ret = wasm.groupDecryptVerified(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, group_id, key_version, sender_user_id, ptr5, len5, created_at);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * @param {Uint8Array} plaintext
  * @param {Uint8Array} group_key
  * @param {bigint} group_id
@@ -558,6 +799,90 @@ export function groupEncrypt(plaintext, group_key, group_id, key_version, sender
         throw takeFromExternrefTable0(ret[1]);
     }
     return JsE2EEEncrypted.__wrap(ret[0]);
+}
+
+/**
+ * @param {Uint8Array} plaintext
+ * @param {Uint8Array} signing_key
+ * @param {Uint8Array} group_key
+ * @param {bigint} group_id
+ * @param {bigint} key_version
+ * @param {bigint} sender_user_id
+ * @param {string} message_id
+ * @param {bigint} created_at
+ * @returns {JsE2EEEncrypted}
+ */
+export function groupEncryptSigned(plaintext, signing_key, group_key, group_id, key_version, sender_user_id, message_id, created_at) {
+    const ptr0 = passArray8ToWasm0(plaintext, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(signing_key, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(group_key, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passStringToWasm0(message_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.groupEncryptSigned(ptr0, len0, ptr1, len1, ptr2, len2, group_id, key_version, sender_user_id, ptr3, len3, created_at);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return JsE2EEEncrypted.__wrap(ret[0]);
+}
+
+/**
+ * @param {Uint8Array} data
+ * @returns {boolean}
+ */
+export function isChunkedFile(data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.isChunkedFile(ptr0, len0);
+    return ret !== 0;
+}
+
+/**
+ * @param {Uint8Array} header
+ * @returns {JsChunkedHeader}
+ */
+export function parseChunkedFileHeader(header) {
+    const ptr0 = passArray8ToWasm0(header, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.parseChunkedFileHeader(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return JsChunkedHeader.__wrap(ret[0]);
+}
+
+/**
+ * @returns {number}
+ */
+export function penikCryptoVersion() {
+    const ret = wasm.penikCryptoVersion();
+    return ret >>> 0;
+}
+
+/**
+ * @param {Uint8Array} signing_key
+ * @param {bigint} group_id
+ * @param {bigint} key_version
+ * @param {bigint} sender_user_id
+ * @param {string} message_id
+ * @param {bigint} created_at
+ * @param {Uint8Array} plaintext
+ * @returns {Uint8Array}
+ */
+export function signGroupMessage(signing_key, group_id, key_version, sender_user_id, message_id, created_at, plaintext) {
+    const ptr0 = passArray8ToWasm0(signing_key, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(message_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(plaintext, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.signGroupMessage(ptr0, len0, group_id, key_version, sender_user_id, ptr1, len1, created_at, ptr2, len2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
 }
 
 /**
@@ -586,6 +911,31 @@ export function unwrapGroupKey(encrypted_key, shared_secret, salt, nonce, group_
 }
 
 /**
+ * @param {Uint8Array} verifying_key
+ * @param {Uint8Array} signature
+ * @param {bigint} group_id
+ * @param {bigint} key_version
+ * @param {bigint} sender_user_id
+ * @param {string} message_id
+ * @param {bigint} created_at
+ * @param {Uint8Array} plaintext
+ */
+export function verifyGroupMessage(verifying_key, signature, group_id, key_version, sender_user_id, message_id, created_at, plaintext) {
+    const ptr0 = passArray8ToWasm0(verifying_key, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(signature, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(message_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArray8ToWasm0(plaintext, wasm.__wbindgen_malloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.verifyGroupMessage(ptr0, len0, ptr1, len1, group_id, key_version, sender_user_id, ptr2, len2, created_at, ptr3, len3);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
+/**
  * @param {Uint8Array} group_key
  * @param {Uint8Array} shared_secret
  * @param {bigint} group_id
@@ -603,14 +953,6 @@ export function wrapGroupKeyForDevice(group_key, shared_secret, group_id, key_ve
     }
     return JsGroupKeyWrapped.__wrap(ret[0]);
 }
-
-/**
- * @returns {number}
- */
-export function penikCryptoVersion() {
-    return wasm.penikCryptoVersion ? wasm.penikCryptoVersion() : 1;
-}
-
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -634,6 +976,12 @@ function __wbg_get_imports() {
         __wbg___wbindgen_is_undefined_8c687d0b90d5b524: function(arg0) {
             const ret = arg0 === undefined;
             return ret;
+        },
+        __wbg___wbindgen_number_get_1dc732b810cb937c: function(arg0, arg1) {
+            const obj = arg1;
+            const ret = typeof(obj) === 'number' ? obj : undefined;
+            getDataViewMemory0().setFloat64(arg0 + 8 * 1, isLikeNone(ret) ? 0 : ret, true);
+            getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
         },
         __wbg___wbindgen_string_get_92ab86bb19cbc12f: function(arg0, arg1) {
             const obj = arg1;
@@ -660,6 +1008,10 @@ function __wbg_get_imports() {
         },
         __wbg_getRandomValues_c44a50d8cfdaebeb: function() { return handleError(function (arg0, arg1) {
             arg0.getRandomValues(arg1);
+        }, arguments); },
+        __wbg_get_989d0a1309644f2b: function() { return handleError(function (arg0, arg1) {
+            const ret = Reflect.get(arg0, arg1);
+            return ret;
         }, arguments); },
         __wbg_get_b1f0ab13c737f856: function(arg0, arg1) {
             const ret = arg0[arg1 >>> 0];
@@ -705,6 +1057,10 @@ function __wbg_get_imports() {
             const ret = new Uint8Array(arg0);
             return ret;
         },
+        __wbg_new_bebc3f4757acf305: function() {
+            const ret = new Object();
+            return ret;
+        },
         __wbg_new_ffa92086ea89f79c: function() {
             const ret = new Array();
             return ret;
@@ -715,6 +1071,10 @@ function __wbg_get_imports() {
         },
         __wbg_new_with_length_5ffeddb9d9fbb96f: function(arg0) {
             const ret = new Uint8Array(arg0 >>> 0);
+            return ret;
+        },
+        __wbg_new_with_length_6a9fc3631737ef8c: function(arg0) {
+            const ret = new Array(arg0 >>> 0);
             return ret;
         },
         __wbg_node_84ea875411254db1: function(arg0) {
@@ -737,6 +1097,13 @@ function __wbg_get_imports() {
         }, arguments); },
         __wbg_require_b4edbdcf3e2a1ef0: function() { return handleError(function () {
             const ret = module.require;
+            return ret;
+        }, arguments); },
+        __wbg_set_13d25b81ab403f5e: function(arg0, arg1, arg2) {
+            arg0[arg1 >>> 0] = arg2;
+        },
+        __wbg_set_a377297433dfea63: function() { return handleError(function (arg0, arg1, arg2) {
+            const ret = Reflect.set(arg0, arg1, arg2);
             return ret;
         }, arguments); },
         __wbg_static_accessor_GLOBAL_8eb4cd83130a11a0: function() {
@@ -763,12 +1130,17 @@ function __wbg_get_imports() {
             const ret = arg0.versions;
             return ret;
         },
-        __wbindgen_generic_0000000000000001: function(arg0, arg1) {
+        __wbindgen_generic_0000000000000001: function(arg0) {
+            // Cast intrinsic for `F64 -> Externref`.
+            const ret = arg0;
+            return ret;
+        },
+        __wbindgen_generic_0000000000000002: function(arg0, arg1) {
             // Cast intrinsic for `Ref(Slice(U8)) -> NamedExternref("Uint8Array")`.
             const ret = getArrayU8FromWasm0(arg0, arg1);
             return ret;
         },
-        __wbindgen_generic_0000000000000002: function(arg0, arg1) {
+        __wbindgen_generic_0000000000000003: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
             return ret;
@@ -789,6 +1161,12 @@ function __wbg_get_imports() {
     };
 }
 
+const JsChunkedHeaderFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_jschunkedheader_free(ptr, 1));
+const JsChunkedKeyNonceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_jschunkedkeynonce_free(ptr, 1));
 const JsE2EEEncryptedFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_jse2eeencrypted_free(ptr, 1));

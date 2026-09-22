@@ -95,9 +95,25 @@ class GroupRepository @Inject constructor(
     private fun myPrivateIK(): ByteArray =
         tokenStorage.getPrivateKey() ?: throw IllegalStateException("private identity key missing")
 
+    private fun myPrivateSigningKey(): ByteArray {
+        val priv = tokenStorage.getSigningPrivateKey()
+        if (priv != null) return priv
+        val raw = if (niel.kro.penik.data.crypto.RustCryptoCore.isAvailable()) {
+            niel.kro.penik.data.crypto.RustCryptoCore.generateSigningKeyPair()
+        } else null
+        val (vk, sk) = if (raw != null && raw.size == 64) {
+            Pair(raw.copyOfRange(0, 32), raw.copyOfRange(32, 64))
+        } else {
+            Pair(ByteArray(32), ByteArray(32))
+        }
+        tokenStorage.saveSigningPrivateKey(sk)
+        tokenStorage.saveSigningPublicKey(vk)
+        return sk
+    }
+
     /* ── Device enumeration + wrapping ── */
 
-    private data class DeviceKey(val deviceId: Long, val ikPub: ByteArray)
+    private data class DeviceKey(val deviceId: Long, val ikPub: ByteArray, val signingKey: ByteArray? = null)
 
     // Short-lived per-user device-key cache. A single history sync decrypts many
     // messages across key versions; without this, each one re-fetches every
@@ -131,10 +147,11 @@ class GroupRepository @Inject constructor(
             val keys = mutableListOf<DeviceKey>()
             for (d in devices) {
                 val ik = runCatching { Base64.decode(d.identityKey, Base64.DEFAULT) }.getOrNull() ?: continue
+                val signingKey = d.signingKey?.let { runCatching { Base64.decode(it, Base64.DEFAULT) }.getOrNull() }
                 // TOFU: a swapped group-member key would otherwise let the server
                 // read every epoch key it wraps for that device.
                 identityPins.verify(uid, d.deviceId, ik)
-                keys.add(DeviceKey(d.deviceId, ik))
+                keys.add(DeviceKey(d.deviceId, ik, signingKey))
             }
             deviceKeyCache[uid] = keys
             out.addAll(keys)
@@ -214,6 +231,26 @@ class GroupRepository @Inject constructor(
             ik = fetchDeviceKeys(freshMembers.ifEmpty { listOf(myUserId()) }).find { it.deviceId == deviceId }?.ikPub
         }
         return ik
+    }
+
+    private suspend fun fetchDeviceSigningKey(groupId: Long, deviceId: Long, senderUserId: Long? = null): ByteArray? {
+        if (senderUserId != null && senderUserId > 0L) {
+            val direct = fetchDeviceKeys(listOf(senderUserId)).find { it.deviceId == deviceId }?.signingKey
+            if (direct != null) return direct
+        }
+        var members = dao.getMembers(groupId).map { it.userId }
+        if (members.isEmpty()) {
+            runCatching { refreshMembers(groupId) }
+            members = dao.getMembers(groupId).map { it.userId }
+        }
+        val targetMembers = members.ifEmpty { listOf(myUserId()) }
+        var sk = fetchDeviceKeys(targetMembers).find { it.deviceId == deviceId }?.signingKey
+        if (sk == null) {
+            runCatching { refreshMembers(groupId) }
+            val freshMembers = dao.getMembers(groupId).map { it.userId }
+            sk = fetchDeviceKeys(freshMembers.ifEmpty { listOf(myUserId()) }).find { it.deviceId == deviceId }?.signingKey
+        }
+        return sk
     }
 
     /* ── Lifecycle ── */
@@ -374,8 +411,9 @@ class GroupRepository @Inject constructor(
         // here made the recipient's AAD mismatch and decryption fail.
         val createdAt = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
         val senderUserId = myUserId()
-        val enc = groupCrypto.encryptMessage(
-            text.toByteArray(Charsets.UTF_8), groupKey, groupId, version, senderUserId, messageId, createdAt
+        val signingKey = myPrivateSigningKey()
+        val enc = groupCrypto.encryptSignedMessage(
+            text.toByteArray(Charsets.UTF_8), signingKey, groupKey, groupId, version, senderUserId, messageId, createdAt
         )
 
         dao.upsertMessage(
@@ -452,13 +490,14 @@ class GroupRepository @Inject constructor(
             Log.w("GroupRepo", "key unavailable for group=$groupId v=$keyVersion")
             return null
         }
+        val verifyingKey = fetchDeviceSigningKey(groupId, senderDeviceId, senderUserId)
         val text = runCatching {
             String(
-                groupCrypto.decryptMessage(ciphertext, groupKey, salt, nonce, groupId, keyVersion, senderUserId, messageId, createdAt),
+                groupCrypto.decryptVerifiedMessage(ciphertext, verifyingKey, groupKey, salt, nonce, groupId, keyVersion, senderUserId, messageId, createdAt),
                 Charsets.UTF_8,
             )
         }.getOrElse {
-            Log.e("GroupRepo", "decrypt/AAD failed for group=$groupId msg=$messageId")
+            Log.e("GroupRepo", "decrypt/signature verification failed for group=$groupId msg=$messageId")
             return null
         }
         val entity = GroupMessageEntity(
@@ -495,8 +534,9 @@ class GroupRepository @Inject constructor(
         val groupKey = ensureGroupKey(groupId, version) ?: return
         val editedAt = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
         val senderUserId = myUserId()
-        val enc = groupCrypto.encryptMessage(
-            finalPayload.toByteArray(Charsets.UTF_8), groupKey, groupId, version, senderUserId, messageId, editedAt
+        val signingKey = myPrivateSigningKey()
+        val enc = groupCrypto.encryptSignedMessage(
+            finalPayload.toByteArray(Charsets.UTF_8), signingKey, groupKey, groupId, version, senderUserId, messageId, editedAt
         )
 
         dao.updateMessageText(groupId, messageId, finalPayload, editedAt * 1000)
@@ -505,11 +545,12 @@ class GroupRepository @Inject constructor(
 
     suspend fun handleIncomingEdit(event: WebSocketEvent.GroupMsgEditNotify) {
         val groupKey = ensureGroupKey(event.groupId, event.keyVersion) ?: return
+        val verifyingKey = fetchDeviceSigningKey(event.groupId, event.senderDeviceId, event.senderUserId)
         val editedAtSec = event.editedAt / 1000
         val text = runCatching {
             String(
-                groupCrypto.decryptMessage(
-                    event.ciphertext, groupKey, event.salt, event.nonce,
+                groupCrypto.decryptVerifiedMessage(
+                    event.ciphertext, verifyingKey, groupKey, event.salt, event.nonce,
                     event.groupId, event.keyVersion, event.senderUserId, event.messageId, editedAtSec
                 ),
                 Charsets.UTF_8
@@ -549,11 +590,12 @@ class GroupRepository @Inject constructor(
                     val isEdited = m.editedAt != null && (existing == null || existing.editedAt == null || (m.editedAt * 1000 > (existing.editedAt ?: 0L)))
                     if (existing != null && !isEdited && existing.serverId != 0L) continue
                     val groupKey = ensureGroupKey(groupId, m.keyVersion) ?: continue
+                    val verifyingKey = fetchDeviceSigningKey(groupId, m.senderDeviceId, m.senderUserId)
                     val ts = m.editedAt ?: m.createdAt
                     val text = runCatching {
                         String(
-                            groupCrypto.decryptMessage(
-                                Base64.decode(m.ciphertext, urlB64Flags), groupKey,
+                            groupCrypto.decryptVerifiedMessage(
+                                Base64.decode(m.ciphertext, urlB64Flags), verifyingKey, groupKey,
                                 Base64.decode(m.salt, urlB64Flags),
                                 Base64.decode(m.nonce, urlB64Flags),
                                 groupId, m.keyVersion, m.senderUserId, m.messageId, ts

@@ -703,3 +703,195 @@ pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_cry
 ) -> jint {
     crate::CRYPTO_CORE_VERSION as jint
 }
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_generateSigningKeyPair<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jbyteArray {
+    let (mut sk, vk) = crate::signing::generate_signing_keypair();
+    let mut combined = Vec::with_capacity(64);
+    combined.extend_from_slice(&vk);
+    combined.extend_from_slice(&sk);
+    sk.zeroize();
+
+    match env.byte_array_from_slice(&combined) {
+        Ok(arr) => arr.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_deriveVerifyingKey<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    signing_key: JByteArray<'local>,
+) -> jbyteArray {
+    let mut sk_bytes = match env.convert_byte_array(signing_key) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    if sk_bytes.len() != crate::signing::SIGNING_KEY_SIZE {
+        sk_bytes.zeroize();
+        return std::ptr::null_mut();
+    }
+    let mut sk = [0u8; crate::signing::SIGNING_KEY_SIZE];
+    sk.copy_from_slice(&sk_bytes);
+    sk_bytes.zeroize();
+
+    let vk = crate::signing::derive_verifying_key(&sk);
+    sk.zeroize();
+
+    match env.byte_array_from_slice(&vk) {
+        Ok(arr) => arr.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_groupEncryptSigned<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    plaintext: JByteArray<'local>,
+    signing_key: JByteArray<'local>,
+    group_key: JByteArray<'local>,
+    group_id: jlong,
+    key_version: jlong,
+    sender_user_id: jlong,
+    message_id: JString<'local>,
+    created_at: jlong,
+) -> jbyteArray {
+    let pt_bytes = if plaintext.is_null() {
+        Vec::new()
+    } else {
+        env.convert_byte_array(plaintext).unwrap_or_default()
+    };
+    let mut sk_bytes = match env.convert_byte_array(signing_key) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    if sk_bytes.len() != crate::signing::SIGNING_KEY_SIZE {
+        sk_bytes.zeroize();
+        return std::ptr::null_mut();
+    }
+    let mut sk = [0u8; crate::signing::SIGNING_KEY_SIZE];
+    sk.copy_from_slice(&sk_bytes);
+    sk_bytes.zeroize();
+
+    let gk_bytes = match env.convert_byte_array(group_key) {
+        Ok(b) => b,
+        Err(_) => {
+            sk.zeroize();
+            return std::ptr::null_mut();
+        }
+    };
+
+    let msg_id_str: String = if message_id.is_null() {
+        String::new()
+    } else {
+        env.get_string(&message_id)
+            .map(|s| s.into())
+            .unwrap_or_default()
+    };
+
+    let res = crate::signing::group_encrypt_signed(
+        &pt_bytes,
+        &sk,
+        &gk_bytes,
+        group_id as u64,
+        key_version as u64,
+        sender_user_id as u64,
+        &msg_id_str,
+        created_at,
+    );
+    sk.zeroize();
+
+    match res {
+        Ok(enc) => {
+            // Packed format: salt (32) + nonce (12) + ciphertext
+            let mut out = Vec::with_capacity(32 + 12 + enc.ciphertext.len());
+            out.extend_from_slice(&enc.salt);
+            out.extend_from_slice(&enc.nonce);
+            out.extend_from_slice(&enc.ciphertext);
+
+            match env.byte_array_from_slice(&out) {
+                Ok(arr) => arr.into_raw(),
+                Err(_) => std::ptr::null_mut(),
+            }
+        }
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_groupDecryptVerified<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    ciphertext: JByteArray<'local>,
+    verifying_key: JByteArray<'local>,
+    group_key: JByteArray<'local>,
+    salt: JByteArray<'local>,
+    nonce: JByteArray<'local>,
+    group_id: jlong,
+    key_version: jlong,
+    sender_user_id: jlong,
+    message_id: JString<'local>,
+    created_at: jlong,
+) -> jbyteArray {
+    let ct_bytes = match env.convert_byte_array(ciphertext) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let vk_opt = if verifying_key.is_null() {
+        None
+    } else {
+        match env.convert_byte_array(verifying_key) {
+            Ok(b) if b.len() == crate::signing::VERIFYING_KEY_SIZE => {
+                let mut vk = [0u8; crate::signing::VERIFYING_KEY_SIZE];
+                vk.copy_from_slice(&b);
+                Some(vk)
+            }
+            _ => None,
+        }
+    };
+    let gk_bytes = match env.convert_byte_array(group_key) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let salt_bytes = match env.convert_byte_array(salt) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let nonce_bytes = match env.convert_byte_array(nonce) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    let msg_id_str: String = if message_id.is_null() {
+        String::new()
+    } else {
+        env.get_string(&message_id)
+            .map(|s| s.into())
+            .unwrap_or_default()
+    };
+
+    match crate::signing::group_decrypt_verified(
+        &ct_bytes,
+        vk_opt.as_ref(),
+        &gk_bytes,
+        &salt_bytes,
+        &nonce_bytes,
+        group_id as u64,
+        key_version as u64,
+        sender_user_id as u64,
+        &msg_id_str,
+        created_at,
+    ) {
+        Ok(pt) => match env.byte_array_from_slice(&pt) {
+            Ok(arr) => arr.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+

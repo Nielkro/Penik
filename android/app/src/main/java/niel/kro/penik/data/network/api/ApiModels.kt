@@ -11,7 +11,8 @@ data class LoginRequestBody(
     val platform: String = "",
     val location: String = "",
     @SerialName("crypto_version") val cryptoVersion: Int = 2,
-    @SerialName("ik_pub") val ikPub: String? = null
+    @SerialName("ik_pub") val ikPub: String? = null,
+    @SerialName("signing_key") val signingKey: String? = null
 )
 
 @Serializable
@@ -23,7 +24,8 @@ data class RegisterRequestBody(
     val platform: String = "",
     val location: String = "",
     @SerialName("crypto_version") val cryptoVersion: Int = 2,
-    @SerialName("ik_pub") val ikPub: String? = null
+    @SerialName("ik_pub") val ikPub: String? = null,
+    @SerialName("signing_key") val signingKey: String? = null
 )
 
 @Serializable
@@ -75,7 +77,15 @@ data class ChangePasswordRequestBody(
 data class DeviceBundle(
     @SerialName("device_id") val deviceId: Long,
     @SerialName("identity_key") val identityKey: String,
+    @SerialName("signing_key") val signingKey: String? = null,
     @SerialName("crypto_version") val cryptoVersion: Int = 1
+)
+
+@Serializable
+data class KeysInitRequestBody(
+    @SerialName("ik_pub") val ikPub: String,
+    @SerialName("signing_key") val signingKey: String? = null,
+    @SerialName("crypto_version") val cryptoVersion: Int = 2
 )
 
 @Serializable

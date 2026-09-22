@@ -7,6 +7,7 @@
 
 import {
   apiGet,
+  apiPost,
   createGroup as apiCreateGroup,
   listGroups as apiListGroups,
   getGroup as apiGetGroup,
@@ -33,6 +34,9 @@ import {
   generateGroupKey,
   groupEncrypt,
   groupDecrypt,
+  groupEncryptSigned,
+  groupDecryptVerified,
+  generateSigningKeyPair,
   wrapGroupKeyForDevice,
   unwrapGroupKey,
   e2eeEncrypt,
@@ -43,6 +47,7 @@ import {
   saveGroupMembers, getGroupMembers,
   saveGroupKey, getGroupKey,
   saveGroupMessage, getGroupMessage, getGroupMessages, updateGroupMessageText, deleteGroupMessage,
+  saveSigningPrivate, saveSigningPublic, getSigningPrivate, getSigningPublic, getIKPublic,
 } from './storage.js';
 import { ws, OP } from './ws.js';
 import { loadPrivateIK, showDesktopNotification } from './app.js';
@@ -80,6 +85,32 @@ async function resolvePrivateIK() {
   return priv;
 }
 
+export async function resolvePrivateSigningKey() {
+  let priv = await getSigningPrivate();
+  if (priv) return priv instanceof Uint8Array ? priv : new Uint8Array(priv);
+
+  // Generate new signing keypair if missing and persist
+  const kp = await generateSigningKeyPair();
+  await saveSigningPrivate(kp.privateKey);
+  await saveSigningPublic(kp.publicKey);
+
+  // Upload signing key to server so peers can verify our messages
+  try {
+    const ikPub = await getIKPublic();
+    if (ikPub) {
+      await apiPost('/keys/init', {
+        ik_pub: btoa(String.fromCharCode(...ikPub)),
+        signing_key: btoa(String.fromCharCode(...kp.publicKey)),
+        crypto_version: 2
+      });
+    }
+  } catch (e) {
+    console.warn('[keys] failed to upload signing key:', e);
+  }
+
+  return kp.privateKey;
+}
+
 function myUserId() { return Number(localStorage.getItem('user_id')); }
 function myDeviceId() { return Number(localStorage.getItem('device_id')); }
 
@@ -87,7 +118,7 @@ function myDeviceId() { return Number(localStorage.getItem('device_id')); }
 
 const bundleCache = new Map();
 
-// activeDeviceKeys returns [{ device_id, ik_pub }] for every device of the given
+// activeDeviceKeys returns [{ device_id, ik_pub, signing_key }] for every device of the given
 // user ids, using the existing pairwise key-bundle endpoint.
 async function fetchDeviceKeys(userIds) {
   const result = [];
@@ -109,9 +140,10 @@ async function fetchDeviceKeys(userIds) {
     for (const d of bundle?.devices || []) {
       if (!d.identity_key) continue;
       const ikPub = stdB64Decode(d.identity_key);
+      const signingKey = d.signing_key ? stdB64Decode(d.signing_key) : null;
       // TOFU pinning: verify and pin identity key; displays warning on change.
       await verifyPeerIdentityKey(uid, d.device_id, ikPub);
-      result.push({ device_id: Number(d.device_id), ik_pub: ikPub });
+      result.push({ device_id: Number(d.device_id), ik_pub: ikPub, signing_key: signingKey });
     }
   }
   return result;
@@ -187,36 +219,32 @@ export async function ensureGroupKey(groupId, version) {
   return promise;
 }
 
-// Identity keys are cached per device, but a device can be re-registered with a
-// fresh key, so entries expire instead of living for the whole page session.
-const DEVICE_IK_TTL_MS = 5 * 60 * 1000;
-/** @type {Map<number, { ik: any, at: number }>} */
-const deviceIKCache = new Map();
+// Device keys (IK and Ed25519 signing key) are cached per device.
+const DEVICE_KEY_TTL_MS = 5 * 60 * 1000;
+/** @type {Map<number, { ik: Uint8Array, signingKey: Uint8Array|null, at: number }>} */
+const deviceKeyCache = new Map();
 
-function cachedDeviceIK(deviceId) {
-  const entry = deviceIKCache.get(deviceId);
+function cachedDeviceKey(deviceId) {
+  const entry = deviceKeyCache.get(deviceId);
   if (!entry) return null;
-  if (Date.now() - entry.at > DEVICE_IK_TTL_MS) {
-    deviceIKCache.delete(deviceId);
+  if (Date.now() - entry.at > DEVICE_KEY_TTL_MS) {
+    deviceKeyCache.delete(deviceId);
     return null;
   }
-  return entry.ik;
+  return entry;
 }
 
-// fetchDeviceIK returns one device's public identity key by checking senderUserId or
-// scanning the given group's members' key bundles. groupId is passed explicitly so concurrent
-// lookups for different groups cannot race on shared state.
-async function fetchDeviceIK(groupId, deviceId, senderUserId = null) {
-  const cached = cachedDeviceIK(deviceId);
+async function fetchDeviceKeyEntry(groupId, deviceId, senderUserId = null) {
+  const cached = cachedDeviceKey(deviceId);
   if (cached) return cached;
 
   if (senderUserId) {
     try {
       const senderDevices = await fetchDeviceKeys([senderUserId]);
       for (const d of senderDevices) {
-        deviceIKCache.set(d.device_id, { ik: d.ik_pub, at: Date.now() });
+        deviceKeyCache.set(d.device_id, { ik: d.ik_pub, signingKey: d.signing_key, at: Date.now() });
       }
-      const found = cachedDeviceIK(deviceId);
+      const found = cachedDeviceKey(deviceId);
       if (found) return found;
     } catch (e) {
       console.warn('[groups] failed to fetch sender key bundle', e);
@@ -235,9 +263,9 @@ async function fetchDeviceIK(groupId, deviceId, senderUserId = null) {
   const targetUserIds = userIds.length ? [...new Set([...userIds, myUserId()])] : [myUserId()];
   let devices = await fetchDeviceKeys(targetUserIds);
   for (const d of devices) {
-    deviceIKCache.set(d.device_id, { ik: d.ik_pub, at: Date.now() });
+    deviceKeyCache.set(d.device_id, { ik: d.ik_pub, signingKey: d.signing_key, at: Date.now() });
   }
-  let found = cachedDeviceIK(deviceId);
+  let found = cachedDeviceKey(deviceId);
   if (found) return found;
 
   // Fallback: force refresh members in case member list was stale
@@ -246,13 +274,25 @@ async function fetchDeviceIK(groupId, deviceId, senderUserId = null) {
     userIds = members.map(m => m.user_id);
     devices = await fetchDeviceKeys([...new Set([...userIds, myUserId()])]);
     for (const d of devices) {
-      deviceIKCache.set(d.device_id, { ik: d.ik_pub, at: Date.now() });
+      deviceKeyCache.set(d.device_id, { ik: d.ik_pub, signingKey: d.signing_key, at: Date.now() });
     }
   } catch (e) {
     console.warn('[groups] member refresh fallback failed', e);
   }
 
-  return cachedDeviceIK(deviceId);
+  return cachedDeviceKey(deviceId);
+}
+
+// fetchDeviceIK returns one device's public identity key.
+async function fetchDeviceIK(groupId, deviceId, senderUserId = null) {
+  const entry = await fetchDeviceKeyEntry(groupId, deviceId, senderUserId);
+  return entry?.ik || null;
+}
+
+// fetchDeviceSigningKey returns one device's public Ed25519 signing key.
+async function fetchDeviceSigningKey(groupId, deviceId, senderUserId = null) {
+  const entry = await fetchDeviceKeyEntry(groupId, deviceId, senderUserId);
+  return entry?.signingKey || null;
 }
 
 /* ── Public API: group lifecycle ── */
@@ -525,13 +565,14 @@ export async function sendGroupMessage(groupId, text, replyToMsgId = null) {
     }
   }
 
+  const signingKey = await resolvePrivateSigningKey();
   const messageId = crypto.randomUUID();
   // created_at is bound into the AAD and must match what the server persists and
   // relays. The server works in Unix seconds, so encode seconds here — mixing
   // milliseconds made the recipient's AAD mismatch and decryption fail.
   const createdAt = getServerTimeSec();
   const senderUserId = myUserId();
-  const { ciphertext, salt, nonce } = await groupEncrypt(text, groupKey, groupId, version, senderUserId, messageId, createdAt);
+  const { ciphertext, salt, nonce } = await groupEncryptSigned(text, signingKey, groupKey, groupId, version, senderUserId, messageId, createdAt);
 
   const localRecord = {
     group_id: groupId, message_id: messageId, id: 0,
@@ -572,6 +613,8 @@ export async function decryptIncoming(frame) {
   const groupId = Number(frame.group_id);
   const version = Number(frame.key_version);
   const messageId = String(frame.message_id);
+  const senderUserId = Number(frame.sender_user_id);
+  const senderDeviceId = Number(frame.sender_device_id);
 
   // Dedup by (group_id, message_id).
   const existing = await getGroupMessage(groupId, messageId);
@@ -587,16 +630,26 @@ export async function decryptIncoming(frame) {
     return null;
   }
 
+  // Fetch author's verifying key (Ed25519 public key)
+  let verifyingKey = null;
+  if (senderDeviceId) {
+    try {
+      verifyingKey = await fetchDeviceSigningKey(groupId, senderDeviceId, senderUserId);
+    } catch (e) {
+      console.warn('[groups] could not resolve verifying key for device', senderDeviceId, e);
+    }
+  }
+
   let text;
   try {
     const ts = frame.edited_at || frame.created_at;
-    const pt = await groupDecrypt(
-      toU8(frame.ciphertext), groupKey, toU8(frame.salt), toU8(frame.nonce),
-      groupId, version, Number(frame.sender_user_id), messageId, Number(ts),
+    const pt = await groupDecryptVerified(
+      toU8(frame.ciphertext), verifyingKey, groupKey, toU8(frame.salt), toU8(frame.nonce),
+      groupId, version, senderUserId, messageId, Number(ts),
     );
     text = new TextDecoder().decode(pt);
   } catch (e) {
-    console.error('[groups] decrypt/AAD failed for', groupId, messageId, e.message);
+    console.error('[groups] decrypt/signature verification failed for', groupId, messageId, e.message);
     return null;
   }
 
@@ -801,12 +854,22 @@ export function registerGroupWSListeners() {
     const groupId = Number(frame.group_id);
     const version = Number(frame.key_version);
     const messageId = String(frame.message_id);
+    const senderUserId = Number(frame.sender_user_id);
+    const senderDeviceId = Number(frame.sender_device_id);
 
     try {
       const groupKey = await ensureGroupKey(groupId, version);
-      const pt = await groupDecrypt(
-        toU8(frame.ciphertext), groupKey, toU8(frame.salt), toU8(frame.nonce),
-        groupId, version, Number(frame.sender_user_id), messageId, Number(frame.edited_at),
+      let verifyingKey = null;
+      if (senderDeviceId) {
+        try {
+          verifyingKey = await fetchDeviceSigningKey(groupId, senderDeviceId, senderUserId);
+        } catch (e) {
+          console.warn('[groups] could not resolve verifying key for edit notify', senderDeviceId, e);
+        }
+      }
+      const pt = await groupDecryptVerified(
+        toU8(frame.ciphertext), verifyingKey, groupKey, toU8(frame.salt), toU8(frame.nonce),
+        groupId, version, senderUserId, messageId, Number(frame.edited_at),
       );
       const text = new TextDecoder().decode(pt);
       const editedAt = Number(frame.edited_at) * 1000;
@@ -839,9 +902,10 @@ export async function editGroupMessage(groupId, messageId, newText) {
   const version = group ? Number(group.current_key_version) : await currentVersion(groupId);
   const groupKey = await ensureGroupKey(groupId, version);
 
+  const signingKey = await resolvePrivateSigningKey();
   const editedAt = getServerTimeSec();
   const senderUserId = myUserId();
-  const { ciphertext, salt, nonce } = await groupEncrypt(newText, groupKey, groupId, version, senderUserId, messageId, editedAt);
+  const { ciphertext, salt, nonce } = await groupEncryptSigned(newText, signingKey, groupKey, groupId, version, senderUserId, messageId, editedAt);
 
   await updateGroupMessageText(groupId, messageId, newText, editedAt * 1000);
   emit({ type: 'edit', groupId, messageId, text: newText, editedAt: editedAt * 1000 });

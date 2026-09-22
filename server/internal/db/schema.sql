@@ -79,6 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_users_nickname ON users(nickname);
 CREATE TABLE IF NOT EXISTS device_public_keys (
     device_id INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
     x25519_pub BLOB NOT NULL,
+    ed25519_pub BLOB DEFAULT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );

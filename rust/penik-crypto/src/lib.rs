@@ -5,6 +5,7 @@ pub mod errors;
 pub mod kdf;
 pub mod keys;
 pub mod safety;
+pub mod signing;
 
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
@@ -14,7 +15,7 @@ pub mod jni;
 
 /// Current internal crypto core build/ABI version.
 /// Bump this integer when adding new exports, modifying signatures, or changing ABI.
-pub const CRYPTO_CORE_VERSION: u32 = 2;
+pub const CRYPTO_CORE_VERSION: u32 = 3;
 
 #[inline]
 pub fn crypto_core_version() -> u32 {
@@ -45,4 +46,9 @@ pub use keys::{
 pub use safety::{
     compute_safety_fingerprint, compute_safety_hash, compute_safety_number, SafetyFingerprint,
     RUSSIAN_WORDS, SAFETY_NUMBER_BLOCKS,
+};
+pub use signing::{
+    build_group_sign_data, derive_verifying_key, generate_signing_keypair, group_decrypt_verified,
+    group_encrypt_signed, sign, sign_group_message, verify, verify_group_message, SIGNATURE_SIZE,
+    SIGNED_GROUP_MAGIC, SIGNING_KEY_SIZE, VERIFYING_KEY_SIZE,
 };

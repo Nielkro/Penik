@@ -748,6 +748,38 @@ export async function saveIKPublic(publicKey) {
   return put(tx("e2ee_keys", "readwrite"), { id: "identity_public_key", publicKey });
 }
 
+// The private Signing Key (Ed25519) never leaves IndexedDB in the clear: it is sealed
+// with the origin's non-extractable wrapping key (vault.js).
+export async function saveSigningPrivate(privateKey) {
+  await openDB();
+  const sealed = await sealBytes(vaultStore, privateKey);
+  return put(tx("e2ee_keys", "readwrite"), { id: "signing_private_key", sealed });
+}
+
+export async function getSigningPrivate() {
+  await openDB();
+  const record = await get(tx("e2ee_keys"), "signing_private_key");
+  if (!record) return null;
+  if (isSealed(record.sealed)) return openBytes(vaultStore, record.sealed);
+  if (record.privateKey) {
+    const bytes = record.privateKey;
+    await saveSigningPrivate(bytes);
+    return bytes;
+  }
+  return null;
+}
+
+export async function saveSigningPublic(publicKey) {
+  await openDB();
+  return put(tx("e2ee_keys", "readwrite"), { id: "signing_public_key", publicKey });
+}
+
+export async function getSigningPublic() {
+  await openDB();
+  const record = await get(tx("e2ee_keys"), "signing_public_key");
+  return record ? record.publicKey : null;
+}
+
 // The session bearer token is sealed for the same reason as the identity key: it
 // is a long-lived credential, and an unencrypted copy in IndexedDB is a
 // take-away credential rather than a page-bound one.

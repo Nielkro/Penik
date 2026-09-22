@@ -965,6 +965,86 @@ export async function groupDecrypt(ciphertext, groupKey, salt, nonce, groupId, k
   );
 }
 
+export async function generateSigningKeyPair() {
+  const wasm = await getWasm();
+  const kp = wasm.generateSigningKeyPair();
+  return {
+    publicKey: kp.publicKey,
+    privateKey: kp.privateKey
+  };
+}
+
+export async function deriveVerifyingKey(signingKey) {
+  const wasm = await getWasm();
+  return wasm.deriveVerifyingKey(requireBytes(signingKey, 32, "signingKey"));
+}
+
+export async function signGroupMessage(signingKey, groupId, keyVersion, senderUserId, messageId, createdAt, plaintext) {
+  const wasm = await getWasm();
+  const ptBytes = typeof plaintext === "string" ? new TextEncoder().encode(plaintext) : plaintext;
+  return wasm.signGroupMessage(
+    requireBytes(signingKey, 32, "signingKey"),
+    BigInt(groupId),
+    BigInt(keyVersion),
+    BigInt(senderUserId || 0),
+    String(messageId),
+    BigInt(createdAt),
+    ptBytes
+  );
+}
+
+export async function verifyGroupMessage(verifyingKey, signature, groupId, keyVersion, senderUserId, messageId, createdAt, plaintext) {
+  const wasm = await getWasm();
+  const ptBytes = typeof plaintext === "string" ? new TextEncoder().encode(plaintext) : plaintext;
+  wasm.verifyGroupMessage(
+    requireBytes(verifyingKey, 32, "verifyingKey"),
+    requireBytes(signature, 64, "signature"),
+    BigInt(groupId),
+    BigInt(keyVersion),
+    BigInt(senderUserId || 0),
+    String(messageId),
+    BigInt(createdAt),
+    ptBytes
+  );
+}
+
+export async function groupEncryptSigned(plaintext, signingKey, groupKey, groupId, keyVersion, senderUserId, messageId, createdAt) {
+  const wasm = await getWasm();
+  const plaintextBytes = typeof plaintext === "string" ? new TextEncoder().encode(plaintext) : plaintext;
+  const res = wasm.groupEncryptSigned(
+    plaintextBytes,
+    requireBytes(signingKey, 32, "signingKey"),
+    requireBytes(groupKey, 32, "groupKey"),
+    BigInt(groupId),
+    BigInt(keyVersion),
+    BigInt(senderUserId || 0),
+    String(messageId),
+    BigInt(createdAt)
+  );
+  return {
+    ciphertext: res.ciphertext,
+    salt: res.salt,
+    nonce: res.nonce
+  };
+}
+
+export async function groupDecryptVerified(ciphertext, verifyingKey, groupKey, salt, nonce, groupId, keyVersion, senderUserId, messageId, createdAt) {
+  const wasm = await getWasm();
+  const vkBytes = verifyingKey ? requireBytes(verifyingKey, 32, "verifyingKey") : null;
+  return wasm.groupDecryptVerified(
+    ciphertext,
+    vkBytes,
+    requireBytes(groupKey, 32, "groupKey"),
+    salt,
+    nonce,
+    BigInt(groupId),
+    BigInt(keyVersion),
+    BigInt(senderUserId || 0),
+    String(messageId),
+    BigInt(createdAt)
+  );
+}
+
 export async function wrapGroupKeyForDevice(groupKey, sharedSecret, groupId, keyVersion) {
   const wasm = await getWasm();
   const res = wasm.wrapGroupKeyForDevice(

@@ -31,6 +31,9 @@ pub enum CryptoError {
 
     #[error("Invalid or low-order public key")]
     InvalidKey,
+
+    #[error("Signature verification failed: invalid signature or forged author")]
+    InvalidSignature,
 }
 
 #[cfg(target_arch = "wasm32")]

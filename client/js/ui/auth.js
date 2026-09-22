@@ -1,8 +1,12 @@
 import { apiPost, apiGet, setToken, getUserById, getToken, BASE } from "../api.js";
-import { getPersistentDeviceName, getClientPlatform, getClientLocation, saveIdentityKey, saveIKPrivate, saveIKPublic, getIKPrivate, getIKPublic } from "../storage.js";
+import {
+  getPersistentDeviceName, getClientPlatform, getClientLocation,
+  saveIdentityKey, saveIKPrivate, saveIKPublic, getIKPrivate, getIKPublic,
+  saveSigningPrivate, saveSigningPublic, getSigningPrivate, getSigningPublic
+} from "../storage.js";
 import { navigate, setCurrentUser, restoreE2EEKeys, backupE2EEKeys } from "../app.js";
 import { el, showToast, spinner, avatar, showConfirmModal, showPinModal } from "./components.js";
-import { generateKeyPair, encryptIdentityEnvelope, derivePublicKey } from "../crypto.js";
+import { generateKeyPair, generateSigningKeyPair, encryptIdentityEnvelope, derivePublicKey } from "../crypto.js";
 import { ws, OP } from "../ws.js";
 
 function authErr(errEl, msg) {
@@ -21,17 +25,32 @@ async function resolveIdentityKeyPair() {
   return { publicKey: ik.publicKey, privateKey: ik.privateKey, existing: false };
 }
 
+async function resolveSigningKeyPair() {
+  const priv = await getSigningPrivate();
+  const pub = await getSigningPublic();
+  if (priv && pub) {
+    return { publicKey: new Uint8Array(pub), privateKey: new Uint8Array(priv), existing: true };
+  }
+  const kp = await generateSigningKeyPair();
+  return { publicKey: kp.publicKey, privateKey: kp.privateKey, existing: false };
+}
+
 async function generateAndUploadKeys(e2eePassword) {
   const ik = await resolveIdentityKeyPair();
+  const sk = await resolveSigningKeyPair();
   const envelope = await encryptIdentityEnvelope({ privateKey: ik.privateKey }, e2eePassword);
   const ikPubB64 = btoa(String.fromCharCode(...ik.publicKey));
+  const signingKeyB64 = btoa(String.fromCharCode(...sk.publicKey));
 
   return {
     ikPub: ikPubB64,
+    signingKey: signingKeyB64,
     saveKeys: async () => {
       await saveIdentityKey(envelope);
       await saveIKPrivate(ik.privateKey);
       await saveIKPublic(ik.publicKey);
+      await saveSigningPrivate(sk.privateKey);
+      await saveSigningPublic(sk.publicKey);
     }
   };
 }
@@ -372,7 +391,9 @@ export function renderAuth(container, initialMode = "welcome") {
             device_name: getPersistentDeviceName(),
             platform: getClientPlatform(),
             location: getClientLocation(),
+            crypto_version: 2,
             ik_pub: keysData.ikPub,
+            signing_key: keysData.signingKey,
           });
 
           setToken(res.token);
@@ -517,12 +538,17 @@ export function renderAuth(container, initialMode = "welcome") {
             device_name: getPersistentDeviceName(),
             platform: getClientPlatform(),
             location: getClientLocation(),
+            crypto_version: 2,
           };
 
           // If device already has local key pair, include it
           const existingPub = await getIKPublic();
           if (existingPub && existingPub.length === 32) {
             loginPayload.ik_pub = btoa(String.fromCharCode(...existingPub));
+          }
+          const existingSigningPub = await getSigningPublic();
+          if (existingSigningPub && existingSigningPub.length === 32) {
+            loginPayload.signing_key = btoa(String.fromCharCode(...existingSigningPub));
           }
 
           const res = await apiPost("/login", loginPayload);
@@ -625,6 +651,9 @@ export function renderAuth(container, initialMode = "welcome") {
           const ik = await generateKeyPair();
           await saveIKPrivate(ik.privateKey);
           await saveIKPublic(ik.publicKey);
+          const sk = await generateSigningKeyPair();
+          await saveSigningPrivate(sk.privateKey);
+          await saveSigningPublic(sk.publicKey);
 
           const user = await getUserById(state.tempUserId);
           if (user) {
@@ -665,12 +694,15 @@ export function renderAuth(container, initialMode = "welcome") {
         try {
           // Generate a fresh keypair and encrypt with the new E2EE password
           const ik = await generateKeyPair();
+          const sk = await generateSigningKeyPair();
           const envelope = await encryptIdentityEnvelope({ privateKey: ik.privateKey }, newPass);
 
           // Save keys locally
           await saveIdentityKey(envelope);
           await saveIKPrivate(ik.privateKey);
           await saveIKPublic(ik.publicKey);
+          await saveSigningPrivate(sk.privateKey);
+          await saveSigningPublic(sk.publicKey);
 
           // Upload backup to server
           await backupE2EEKeys(newPass);

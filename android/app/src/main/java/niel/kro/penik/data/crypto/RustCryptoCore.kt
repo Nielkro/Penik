@@ -145,5 +145,37 @@ object RustCryptoCore {
     ): ByteArray?
 
     @JvmStatic
+    external fun generateSigningKeyPair(): ByteArray?
+
+    @JvmStatic
+    external fun deriveVerifyingKey(signingKey: ByteArray): ByteArray?
+
+    @JvmStatic
+    external fun groupEncryptSigned(
+        plaintext: ByteArray,
+        signingKey: ByteArray,
+        groupKey: ByteArray,
+        groupId: Long,
+        keyVersion: Long,
+        senderUserId: Long,
+        messageId: String,
+        createdAt: Long
+    ): ByteArray?
+
+    @JvmStatic
+    external fun groupDecryptVerified(
+        ciphertext: ByteArray,
+        verifyingKey: ByteArray?,
+        groupKey: ByteArray,
+        salt: ByteArray,
+        nonce: ByteArray,
+        groupId: Long,
+        keyVersion: Long,
+        senderUserId: Long,
+        messageId: String,
+        createdAt: Long
+    ): ByteArray?
+
+    @JvmStatic
     external fun zeroize(array: ByteArray)
 }

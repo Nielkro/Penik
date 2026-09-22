@@ -28,10 +28,12 @@ type KeyBackup struct {
 
 // DeviceKeyBundle bundles everything a sender needs to initiate a session.
 type DeviceKeyBundle struct {
-	DeviceID int64  `msgpack:"device_id"`
-	IKPub    []byte `msgpack:"ik_pub"`
-	SPKPub   []byte `msgpack:"spk_pub"`
-	SPKSig   []byte `msgpack:"spk_sig"`
+	DeviceID      int64  `msgpack:"device_id"`
+	IKPub         []byte `msgpack:"ik_pub"`
+	SigningKey    []byte `msgpack:"signing_key,omitempty" json:"signing_key,omitempty"`
+	SPKPub        []byte `msgpack:"spk_pub"`
+	SPKSig        []byte `msgpack:"spk_sig"`
 	OPKPub        []byte `msgpack:"opk_pub"` // may be nil if exhausted
 	CryptoVersion int    `msgpack:"crypto_version" json:"crypto_version"`
 }
+

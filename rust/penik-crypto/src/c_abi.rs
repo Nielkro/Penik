@@ -423,3 +423,164 @@ pub unsafe extern "C" fn penik_zeroize(
 pub extern "C" fn penik_crypto_version() -> u32 {
     crate::CRYPTO_CORE_VERSION
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn penik_generate_signing_key_pair(
+    out_vk: *mut u8,
+    out_sk: *mut u8,
+) -> i32 {
+    if out_vk.is_null() || out_sk.is_null() {
+        return -1;
+    }
+    let (mut sk, vk) = crate::signing::generate_signing_keypair();
+    std::ptr::copy_nonoverlapping(vk.as_ptr(), out_vk, 32);
+    std::ptr::copy_nonoverlapping(sk.as_ptr(), out_sk, 32);
+    zeroize::Zeroize::zeroize(&mut sk);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn penik_derive_verifying_key(
+    in_sk: *const u8,
+    out_vk: *mut u8,
+) -> i32 {
+    if in_sk.is_null() || out_vk.is_null() {
+        return -1;
+    }
+    let sk_slice = slice::from_raw_parts(in_sk, 32);
+    let mut sk = [0u8; 32];
+    sk.copy_from_slice(sk_slice);
+    let vk = crate::signing::derive_verifying_key(&sk);
+    zeroize::Zeroize::zeroize(&mut sk);
+    std::ptr::copy_nonoverlapping(vk.as_ptr(), out_vk, 32);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn penik_group_encrypt_signed(
+    plaintext: *const u8,
+    plaintext_len: usize,
+    signing_key: *const u8,
+    group_key: *const u8,
+    group_key_len: usize,
+    group_id: u64,
+    key_version: u64,
+    sender_user_id: u64,
+    message_id: *const c_char,
+    created_at: i64,
+    out_ct: *mut u8,
+    out_salt: *mut u8,
+    out_nonce: *mut u8,
+) -> i32 {
+    if signing_key.is_null() || group_key.is_null() || out_ct.is_null() || out_salt.is_null() || out_nonce.is_null() {
+        return -1;
+    }
+    let msg_id = if message_id.is_null() {
+        ""
+    } else {
+        match CStr::from_ptr(message_id).to_str() {
+            Ok(s) => s,
+            Err(_) => return -1,
+        }
+    };
+    let pt_slice = if plaintext_len > 0 && !plaintext.is_null() {
+        slice::from_raw_parts(plaintext, plaintext_len)
+    } else {
+        &[]
+    };
+    let mut sk = [0u8; 32];
+    sk.copy_from_slice(slice::from_raw_parts(signing_key, 32));
+    let gk_slice = slice::from_raw_parts(group_key, group_key_len);
+
+    let res = crate::signing::group_encrypt_signed(
+        pt_slice,
+        &sk,
+        gk_slice,
+        group_id,
+        key_version,
+        sender_user_id,
+        msg_id,
+        created_at,
+    );
+    zeroize::Zeroize::zeroize(&mut sk);
+
+    match res {
+        Ok(enc) => {
+            std::ptr::copy_nonoverlapping(enc.ciphertext.as_ptr(), out_ct, enc.ciphertext.len());
+            std::ptr::copy_nonoverlapping(enc.salt.as_ptr(), out_salt, 32);
+            std::ptr::copy_nonoverlapping(enc.nonce.as_ptr(), out_nonce, 12);
+            0
+        }
+        Err(_) => -1,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn penik_group_decrypt_verified(
+    ciphertext: *const u8,
+    ciphertext_len: usize,
+    verifying_key: *const u8,
+    group_key: *const u8,
+    group_key_len: usize,
+    salt: *const u8,
+    nonce: *const u8,
+    group_id: u64,
+    key_version: u64,
+    sender_user_id: u64,
+    message_id: *const c_char,
+    created_at: i64,
+    out_pt: *mut u8,
+    out_pt_len: *mut usize,
+) -> i32 {
+    if ciphertext.is_null() || group_key.is_null() || salt.is_null() || nonce.is_null() || out_pt_len.is_null() {
+        return -1;
+    }
+    let msg_id = if message_id.is_null() {
+        ""
+    } else {
+        match CStr::from_ptr(message_id).to_str() {
+            Ok(s) => s,
+            Err(_) => return -1,
+        }
+    };
+    let ct_slice = slice::from_raw_parts(ciphertext, ciphertext_len);
+    let gk_slice = slice::from_raw_parts(group_key, group_key_len);
+    let salt_slice = slice::from_raw_parts(salt, 32);
+    let nonce_slice = slice::from_raw_parts(nonce, 12);
+    let vk_opt = if !verifying_key.is_null() {
+        let mut vk = [0u8; 32];
+        vk.copy_from_slice(slice::from_raw_parts(verifying_key, 32));
+        Some(vk)
+    } else {
+        None
+    };
+
+    match crate::signing::group_decrypt_verified(
+        ct_slice,
+        vk_opt.as_ref(),
+        gk_slice,
+        salt_slice,
+        nonce_slice,
+        group_id,
+        key_version,
+        sender_user_id,
+        msg_id,
+        created_at,
+    ) {
+        Ok(pt) => {
+            if out_pt.is_null() {
+                *out_pt_len = pt.len();
+                return 0;
+            }
+            if *out_pt_len < pt.len() {
+                *out_pt_len = pt.len();
+                return -2;
+            }
+            std::ptr::copy_nonoverlapping(pt.as_ptr(), out_pt, pt.len());
+            *out_pt_len = pt.len();
+            0
+        }
+        Err(_) => -1,
+    }
+}
+
