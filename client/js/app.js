@@ -13,7 +13,7 @@ import { ws, OP } from './ws.js';
 import { renderAuth } from './ui/auth.js';
 import { renderChatList, renderChat, avatarUpdateTimestamps } from './ui/chat.js';
 import { renderCalls } from './ui/calls.js';
-import { groupAvatarUpdateTimestamps, showToast } from './ui/components.js';
+import { groupAvatarUpdateTimestamps, showToast, setMsgTextContent } from './ui/components.js';
 import { renderGroup } from './ui/groups.js';
 import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
@@ -589,6 +589,65 @@ export function triggerChatListUpdate() {
   }
 }
 
+  // Optimistic file payloads keep upload_msg_id and blob:/local: URLs with no
+  // key. They must never win over a final server payload (/api/v1/... + key).
+  function isBrokenFilePlaintext(plaintext) {
+    if (!plaintext || typeof plaintext !== "string" || !plaintext.startsWith("{")) return false;
+    try {
+      const p = JSON.parse(plaintext);
+      if (!p || p.type !== "file" || !p.file) return false;
+      const f = p.file;
+      const url = String(f.url || "");
+      return Boolean(f.upload_msg_id) ||
+        !f.key ||
+        url.startsWith("local:") ||
+        url.startsWith("blob:") ||
+        (Boolean(url) && !url.startsWith("/api/v1/attachments/"));
+    } catch {
+      return false;
+    }
+  }
+
+  function isGoodFilePlaintext(plaintext) {
+    if (!plaintext || typeof plaintext !== "string" || !plaintext.startsWith("{")) return false;
+    try {
+      const p = JSON.parse(plaintext);
+      if (!p || p.type !== "file" || !p.file) return false;
+      const f = p.file;
+      const url = String(f.url || "");
+      return Boolean(f.key) && url.startsWith("/api/v1/attachments/") && !f.upload_msg_id;
+    } catch {
+      return false;
+    }
+  }
+
+  function updateActiveBubblePlaintext(msgId, clientMsgId, newPlaintext) {
+    if (!_activeChatCallback) return;
+    const ids = [msgId, clientMsgId].filter(Boolean);
+    for (const id of ids) {
+      const esc = CSS.escape(String(id));
+      const bubble = /** @type {(HTMLElement & {_msg?: {plaintext?: string}})|null} */ (
+        document.querySelector(`[data-msg-id="${esc}"], [data-client-msg-id="${esc}"]`)
+      );
+      if (!bubble) continue;
+      if (bubble._msg) bubble._msg.plaintext = newPlaintext;
+      const txt = bubble.querySelector(".msg-text");
+      if (txt) setMsgTextContent(txt, newPlaintext);
+      return;
+    }
+  }
+
+  // Replace a stale optimistic file copy with the final server payload.
+  async function tryUpgradeStaleFilePlaintext(localMsg, serverPlaintext) {
+    if (!localMsg || !serverPlaintext) return false;
+    if (!isBrokenFilePlaintext(localMsg.plaintext)) return false;
+    if (!isGoodFilePlaintext(serverPlaintext)) return false;
+    const updated = { ...localMsg, plaintext: serverPlaintext };
+    await saveMessage(updated);
+    updateActiveBubblePlaintext(localMsg.msg_id, localMsg.client_msg_id, serverPlaintext);
+    return true;
+  }
+
 async function onMsgRecvGlobal(payload) {
   const fromUserId = Number(payload.from_user_id);
 
@@ -597,7 +656,21 @@ async function onMsgRecvGlobal(payload) {
 
   // Prevent duplicate rendering of messages sent by this device
   const existingByServer = payload.msg_id ? await getMessage(payload.msg_id) : null;
-  if (existingByServer) return;
+  if (existingByServer) {
+    // Local optimistic copy may still hold upload_msg_id while the replayed
+    // ciphertext carries the final file payload — replace it.
+    if (isBrokenFilePlaintext(existingByServer.plaintext) && payload.ciphertext) {
+      try {
+        const result = await decryptMessagePayload(payload);
+        if (result && result.text) {
+          await tryUpgradeStaleFilePlaintext(existingByServer, result.text);
+        }
+      } catch (e) {
+        console.warn("[ws] stale file upgrade failed:", e);
+      }
+    }
+    return;
+  }
 
   if (payload.client_msg_id) {
     const existingByClient = await getMessageByClientId(payload.client_msg_id);
@@ -616,6 +689,19 @@ async function onMsgRecvGlobal(payload) {
           }
         }
       }
+      if (isBrokenFilePlaintext(existingByClient.plaintext) && payload.ciphertext) {
+        try {
+          const result = await decryptMessagePayload(payload);
+          if (result && result.text) {
+            const refreshed = payload.msg_id
+              ? (await getMessage(payload.msg_id)) || existingByClient
+              : existingByClient;
+            await tryUpgradeStaleFilePlaintext(refreshed, result.text);
+          }
+        } catch (e) {
+          console.warn("[ws] stale file upgrade (client id) failed:", e);
+        }
+      }
       return;
     }
   }
@@ -631,7 +717,7 @@ async function onMsgRecvGlobal(payload) {
         domId = pending.tempId;
       }
       pendingAcks.delete(String(resolvedOldId));
-      
+
       // Update DOM dataset ID of the message bubble
       if (_activeChatCallback) {
         const bubble = /** @type {HTMLElement} */ (document.querySelector(`[data-msg-id="${domId}"]`) || document.querySelector(`[data-msg-id="${resolvedOldId}"]`));
@@ -641,6 +727,19 @@ async function onMsgRecvGlobal(payload) {
           if (statusEl) {
             statusEl.dataset.msgId = payload.msg_id;
           }
+        }
+      }
+      if (payload.ciphertext) {
+        try {
+          const resolvedMsg = await getMessage(payload.msg_id) || await getMessage(resolvedOldId);
+          if (resolvedMsg && isBrokenFilePlaintext(resolvedMsg.plaintext)) {
+            const result = await decryptMessagePayload(payload);
+            if (result && result.text) {
+              await tryUpgradeStaleFilePlaintext(resolvedMsg, result.text);
+            }
+          }
+        } catch (e) {
+          console.warn("[ws] stale file upgrade (resolve) failed:", e);
         }
       }
       triggerChatListUpdate();
@@ -659,7 +758,8 @@ async function onMsgRecvGlobal(payload) {
       // saved during the first delivery is the authoritative copy.
       const existing = payload.msg_id ? await getMessage(payload.msg_id) : null;
       if (existing?.plaintext &&
-          !existing.plaintext.startsWith('[Ошибка расшифрования')) {
+          !existing.plaintext.startsWith('[Ошибка расшифрования') &&
+          !isBrokenFilePlaintext(existing.plaintext)) {
         plaintext = existing.plaintext;
       } else {
         const result = await decryptMessagePayload(payload);
@@ -676,10 +776,11 @@ async function onMsgRecvGlobal(payload) {
   if (plaintext.startsWith('[Сообщение не расшифровано')) {
     const clientMsgId = payload.client_msg_id;
     if (clientMsgId) {
-      const existing = await getMessageByClientId(clientMsgId);
-      if (existing?.plaintext && !existing.plaintext.startsWith('[Сообщение не расшифровано')) {
-        return;
-      }
+        const existing = await getMessageByClientId(clientMsgId);
+        if (existing?.plaintext && !existing.plaintext.startsWith('[Сообщение не расшифровано') &&
+            !isBrokenFilePlaintext(existing.plaintext)) {
+          return;
+        }
     }
   }
 
@@ -1038,7 +1139,8 @@ export async function syncMessageHistory(options = {}) {
       const existing = await getMessage(item.id);
       const isEdited = item.edited_at && (!existing || !existing.edited_at || (item.edited_at * 1000 > existing.edited_at));
       if (existing && existing.plaintext &&
-          !existing.plaintext.startsWith('[Сообщение не расшифровано') && !isEdited) {
+          !existing.plaintext.startsWith('[Сообщение не расшифровано') && !isEdited &&
+          !isBrokenFilePlaintext(existing.plaintext)) {
         continue;
       }
 
@@ -1049,15 +1151,18 @@ export async function syncMessageHistory(options = {}) {
         text = item.plaintext;
       } else if (item.ciphertext) {
         try {
-          // History can contain a message that was already received live and
-          // decrypted. In that case the OTPK may have been consumed already;
-          // use the locally persisted plaintext unless it was edited.
-          const locallyStored = await getMessage(item.id);
-          if (locallyStored && locallyStored.plaintext &&
-              !locallyStored.plaintext.startsWith('[Сообщение не расшифровано') && !isEdited) {
-            text = locallyStored.plaintext;
-            throw { __alreadyDecrypted: true };
-          }
+      // History can contain a message that was already received live and
+      // decrypted. In that case the OTPK may have been consumed already;
+      // use the locally persisted plaintext unless it was edited.
+      // A stale optimistic file copy (upload_msg_id / local: / no key) must
+      // still be re-decrypted so the final server payload can replace it.
+      const locallyStored = await getMessage(item.id);
+      if (locallyStored && locallyStored.plaintext &&
+          !locallyStored.plaintext.startsWith('[Сообщение не расшифровано') && !isEdited &&
+          !isBrokenFilePlaintext(locallyStored.plaintext)) {
+        text = locallyStored.plaintext;
+        throw { __alreadyDecrypted: true };
+      }
           let senderBundle = await getSenderBundle(item.sender_id);
           let senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
           if (!senderDevice) {
@@ -1129,6 +1234,8 @@ export async function syncMessageHistory(options = {}) {
           if (_activeChatCallback && typeof _activeChatCallback.onMessageEdited === "function") {
             _activeChatCallback.onMessageEdited(item.id, text, item.edited_at * 1000);
           }
+        } else if (isBrokenFilePlaintext(existingMsg.plaintext)) {
+          await tryUpgradeStaleFilePlaintext(existingMsg, text);
         }
         continue;
       }
@@ -1148,6 +1255,11 @@ export async function syncMessageHistory(options = {}) {
           }
           if (item.edited_at) {
             await updateMessageText(item.id, text, item.edited_at * 1000);
+          } else {
+            const resolvedMsg = await getMessage(item.id);
+            if (resolvedMsg && isBrokenFilePlaintext(resolvedMsg.plaintext)) {
+              await tryUpgradeStaleFilePlaintext(resolvedMsg, text);
+            }
           }
           continue;
         }

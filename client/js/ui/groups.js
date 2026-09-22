@@ -487,6 +487,9 @@ export async function renderGroup(container, groupId) {
           if (txt && msg.plaintext) {
             setMsgTextContent(txt, msg.plaintext);
           }
+          if (bubble._msg && msg.plaintext) {
+            bubble._msg.plaintext = msg.plaintext;
+          }
           const st = bubble.querySelector(".msg-status-wrapper, .msg-status");
           if (st) {
             if (msg.delivered) {
@@ -1013,6 +1016,10 @@ export async function renderGroup(container, groupId) {
         const txt = bubble.querySelector(".msg-text");
         if (txt) {
           setMsgTextContent(txt, payloadStr);
+        }
+        const realBubble = bubble.classList.contains("msg-bubble") ? bubble : bubble.querySelector(".msg-bubble");
+        if (realBubble && realBubble._msg) {
+          realBubble._msg.plaintext = payloadStr;
         }
       }
 

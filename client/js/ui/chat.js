@@ -1034,6 +1034,9 @@ export async function renderChat(container, userId) {
             setMsgTextContent(txt, msg.plaintext || "");
           }
         }
+        if (existing._msg && typeof msg.plaintext === "string" && msg.plaintext) {
+          existing._msg.plaintext = msg.plaintext;
+        }
         return;
       }
     }
@@ -1650,6 +1653,11 @@ export async function renderChat(container, userId) {
         const txt = bubble.querySelector(".msg-text");
         if (txt) {
           setMsgTextContent(txt, payloadStr);
+        }
+        // Forward/copy read bubble._msg — keep it in sync with the final payload
+        // so a later forward does not clone optimistic upload_msg_id state.
+        if (bubble._msg) {
+          bubble._msg.plaintext = payloadStr;
         }
       }
 

@@ -419,7 +419,7 @@ export function setMsgTextContent(el, text) {
         renderStickerContent(el, parsed);
         return;
       }
-      if (parsed && (parsed.type === "file" || parsed.file) && (parsed.file?.url || parsed.url)) {
+      if (parsed && (parsed.type === "file" || parsed.file)) {
         if (!parsed.file) parsed.file = { ...parsed };
         if (parsed.fwd_from) {
           const header = document.createElement("div");
@@ -1087,10 +1087,22 @@ function createUploadOverlay(uploadMsgId, totalSize = 0) {
   return overlay;
 }
 
+// A file is downloadable only with a real server URL and a non-empty key.
+// Optimistic payloads (upload_msg_id + blob:/local: and no key) must not fetch.
+function isDownloadableFile(f) {
+  if (!f) return false;
+  const url = String(f.url || "");
+  return Boolean(f.key) && url.startsWith("/api/v1/attachments/");
+}
+
 function renderFileCard(container, fileMsg) {
   const f = fileMsg.file;
   const isImage = (f.mime || "").startsWith("image/");
   const isVideo = (f.mime || "").startsWith("video/");
+  const downloadable = isDownloadableFile(f);
+  // Overlay only while the payload is still optimistic — a leftover
+  // upload_msg_id on a final URL must not pin a fake "uploading" state.
+  const showUploadOverlay = Boolean(f.upload_msg_id) && !downloadable;
 
   if (isImage) {
     const fileCard = el("div", { class: "msg-file-card", style: "display:flex;flex-direction:column;gap:4px;width:100%;padding:0;" });
@@ -1106,19 +1118,19 @@ function renderFileCard(container, fileMsg) {
     });
     imgEl.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (!f.upload_msg_id) {
+      if (downloadable || decryptedBlobCache.has(f.url)) {
         downloadAndDecryptFile(f, true);
       }
     });
     mediaWrap.appendChild(imgEl);
 
-    if (f.upload_msg_id) {
+    if (showUploadOverlay) {
       mediaWrap.appendChild(createUploadOverlay(f.upload_msg_id, f.size));
     }
 
     fileCard.appendChild(mediaWrap);
 
-    if (!cachedBlobUrl && !f.upload_msg_id) {
+    if (!cachedBlobUrl && downloadable) {
       downloadAndDecryptFile(f, false, null, true).then((fullBlobUrl) => {
         if (fullBlobUrl && document.body.contains(imgEl)) {
           imgEl.src = fullBlobUrl;
@@ -1157,7 +1169,7 @@ function renderFileCard(container, fileMsg) {
 
     mediaWrap.appendChild(videoEl);
 
-    if (f.upload_msg_id) {
+    if (showUploadOverlay) {
       mediaWrap.appendChild(createUploadOverlay(f.upload_msg_id, f.size));
     }
 
@@ -1200,7 +1212,7 @@ function renderFileCard(container, fileMsg) {
     // plays the audio track, but reports videoWidth 0 and paints black. Name the
     // codec so the cause is obvious, and offer the file for download.
     videoEl.addEventListener("loadeddata", () => {
-      if (f.upload_msg_id || videoEl.videoWidth > 0 || videoEl.videoHeight > 0) return;
+      if (showUploadOverlay || videoEl.videoWidth > 0 || videoEl.videoHeight > 0) return;
       setTimeout(() => {
         if (videoEl.videoWidth > 0 || videoEl.videoHeight > 0 || !videoEl.isConnected) return;
         const src = videoEl.src;
@@ -1218,7 +1230,7 @@ function renderFileCard(container, fileMsg) {
 
     if (cachedBlobUrl) {
       videoEl.src = cachedBlobUrl;
-    } else {
+    } else if (downloadable) {
       // Decrypting every video in the history at once blocks the main thread and
       // freezes the page, so the fetch is deferred until the card is scrolled to.
       const startLoad = () => {
@@ -1247,6 +1259,8 @@ function renderFileCard(container, fileMsg) {
       } else {
         startLoad();
       }
+    } else if (!showUploadOverlay) {
+      showFallbackCard("Файл не загружен на сервер.", false);
     }
 
     let hoverTimer = null;
@@ -1301,7 +1315,7 @@ function renderFileCard(container, fileMsg) {
   });
   infoRow.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (!f.upload_msg_id) {
+    if (downloadable || decryptedBlobCache.has(f.url)) {
       downloadAndDecryptFile(f, false);
     }
   });
@@ -1313,7 +1327,7 @@ function renderFileCard(container, fileMsg) {
   );
 
   infoRow.append(iconNode, metaBox);
-  if (f.upload_msg_id) {
+  if (showUploadOverlay) {
     infoRow.appendChild(createUploadOverlay(f.upload_msg_id, f.size));
   }
   fileCard.appendChild(infoRow);
@@ -1956,6 +1970,17 @@ async function executeForward(target, rawMsgText, senderName) {
     try {
       const parsed = JSON.parse(rawMsgText);
       if (parsed.type === "file" || parsed.file) {
+        // Never forward optimistic upload state: strip markers and unusable URLs
+        // so the recipient does not inherit a permanently blocked fetch.
+        if (parsed.file && typeof parsed.file === "object") {
+          delete parsed.file.upload_msg_id;
+          delete parsed.file.uploading;
+          delete parsed.file.error;
+          const fileUrl = String(parsed.file.url || "");
+          if (fileUrl && !fileUrl.startsWith("/api/v1/attachments/")) {
+            parsed.file.url = "";
+          }
+        }
         parsed.fwd_from = parsed.fwd_from || senderName;
         forwardedPayload = JSON.stringify(parsed);
       } else if (parsed.type === "fwd") {
