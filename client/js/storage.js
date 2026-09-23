@@ -219,6 +219,18 @@ export async function updateMessageText(msgId, newText, editedAt) {
   return existing;
 }
 
+// Fill a missing or placeholder plaintext after a successful history decrypt
+// without marking the message as edited (no "ред." badge).
+export async function updateMessagePlaintext(msgId, newText) {
+  await openDB();
+  const existing = await getMessage(msgId);
+  if (!existing) return null;
+  existing.plaintext = newText;
+  existing.text = newText;
+  await saveMessage(existing);
+  return existing;
+}
+
 async function unsealMessageRecord(msg) {
   if (!msg) return msg;
   if (msg.sealed_text && isSealed(msg.sealed_text)) {

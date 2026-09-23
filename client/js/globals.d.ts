@@ -12,6 +12,10 @@ interface Window {
   __PENIK_DESKTOP_PLATFORM__?: string;
   // Console diagnostic: dumps local IK vs stored/server pubs and TOFU pins.
   __penikDebug?: () => Promise<unknown>;
+  // Console diagnostic: counters from the last history sync pass.
+  __penikSyncStats?: () => unknown;
+  // Console diagnostic: fetch one server row by id and attempt decrypt.
+  __penikTryDecrypt?: (msgId: number | string) => Promise<unknown>;
   go?: any;
   runtime?: any;
 }

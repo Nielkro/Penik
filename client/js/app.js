@@ -1,6 +1,6 @@
 import { getToken, setToken, primeToken, getUserById, apiGet, apiPost, syncServerTime, getServerTimeMs, getServerTimeSec, getApiOrigin } from './api.js';
 import {
-  openDB, saveMessage, updateMessageRead, updateMessageText,
+  openDB, saveMessage, updateMessageRead, updateMessageText, updateMessagePlaintext,
   saveContact, getContact, updateMessageDelivered, clearIndexedDB,
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
   findAndResolvePendingSentMessage, deleteChatData, deleteMessage,
@@ -93,6 +93,11 @@ function read32BE(buf, offset) {
 }
 
 export const pendingAcks = new Map();
+
+// Per-chat lowest server message id returned by history sync. Scroll-back must
+// page by this watermark so local-only rows cannot skip an unfetched server gap.
+const historyWatermarks = new Map();
+let lastHistorySyncStats = null;
 
 // pendingAcks maps client_msg_id -> { tempId, userId, ts }. Entries are removed
 // the instant their ACK arrives (onMsgAckReceivedGlobal). This TTL sweep is a
@@ -652,6 +657,26 @@ export function triggerChatListUpdate() {
     return true;
   }
 
+  // After a successful decrypt, write plaintext onto an existing shell (empty,
+  // placeholder, or failed) so a prior partial save cannot swallow the text.
+  // Returns true when the record was updated. Does not mark the message edited.
+  async function fillMissingPlaintext(msgId, text) {
+    if (!text) return false;
+    const existing = await getMessage(msgId);
+    if (!existing) return false;
+    const p = existing.plaintext;
+    if (p &&
+        !p.startsWith('[Сообщение не расшифровано') &&
+        !p.startsWith('[Ошибка') &&
+        !isBrokenFilePlaintext(p)) {
+      return false;
+    }
+    if (isBrokenFilePlaintext(p)) return false;
+    await updateMessagePlaintext(msgId, text);
+    updateActiveBubblePlaintext(msgId, existing.client_msg_id, text);
+    return true;
+  }
+
 async function onMsgRecvGlobal(payload) {
   const fromUserId = Number(payload.from_user_id);
 
@@ -1084,6 +1109,29 @@ async function onMsgStatusBatchGlobal(payload) {
   }
 }
 
+function recordHistoryWatermark(chatUserId, rows) {
+  if (chatUserId == null || !Array.isArray(rows) || rows.length === 0) return;
+  let minId = Infinity;
+  for (const row of rows) {
+    const id = Number(row?.id);
+    if (Number.isFinite(id) && id < minId) minId = id;
+  }
+  if (!Number.isFinite(minId)) return;
+  const key = String(chatUserId);
+  const prev = historyWatermarks.get(key);
+  if (prev == null || minId < prev) historyWatermarks.set(key, minId);
+}
+
+export function getHistoryWatermark(chatUserId) {
+  if (chatUserId == null) return null;
+  const value = historyWatermarks.get(String(chatUserId));
+  return value == null ? null : value;
+}
+
+export function getLastHistorySyncStats() {
+  return lastHistorySyncStats;
+}
+
 export async function syncMessageHistory(options = {}) {
   try {
     const limit = options.limit || 500;
@@ -1109,7 +1157,20 @@ export async function syncMessageHistory(options = {}) {
       url += `&chat_user_id=${options.chat_user_id}`;
     }
     const history = await apiGet(url);
-    if (!history || !Array.isArray(history) || history.length === 0) return [];
+    if (!history || !Array.isArray(history) || history.length === 0) {
+      lastHistorySyncStats = {
+        url,
+        total: 0,
+        at: Date.now(),
+        before_id: options.before_id || null,
+        chat_user_id: options.chat_user_id || null,
+      };
+      return [];
+    }
+
+    if (options.chat_user_id) {
+      recordHistoryWatermark(options.chat_user_id, history);
+    }
 
     const me = state.currentUser;
     if (!me) return [];
@@ -1130,6 +1191,26 @@ export async function syncMessageHistory(options = {}) {
     // UI copy per client_msg_id to avoid rendering every envelope separately.
     const seenOwnClientMsgIds = new Set();
 
+    const stats = {
+      url,
+      total: history.length,
+      deviceSkipped: 0,
+      alreadyGood: 0,
+      fanoutSkipped: 0,
+      ownDecryptOk: 0,
+      ownDecryptFail: 0,
+      peerDecryptOk: 0,
+      peerDecryptFail: 0,
+      undecryptableSkipped: 0,
+      filledPlaceholder: 0,
+      filledResolved: 0,
+      upgradedFile: 0,
+      savedNew: 0,
+      deletedSkipped: 0,
+      before_id: options.before_id || null,
+      chat_user_id: options.chat_user_id || null,
+    };
+
     for (const item of history) {
       // History is device-scoped.  Never try to decrypt a fan-out copy that
       // belongs to another device of the same account (for example, the
@@ -1143,6 +1224,7 @@ export async function syncMessageHistory(options = {}) {
         Number(item.recipient_device_id) === currentDeviceId ||
         Number(item.sender_device_id) === currentDeviceId;
       if (!belongsToThisDevice) {
+        stats.deviceSkipped++;
         continue;
       }
       const existing = await getMessage(item.id);
@@ -1150,6 +1232,7 @@ export async function syncMessageHistory(options = {}) {
       if (existing && existing.plaintext &&
           !existing.plaintext.startsWith('[Сообщение не расшифровано') && !isEdited &&
           !isBrokenFilePlaintext(existing.plaintext)) {
+        stats.alreadyGood++;
         if (Number(item.sender_id) === myId && item.client_msg_id) {
           seenOwnClientMsgIds.add(item.client_msg_id);
         }
@@ -1161,6 +1244,7 @@ export async function syncMessageHistory(options = {}) {
       // does not block another target-device copy of the same message.
       const isOwnRow = Number(item.sender_id) === myId && !!item.client_msg_id;
       if (isOwnRow && seenOwnClientMsgIds.has(item.client_msg_id)) {
+        stats.fanoutSkipped++;
         continue;
       }
 
@@ -1237,9 +1321,13 @@ export async function syncMessageHistory(options = {}) {
             edited_at: item.edited_at
           });
           text = decrypted.text;
+          if (isOwnOutgoing) stats.ownDecryptOk++;
+          else stats.peerDecryptOk++;
         } catch (e) {
           if (e?.__alreadyDecrypted) continue;
           text = existing?.plaintext || "";
+          if (isOwnRow) stats.ownDecryptFail++;
+          else stats.peerDecryptFail++;
         }
       }
 
@@ -1258,6 +1346,7 @@ export async function syncMessageHistory(options = {}) {
 
       if (!text || text.startsWith('[Сообщение не расшифровано') || text.startsWith('[Ошибка')) {
         // Ensure chat exists in contacts list, but do NOT save broken undecryptable messages
+        stats.undecryptableSkipped++;
         const currentContact = await getContact(peerId);
         await saveContact({
           ...contact,
@@ -1290,13 +1379,18 @@ export async function syncMessageHistory(options = {}) {
             _activeChatCallback.onMessageEdited(item.id, text, item.edited_at * 1000);
           }
         } else if (isBrokenFilePlaintext(existingMsg.plaintext)) {
-          await tryUpgradeStaleFilePlaintext(existingMsg, text);
+          if (await tryUpgradeStaleFilePlaintext(existingMsg, text)) {
+            stats.upgradedFile++;
+          }
+        } else if (await fillMissingPlaintext(item.id, text)) {
+          stats.filledPlaceholder++;
         }
         continue;
       }
 
       if (await isMessageDeletedLocally(item.id) || (item.client_msg_id && await isMessageDeletedLocally(item.client_msg_id))) {
         console.log("[sync] Skipping locally deleted message:", item.id);
+        stats.deletedSkipped++;
         continue;
       }
 
@@ -1313,7 +1407,11 @@ export async function syncMessageHistory(options = {}) {
           } else {
             const resolvedMsg = await getMessage(item.id);
             if (resolvedMsg && isBrokenFilePlaintext(resolvedMsg.plaintext)) {
-              await tryUpgradeStaleFilePlaintext(resolvedMsg, text);
+              if (await tryUpgradeStaleFilePlaintext(resolvedMsg, text)) {
+                stats.upgradedFile++;
+              }
+            } else if (await fillMissingPlaintext(item.id, text)) {
+              stats.filledResolved++;
             }
           }
           continue;
@@ -1333,11 +1431,17 @@ export async function syncMessageHistory(options = {}) {
         edited_at: item.edited_at ? item.edited_at * 1000 : null,
       };
       await saveMessage(storedMsg);
+      stats.savedNew++;
 
       if (_activeChatCallback && String(_activeChatCallback.userId) === String(peerId)) {
         _activeChatCallback.fn(storedMsg);
       }
     }
+
+    stats.at = Date.now();
+    stats.watermark = getHistoryWatermark(options.chat_user_id);
+    lastHistorySyncStats = stats;
+    console.log("[sync] history", stats);
 
     triggerChatListUpdate();
     return history;
@@ -2080,6 +2184,124 @@ async function penikDebugDump() {
   return report;
 }
 
+// Fetch one server row by id and attempt a full decrypt with the same IK/AAD
+// resolution path used by syncMessageHistory. For console diagnosis only.
+async function penikTryDecryptById(msgId) {
+  const id = Number(msgId);
+  if (!Number.isFinite(id)) throw new Error("__penikTryDecrypt: numeric msgId required");
+
+  let item = null;
+  try {
+    const afterRows = await apiGet(`/messages/history?after_id=${id - 1}&limit=20`);
+    item = (afterRows || []).find(r => Number(r.id) === id) || null;
+  } catch {
+    item = null;
+  }
+  if (!item) {
+    try {
+      const beforeRows = await apiGet(`/messages/history?before_id=${id + 1}&limit=20`);
+      item = (beforeRows || []).find(r => Number(r.id) === id) || null;
+    } catch {
+      item = null;
+    }
+  }
+  if (!item) return { found: false, id };
+
+  const me = state.currentUser;
+  const myId = Number(me?.id || me?.user_id || localStorage.getItem("user_id"));
+  const currentDeviceId = Number(localStorage.getItem("device_id"));
+  const peerId = Number(item.chat_user_id || (Number(item.sender_id) === myId ? item.recipient_id : item.sender_id));
+  const isOwnOutgoing = Number(item.sender_id) === myId;
+  const keyOwnerUserId = Number(item.recipient_id) || peerId;
+  const keyDeviceId = Number(item.recipient_device_id) || 0;
+  const senderDeviceId = Number(item.sender_device_id);
+
+  const base = {
+    id: item.id,
+    found: true,
+    isOwnOutgoing,
+    sender_id: item.sender_id,
+    recipient_id: item.recipient_id,
+    sender_device_id: item.sender_device_id,
+    recipient_device_id: item.recipient_device_id,
+    currentDeviceId,
+    timestamp: item.timestamp,
+    client_msg_id: item.client_msg_id,
+    hasCiphertext: Boolean(item.ciphertext),
+    hasSalt: Boolean(item.encryption_salt),
+    hasNonce: Boolean(item.encryption_nonce),
+    ctLen: item.ciphertext ? item.ciphertext.length : 0,
+  };
+
+  if (!item.ciphertext) {
+    return { ...base, ok: false, error: "no_ciphertext" };
+  }
+
+  let fromIdentityKey;
+  let peerUserIdForPin;
+  let peerDeviceIdForPin;
+  let ikSource;
+  try {
+    if (isOwnOutgoing) {
+      const recipBundle = await getCachedKeyBundle(keyOwnerUserId, true);
+      const recipDevice = keyDeviceId
+        ? recipBundle?.devices?.find(d => Number(d.device_id) === keyDeviceId)
+        : null;
+      fromIdentityKey = recipDevice?.identity_key;
+      peerUserIdForPin = keyOwnerUserId;
+      peerDeviceIdForPin = keyDeviceId;
+      ikSource = `recipient:${keyOwnerUserId}:dev${keyDeviceId}:${recipDevice ? "found" : "missing"}`;
+    } else {
+      const senderBundle = await getCachedKeyBundle(item.sender_id, true);
+      const senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === senderDeviceId);
+      fromIdentityKey = senderDevice?.identity_key;
+      peerUserIdForPin = Number(item.sender_id);
+      peerDeviceIdForPin = senderDeviceId;
+      ikSource = `sender:${item.sender_id}:dev${senderDeviceId}:${senderDevice ? "found" : "missing"}`;
+    }
+  } catch (e) {
+    return { ...base, ok: false, error: String(e?.message || e), stage: "resolve_ik" };
+  }
+
+  try {
+    const decrypted = await decryptMessagePayload({
+      ciphertext: item.ciphertext,
+      salt: item.encryption_salt,
+      nonce: item.encryption_nonce,
+      from_identity_key: fromIdentityKey,
+      sender_user_id: item.sender_id,
+      sender_device_id: item.sender_device_id,
+      peer_user_id: peerUserIdForPin,
+      peer_device_id: peerDeviceIdForPin,
+      recipient_id: item.recipient_id,
+      recipient_device_id: item.recipient_device_id,
+      chat_user_id: peerId,
+      chat_id: String(peerId),
+      to_user_id: isOwnOutgoing ? peerId : myId,
+      recipient_user_id: isOwnOutgoing ? peerId : myId,
+      client_msg_id: item.client_msg_id,
+      timestamp: item.timestamp,
+      edited_at: item.edited_at
+    });
+    return {
+      ...base,
+      ok: true,
+      ikSource,
+      hasIk: Boolean(fromIdentityKey),
+      textPreview: String(decrypted.text || "").slice(0, 120),
+    };
+  } catch (e) {
+    return {
+      ...base,
+      ok: false,
+      ikSource,
+      hasIk: Boolean(fromIdentityKey),
+      error: String(e?.message || e),
+      stage: "decrypt",
+    };
+  }
+}
+
 function toUint8ArrayDebug(val) {
   if (!val) return new Uint8Array(0);
   if (val instanceof Uint8Array) return val;
@@ -2096,4 +2318,6 @@ function toUint8ArrayDebug(val) {
 
 if (typeof window !== "undefined") {
   window.__penikDebug = penikDebugDump;
+  window.__penikSyncStats = getLastHistorySyncStats;
+  window.__penikTryDecrypt = penikTryDecryptById;
 }

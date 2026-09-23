@@ -99,9 +99,9 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `index.html` — Root HTML template for the web client and application container.
 - `client/index.html` — Source HTML entry point for the Vite client.
 - `client/css/main.css` — Core browser UI styles: layout, navigation, chats, groups, forms, responsive behavior, and the `.msg-time-tooltip` hover popup.
-- `client/js/app.js` — Main application controller: user state, hash navigation, screen layout, storage initialization, REST/WebSocket/crypto coordination, pairwise history decrypt (recipient-device peer key for own outgoing, fan-out collapse by client_msg_id), key-bundle re-exports, and `window.__penikDebug()` console dump of local IK vs stored/server pubs and TOFU pins.
+- `client/js/app.js` — Main application controller: user state, hash navigation, screen layout, storage initialization, REST/WebSocket/crypto coordination, pairwise history decrypt (recipient-device peer key for own outgoing, fan-out collapse by client_msg_id), key-bundle re-exports, per-chat history watermarks for `before_id` scroll pagination, sync decrypt counters, and `window.__penikDebug()` / `__penikSyncStats()` / `__penikTryDecrypt(id)` console diagnostics.
 - `client/js/ui/auth.js` — Renders login/registration screens and binds forms to the auth API.
-- `client/js/ui/chat.js` — Displays the chat list with live message and call previews, direct messaging room, messages, delivery/read receipts, and input controls.
+- `client/js/ui/chat.js` — Displays the chat list with live message and call previews, direct messaging room, messages, delivery/read receipts, and input controls; older pages load from the server watermark first so local-only rows cannot hide an unfetched server gap.
 - `client/js/ui/calls.js` — Dedicated call history tab in the web client, displaying call records with duration, timestamps, status, and quick redial buttons.
 - `client/js/ui/groups.js` — Displays the group list and group chat room, including messages, invitations, and member actions.
 - `client/js/ui/profile.js` — Profile screen for editing user data and uploading avatars.

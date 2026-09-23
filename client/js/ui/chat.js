@@ -6,7 +6,7 @@ import {
   updateMessageDelivered, updateMessageText, getContact, saveContact, getAllContacts,
   deleteChatData, deleteMessage, saveCachedMedia
 } from "../storage.js";
-import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload, syncMessageHistory, prefetchKeyBundle, getCachedKeyBundle } from "../app.js";
+import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload, syncMessageHistory, prefetchKeyBundle, getCachedKeyBundle, getHistoryWatermark } from "../app.js";
 import { OP } from "../ws.js";
 import {
   avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon,
@@ -1306,65 +1306,54 @@ export async function renderChat(container, userId) {
   async function loadOlderHistory() {
     if (isLoadingOlder || !hasMoreOlder) return;
     isLoadingOlder = true;
-    const oldest = messages[0];
-    if (!oldest) {
-      isLoadingOlder = false;
-      return;
-    }
-    const oldestTs = normalizeTs(oldest.created_at || oldest.timestamp);
-    const oldestServerId = typeof oldest.msg_id === "number" ? oldest.msg_id : (oldest.server_id || null);
-
-    // 1. Try local IndexedDB
-    let olderLocal = [];
     try {
-      olderLocal = await getMessages(userId, 50, oldestTs);
-    } catch (e) {
-      olderLocal = [];
-    }
+      const oldest = messages[0];
+      if (!oldest) return;
+      const oldestTs = normalizeTs(oldest.created_at || oldest.timestamp);
 
-    if (olderLocal.length > 0) {
-      const scrollHeightBefore = messagesEl.scrollHeight;
-      const scrollTopBefore = messagesEl.scrollTop;
-      
-      messages = [...olderLocal, ...messages];
-      olderLocal.forEach(m => appendMessage(m));
-      updateDateDividers();
-      
-      messagesEl.scrollTop = messagesEl.scrollHeight - scrollHeightBefore + scrollTopBefore;
-      isLoadingOlder = false;
-      return;
-    }
+      // Always page the server by the per-chat watermark (min id of prior
+      // history responses). Local-only rows must never short-circuit this:
+      // live peer messages can sit in IndexedDB while own outgoing rows in
+      // the same id range were never fetched, and local-first would skip them.
+      let serverBeforeId = getHistoryWatermark(userId);
+      if (serverBeforeId == null) {
+        await syncMessageHistory({ chat_user_id: userId, limit: 100 }).catch(() => {});
+        serverBeforeId = getHistoryWatermark(userId);
+      }
 
-    // 2. If local DB had no more older messages, query server with before_id
-    if (oldestServerId) {
-      try {
-        const fetched = await syncMessageHistory({
-          chat_user_id: userId,
-          before_id: oldestServerId,
-          limit: 50
-        });
-        if (!fetched || fetched.length === 0) {
-          hasMoreOlder = false;
-        } else {
-          const freshLocal = await getMessages(userId, 50, oldestTs);
-          if (freshLocal.length > 0) {
-            const scrollHeightBefore = messagesEl.scrollHeight;
-            const scrollTopBefore = messagesEl.scrollTop;
-            messages = [...freshLocal, ...messages];
-            freshLocal.forEach(m => appendMessage(m));
-            updateDateDividers();
-            messagesEl.scrollTop = messagesEl.scrollHeight - scrollHeightBefore + scrollTopBefore;
-          } else {
+      if (serverBeforeId != null) {
+        try {
+          const fetched = await syncMessageHistory({
+            chat_user_id: userId,
+            before_id: serverBeforeId,
+            limit: 50
+          });
+          if (!fetched || fetched.length === 0) {
             hasMoreOlder = false;
           }
+        } catch (err) {
+          console.warn("Failed to fetch older history from server:", err);
         }
-      } catch (err) {
-        console.warn("Failed to fetch older history from server:", err);
+      } else {
+        hasMoreOlder = false;
       }
-    } else {
-      hasMoreOlder = false;
+
+      const olderLocal = await getMessages(userId, 50, oldestTs);
+      if (olderLocal.length > 0) {
+        const seenIds = new Set(messages.map(m => String(m.msg_id)));
+        const toPrepend = olderLocal.filter(m => !seenIds.has(String(m.msg_id)));
+        if (toPrepend.length > 0) {
+          const scrollHeightBefore = messagesEl.scrollHeight;
+          const scrollTopBefore = messagesEl.scrollTop;
+          messages = [...toPrepend, ...messages];
+          toPrepend.forEach(m => appendMessage(m));
+          updateDateDividers();
+          messagesEl.scrollTop = messagesEl.scrollHeight - scrollHeightBefore + scrollTopBefore;
+        }
+      }
+    } finally {
+      isLoadingOlder = false;
     }
-    isLoadingOlder = false;
   }
 
   messagesEl.addEventListener("scroll", () => {
