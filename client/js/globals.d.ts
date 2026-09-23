@@ -10,6 +10,8 @@ interface Window {
   __PENIK_API_HOST__?: string;
   __PENIK_DESKTOP__?: boolean;
   __PENIK_DESKTOP_PLATFORM__?: string;
+  // Console diagnostic: dumps local IK vs stored/server pubs and TOFU pins.
+  __penikDebug?: () => Promise<unknown>;
   go?: any;
   runtime?: any;
 }

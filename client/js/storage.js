@@ -1077,3 +1077,16 @@ export async function savePinnedIK(userId, deviceId, ikB64) {
   await openDB();
   return put(tx("e2ee_keys", "readwrite"), { id: `pinned_ik:${userId}:${deviceId}`, ik: ikB64 });
 }
+
+// getAllPinnedIKs returns every TOFU pin as { "userId:deviceId": ikBase64 }.
+export async function getAllPinnedIKs() {
+  await openDB();
+  const rows = await getAll(tx("e2ee_keys"));
+  const out = {};
+  for (const row of rows) {
+    if (row && typeof row.id === "string" && row.id.startsWith("pinned_ik:") && row.ik) {
+      out[row.id.slice("pinned_ik:".length)] = row.ik;
+    }
+  }
+  return out;
+}

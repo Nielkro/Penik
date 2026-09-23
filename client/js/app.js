@@ -7,7 +7,7 @@ import {
   getMessageByClientId, isMessageDeletedLocally,
   getIKPrivate, saveIKPrivate, getIKPublic, saveIKPublic,
   getPersistentDeviceName, getClientPlatform,
-  getAllGroupKeysPlain, saveGroupKey
+  getAllGroupKeysPlain, saveGroupKey, getAllPinnedIKs
 } from './storage.js';
 import { ws, OP } from './ws.js';
 import { renderAuth } from './ui/auth.js';
@@ -23,7 +23,8 @@ import { appSounds } from './sounds.js';
 import { getMessagePreview } from './ui/chat.js';
 import {
   deriveSharedSecret, e2eeEncrypt, e2eeDecrypt, buildPairwiseAAD, buildPairwiseAADV2,
-  encryptKeyBackup, decryptKeyBackup, derivePublicKey, generateKeyPair, encryptPairwiseBatch
+  encryptKeyBackup, decryptKeyBackup, derivePublicKey, generateKeyPair, encryptPairwiseBatch,
+  encodeKey
 } from './crypto.js';
 import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
 import { verifyPeerIdentityKey } from './pinning.js';
@@ -1941,4 +1942,158 @@ export async function restoreE2EEKeys(passphrase) {
   state.privateIK = privBytes;
 
   console.log("E2EE keys and group keys successfully restored from server backup!");
+}
+
+function debugToHex(bytes) {
+  if (!bytes || !bytes.length) return null;
+  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  return Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+function debugToB64(bytes) {
+  if (!bytes || !bytes.length) return null;
+  try {
+    return encodeKey(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+  } catch {
+    return null;
+  }
+}
+
+async function penikDebugDump() {
+  const myId = Number(localStorage.getItem("user_id"));
+  const myDeviceId = Number(localStorage.getItem("device_id"));
+  const priv = await loadPrivateIK();
+  const storedPub = await getIKPublic();
+  let derivedPub = null;
+  if (priv) {
+    try {
+      derivedPub = await derivePublicKey(priv);
+    } catch (e) {
+      console.warn("[penikDebug] derivePublicKey failed", e);
+    }
+  }
+
+  const storedPubB64 = storedPub ? debugToB64(storedPub) : null;
+  const derivedPubB64 = derivedPub ? debugToB64(derivedPub) : null;
+  const privMatchesStored = Boolean(
+    derivedPubB64 && storedPubB64 && derivedPubB64 === storedPubB64
+  );
+
+  let selfBundle = null;
+  let selfBundleErr = null;
+  if (myId) {
+    try {
+      selfBundle = await getCachedKeyBundle(myId, true);
+    } catch (e) {
+      selfBundleErr = String(e?.message || e);
+    }
+  }
+
+  const selfDevices = (selfBundle?.devices || []).map((d) => {
+    const ikB64 = d.identity_key || null;
+    let ikBytes = null;
+    if (ikB64) {
+      try {
+        ikBytes = toUint8ArrayDebug(ikB64);
+      } catch {
+        ikBytes = null;
+      }
+    }
+    return {
+      device_id: Number(d.device_id),
+      crypto_version: Number(d.crypto_version || 0),
+      identity_key_b64: ikB64,
+      identity_key_hex: ikBytes ? debugToHex(ikBytes) : null,
+      is_current_device: Number(d.device_id) === myDeviceId,
+      matches_derived_pub: Boolean(derivedPubB64 && ikB64 && ikB64 === derivedPubB64),
+      matches_stored_pub: Boolean(storedPubB64 && ikB64 && ikB64 === storedPubB64),
+    };
+  });
+
+  const currentDeviceOnServer = selfDevices.find((d) => d.device_id === myDeviceId)
+    || selfDevices.find((d) => d.matches_derived_pub)
+    || null;
+
+  const pins = await getAllPinnedIKs();
+  const pinEntries = Object.entries(pins).map(([key, ikB64]) => {
+    const [userId, deviceId] = key.split(":").map(Number);
+    return { key, userId, deviceId, ik_b64: ikB64, ik_hex: ikB64 ? (() => {
+      try { return debugToHex(toUint8ArrayDebug(ikB64)); } catch { return null; }
+    })() : null };
+  });
+
+  // Compare each pin against the peer's current server bundle (if reachable).
+  const peerUserIds = [...new Set(pinEntries.map((p) => p.userId).filter(Boolean))];
+  const peerComparisons = [];
+  for (const uid of peerUserIds) {
+    let bundle = null;
+    let err = null;
+    try {
+      bundle = await getCachedKeyBundle(uid, true);
+    } catch (e) {
+      err = String(e?.message || e);
+    }
+    const devices = (bundle?.devices || []).map((d) => {
+      const ikB64 = d.identity_key || null;
+      const pinKey = `${uid}:${Number(d.device_id)}`;
+      const pinned = pins[pinKey] || null;
+      return {
+        device_id: Number(d.device_id),
+        server_ik_b64: ikB64,
+        server_ik_hex: ikB64 ? (() => { try { return debugToHex(toUint8ArrayDebug(ikB64)); } catch { return null; } })() : null,
+        pinned_ik_b64: pinned,
+        pinned_ik_hex: pinned ? (() => { try { return debugToHex(toUint8ArrayDebug(pinned)); } catch { return null; } })() : null,
+        pin_matches_server: Boolean(pinned && ikB64 && pinned === ikB64),
+        pin_missing: !pinned,
+      };
+    });
+    peerComparisons.push({ user_id: uid, error: err, devices });
+  }
+
+  const report = {
+    myId,
+    myDeviceId,
+    hasPrivateIK: Boolean(priv),
+    privateIK_len: priv ? priv.length : 0,
+    storedPub_b64: storedPubB64,
+    storedPub_hex: storedPub ? debugToHex(storedPub) : null,
+    derivedPub_b64: derivedPubB64,
+    derivedPub_hex: derivedPub ? debugToHex(derivedPub) : null,
+    priv_matches_stored_pub: privMatchesStored,
+    serverSelfBundleError: selfBundleErr,
+    serverSelfDevices: selfDevices,
+    currentDeviceOnServer,
+    priv_matches_current_device_on_server: Boolean(
+      currentDeviceOnServer && derivedPubB64 && currentDeviceOnServer.identity_key_b64 === derivedPubB64
+    ),
+    pins: pinEntries,
+    peerComparisons,
+    expectedFromForkDb: {
+      device1_hex: "ABD34799FA7E06AB53FA85345D4FE6DF4ED168F313FFEDA9F54718B3D6991C0A",
+      device17_hex: "ABD34799FA7E06AB53FA85345D4FE6DF4ED168F313FFEDA9F54718B3D6991C0A",
+      device7_user6_hex: "21501EBFB7A629B2CFCD8787A2B7CBF79BE66BF3DFD1E1E1685379436481740B",
+      device11_user9_hex: "DE40D88927AE1E2C70C5DD5E1CB2782D7136A38097157FA0FDFC371C5579841A",
+    },
+  };
+
+  console.log("[penikDebug] E2EE key report", report);
+  return report;
+}
+
+function toUint8ArrayDebug(val) {
+  if (!val) return new Uint8Array(0);
+  if (val instanceof Uint8Array) return val;
+  if (val instanceof ArrayBuffer) return new Uint8Array(val);
+  if (Array.isArray(val)) return new Uint8Array(val);
+  if (typeof val === "string") {
+    const bin = atob(val);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  throw new Error(`unsupported binary type ${typeof val}`);
+}
+
+if (typeof window !== "undefined") {
+  window.__penikDebug = penikDebugDump;
 }
