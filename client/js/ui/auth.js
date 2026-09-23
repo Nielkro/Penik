@@ -5,7 +5,7 @@ import {
   saveSigningPrivate, saveSigningPublic, getSigningPrivate, getSigningPublic
 } from "../storage.js";
 import { navigate, setCurrentUser, restoreE2EEKeys, backupE2EEKeys } from "../app.js";
-import { el, showToast, spinner, avatar, showConfirmModal, showPinModal } from "./components.js";
+import { el, showToast, spinner, avatar, showConfirmModal, showPinModal, formatDate, formatTime } from "./components.js";
 import { generateKeyPair, generateSigningKeyPair, encryptIdentityEnvelope, derivePublicKey } from "../crypto.js";
 import { ws, OP } from "../ws.js";
 
@@ -134,7 +134,9 @@ export function renderAuth(container, initialMode = "welcome") {
     avatarFile: null,
     avatarUrl: null,
     tempUserId: null,
-    tempName: null
+    tempName: null,
+    availableBackups: [],
+    selectedBackupId: null
   };
 
   const card = el("div", { class: "auth-card", style: "position:relative; overflow:hidden; min-height: 380px; display:flex; flex-direction:column; justify-content:center;" });
@@ -557,15 +559,26 @@ export function renderAuth(container, initialMode = "welcome") {
           localStorage.setItem("user_id", String(res.user_id));
           localStorage.setItem("device_id", String(res.device_id));
 
+          state.tempUserId = res.user_id;
           state.password = password;
 
           try {
-            const backup = await apiGet("/keys/backup");
-            if (backup && backup.encrypted_blob) {
+            const backups = await apiGet("/keys/backups");
+            if (Array.isArray(backups) && backups.length > 0) {
+              state.availableBackups = backups;
+              state.selectedBackupId = backups[0].id;
               step = 3;
               renderStep();
             } else {
-              navigate("#chats");
+              const backup = await apiGet("/keys/backup");
+              if (backup && backup.encrypted_blob) {
+                state.availableBackups = [backup];
+                state.selectedBackupId = backup.id || null;
+                step = 3;
+                renderStep();
+              } else {
+                navigate("#chats");
+              }
             }
           } catch (_) {
             navigate("#chats");
@@ -591,6 +604,60 @@ export function renderAuth(container, initialMode = "welcome") {
       // Step 4: E2EE Password / Restore / Reset
       const title = el("h1", { class: "auth-title" }, "Восстановление ключей");
       const subtitle = el("p", { style: "text-align:center; color:#aaa; font-size:13px; margin-bottom:20px; line-height:1.4;" }, "Введите ваш E2EE-пароль или мнемоническую фразу (12 слов) для расшифрования сообщений");
+
+      // Backup picker (choose which device backup to restore)
+      let backupPicker = null;
+      if (Array.isArray(state.availableBackups) && state.availableBackups.length > 0) {
+        backupPicker = el("div", { style: "width:100%; margin-bottom:16px;" });
+        const pickerLabel = el("div", {
+          style: "font-size:12px; color:#aaa; margin-bottom:8px; font-weight:500;"
+        }, state.availableBackups.length > 1 ? "Выберите резервную копию устройства:" : "Резервная копия:");
+        backupPicker.appendChild(pickerLabel);
+
+        const list = el("div", { style: "display:flex; flex-direction:column; gap:8px;" });
+        state.availableBackups.forEach(b => {
+          const isSelected = b.id === state.selectedBackupId;
+          const isMobile = b.platform === "android" || b.platform === "ios" || (b.device_name && /android|iphone|phone|pixel|samsung|xiaomi/i.test(b.device_name));
+          const icon = isMobile ? "📱" : "💻";
+          const titleText = b.device_name || (b.platform ? b.platform.toUpperCase() : "Устройство");
+          const ts = b.updated_at || b.created_at;
+          const timeText = ts ? `${formatDate(ts)} в ${formatTime(ts)}` : "";
+
+          const item = el("div", {
+            style: `padding:10px 12px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:space-between; border:1px solid ${isSelected ? "var(--accent, #3b82f6)" : "rgba(255,255,255,0.1)"}; background:${isSelected ? "rgba(59,130,246,0.12)" : "rgba(255,255,255,0.03)"}; transition: all 0.15s ease;`
+          });
+
+          const left = el("div", { style: "display:flex; align-items:center; gap:10px; overflow:hidden;" });
+          const iconEl = el("span", { style: "font-size:18px; line-height:1;" }, icon);
+          const meta = el("div", { style: "display:flex; flex-direction:column; min-width:0;" });
+          const devName = el("div", { style: "font-weight:600; font-size:13px; color:#fff; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" }, titleText);
+          meta.appendChild(devName);
+          if (timeText) {
+            const timeEl = el("div", { style: "font-size:11px; color:#888;" }, timeText);
+            meta.appendChild(timeEl);
+          }
+          left.appendChild(iconEl);
+          left.appendChild(meta);
+
+          const radio = el("input", {
+            type: "radio",
+            name: "auth_backup_selection",
+            checked: isSelected,
+            style: "accent-color:var(--accent, #3b82f6); cursor:pointer; margin-left:8px;"
+          });
+
+          item.appendChild(left);
+          item.appendChild(radio);
+
+          item.addEventListener("click", () => {
+            state.selectedBackupId = b.id;
+            renderStep();
+          });
+
+          list.appendChild(item);
+        });
+        backupPicker.appendChild(list);
+      }
 
       const input = el("input", { type: "password", placeholder: "E2EE-пароль или мнемоническая фраза", class: "profile-input", value: state.e2eePassword, style: "width:100%; padding:12px; padding-right:36px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#fff;" });
       
@@ -621,7 +688,7 @@ export function renderAuth(container, initialMode = "welcome") {
         clearErr();
 
         try {
-          await restoreE2EEKeys(passphrase);
+          await restoreE2EEKeys(passphrase, state.selectedBackupId);
 
           // Get profile
           const user = await getUserById(state.tempUserId);
@@ -729,6 +796,7 @@ export function renderAuth(container, initialMode = "welcome") {
 
       card.appendChild(title);
       card.appendChild(subtitle);
+      if (backupPicker) card.appendChild(backupPicker);
       card.appendChild(wrapper);
       card.appendChild(restoreBtn);
       card.appendChild(skipBtn);

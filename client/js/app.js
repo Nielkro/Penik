@@ -1993,8 +1993,9 @@ export async function backupE2EEKeys(passphrase) {
   });
 }
 
-export async function restoreE2EEKeys(passphrase) {
-  const backup = await apiGet("/keys/backup");
+export async function restoreE2EEKeys(passphrase, backupId = null) {
+  const url = backupId ? `/keys/backup?id=${encodeURIComponent(backupId)}` : "/keys/backup";
+  const backup = await apiGet(url);
   if (!backup || !backup.encrypted_blob) {
     throw new Error("Резервная копия ключей не найдена на сервере.");
   }

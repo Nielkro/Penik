@@ -1,4 +1,4 @@
-import { el, showToast, spinner, formatFullTime, avatar, showConfirmModal } from "./components.js";
+import { el, showToast, spinner, formatFullTime, avatar, showConfirmModal, formatDate, formatTime } from "./components.js";
 import { getTheme, setTheme } from "../theme.js";
 import {
   listDevices,
@@ -330,6 +330,9 @@ function showCloudRestoreModal() {
   const close = () => modal.remove();
   modal.addEventListener("click", event => { if (event.target === modal) close(); });
 
+  let selectedBackupId = null;
+  const pickerContainer = el("div", { style: "margin-top:12px;display:flex;flex-direction:column;gap:8px;" });
+
   const passInput = el("input", {
     type: "password",
     placeholder: "Пароль или 12 слов",
@@ -348,7 +351,7 @@ function showCloudRestoreModal() {
     restoreBtn.textContent = "";
     restoreBtn.appendChild(spinner());
     try {
-      await restoreE2EEKeys(pass);
+      await restoreE2EEKeys(pass, selectedBackupId);
       showToast("Ключи шифрования успешно восстановлены!", "success");
       close();
     } catch (e) {
@@ -359,9 +362,51 @@ function showCloudRestoreModal() {
     }
   });
 
+  // Fetch list of available device backups
+  apiGet("/keys/backups").then(backups => {
+    if (Array.isArray(backups) && backups.length > 0) {
+      selectedBackupId = backups[0].id;
+      if (backups.length > 1) {
+        pickerContainer.appendChild(el("div", { style: "font-size:12px;color:var(--text-muted);font-weight:500;margin-bottom:2px;" }, "Выберите копию устройства:"));
+        const renderList = () => {
+          pickerContainer.querySelectorAll(".backup-pick-item").forEach(e => e.remove());
+          backups.forEach(b => {
+            const isSelected = b.id === selectedBackupId;
+            const isMobile = b.platform === "android" || b.platform === "ios" || (b.device_name && /android|iphone|phone|pixel|samsung|xiaomi/i.test(b.device_name));
+            const icon = isMobile ? "📱" : "💻";
+            const ts = b.updated_at || b.created_at;
+            const timeText = ts ? `${formatDate(ts)} в ${formatTime(ts)}` : "";
+
+            const item = el("div", {
+              class: "backup-pick-item",
+              style: `padding:8px 10px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;border:1px solid ${isSelected ? "var(--accent)" : "var(--border)"};background:${isSelected ? "rgba(59,130,246,0.12)" : "var(--bg)"};`
+            }, [
+              el("div", { style: "display:flex;align-items:center;gap:8px;overflow:hidden;" }, [
+                el("span", { style: "font-size:16px;" }, icon),
+                el("div", { style: "display:flex;flex-direction:column;min-width:0;" }, [
+                  el("div", { style: "font-weight:600;font-size:12px;color:var(--text);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;" }, b.device_name || b.platform || "Устройство"),
+                  timeText ? el("div", { style: "font-size:10px;color:var(--text-muted);" }, timeText) : null
+                ])
+              ]),
+              el("input", { type: "radio", name: "settings_backup_pick", checked: isSelected, style: "accent-color:var(--accent);cursor:pointer;" })
+            ]);
+
+            item.addEventListener("click", () => {
+              selectedBackupId = b.id;
+              renderList();
+            });
+            pickerContainer.appendChild(item);
+          });
+        };
+        renderList();
+      }
+    }
+  }).catch(() => {});
+
   modal.appendChild(el("div", { style: "width:min(400px,100%);background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:left;box-shadow:0 12px 40px rgba(0,0,0,.45);" },
     el("h3", { style: "margin:0 0 8px;color:var(--text);" }, "Восстановление ключей из облака"),
     el("p", { style: "margin:0 0 16px;color:var(--text-muted);font-size:13px;line-height:1.4;" }, "Введите пароль или мнемоническую фразу (12 слов), которая использовалась при создании резервной копии ключей на сервере."),
+    pickerContainer,
     passInput,
     restoreBtn,
     el("button", { class: "btn-ghost", style: "width:100%;margin-top:8px;cursor:pointer;", onclick: close }, "Отмена")
