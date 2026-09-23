@@ -32,6 +32,9 @@ import { getCachedMedia } from './storage.js';
 import { callManager } from './call.js';
 import { initCallUI } from './ui/call_modal.js';
 import { initDesktop, isDesktop, sendDesktopNotification } from './desktop.js';
+import { getCachedKeyBundle, prefetchKeyBundle } from './keybundle.js';
+
+export { getCachedKeyBundle, prefetchKeyBundle };
 
 // Service Worker registration for HTTP 206 Partial Content Range streaming
 if ('serviceWorker' in navigator) {
@@ -1120,6 +1123,8 @@ export async function syncMessageHistory(options = {}) {
     };
 
     const currentDeviceId = Number(localStorage.getItem("device_id"));
+    // One force-refresh per sender per sync pass — never per message row.
+    const forceRefreshedSenders = new Set();
 
     for (const item of history) {
       // History is device-scoped.  Never try to decrypt a fan-out copy that
@@ -1165,7 +1170,8 @@ export async function syncMessageHistory(options = {}) {
       }
           let senderBundle = await getSenderBundle(item.sender_id);
           let senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
-          if (!senderDevice) {
+          if (!senderDevice && !forceRefreshedSenders.has(String(item.sender_id))) {
+            forceRefreshedSenders.add(String(item.sender_id));
             senderBundle = await getCachedKeyBundle(item.sender_id, true);
             senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
           }
@@ -1352,7 +1358,7 @@ export async function decryptMessagePayload(payload) {
 
   if (!fromIdentityKey.length && senderUserId) {
     try {
-      const bundle = await getCachedKeyBundle(senderUserId, true);
+      const bundle = await getCachedKeyBundle(senderUserId);
       const targetDev = bundle?.devices?.find(d => Number(d.device_id) === pinDeviceId) || bundle?.devices?.[0];
       if (targetDev?.identity_key) {
         fromIdentityKey = toUint8Array(targetDev.identity_key);
@@ -1448,9 +1454,10 @@ export async function decryptMessagePayload(payload) {
   }
 
   // If initial decryption failed or key was missing, try sender's key bundle
+  // (soft refresh: getCachedKeyBundle dedups + rate-limits forceRefresh).
   if (!textBytes && senderUserId) {
     try {
-      const bundle = await getCachedKeyBundle(senderUserId, true);
+      const bundle = await getCachedKeyBundle(senderUserId);
       for (const dev of (bundle?.devices || [])) {
         if (!dev.identity_key) continue;
         const candidateIK = toUint8Array(dev.identity_key);
@@ -1483,45 +1490,6 @@ export async function decryptMessagePayload(payload) {
   }
 
   return { text: new TextDecoder().decode(textBytes) };
-}
-
-const bundleMemoryCache = new Map(); // userId -> { bundle, expiresAt }
-const bundleInflight = new Map(); // userId -> Promise<bundle>
-
-export async function getCachedKeyBundle(userId, forceRefresh = false) {
-  const key = String(userId);
-  const now = Date.now();
-  if (!forceRefresh && bundleMemoryCache.has(key)) {
-    const cached = bundleMemoryCache.get(key);
-    if (cached.expiresAt > now) {
-      return cached.bundle;
-    }
-  }
-  if (!forceRefresh && bundleInflight.has(key)) {
-    return bundleInflight.get(key);
-  }
-  const promise = (async () => {
-    try {
-      const bundle = await apiGet(`/keys/bundle/${userId}`);
-      const myId = Number(localStorage.getItem("user_id"));
-      const ttl = Number(userId) === myId ? 30 * 1000 : 5 * 60 * 1000;
-      bundleMemoryCache.set(key, { bundle, expiresAt: Date.now() + ttl });
-      return bundle;
-    } finally {
-      bundleInflight.delete(key);
-    }
-  })();
-  bundleInflight.set(key, promise);
-  return promise;
-}
-
-export function prefetchKeyBundle(userId) {
-  if (!userId) return;
-  const myId = Number(localStorage.getItem("user_id"));
-  getCachedKeyBundle(userId).catch(() => {});
-  if (myId && myId !== Number(userId)) {
-    getCachedKeyBundle(myId).catch(() => {});
-  }
 }
 
 export async function encryptMessagePayload(text, recipientUserId, clientMsgId = "", timestamp = 0) {

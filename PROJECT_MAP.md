@@ -60,6 +60,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `client/js/pairing.js` — Decrypts and imports history transferred from Android into the browser IndexedDB stores.
 - `client/js/backup.js` — Exports and imports encrypted full history envelopes (.penikbackup) and key backups using AES-256-GCM / PBKDF2 with mnemonic seed phrase support.
 - `client/js/ws.js` — Manages the browser WebSocket connection: encodes/decodes MsgPack frames, supports opcodes, ping/pong, request queuing, and exponential backoff reconnection; `connect()` is idempotent and each socket generation is fenced so a stale socket cannot open a second parallel session.
+- `client/js/keybundle.js` — Shared `/keys/bundle` cache with in-flight dedup, force-refresh cooldown, and stale-on-error fallback so history sync cannot stampede the rate limiter.
 - `client/js/presence.js` — Publishes user presence events and provides handlers for online status updates.
 
 ### Desktop client (Wails v2)

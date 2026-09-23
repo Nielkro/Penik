@@ -51,6 +51,7 @@ import {
 } from './storage.js';
 import { ws, OP } from './ws.js';
 import { loadPrivateIK, showDesktopNotification } from './app.js';
+import { getCachedKeyBundle } from './keybundle.js';
 import { appSounds } from './sounds.js';
 import { verifyPeerIdentityKey } from './pinning.js';
 import { groupAvatarUpdateTimestamps } from './ui/components.js';
@@ -116,26 +117,17 @@ function myDeviceId() { return Number(localStorage.getItem('device_id')); }
 
 /* ── Device enumeration + key wrapping ── */
 
-const bundleCache = new Map();
-
 // activeDeviceKeys returns [{ device_id, ik_pub, signing_key }] for every device of the given
-// user ids, using the existing pairwise key-bundle endpoint.
+// user ids, using the shared getCachedKeyBundle cache (single source of truth,
+// inflight dedup, force-refresh cooldown — avoids /keys/bundle stampedes).
 async function fetchDeviceKeys(userIds) {
   const result = [];
-  const now = Date.now();
   for (const uid of userIds) {
     let bundle;
-    const cached = bundleCache.get(uid);
-    if (cached && now - cached.ts < 10000) { // cache for 10 seconds
-      bundle = cached.bundle;
-    } else {
-      try {
-        bundle = await apiGet(`/keys/bundle/${uid}`);
-        bundleCache.set(uid, { bundle, ts: now });
-      } catch (e) {
-        if (cached) bundle = cached.bundle;
-        else continue;
-      }
+    try {
+      bundle = await getCachedKeyBundle(uid);
+    } catch (e) {
+      continue;
     }
     for (const d of bundle?.devices || []) {
       if (!d.identity_key) continue;

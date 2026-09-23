@@ -2,6 +2,7 @@ import { ws, OP } from './ws.js';
 import { showToast } from './ui/components.js';
 import { getContact, saveContact, getIKPrivate } from './storage.js';
 import { getUserById, apiGet, getApiOrigin, invalidateCallsCache } from './api.js';
+import { getCachedKeyBundle } from './keybundle.js';
 import { callSounds } from './sounds.js';
 import { generateKeyPair, deriveSharedSecret, decodeKey } from './crypto.js';
 import { defaultWordCoder } from './wordcoder.js';
@@ -89,7 +90,7 @@ async function deriveMediaKeyAndWords(sharedDh, authSecret) {
 
 async function fetchPeerIdentityKey(userId) {
   try {
-    const res = await apiGet(`/keys/bundle/${userId}`);
+    const res = await getCachedKeyBundle(userId);
     const dev = res?.devices?.find((d) => d.identity_key);
     if (dev?.identity_key) {
       return decodeKey(dev.identity_key);
