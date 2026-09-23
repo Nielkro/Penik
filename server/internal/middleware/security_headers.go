@@ -11,6 +11,9 @@ import "net/http"
 //
 // 'unsafe-eval' is eliminated. 'wasm-unsafe-eval' is kept for WebAssembly (penik-crypto WASM).
 // connect-src is locked down to 'self', secure wss: and https: endpoints.
+// blob: is required so same-document fetch() can read decrypted media object
+// URLs (video codec sniff, service-worker stream handoff) without weakening
+// cross-origin policy — blob URLs never leave the creating document.
 const contentSecurityPolicy = "default-src 'self'; " +
 	"script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; " +
 	"worker-src 'self' blob:; " +
@@ -18,7 +21,7 @@ const contentSecurityPolicy = "default-src 'self'; " +
 	"img-src 'self' data: blob: https: http:; " +
 	"media-src 'self' blob: https: http:; " +
 	"font-src 'self' data:; " +
-	"connect-src 'self' wss: https:; " +
+	"connect-src 'self' blob: wss: https:; " +
 	"object-src 'none'; " +
 	"base-uri 'self'; " +
 	"form-action 'self'; " +

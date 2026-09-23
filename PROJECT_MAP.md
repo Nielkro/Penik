@@ -39,7 +39,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/middleware/cors.go` — Configures CORS, origin checks, and CSRF protection for HTTP requests.
 - `server/internal/middleware/rate_limit.go` — Provides IP- and user-based rate limiting for public and sensitive operations.
 - `server/internal/middleware/limit.go` — Limits the maximum HTTP request body size.
-- `server/internal/middleware/security_headers.go` — Sets Content-Security-Policy and defensive response headers (nosniff, frame-deny, referrer policy) on every response.
+- `server/internal/middleware/security_headers.go` — Sets Content-Security-Policy (`connect-src` includes same-document `blob:` for decrypted media fetch) and defensive response headers (nosniff, frame-deny, referrer policy) on every response.
 - `Dockerfile` — Multi-stage Docker build packaging Node.js client build and Go server into a single lightweight Alpine runtime image with built-in HTTP healthcheck; prefers in-tree `client/pkg/penik-crypto-wasm` and only fetches the WASM package when missing.
 - `docker-compose.yml` — Docker Compose configuration running standalone `penik-server` container on port 8143 with volume persistence and automated healthcheck.
 - `.github/workflows/docker.yml` — GitHub Actions workflow building and publishing `penik-server` container image to GitHub Container Registry (`ghcr.io`), coordinated with crypto releases via `workflow_run`, running parallel E2E integration test verification before deployment, with post-deployment health verification and automatic rollback.
