@@ -264,10 +264,33 @@ class AuthRepository @Inject constructor(
                     })
                 }
             }
+            val allGroupMessages = groupDao.getAllMessages()
+            val groupMessagesArr = org.json.JSONArray().apply {
+                allGroupMessages
+                    .sortedByDescending { it.createdAt }
+                    .take(3000)
+                    .forEach { gm ->
+                        put(org.json.JSONObject().apply {
+                            put("group_id", gm.groupId)
+                            put("message_id", gm.messageId)
+                            put("server_id", gm.serverId)
+                            put("sender_user_id", gm.senderUserId)
+                            put("sender_device_id", gm.senderDeviceId)
+                            put("key_version", gm.keyVersion)
+                            put("text", gm.text)
+                            put("created_at", gm.createdAt)
+                            put("sent_by_me", gm.sentByMe)
+                            put("delivered", gm.delivered)
+                            if (gm.replyToMsgId != null) put("reply_to_msg_id", gm.replyToMsgId)
+                            if (gm.editedAt != null) put("edited_at", gm.editedAt)
+                        })
+                    }
+            }
             val payloadBytes = org.json.JSONObject().apply {
-                put("version", 2)
+                put("version", 3)
                 put("identity_key", Base64.getEncoder().encodeToString(privateKey))
                 put("group_keys", groupKeysArr)
+                put("group_messages", groupMessagesArr)
             }.toString().toByteArray(Charsets.UTF_8)
 
             val backup = e2eeCrypto.encryptKeyBackup(payloadBytes, passphrase)
@@ -365,6 +388,36 @@ class AuthRepository @Inject constructor(
                             groupDao.saveGroupKeys(keysToInsert)
                         }
                     }
+                    val groupMessagesArr = root.optJSONArray("group_messages")
+                    if (groupMessagesArr != null) {
+                        val msgsToInsert = mutableListOf<niel.kro.penik.data.local.entity.GroupMessageEntity>()
+                        for (i in 0 until groupMessagesArr.length()) {
+                            val gmObj = groupMessagesArr.optJSONObject(i) ?: continue
+                            val gId = gmObj.optLong("group_id")
+                            val mId = gmObj.optString("message_id")
+                            if (gId > 0 && mId.isNotBlank()) {
+                                msgsToInsert.add(
+                                    niel.kro.penik.data.local.entity.GroupMessageEntity(
+                                        groupId = gId,
+                                        messageId = mId,
+                                        serverId = gmObj.optLong("server_id", 0L),
+                                        senderUserId = gmObj.optLong("sender_user_id"),
+                                        senderDeviceId = gmObj.optLong("sender_device_id", 0L),
+                                        keyVersion = gmObj.optLong("key_version", 1L),
+                                        text = gmObj.optString("text"),
+                                        createdAt = gmObj.optLong("created_at"),
+                                        sentByMe = gmObj.optBoolean("sent_by_me", false),
+                                        delivered = gmObj.optBoolean("delivered", true),
+                                        replyToMsgId = if (gmObj.has("reply_to_msg_id") && !gmObj.isNull("reply_to_msg_id")) gmObj.optString("reply_to_msg_id") else null,
+                                        editedAt = if (gmObj.has("edited_at") && !gmObj.isNull("edited_at")) gmObj.optLong("edited_at") else null
+                                    )
+                                )
+                            }
+                        }
+                        if (msgsToInsert.isNotEmpty()) {
+                            groupDao.insertGroupMessages(msgsToInsert)
+                        }
+                    }
                     k
                 } else {
                     decryptedBytes
@@ -404,10 +457,33 @@ class AuthRepository @Inject constructor(
                     })
                 }
             }
+            val allGroupMessages = groupDao.getAllMessages()
+            val groupMessagesArr = org.json.JSONArray().apply {
+                allGroupMessages
+                    .sortedByDescending { it.createdAt }
+                    .take(3000)
+                    .forEach { gm ->
+                        put(org.json.JSONObject().apply {
+                            put("group_id", gm.groupId)
+                            put("message_id", gm.messageId)
+                            put("server_id", gm.serverId)
+                            put("sender_user_id", gm.senderUserId)
+                            put("sender_device_id", gm.senderDeviceId)
+                            put("key_version", gm.keyVersion)
+                            put("text", gm.text)
+                            put("created_at", gm.createdAt)
+                            put("sent_by_me", gm.sentByMe)
+                            put("delivered", gm.delivered)
+                            if (gm.replyToMsgId != null) put("reply_to_msg_id", gm.replyToMsgId)
+                            if (gm.editedAt != null) put("edited_at", gm.editedAt)
+                        })
+                    }
+            }
             val payloadBytes = org.json.JSONObject().apply {
-                put("version", 2)
+                put("version", 3)
                 put("identity_key", Base64.getEncoder().encodeToString(privateKey))
                 put("group_keys", groupKeysArr)
+                put("group_messages", groupMessagesArr)
             }.toString().toByteArray(Charsets.UTF_8)
 
             val backup = e2eeCrypto.encryptKeyBackup(payloadBytes, newPassphrase)

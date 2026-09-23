@@ -7,7 +7,8 @@ import {
   getMessageByClientId, isMessageDeletedLocally,
   getIKPrivate, saveIKPrivate, getIKPublic, saveIKPublic,
   getPersistentDeviceName, getClientPlatform,
-  getAllGroupKeysPlain, saveGroupKey, getAllPinnedIKs
+  getAllGroupKeysPlain, saveGroupKey, getAllPinnedIKs,
+  getAllGroupMessages, saveGroupMessage
 } from './storage.js';
 import { ws, OP } from './ws.js';
 import { renderAuth } from './ui/auth.js';
@@ -1976,10 +1977,29 @@ export async function backupE2EEKeys(passphrase) {
     key: btoa(String.fromCharCode(...gk.key))
   }));
 
+  const allGroupMsgs = await getAllGroupMessages();
+  const sortedGroupMsgs = (allGroupMsgs || [])
+    .slice()
+    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
+    .slice(0, 3000)
+    .map(m => ({
+      group_id: Number(m.group_id),
+      message_id: String(m.message_id || m.id),
+      server_id: Number(m.server_id || m.id || 0),
+      sender_user_id: Number(m.sender_user_id || m.sender_id || 0),
+      sender_device_id: Number(m.sender_device_id || 0),
+      key_version: Number(m.key_version || 1),
+      text: String(m.text || m.plaintext || ""),
+      created_at: Number(m.created_at || 0),
+      edited_at: m.edited_at ? Number(m.edited_at) : null,
+      reply_to_msg_id: m.reply_to_msg_id ? String(m.reply_to_msg_id) : null
+    }));
+
   const payloadJson = JSON.stringify({
-    version: 2,
+    version: 3,
     identity_key: btoa(String.fromCharCode(...privBytes)),
-    group_keys: groupKeysArr
+    group_keys: groupKeysArr,
+    group_messages: sortedGroupMsgs
   });
   const payloadBytes = new TextEncoder().encode(payloadJson);
   const backup = await encryptKeyBackup(payloadBytes, passphrase);
@@ -2035,8 +2055,27 @@ export async function restoreE2EEKeys(passphrase, backupId = null) {
           }
         }
       }
+      if (Array.isArray(parsed.group_messages)) {
+        for (const gm of parsed.group_messages) {
+          if (gm.group_id && gm.message_id) {
+            await saveGroupMessage({
+              group_id: Number(gm.group_id),
+              message_id: String(gm.message_id),
+              server_id: Number(gm.server_id || 0),
+              id: Number(gm.server_id || 0),
+              sender_user_id: Number(gm.sender_user_id || 0),
+              sender_device_id: Number(gm.sender_device_id || 0),
+              key_version: Number(gm.key_version || 1),
+              text: String(gm.text || ""),
+              created_at: Number(gm.created_at || 0),
+              edited_at: gm.edited_at ? Number(gm.edited_at) : null,
+              reply_to_msg_id: gm.reply_to_msg_id ? String(gm.reply_to_msg_id) : null
+            });
+          }
+        }
+      }
     } catch (e) {
-      console.warn("Failed to parse JSON backup v2 payload:", e);
+      console.warn("Failed to parse JSON backup v3 payload:", e);
     }
   }
 

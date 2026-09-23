@@ -1057,7 +1057,8 @@ export async function getAllGroupKeysPlain() {
 
 export async function getAllGroupMessages() {
   await openDB();
-  return getAll(tx("group_messages"));
+  const all = await getAll(tx("group_messages"));
+  return Promise.all(all.map(m => unsealMessageRecord(m)));
 }
 
 export async function saveCachedMedia(url, blob, mime) {
