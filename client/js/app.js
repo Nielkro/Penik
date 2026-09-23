@@ -34,9 +34,9 @@ import { getCachedMedia } from './storage.js';
 import { callManager } from './call.js';
 import { initCallUI } from './ui/call_modal.js';
 import { initDesktop, isDesktop, sendDesktopNotification } from './desktop.js';
-import { getCachedKeyBundle, prefetchKeyBundle } from './keybundle.js';
+import { getCachedKeyBundle, prefetchKeyBundle, invalidateKeyBundle } from './keybundle.js';
 
-export { getCachedKeyBundle, prefetchKeyBundle };
+export { getCachedKeyBundle, prefetchKeyBundle, invalidateKeyBundle };
 
 // Service Worker registration for HTTP 206 Partial Content Range streaming
 if ('serviceWorker' in navigator) {
@@ -798,6 +798,13 @@ async function onMsgRecvGlobal(payload) {
     } catch (e) {
       plaintext = `[Сообщение не расшифровано]`;
       decryptSuccess = false;
+      if (ws && ws.isConnected() && payload.msg_id && payload.from_device_id) {
+        console.warn(`[ws] Decryption failed for msg ${payload.msg_id}, requesting retry from device ${payload.from_device_id}`);
+        ws.send(OP.MSG_RETRY_REQ, {
+          msg_id: Number(payload.msg_id),
+          sender_device_id: Number(payload.from_device_id)
+        });
+      }
     }
   }
 
@@ -998,6 +1005,7 @@ async function onMsgRetryReq(payload) {
   }
 
   console.log(`onMsgRetryReq: re-encrypting message ${msgId} for user ${recipientUserId}`);
+  invalidateKeyBundle(recipientUserId);
   const payloads = await encryptMessagePayload(text, recipientUserId);
   
   const targetPayload = payloads.find(p => Number(p.device_id) === Number(payload.requester_device_id));
@@ -1818,6 +1826,11 @@ function setupGlobalWSListeners() {
   ws.on(0x08, onChatPurgeGlobal);
   ws.on(OP.MSG_DELETE_NOTIFY, onMsgDeleteNotifyGlobal);
   ws.on(OP.MSG_EDIT_NOTIFY, onMsgEditNotifyGlobal);
+  ws.on(OP.USER_DEVICES_CHANGED, (payload) => {
+    if (payload && payload.user_id) {
+      invalidateKeyBundle(payload.user_id);
+    }
+  });
   ws.on(OP.USER_AVATAR_UPDATE, (payload) => {
     if (payload && payload.user_id) {
       const ts = payload.ts ? payload.ts * 1000 : Date.now();

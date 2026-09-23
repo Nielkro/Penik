@@ -61,6 +61,10 @@ class MessageRepository @Inject constructor(
         return devices
     }
 
+    fun invalidateKeyBundle(userId: Long) {
+        bundleCache.remove(userId)
+    }
+
     suspend fun isChunkedEncryptionSupported(peerUserId: Long): Boolean {
         return try {
             val myId = tokenStorage.getUserId()
@@ -603,6 +607,9 @@ class MessageRepository @Inject constructor(
             decryptSuccess = false
             if (isSelfChat) {
                 return Pair("", false)
+            }
+            if (event.msgId > 0 && event.fromDeviceId > 0) {
+                webSocketManager.sendMsgRetryReq(event.msgId, event.fromDeviceId)
             }
             "[Ошибка расшифрования сообщения: ${e.message}]"
         }
@@ -1372,6 +1379,44 @@ class MessageRepository @Inject constructor(
 
     suspend fun updateMessageText(clientMsgId: String, serverId: Long?, newText: String, editedAt: Long = 0L) {
         messageDao.updateMessageText(clientMsgId, serverId, newText, editedAt)
+    }
+
+    suspend fun handleMsgRetryReq(msgId: Long, requesterDeviceId: Long) {
+        val existing = messageDao.findMessageByServerId(msgId) ?: return
+        val text = existing.text
+        if (text.isBlank() || text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")) {
+            return
+        }
+        val recipientUserId = existing.chatUserId
+        val myId = tokenStorage.getUserId()
+        val myPrivateIK = tokenStorage.getPrivateKey() ?: return
+
+        // Invalidate bundle cache for recipient to get the newly registered device
+        invalidateKeyBundle(recipientUserId)
+        val freshDevices = getKeyBundleCached(recipientUserId, isSelf = recipientUserId == myId, forceRefresh = true)
+        val targetDevice = freshDevices.find { it.deviceId == requesterDeviceId } ?: return
+        val targetIKPub = runCatching { java.util.Base64.getDecoder().decode(targetDevice.identityKey) }.getOrNull() ?: return
+
+        identityPins.verify(recipientUserId, targetDevice.deviceId, targetIKPub)
+
+        val recipientInfos = listOf(
+            E2EECrypto.DeviceRecipientInfo(
+                deviceId = targetDevice.deviceId,
+                publicKey = targetIKPub,
+                cryptoVersion = targetDevice.cryptoVersion
+            )
+        )
+        val payloads = e2eeCrypto.encryptPairwiseBatch(
+            senderPrivateKey = myPrivateIK,
+            senderUserId = myId,
+            recipientUserId = recipientUserId,
+            clientMsgId = existing.localId,
+            timestamp = toMs(existing.timestamp) / 1000,
+            plaintext = text.toByteArray(Charsets.UTF_8),
+            recipients = recipientInfos
+        )
+        val encPayload = payloads.firstOrNull() ?: return
+        webSocketManager.sendMsgRetryResp(msgId, encPayload.ciphertext, encPayload.salt, encPayload.nonce)
     }
 }
 

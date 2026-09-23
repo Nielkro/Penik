@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -14,6 +15,7 @@ import (
 	"golang.org/x/crypto/argon2"
 	"messenger/server/internal/config"
 	"messenger/server/internal/db"
+	"messenger/server/internal/ws"
 )
 
 var nicknameRe = regexp.MustCompile(`^[a-zA-Z0-9_]{3,32}$`)
@@ -69,7 +71,7 @@ func validCurveKey(b []byte) bool {
 }
 
 // Register handles POST /api/v1/register.
-func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
+func Register(database *db.DB, cfg *config.Config, hubs ...*ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req registerRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -199,6 +201,10 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
+		if len(hubs) > 0 && hubs[0] != nil {
+			go hubs[0].NotifyUserDevicesChanged(context.Background(), database, userID)
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(loginResponse{
@@ -210,7 +216,7 @@ func Register(database *db.DB, cfg *config.Config) http.HandlerFunc {
 }
 
 // Login handles POST /api/v1/login.
-func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
+func Login(database *db.DB, cfg *config.Config, hubs ...*ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req loginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -390,6 +396,10 @@ func Login(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		if err := tx.Commit(); err != nil {
 			loginInternalError(w, "commit transaction", err)
 			return
+		}
+
+		if len(hubs) > 0 && hubs[0] != nil {
+			go hubs[0].NotifyUserDevicesChanged(context.Background(), database, userID)
 		}
 
 		w.Header().Set("Content-Type", "application/json")

@@ -215,6 +215,9 @@ sealed class WebSocketEvent {
     /** The peer's signaling link dropped or came back while the call is held open. */
     data class CallPeerState(val callId: String, val online: Boolean) : WebSocketEvent()
 
+    data class UserDevicesChanged(val userId: Long) : WebSocketEvent()
+    data class MsgRetryReq(val msgId: Long, val requesterDeviceId: Long, val senderDeviceId: Long) : WebSocketEvent()
+
     object Connected : WebSocketEvent()
     object Disconnected : WebSocketEvent()
     object Unauthorized : WebSocketEvent()
@@ -233,6 +236,9 @@ object Opcode {
     const val USER_PROFILE_UPDATE: Byte = 0x0c
     const val MSG_EDIT: Byte = 0x0d
     const val MSG_EDIT_NOTIFY: Byte = 0x0e
+    const val USER_DEVICES_CHANGED: Byte = 0x0f
+    const val MSG_RETRY_REQ: Byte = 0x16
+    const val MSG_RETRY_RESP: Byte = 0x17
     const val OFFLINE_BATCH: Byte = 0x05
     const val MSG_STATUS_BATCH: Byte = 0x1b
     const val USER_AVATAR_UPDATE: Byte = 0x1c
@@ -554,6 +560,8 @@ class WebSocketManager @Inject constructor(
             Opcode.MSG_READ -> handleMsgRead(payload)
             Opcode.MSG_DELETE_NOTIFY -> handleMsgDeleteNotify(payload)
             Opcode.MSG_EDIT_NOTIFY -> handleMsgEditNotify(payload)
+            Opcode.USER_DEVICES_CHANGED -> handleUserDevicesChanged(payload)
+            Opcode.MSG_RETRY_REQ -> handleMsgRetryReq(payload)
             Opcode.OFFLINE_BATCH -> handleOfflineBatch(payload)
             Opcode.MSG_STATUS_BATCH -> handleMsgStatusBatch(payload)
             Opcode.PING -> sendPong()
@@ -672,6 +680,32 @@ class WebSocketManager @Inject constructor(
             scope.launch { _events.emit(WebSocketEvent.UserProfileUpdate(userId, name)) }
         } catch (e: Exception) {
             Log.e("WS", "Failed to parse user profile update", e)
+        }
+    }
+
+    private fun handleUserDevicesChanged(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val userId = (map["user_id"] as? Number)?.toLong() ?: return
+            scope.launch { _events.emit(WebSocketEvent.UserDevicesChanged(userId)) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse UserDevicesChanged frame", e)
+        }
+    }
+
+    private fun handleMsgRetryReq(payload: ByteArray) {
+        try {
+            val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+            val map = unpacker.readMsgRecvMap()
+            unpacker.close()
+            val msgId = (map["msg_id"] as? Number)?.toLong() ?: return
+            val reqDevId = (map["requester_device_id"] as? Number)?.toLong() ?: return
+            val senderDevId = (map["sender_device_id"] as? Number)?.toLong() ?: 0L
+            scope.launch { _events.emit(WebSocketEvent.MsgRetryReq(msgId, reqDevId, senderDevId)) }
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to parse MsgRetryReq frame", e)
         }
     }
 
@@ -1451,6 +1485,44 @@ class WebSocketManager @Inject constructor(
         packer.packMapHeader(1); packer.packString("msg_id"); packer.packLong(msgId); packer.close()
         val payload = bos.toByteArray(); val frame = ByteArray(1 + payload.size); frame[0] = Opcode.MSG_READ
         payload.copyInto(frame, 1); webSocket?.send(frame.toByteString(0, frame.size))
+    }
+
+    fun sendMsgRetryReq(msgId: Long, senderDeviceId: Long) {
+        try {
+            val bos = ByteArrayOutputStream()
+            val packer = MessagePack.newDefaultPacker(bos)
+            packer.packMapHeader(2)
+            packer.packString("msg_id"); packer.packLong(msgId)
+            packer.packString("sender_device_id"); packer.packLong(senderDeviceId)
+            packer.close()
+            val payload = bos.toByteArray()
+            val frame = ByteArray(1 + payload.size)
+            frame[0] = Opcode.MSG_RETRY_REQ
+            payload.copyInto(frame, 1)
+            webSocket?.send(frame.toByteString(0, frame.size))
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to pack sendMsgRetryReq", e)
+        }
+    }
+
+    fun sendMsgRetryResp(msgId: Long, ciphertext: ByteArray, salt: ByteArray, nonce: ByteArray) {
+        try {
+            val bos = ByteArrayOutputStream()
+            val packer = MessagePack.newDefaultPacker(bos)
+            packer.packMapHeader(4)
+            packer.packString("msg_id"); packer.packLong(msgId)
+            packer.packString("ciphertext"); packer.packBinaryHeader(ciphertext.size); packer.writePayload(ciphertext)
+            packer.packString("salt"); packer.packBinaryHeader(salt.size); packer.writePayload(salt)
+            packer.packString("nonce"); packer.packBinaryHeader(nonce.size); packer.writePayload(nonce)
+            packer.close()
+            val payload = bos.toByteArray()
+            val frame = ByteArray(1 + payload.size)
+            frame[0] = Opcode.MSG_RETRY_RESP
+            payload.copyInto(frame, 1)
+            webSocket?.send(frame.toByteString(0, frame.size))
+        } catch (e: Exception) {
+            Log.e("WS", "Failed to pack sendMsgRetryResp", e)
+        }
     }
 
     fun sendChatPurgeAck(peerId: Long) {

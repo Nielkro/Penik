@@ -60,3 +60,10 @@ export function prefetchKeyBundle(userId) {
     getCachedKeyBundle(myId).catch(() => {});
   }
 }
+
+export function invalidateKeyBundle(userId) {
+  if (!userId) return;
+  const key = String(userId);
+  bundleMemoryCache.delete(key);
+  bundleForceCooldown.delete(key);
+}

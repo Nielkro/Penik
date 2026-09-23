@@ -34,6 +34,7 @@ const (
 	OpUserProfileUpdate   Opcode = 0x0c // server→client: a peer renamed themselves
 	OpMsgEdit             Opcode = 0x0d // client→server: edit direct message
 	OpMsgEditNotify       Opcode = 0x0e // server→client: notify message was edited
+	OpUserDevicesChanged  Opcode = 0x0f // server→client: peer added/removed a device (invalidate key bundle cache)
 
 	OpGroupMessageSend        Opcode = 0x20
 	OpGroupMessageRecv        Opcode = 0x21

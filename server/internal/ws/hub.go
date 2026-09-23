@@ -1,8 +1,12 @@
 package ws
 
 import (
+	"context"
 	"sync"
 
+	"messenger/server/internal/db"
+
+	"github.com/shamaton/msgpack/v2"
 	"nhooyr.io/websocket"
 )
 
@@ -197,6 +201,39 @@ func (h *Hub) BroadcastPresence(deviceIDs []int64, payload []byte) {
 			}
 		}
 	}
+}
+
+// BroadcastUserDevicesChanged sends OpUserDevicesChanged to all active connections for specified device IDs.
+func (h *Hub) BroadcastUserDevicesChanged(deviceIDs []int64, payload []byte) {
+	frame := append([]byte{byte(OpUserDevicesChanged)}, payload...)
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, devID := range deviceIDs {
+		if c, ok := h.clients[devID]; ok {
+			select {
+			case c.send <- frame:
+			default:
+			}
+		}
+	}
+}
+
+// NotifyUserDevicesChanged finds all related peer devices and broadcasts OpUserDevicesChanged.
+func (h *Hub) NotifyUserDevicesChanged(ctx context.Context, database *db.DB, userID int64) {
+	if h == nil || database == nil || userID <= 0 {
+		return
+	}
+	deviceIDs, err := database.RelatedPeerDevices(ctx, userID)
+	if err != nil || len(deviceIDs) == 0 {
+		return
+	}
+	payload, err := msgpack.Marshal(map[string]any{
+		"user_id": userID,
+	})
+	if err != nil {
+		return
+	}
+	h.BroadcastUserDevicesChanged(deviceIDs, payload)
 }
 
 // BroadcastServerShutdown sends OpServerShutdown to all connected clients.

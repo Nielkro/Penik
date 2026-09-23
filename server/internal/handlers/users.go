@@ -375,33 +375,8 @@ func notifyAvatarUpdatePeers(ctx context.Context, database *db.DB, hub *ws.Hub, 
 // relatedPeerDevices lists the devices of every 1:1 chat partner and group peer
 // of userID, plus the user's own devices — the audience for a profile change.
 func relatedPeerDevices(ctx context.Context, database *db.DB, userID int64) []int64 {
-	query := `
-		SELECT DISTINCT d.id FROM devices d WHERE d.user_id IN (
-			SELECT sender_user_id FROM messages WHERE recipient_user_id = ?
-			UNION
-			SELECT recipient_user_id FROM messages WHERE sender_user_id = ?
-			UNION
-			SELECT user_id FROM group_members WHERE group_id IN (
-				SELECT group_id FROM group_members WHERE user_id = ?
-			)
-			UNION
-			SELECT ?
-		)
-	`
-	rows, err := database.QueryContext(ctx, query, userID, userID, userID, userID)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	var deviceIDs []int64
-	for rows.Next() {
-		var devID int64
-		if err := rows.Scan(&devID); err == nil {
-			deviceIDs = append(deviceIDs, devID)
-		}
-	}
-	return deviceIDs
+	devs, _ := database.RelatedPeerDevices(ctx, userID)
+	return devs
 }
 
 // GetAvatar handles GET /api/v1/avatar/:user_id.

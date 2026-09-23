@@ -103,8 +103,8 @@ func main() {
 	attachmentUploadLimiter := middleware.NewUserRateLimiter(60, time.Minute)
 
 	// Public routes (no auth, but rate limited).
-	mux.Handle("POST /api/v1/register", authRateLimiter.Limit(http.HandlerFunc(handlers.Register(database, cfg))))
-	mux.Handle("POST /api/v1/login", authRateLimiter.Limit(http.HandlerFunc(handlers.Login(database, cfg))))
+	mux.Handle("POST /api/v1/register", authRateLimiter.Limit(http.HandlerFunc(handlers.Register(database, cfg, hub))))
+	mux.Handle("POST /api/v1/login", authRateLimiter.Limit(http.HandlerFunc(handlers.Login(database, cfg, hub))))
 	mux.Handle("GET /api/v1/users/check", nicknameLookupLimiter.Limit(http.HandlerFunc(handlers.CheckNickname(database))))
 	mux.Handle("GET /api/v1/users/{nickname}/profile", nicknameLookupLimiter.Limit(http.HandlerFunc(handlers.GetUserByNicknameProfile(database))))
 	mux.HandleFunc("GET /api/v1/time", handlers.GetServerTime())
@@ -162,7 +162,7 @@ func main() {
 		authMW(http.HandlerFunc(handlers.ListPeerCalls(database))))
 
 	mux.Handle("POST /api/v1/keys/init",
-		authMW(http.HandlerFunc(handlers.UploadIdentityKeys(database))))
+		authMW(http.HandlerFunc(handlers.UploadIdentityKeys(database, hub))))
 	mux.Handle("GET /api/v1/keys/bundle/{user_id}",
 		authMW(keyBundleLimiter.Limit(http.HandlerFunc(handlers.GetKeyBundle(database)))))
 	mux.Handle("POST /api/v1/keys/backup",

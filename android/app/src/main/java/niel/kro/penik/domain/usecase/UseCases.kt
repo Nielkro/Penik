@@ -219,6 +219,12 @@ class HandleWebSocketEventUseCase @Inject constructor(
             is WebSocketEvent.UserProfileUpdate -> {
                 chatRepository.updateContactName(event.userId, event.name)
             }
+            is WebSocketEvent.UserDevicesChanged -> {
+                messageRepository.invalidateKeyBundle(event.userId)
+            }
+            is WebSocketEvent.MsgRetryReq -> {
+                messageRepository.handleMsgRetryReq(event.msgId, event.requesterDeviceId)
+            }
             is WebSocketEvent.TypingNotify -> {
                 niel.kro.penik.data.repository.TypingBus.update(event.fromUserId, event.isTyping)
             }

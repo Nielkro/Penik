@@ -1303,6 +1303,7 @@ func (c *Client) handleKeyPublish(ctx context.Context, req *KeyPublishReq) error
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
+	go c.hub.NotifyUserDevicesChanged(context.Background(), c.db, c.userID)
 	return nil
 }
 

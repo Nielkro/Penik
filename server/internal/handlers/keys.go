@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/md5"
 	"database/sql"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 
 	"messenger/server/internal/db"
 	"messenger/server/internal/middleware"
+	"messenger/server/internal/ws"
 )
 
 
@@ -26,7 +28,7 @@ type keysInitRequest struct {
 }
 
 // UploadIdentityKeys handles POST /api/v1/keys/init — upload new identity key and signed pre-key.
-func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
+func UploadIdentityKeys(database *db.DB, hubs ...*ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		deviceID := middleware.DeviceIDFromCtx(r.Context())
 		now := time.Now().Unix()
@@ -118,6 +120,13 @@ func UploadIdentityKeys(database *db.DB) http.HandlerFunc {
 		if err := tx.Commit(); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
+		}
+
+		if len(hubs) > 0 && hubs[0] != nil {
+			userID := middleware.UserIDFromCtx(r.Context())
+			if userID > 0 {
+				go hubs[0].NotifyUserDevicesChanged(context.Background(), database, userID)
+			}
 		}
 
 		w.WriteHeader(http.StatusNoContent)

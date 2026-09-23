@@ -38,12 +38,12 @@
 ## 3. Рекомендуемый комбинированный план реализации
 
 ### Этап 1: Серверные уведомления и сброс кэша (Быстрый фикс)
-- [ ] Добавить в `server/internal/ws/protocol.go` событие `OpPeerDeviceAdded` (или использовать broadcast в связанные чаты).
-- [ ] В `server/internal/handlers/auth.go` и `server/internal/ws/client.go` при регистрации нового устройства вызывать broadcast в хаб для всех пользователей, имеющих общий `chat_id` с этим пользователем.
-- [ ] В `client/js/app.js` и `client/js/ws.js`: по приходу события вызывать `bundleMemoryCache.delete(String(userId))`.
-- [ ] В Android `MessageRepository.kt` и `WebSocketEventCoordinator.kt`: по приходу события удалять запись из `bundleCache[userId]`.
+- [x] Добавить в `server/internal/ws/protocol.go` событие `OpUserDevicesChanged` (0x0f) и broadcast в связанные чаты через `hub.NotifyUserDevicesChanged`.
+- [x] В `server/internal/handlers/auth.go`, `server/internal/handlers/keys.go`, `server/cmd/server/main.go` и `server/internal/ws/client.go` при регистрации нового устройства и публикации ключей вызывать broadcast в хаб для всех пользователей, имеющих общий `chat_id` с этим пользователем.
+- [x] В `client/js/app.js`, `client/js/ws.js` и `client/js/keybundle.js`: по приходу события вызывать `invalidateKeyBundle(userId)`.
+- [x] В Android `MessageRepository.kt`, `WebSocketManager.kt` и `UseCases.kt`: по приходу события удалять запись из `bundleCache[userId]`.
 
 ### Этап 2: Протокол самовосстановления (Retry Flow)
-- [ ] В `client/js/app.js` и Android `MessageRepository.kt`: если в `MsgRecvEncrypted` поле `RecipientDeviceID` не совпадает с локальным `myDeviceId` или дешифрование не удалось:
-  - Отправлять `OpMsgRetryReq` автору сообщения.
-- [ ] На стороне автора: при получении `OpMsgRetryReq` подгружать свежий бандл и отправлять персональный шифротекст для нового устройства.
+- [x] В `client/js/app.js` и Android `MessageRepository.kt`: если дешифрование сообщения не удалось:
+  - Отправлять `OpMsgRetryReq` (0x16) автору сообщения.
+- [x] На стороне автора: при получении `OpMsgRetryReq` подгружать свежий бандл с принудительной инвалидацией кэша и отправлять `OpMsgRetryResp` (0x17) с персональным шифротекстом для нового устройства.
