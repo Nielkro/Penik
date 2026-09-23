@@ -20,6 +20,7 @@ import niel.kro.penik.data.update.AppUpdateManager
 import niel.kro.penik.data.update.DownloadState
 import niel.kro.penik.data.update.UpdateCheckResult
 import niel.kro.penik.data.update.UpdateStatus
+import niel.kro.penik.data.network.websocket.WebSocketManager
 import java.io.File
 import javax.inject.Inject
 
@@ -27,7 +28,8 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val appUpdateManager: AppUpdateManager,
     private val authRepository: AuthRepository,
-    private val backupManager: BackupManager
+    private val backupManager: BackupManager,
+    private val webSocketManager: WebSocketManager
 ) : ViewModel() {
 
     val updateStatus: StateFlow<UpdateStatus> = appUpdateManager.updateStatus
@@ -136,6 +138,15 @@ class SettingsViewModel @Inject constructor(
     fun restoreKeyBackup(passphrase: String, onResult: (Result<Unit>) -> Unit) {
         viewModelScope.launch {
             val res = authRepository.restoreKeyBackup(passphrase)
+            if (res.isSuccess) {
+                authRepository.getToken()?.let { tok ->
+                    webSocketManager.reconnect(
+                        niel.kro.penik.data.network.api.ApiConfig.HOST,
+                        niel.kro.penik.data.network.api.ApiConfig.PORT,
+                        tok
+                    )
+                }
+            }
             onResult(res)
         }
     }

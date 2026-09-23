@@ -16,6 +16,7 @@ import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 import niel.kro.penik.data.local.database.PenikDatabase
@@ -33,7 +34,8 @@ class AuthRepository @Inject constructor(
     private val e2eeCrypto: E2EECrypto,
     private val identityPins: niel.kro.penik.data.crypto.IdentityPinStore,
     private val database: PenikDatabase,
-    private val groupDao: niel.kro.penik.data.local.dao.GroupDao
+    private val groupDao: niel.kro.penik.data.local.dao.GroupDao,
+    private val messageRepositoryProvider: Provider<MessageRepository>
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -329,8 +331,12 @@ class AuthRepository @Inject constructor(
                         })
                     }
             }
+            val currentDeviceId = tokenStorage.getDeviceId()
             val payloadBytes = org.json.JSONObject().apply {
                 put("version", 3)
+                if (currentDeviceId > 0L) {
+                    put("device_id", currentDeviceId)
+                }
                 put("identity_key", Base64.getEncoder().encodeToString(privateKey))
                 put("group_keys", groupKeysArr)
                 put("group_messages", groupMessagesArr)
@@ -410,8 +416,12 @@ class AuthRepository @Inject constructor(
 
                 val decryptedBytes = e2eeCrypto.decryptKeyBackup(blob, salt, iv, passphrase)
                 val isJson = decryptedBytes.isNotEmpty() && decryptedBytes[0] == '{'.code.toByte()
+                var jsonDeviceId: Long? = null
                 val privKey = if (isJson) {
                     val root = org.json.JSONObject(String(decryptedBytes, Charsets.UTF_8))
+                    if (root.has("device_id") && !root.isNull("device_id")) {
+                        jsonDeviceId = root.optLong("device_id", 0L).takeIf { it > 0L }
+                    }
                     val idKeyB64 = root.optString("identity_key")
                     val k = Base64.getDecoder().decode(idKeyB64)
                     val groupKeysArr = root.optJSONArray("group_keys")
@@ -471,6 +481,66 @@ class AuthRepository @Inject constructor(
                 tokenStorage.savePrivateKey(privKey)
                 tokenStorage.savePublicKey(derivedPubKey)
 
+                // Rebind session to original device_id if target device differs from current
+                val targetDeviceId = (body.deviceId?.takeIf { it > 0L }) ?: jsonDeviceId
+                val currentDeviceId = tokenStorage.getDeviceId()
+                val userId = tokenStorage.getUserId()
+
+                if (targetDeviceId != null && targetDeviceId > 0L && targetDeviceId != currentDeviceId && userId > 0L) {
+                    try {
+                        val challengeResp = apiService.deviceChallenge(
+                            niel.kro.penik.data.network.api.DeviceChallengeRequest(targetDeviceId)
+                        )
+                        if (challengeResp.isSuccessful && challengeResp.body() != null) {
+                            val challenge = challengeResp.body()!!
+                            val ephPubBytes = Base64.getDecoder().decode(challenge.ephPub)
+                            val nonceBytes = Base64.getDecoder().decode(challenge.nonce)
+
+                            val proofBytes = if (niel.kro.penik.data.crypto.RustCryptoCore.isAvailable()) {
+                                niel.kro.penik.data.crypto.RustCryptoCore.computeDeviceRebindProof(
+                                    privKey,
+                                    ephPubBytes,
+                                    nonceBytes,
+                                    userId,
+                                    targetDeviceId
+                                )
+                            } else null
+
+                            if (proofBytes != null && proofBytes.size == 32) {
+                                val proofB64 = Base64.getEncoder().encodeToString(proofBytes)
+                                val rebindResp = apiService.deviceRebind(
+                                    niel.kro.penik.data.network.api.DeviceRebindRequest(
+                                        deviceId = targetDeviceId,
+                                        nonce = challenge.nonce,
+                                        proof = proofB64
+                                    )
+                                )
+                                if (rebindResp.isSuccessful && rebindResp.body()?.success == true) {
+                                    val token = tokenStorage.getToken() ?: ""
+                                    val remappedDeviceId = rebindResp.body()?.deviceId ?: targetDeviceId
+                                    tokenStorage.saveAuth(token, userId, remappedDeviceId)
+                                    android.util.Log.i("AuthRepository", "Device successfully re-bound to $remappedDeviceId")
+                                } else {
+                                    android.util.Log.w("AuthRepository", "Device rebind rejected by server: ${rebindResp.code()} ${rebindResp.errorBody()?.string()}")
+                                }
+                            } else {
+                                android.util.Log.w("AuthRepository", "Failed to compute device rebind proof")
+                            }
+                        } else {
+                            android.util.Log.w("AuthRepository", "Device challenge request failed: ${challengeResp.code()} ${challengeResp.errorBody()?.string()}")
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("AuthRepository", "Device rebind after restore failed: ${e.message}", e)
+                    }
+                }
+
+                // Pull message history for the re-bound device
+                try {
+                    messageRepositoryProvider.get().syncHistory()
+                } catch (e: Exception) {
+                    android.util.Log.w("AuthRepository", "Failed to sync message history after restore: ${e.message}")
+                }
+
                 Result.success(Unit)
             } else {
                 if (response.code() == 404) {
@@ -522,8 +592,12 @@ class AuthRepository @Inject constructor(
                         })
                     }
             }
+            val currentDeviceId = tokenStorage.getDeviceId()
             val payloadBytes = org.json.JSONObject().apply {
                 put("version", 3)
+                if (currentDeviceId > 0L) {
+                    put("device_id", currentDeviceId)
+                }
                 put("identity_key", Base64.getEncoder().encodeToString(privateKey))
                 put("group_keys", groupKeysArr)
                 put("group_messages", groupMessagesArr)

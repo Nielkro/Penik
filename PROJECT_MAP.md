@@ -213,7 +213,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/data/crypto/IdentityPinStore.kt` — TOFU pinning of peer devices' identity keys on Android (Keystore-backed), the counterpart of `client/js/pinning.js`: pins on first sight, reports a change once per pair without blocking delivery.
 - `android/app/src/main/java/niel/kro/penik/data/crypto/GroupCrypto.kt` — Group E2EE implementation delegating to `RustCryptoCore`/`E2EECrypto`. Kotlin crypto routines are strictly frozen.
 - `android/app/src/main/java/niel/kro/penik/data/local/database/DatabaseEncryption.kt` — Prepares the Android local database encryption key and handles migration for previously unencrypted DBs.
-- `android/app/src/main/java/niel/kro/penik/data/repository/AuthRepository.kt` — Generates and persists stable identity key pairs during register/login, and handles upload/restore of encrypted key backups.
+- `android/app/src/main/java/niel/kro/penik/data/repository/AuthRepository.kt` — Generates and persists stable identity key pairs during register/login, handles upload/restore of encrypted key backups, and executes automatic device challenge-rebind on key restore.
 - `server/internal/models/keys.go` — Defines server models for identity keys, one-time keys, key backups, and device key bundles.
 - `server/internal/handlers/keys.go` — Receives and serves public keys and opaque backup blobs without decrypting client secrets.
 

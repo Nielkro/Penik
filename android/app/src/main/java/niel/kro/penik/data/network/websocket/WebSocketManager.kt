@@ -378,7 +378,20 @@ class WebSocketManager @Inject constructor(
     }
 
     fun connect(host: String, port: Int, token: String) {
-        if (_connectionState.value != ConnectionState.DISCONNECTED) return
+        if (_connectionState.value == ConnectionState.CONNECTED && this.token == token && this.connectHost == host && this.connectPort == port) return
+        if (_connectionState.value != ConnectionState.DISCONNECTED) {
+            disconnect()
+        }
+        this.connectHost = host
+        this.connectPort = port
+        this.token = token
+        manualDisconnect = false
+        reconnectAttempt = 0
+        doConnect()
+    }
+
+    fun reconnect(host: String = connectHost, port: Int = connectPort, token: String = this.token) {
+        disconnect()
         this.connectHost = host
         this.connectPort = port
         this.token = token
