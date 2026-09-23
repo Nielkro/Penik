@@ -14,6 +14,7 @@ export const buildPairwiseAAD: (a: bigint, b: bigint, c: number, d: number, e: n
 export const buildPairwiseAADV2: (a: bigint, b: bigint, c: number, d: number) => any;
 export const chacha20Poly1305Decrypt: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
 export const chacha20Poly1305Encrypt: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
+export const computeDeviceRebindProof: (a: number, b: number, c: number, d: number, e: number, f: number, g: bigint, h: bigint) => [number, number, number];
 export const computeSafetyFingerprint: (a: any, b: any, c: number, d: number) => [number, number, number];
 export const computeSafetyNumber: (a: any, b: any) => [number, number, number, number];
 export const createChunkedFileHeader: (a: number, b: number, c: number) => [number, number, number];
@@ -64,6 +65,7 @@ export const verifyGroupMessage: (a: number, b: number, c: number, d: number, e:
 export const wrapGroupKeyForDevice: (a: number, b: number, c: number, d: number, e: bigint, f: bigint) => [number, number, number];
 export const penik_build_pairwise_aad: (a: bigint, b: bigint, c: number, d: bigint, e: number, f: number) => number;
 export const penik_build_pairwise_aad_v2: (a: bigint, b: bigint, c: number, d: number, e: number) => number;
+export const penik_compute_device_rebind_proof: (a: number, b: number, c: number, d: number, e: bigint, f: bigint, g: number) => number;
 export const penik_compute_safety_fingerprint: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => number;
 export const penik_crypto_version: () => number;
 export const penik_decrypt_file: (a: number, b: number, c: number, d: number, e: number) => number;

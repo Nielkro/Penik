@@ -73,6 +73,8 @@ export function chacha20Poly1305Decrypt(key: Uint8Array, nonce: Uint8Array, ciph
 
 export function chacha20Poly1305Encrypt(key: Uint8Array, nonce: Uint8Array, plaintext: Uint8Array, aad?: Uint8Array | null): Uint8Array;
 
+export function computeDeviceRebindProof(ik_priv: Uint8Array, eph_pub: Uint8Array, nonce: Uint8Array, user_id: bigint, device_id: bigint): Uint8Array;
+
 export function computeSafetyFingerprint(keys_a: any, keys_b: any, user_id?: string | null): JsSafetyFingerprint;
 
 export function computeSafetyNumber(keys_a: any, keys_b: any): string;
@@ -150,6 +152,7 @@ export interface InitOutput {
     readonly buildPairwiseAADV2: (a: bigint, b: bigint, c: number, d: number) => any;
     readonly chacha20Poly1305Decrypt: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
     readonly chacha20Poly1305Encrypt: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
+    readonly computeDeviceRebindProof: (a: number, b: number, c: number, d: number, e: number, f: number, g: bigint, h: bigint) => [number, number, number];
     readonly computeSafetyFingerprint: (a: any, b: any, c: number, d: number) => [number, number, number];
     readonly computeSafetyNumber: (a: any, b: any) => [number, number, number, number];
     readonly createChunkedFileHeader: (a: number, b: number, c: number) => [number, number, number];
@@ -200,6 +203,7 @@ export interface InitOutput {
     readonly wrapGroupKeyForDevice: (a: number, b: number, c: number, d: number, e: bigint, f: bigint) => [number, number, number];
     readonly penik_build_pairwise_aad: (a: bigint, b: bigint, c: number, d: bigint, e: number, f: number) => number;
     readonly penik_build_pairwise_aad_v2: (a: bigint, b: bigint, c: number, d: number, e: number) => number;
+    readonly penik_compute_device_rebind_proof: (a: number, b: number, c: number, d: number, e: bigint, f: bigint, g: number) => number;
     readonly penik_compute_safety_fingerprint: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => number;
     readonly penik_crypto_version: () => number;
     readonly penik_decrypt_file: (a: number, b: number, c: number, d: number, e: number) => number;

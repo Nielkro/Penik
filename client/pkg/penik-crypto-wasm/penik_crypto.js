@@ -393,6 +393,28 @@ export function chacha20Poly1305Encrypt(key, nonce, plaintext, aad) {
 }
 
 /**
+ * @param {Uint8Array} ik_priv
+ * @param {Uint8Array} eph_pub
+ * @param {Uint8Array} nonce
+ * @param {bigint} user_id
+ * @param {bigint} device_id
+ * @returns {Uint8Array}
+ */
+export function computeDeviceRebindProof(ik_priv, eph_pub, nonce, user_id, device_id) {
+    const ptr0 = passArray8ToWasm0(ik_priv, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(eph_pub, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(nonce, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.computeDeviceRebindProof(ptr0, len0, ptr1, len1, ptr2, len2, user_id, device_id);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * @param {any} keys_a
  * @param {any} keys_b
  * @param {string | null} [user_id]

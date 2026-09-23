@@ -801,3 +801,16 @@ pub fn wasm_group_decrypt_verified(
     Ok(js_sys::Uint8Array::from(&pt[..]))
 }
 
+#[wasm_bindgen(js_name = computeDeviceRebindProof)]
+pub fn wasm_compute_device_rebind_proof(
+    ik_priv: &[u8],
+    eph_pub: &[u8],
+    nonce: &[u8],
+    user_id: u64,
+    device_id: u64,
+) -> Result<js_sys::Uint8Array, JsValue> {
+    let proof = keys::compute_device_rebind_proof(ik_priv, eph_pub, nonce, user_id, device_id)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    Ok(js_sys::Uint8Array::from(&proof[..]))
+}
+

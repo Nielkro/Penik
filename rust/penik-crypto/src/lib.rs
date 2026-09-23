@@ -15,7 +15,7 @@ pub mod jni;
 
 /// Current internal crypto core build/ABI version.
 /// Bump this integer when adding new exports, modifying signatures, or changing ABI.
-pub const CRYPTO_CORE_VERSION: u32 = 3;
+pub const CRYPTO_CORE_VERSION: u32 = 4;
 
 #[inline]
 pub fn crypto_core_version() -> u32 {
@@ -40,8 +40,8 @@ pub use cipher::{
 pub use errors::CryptoError;
 pub use kdf::{hkdf_derive, pbkdf2_derive};
 pub use keys::{
-    decode_key, derive_public_key, diffie_hellman, encode_key, generate_key_pair,
-    normalize_public_key, KeyPair,
+    compute_device_rebind_proof, decode_key, derive_public_key, diffie_hellman, encode_key,
+    generate_key_pair, normalize_public_key, KeyPair,
 };
 pub use safety::{
     compute_safety_fingerprint, compute_safety_hash, compute_safety_number, SafetyFingerprint,

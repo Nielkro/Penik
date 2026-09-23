@@ -292,3 +292,24 @@ func (h *Hub) CloseUserSessionsExcept(userID int64, keepTokenHash string) {
 	}
 }
 
+// CloseDeviceConnections terminates all WebSocket connections associated with deviceID.
+func (h *Hub) CloseDeviceConnections(deviceID int64) {
+	if h == nil || deviceID == 0 {
+		return
+	}
+	h.mu.RLock()
+	var toClose []*Client
+	for _, c := range h.clients {
+		if c.deviceID == deviceID {
+			toClose = append(toClose, c)
+		}
+	}
+	h.mu.RUnlock()
+
+	for _, c := range toClose {
+		if c.conn != nil {
+			_ = c.conn.Close(websocket.StatusPolicyViolation, "device re-bound")
+		}
+	}
+}
+

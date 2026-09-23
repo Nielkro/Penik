@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -1291,6 +1292,16 @@ func (c *Client) handleKeyPublish(ctx context.Context, req *KeyPublishReq) error
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+
+	// Identity keys are permanent for a device; reject mutations
+	var existingIK []byte
+	err = tx.QueryRowContext(ctx,
+		`SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, c.deviceID).Scan(&existingIK)
+	if err == nil && len(existingIK) > 0 {
+		if !bytes.Equal(existingIK, req.X25519Pub) {
+			return fmt.Errorf("identity key is immutable: device %d already has a different key", c.deviceID)
+		}
+	}
 
 	_, err = tx.ExecContext(ctx,
 		`INSERT OR REPLACE INTO device_public_keys(device_id, x25519_pub, created_at, updated_at)

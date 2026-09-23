@@ -1071,3 +1071,15 @@ export async function unwrapGroupKey(encryptedKey, sharedSecret, salt, nonce, gr
     BigInt(keyVersion)
   );
 }
+
+export async function computeDeviceRebindProof(ikPriv, ephPub, nonce, userId, deviceId) {
+  const wasm = await getWasm();
+  return wasm.computeDeviceRebindProof(
+    requireBytes(ikPriv, 32, "ikPriv"),
+    requireBytes(ephPub, 32, "ephPub"),
+    requireBytes(nonce, 32, "nonce"),
+    BigInt(userId),
+    BigInt(deviceId)
+  );
+}
+

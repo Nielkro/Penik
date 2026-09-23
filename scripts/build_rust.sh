@@ -8,6 +8,8 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+export PATH="$HOME/.cargo/bin:$PATH"
+
 log()  { echo -e "${BLUE}[build_rust]${NC} $*"; }
 info() { echo -e "${GREEN}[build_rust]${NC} $*"; }
 warn() { echo -e "${YELLOW}[build_rust] WARNING:${NC} $*"; }

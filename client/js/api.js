@@ -511,4 +511,12 @@ export function getServerTimeSec() {
   return Math.floor(getServerTimeMs() / 1000);
 }
 
+export function deviceChallenge(targetDeviceId) {
+  return post('/auth/device-challenge', { target_device_id: targetDeviceId });
+}
+
+export function deviceRebind(deviceId, nonce, proof) {
+  return post('/auth/device-rebind', { device_id: deviceId, nonce, proof });
+}
+
 

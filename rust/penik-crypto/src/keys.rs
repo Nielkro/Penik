@@ -113,3 +113,64 @@ pub fn decode_key(b64: &str) -> Result<Vec<u8>, CryptoError> {
         .or_else(|_| BASE64_URL_SAFE_NO_PAD.decode(&padded))
         .map_err(|_| CryptoError::Base64DecodeError)
 }
+
+pub fn compute_device_rebind_proof(
+    ik_priv: &[u8],
+    eph_pub: &[u8],
+    nonce: &[u8],
+    user_id: u64,
+    device_id: u64,
+) -> Result<[u8; 32], CryptoError> {
+    if nonce.len() != 32 {
+        return Err(CryptoError::InvalidKeyLength {
+            expected: 32,
+            actual: nonce.len(),
+        });
+    }
+    let shared = diffie_hellman(ik_priv, eph_pub)?;
+
+    let mut info = Vec::with_capacity(70);
+    info.extend_from_slice(b"penik-device-rebind-v1");
+    info.extend_from_slice(nonce);
+    info.extend_from_slice(&user_id.to_be_bytes());
+    info.extend_from_slice(&device_id.to_be_bytes());
+
+    let okm = crate::kdf::hkdf_derive(&[], &shared, &info, 32)?;
+    let mut proof = [0u8; 32];
+    proof.copy_from_slice(&okm);
+    Ok(proof)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_device_rebind_proof_symmetric() {
+        let client_ik = generate_key_pair();
+        let server_eph = generate_key_pair();
+        let nonce = [42u8; 32];
+        let user_id = 12345u64;
+        let device_id = 67890u64;
+
+        // Client side computes proof using client's private IK and server's ephemeral public key
+        let client_proof = compute_device_rebind_proof(
+            &client_ik.private_key,
+            &server_eph.public_key,
+            &nonce,
+            user_id,
+            device_id,
+        ).unwrap();
+
+        // Server side computes expected proof using server's ephemeral private key and client's public IK
+        let server_proof = compute_device_rebind_proof(
+            &server_eph.private_key,
+            &client_ik.public_key,
+            &nonce,
+            user_id,
+            device_id,
+        ).unwrap();
+
+        assert_eq!(client_proof, server_proof);
+    }
+}

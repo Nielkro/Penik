@@ -32,6 +32,33 @@ data class RegisterRequestBody(
 data class AuthResponseBody(
     val token: String,
     @SerialName("user_id") val userId: Long,
+    @SerialName("device_id") val deviceId: Long,
+    @SerialName("rebind_required") val rebindRequired: Boolean = false,
+    @SerialName("target_device_id") val targetDeviceId: Long = 0L
+)
+
+@Serializable
+data class DeviceChallengeRequest(
+    @SerialName("target_device_id") val targetDeviceId: Long
+)
+
+@Serializable
+data class DeviceChallengeResponse(
+    val nonce: String,
+    @SerialName("eph_pub") val ephPub: String,
+    @SerialName("expires_at") val expiresAt: Long
+)
+
+@Serializable
+data class DeviceRebindRequest(
+    @SerialName("device_id") val deviceId: Long,
+    val nonce: String,
+    val proof: String
+)
+
+@Serializable
+data class DeviceRebindResponse(
+    val success: Boolean,
     @SerialName("device_id") val deviceId: Long
 )
 

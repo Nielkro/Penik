@@ -8,7 +8,9 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 - `server/cmd/server/main.go` — Server entry point: loads config, opens DB, registers REST/WebSocket routes, attaches middleware, and serves the embedded web client.
 - `server/internal/config/config.go` — Loads runtime configuration from environment variables: port, SQLite path, session TTL, size limits, CORS, upload directory, MaxMind GeoIP database path, and primary/fallback LiveKit URLs.
-- `server/internal/handlers/auth.go` — REST handlers for registration and login; validates credentials and key material, hashes passwords, and creates devices/sessions.
+- `server/internal/handlers/auth.go` — REST handlers for registration and login; validates credentials and key material, hashes passwords, and creates devices/sessions with provisional device handling for rebinds.
+- `server/internal/handlers/challenge_store.go` — In-memory TTL challenge store with background ticker eviction for device identity key rebind verification.
+- `server/internal/handlers/device_rebind.go` — REST handlers for issuing Diffie-Hellman challenges (`/auth/device-challenge`) and atomic proof-of-possession verification with session elevation (`/auth/device-rebind`).
 - `server/internal/handlers/logout.go` — REST handlers revoking the current session token (`/logout`) or the user's other sessions (`/logout/all`), terminating associated active WebSockets via the hub; `/logout/all` is rejected with 403 unless the requesting session is older than a day.
 - `server/internal/handlers/devices.go` — REST handler `GET /api/v1/devices` listing the authenticated user's devices, flagging the current device and whether each has an active session.
 - `server/internal/handlers/deviceinfo.go` — Helpers deriving a device's platform label, originating IP, and IP-based geolocation resolution (MaxMind GeoLite2/DB-IP Lite .mmdb reader with cached fallback).

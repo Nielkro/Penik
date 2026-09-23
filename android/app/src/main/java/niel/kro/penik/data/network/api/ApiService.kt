@@ -23,6 +23,12 @@ interface ApiService {
     @POST("login")
     suspend fun login(@Body body: LoginRequestBody): Response<AuthResponseBody>
 
+    @POST("auth/device-challenge")
+    suspend fun deviceChallenge(@Body body: DeviceChallengeRequest): Response<DeviceChallengeResponse>
+
+    @POST("auth/device-rebind")
+    suspend fun deviceRebind(@Body body: DeviceRebindRequest): Response<DeviceRebindResponse>
+
     @GET("time")
     suspend fun getServerTime(): Response<ServerTimeResponse>
 

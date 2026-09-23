@@ -37,6 +37,7 @@ from tests.e2e.crypto_utils import (
     encrypt_file,
     decrypt_file,
     compute_safety_fingerprint,
+    compute_device_rebind_proof,
 )
 
 GREEN = "\033[92m"
@@ -157,6 +158,39 @@ def test_safety_fingerprint():
     print(f"{GREEN}{BOLD}OK (Number: {fp['number']}){RESET}")
 
 
+def test_device_rebind_proof():
+    print("Testing Device Rebind Proof (Rust vs Python cryptography)...", end=" ")
+    from cryptography.hazmat.primitives.asymmetric import x25519
+
+    alice_priv, alice_pub = generate_key_pair()
+    eph_priv, eph_pub = generate_key_pair()
+    nonce = os.urandom(32)
+    user_id = 999
+    device_id = 42
+
+    rust_proof = compute_device_rebind_proof(alice_priv, eph_pub, nonce, user_id, device_id)
+    assert len(rust_proof) == 32
+
+    # Reference Python implementation using cryptography
+    py_priv = x25519.X25519PrivateKey.from_private_bytes(alice_priv)
+    py_pub = x25519.X25519PublicKey.from_public_bytes(eph_pub)
+    py_shared = py_priv.exchange(py_pub)
+
+    framing = b"penik-device-rebind-v1" + nonce + user_id.to_bytes(8, "big") + device_id.to_bytes(8, "big")
+    assert len(framing) == 70
+
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=framing,
+    )
+    expected_proof = hkdf.derive(py_shared)
+
+    assert rust_proof == expected_proof, f"Proof mismatch: rust={rust_proof.hex()} py={expected_proof.hex()}"
+    print(f"{GREEN}{BOLD}OK{RESET}")
+
+
 if __name__ == "__main__":
     print(f"\n{BOLD}=== RUNNING PENIK PYTHON CRYPTO VERIFICATION ==={RESET}\n")
     test_pbkdf2()
@@ -167,4 +201,6 @@ if __name__ == "__main__":
     test_e2ee_encrypt_decrypt()
     test_file_crypto()
     test_safety_fingerprint()
+    test_device_rebind_proof()
     print(f"\n{GREEN}{BOLD}ALL PYTHON CRYPTO CORE TESTS PASSED!{RESET}\n")
+

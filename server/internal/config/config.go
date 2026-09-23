@@ -34,6 +34,7 @@ type Config struct {
 	LiveKitAPIKey      string
 	LiveKitAPISecret   string
 	VersionSourceURL   string // Remote URL (GitHub Gist or raw repo URL) serving version.json policy
+	DeviceRebindRequired bool // DEVICE_REBIND_REQUIRED env (default true, 0 to disable enforcement)
 }
 
 // IsProduction reports whether the server runs with production hardening.
@@ -117,6 +118,7 @@ func Load() *Config {
 		LiveKitAPIKey:      getEnv("LIVEKIT_API_KEY", defaultLiveKitAPIKey),
 		LiveKitAPISecret:   getEnv("LIVEKIT_API_SECRET", defaultLiveKitAPISecret),
 		VersionSourceURL:   getEnv("VERSION_SOURCE_URL", "https://raw.githubusercontent.com/Nielkro/Penik/master/version.json"),
+		DeviceRebindRequired: os.Getenv("DEVICE_REBIND_REQUIRED") != "0",
 	}
 
 	cfg.SessionTTL = getEnvDuration("SESSION_TTL", 720*time.Hour)

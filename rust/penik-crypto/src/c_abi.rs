@@ -584,3 +584,28 @@ pub unsafe extern "C" fn penik_group_decrypt_verified(
     }
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn penik_compute_device_rebind_proof(
+    ik_priv: *const u8,
+    eph_pub: *const u8,
+    nonce: *const u8,
+    nonce_len: usize,
+    user_id: u64,
+    device_id: u64,
+    out_proof: *mut u8,
+) -> i32 {
+    if ik_priv.is_null() || eph_pub.is_null() || nonce.is_null() || out_proof.is_null() {
+        return -1;
+    }
+    let priv_slice = slice::from_raw_parts(ik_priv, 32);
+    let eph_slice = slice::from_raw_parts(eph_pub, 32);
+    let nonce_slice = slice::from_raw_parts(nonce, nonce_len);
+    match keys::compute_device_rebind_proof(priv_slice, eph_slice, nonce_slice, user_id, device_id) {
+        Ok(proof) => {
+            std::ptr::copy_nonoverlapping(proof.as_ptr(), out_proof, 32);
+            0
+        }
+        Err(_) => -1,
+    }
+}
+

@@ -50,9 +50,11 @@ type loginRequest struct {
 }
 
 type loginResponse struct {
-	Token    string `json:"token"`
-	UserID   int64  `json:"user_id"`
-	DeviceID int64  `json:"device_id"`
+	Token          string `json:"token"`
+	UserID         int64  `json:"user_id"`
+	DeviceID       int64  `json:"device_id"`
+	RebindRequired bool   `json:"rebind_required,omitempty"`
+	TargetDeviceID int64  `json:"target_device_id,omitempty"`
 }
 
 const (
@@ -267,13 +269,9 @@ func Login(database *db.DB, cfg *config.Config, hubs ...*ws.Hub) http.HandlerFun
 		// A device ID is part of message ownership. Deleting and recreating the
 		// device here would cascade-delete every offline message addressed to it.
 		//
-		// Match by identity key first: the client's IK is stable per install, so
-		// the same crypto identity should always map to the same device row. This
-		// prevents device proliferation when device_name is volatile (e.g. the web
-		// client stores it in localStorage, so clearing site data would otherwise
-		// mint a new device on every login). Fall back to (user_id, device_name)
-		// for older clients that send no IK.
-		var deviceID int64
+		// Match by identity key: the client's IK is stable per install.
+		// Never fall back to device_name, to prevent device claiming attacks.
+		var matchedDeviceID int64
 		var lookupErr error
 		if len(req.IKPub) > 0 {
 			lookupErr = tx.QueryRowContext(r.Context(),
@@ -282,41 +280,38 @@ func Login(database *db.DB, cfg *config.Config, hubs ...*ws.Hub) http.HandlerFun
 				 WHERE d.user_id=? AND dpk.x25519_pub=?
 				 ORDER BY d.id DESC
 				 LIMIT 1`,
-				userID, req.IKPub).Scan(&deviceID)
+				userID, req.IKPub).Scan(&matchedDeviceID)
 		} else {
 			lookupErr = sql.ErrNoRows
 		}
-		if lookupErr == sql.ErrNoRows {
-			lookupErr = tx.QueryRowContext(r.Context(),
-				`SELECT id FROM devices
-				 WHERE user_id=? AND device_name=?
-				 ORDER BY id DESC
-				 LIMIT 1`,
-				userID, req.DeviceName).Scan(&deviceID)
-		}
-		err = lookupErr
+
 		loc := resolveLocation(req.Location, r)
 		cryptoVer := req.CryptoVersion
 		if cryptoVer <= 0 {
 			cryptoVer = 1
 		}
-		if err == sql.ErrNoRows {
+
+		var deviceID int64
+		var targetDeviceID int64
+		if lookupErr == nil && matchedDeviceID > 0 && cfg.DeviceRebindRequired {
+			// Matched an existing device key, but require proof-of-possession challenge.
+			// Issue provisional temporary device; caller must rebind to targetDeviceID.
+			targetDeviceID = matchedDeviceID
 			devRes, insertErr := tx.ExecContext(r.Context(),
 				`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen,crypto_version) VALUES(?,?,?,?,?,?,?,?)`,
 				userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now, cryptoVer)
 			if insertErr != nil {
-				loginInternalError(w, "insert device", insertErr)
+				loginInternalError(w, "insert provisional device", insertErr)
 				return
 			}
 			deviceID, err = devRes.LastInsertId()
 			if err != nil {
-				loginInternalError(w, "get device id", err)
+				loginInternalError(w, "get provisional device id", err)
 				return
 			}
-		} else if err != nil {
-			loginInternalError(w, "lookup device", err)
-			return
-		} else {
+		} else if lookupErr == nil && matchedDeviceID > 0 {
+			// Legacy path when rebind challenge is disabled
+			deviceID = matchedDeviceID
 			_, err = tx.ExecContext(r.Context(),
 				`UPDATE devices
 				 SET registration_id=?, last_seen=?,
@@ -333,6 +328,22 @@ func Login(database *db.DB, cfg *config.Config, hubs ...*ws.Hub) http.HandlerFun
 				loginInternalError(w, "update device", err)
 				return
 			}
+		} else if lookupErr == sql.ErrNoRows {
+			devRes, insertErr := tx.ExecContext(r.Context(),
+				`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen,crypto_version) VALUES(?,?,?,?,?,?,?,?)`,
+				userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now, cryptoVer)
+			if insertErr != nil {
+				loginInternalError(w, "insert device", insertErr)
+				return
+			}
+			deviceID, err = devRes.LastInsertId()
+			if err != nil {
+				loginInternalError(w, "get device id", err)
+				return
+			}
+		} else {
+			loginInternalError(w, "lookup device", lookupErr)
+			return
 		}
 
 		if len(req.SigningKey) > 0 && len(req.SigningKey) != 32 {
@@ -404,9 +415,11 @@ func Login(database *db.DB, cfg *config.Config, hubs ...*ws.Hub) http.HandlerFun
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(loginResponse{
-			Token:    token,
-			UserID:   userID,
-			DeviceID: deviceID,
+			Token:          token,
+			UserID:         userID,
+			DeviceID:       deviceID,
+			RebindRequired: targetDeviceID > 0,
+			TargetDeviceID: targetDeviceID,
 		})
 	}
 }

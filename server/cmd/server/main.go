@@ -127,6 +127,13 @@ func main() {
 	mux.Handle("PUT /api/v1/devices/me/fcm",
 		authMW(http.HandlerFunc(handlers.UpdateFCMToken(database))))
 
+	deviceChallengeLimiter := middleware.NewUserRateLimiter(5, time.Minute)
+	rebindStore := handlers.NewDeviceChallengeStore()
+	mux.Handle("POST /api/v1/auth/device-challenge",
+		authMW(deviceChallengeLimiter.Limit(http.HandlerFunc(handlers.DeviceChallenge(database, cfg, rebindStore)))))
+	mux.Handle("POST /api/v1/auth/device-rebind",
+		authMW(http.HandlerFunc(handlers.DeviceRebind(database, cfg, rebindStore, hub))))
+
 	mux.Handle("POST /api/v1/bots",
 		authMW(http.HandlerFunc(handlers.CreateBot(database))))
 	mux.Handle("GET /api/v1/bots",

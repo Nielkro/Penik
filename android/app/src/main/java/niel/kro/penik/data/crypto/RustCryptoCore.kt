@@ -177,5 +177,14 @@ object RustCryptoCore {
     ): ByteArray?
 
     @JvmStatic
+    external fun computeDeviceRebindProof(
+        ikPriv: ByteArray,
+        ephPub: ByteArray,
+        nonce: ByteArray,
+        userId: Long,
+        deviceId: Long
+    ): ByteArray?
+
+    @JvmStatic
     external fun zeroize(array: ByteArray)
 }

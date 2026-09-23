@@ -1,4 +1,4 @@
-import { apiPost, apiGet, setToken, getUserById, getToken, BASE } from "../api.js";
+import { apiPost, apiGet, setToken, getUserById, getToken, BASE, deviceChallenge, deviceRebind } from "../api.js";
 import {
   getPersistentDeviceName, getClientPlatform, getClientLocation,
   saveIdentityKey, saveIKPrivate, saveIKPublic, getIKPrivate, getIKPublic,
@@ -6,7 +6,7 @@ import {
 } from "../storage.js";
 import { navigate, setCurrentUser, restoreE2EEKeys, backupE2EEKeys } from "../app.js";
 import { el, showToast, spinner, avatar, showConfirmModal, showPinModal, formatDate, formatTime } from "./components.js";
-import { generateKeyPair, generateSigningKeyPair, encryptIdentityEnvelope, derivePublicKey } from "../crypto.js";
+import { generateKeyPair, generateSigningKeyPair, encryptIdentityEnvelope, derivePublicKey, computeDeviceRebindProof, decodeKey } from "../crypto.js";
 import { ws, OP } from "../ws.js";
 
 function authErr(errEl, msg) {
@@ -556,6 +556,32 @@ export function renderAuth(container, initialMode = "welcome") {
           const res = await apiPost("/login", loginPayload);
 
           setToken(res.token);
+
+          if (res.rebind_required && res.target_device_id) {
+            try {
+              const priv = await getIKPrivate();
+              if (priv && priv.length === 32) {
+                const challenge = await deviceChallenge(res.target_device_id);
+                const ephPubBytes = decodeKey(challenge.eph_pub);
+                const nonceBytes = decodeKey(challenge.nonce);
+                const proofBytes = await computeDeviceRebindProof(
+                  new Uint8Array(priv),
+                  ephPubBytes,
+                  nonceBytes,
+                  res.user_id,
+                  res.target_device_id
+                );
+                const proofB64 = btoa(String.fromCharCode(...proofBytes));
+                const rebindRes = await deviceRebind(res.target_device_id, challenge.nonce, proofB64);
+                if (rebindRes && rebindRes.device_id) {
+                  res.device_id = rebindRes.device_id;
+                }
+              }
+            } catch (rebindErr) {
+              console.warn("[auth] Device rebind failed:", rebindErr);
+            }
+          }
+
           localStorage.setItem("user_id", String(res.user_id));
           localStorage.setItem("device_id", String(res.device_id));
 

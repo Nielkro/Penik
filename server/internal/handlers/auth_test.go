@@ -53,6 +53,15 @@ func TestLoginPreservesOfflineMessagesForExistingDevice(t *testing.T) {
 	}
 	recipientDeviceID, _ := recipientDeviceResult.LastInsertId()
 
+	ikPub := bytes.Repeat([]byte{0x42}, 32)
+	_, err = database.Exec(
+		`INSERT INTO device_public_keys(device_id, x25519_pub, created_at, updated_at) VALUES(?,?,?,?)`,
+		recipientDeviceID, ikPub, now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	chatResult, err := database.Exec(
 		`INSERT INTO chats(user1_id,user2_id,created_at) VALUES(?,?,?)`,
 		userID, senderID, now,
@@ -77,6 +86,7 @@ func TestLoginPreservesOfflineMessagesForExistingDevice(t *testing.T) {
 		Nickname:   "recipient",
 		Password:   "secret123",
 		DeviceName: "Web Client TEST",
+		IKPub:      ikPub,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"database/sql"
@@ -63,6 +64,18 @@ func UploadIdentityKeys(database *db.DB, hubs ...*ws.Hub) http.HandlerFunc {
 			return
 		}
 		defer tx.Rollback()
+
+		// Identity keys are permanent for a device; reject mutations with 409 Conflict
+		var existingIK []byte
+		err = tx.QueryRowContext(r.Context(),
+			`SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, deviceID).
+			Scan(&existingIK)
+		if err == nil && len(existingIK) > 0 {
+			if !bytes.Equal(existingIK, req.IKPub) {
+				http.Error(w, "identity key is immutable", http.StatusConflict)
+				return
+			}
+		}
 
 		if len(req.SigningKey) > 0 {
 			_, err = tx.ExecContext(r.Context(),

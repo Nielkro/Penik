@@ -895,3 +895,50 @@ pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_gro
     }
 }
 
+#[no_mangle]
+pub unsafe extern "system" fn Java_niel_kro_penik_data_crypto_RustCryptoCore_computeDeviceRebindProof<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    ik_priv: JByteArray<'local>,
+    eph_pub: JByteArray<'local>,
+    nonce: JByteArray<'local>,
+    user_id: jlong,
+    device_id: jlong,
+) -> jbyteArray {
+    let mut priv_bytes = match env.convert_byte_array(ik_priv) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let eph_bytes = match env.convert_byte_array(eph_pub) {
+        Ok(b) => b,
+        Err(_) => {
+            priv_bytes.zeroize();
+            return std::ptr::null_mut();
+        }
+    };
+    let nonce_bytes = match env.convert_byte_array(nonce) {
+        Ok(b) => b,
+        Err(_) => {
+            priv_bytes.zeroize();
+            return std::ptr::null_mut();
+        }
+    };
+
+    let res = keys::compute_device_rebind_proof(
+        &priv_bytes,
+        &eph_bytes,
+        &nonce_bytes,
+        user_id as u64,
+        device_id as u64,
+    );
+    priv_bytes.zeroize();
+
+    match res {
+        Ok(proof) => match env.byte_array_from_slice(&proof) {
+            Ok(arr) => arr.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
