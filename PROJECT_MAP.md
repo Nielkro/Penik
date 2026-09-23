@@ -295,4 +295,6 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `plan/micro_rust_core_plan.md` — Architecture plan for unifying cryptography in a Rust micro-core (`penik-crypto`) with WebAssembly and UniFFI bindings.
 - `plan/new_device_key_invalidation_plan.md` — Architecture plan for handling key bundle invalidation and retry flows when users add new devices.
 - `plan/wails_desktop_plan.md` — Plan for a Windows + Linux desktop client on Wails (Go + WebView2/WebKitGTK) reusing the web `client/` frontend.
+- `plan/device-rebind-ik-proof.md` — Plan for session rebind via X25519 DH-challenge proof-of-possession of a device identity key (Idea A).
+- `plan/e2ee-removal-tradeoffs.md` — Tradeoff note: what is lost and gained if E2EE is removed; recommendation to keep E2EE in prod.
 
