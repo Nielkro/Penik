@@ -11,9 +11,10 @@ COPY client/package*.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY client/ ./
 COPY scripts/fetch_crypto.sh /tmp/fetch_crypto.sh
+# Prefer the in-tree pkg wasm when present; only fetch when missing (no --force).
 RUN chmod +x /tmp/fetch_crypto.sh && \
     GITHUB_REPO="${GITHUB_REPO}" GITHUB_TOKEN="${GITHUB_TOKEN}" \
-    /tmp/fetch_crypto.sh --force --wasm /app/client/pkg/penik-crypto-wasm
+    /tmp/fetch_crypto.sh --wasm /app/client/pkg/penik-crypto-wasm
 
 RUN npm run build
 

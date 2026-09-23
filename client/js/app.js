@@ -1125,6 +1125,9 @@ export async function syncMessageHistory(options = {}) {
     const currentDeviceId = Number(localStorage.getItem("device_id"));
     // One force-refresh per sender per sync pass — never per message row.
     const forceRefreshedSenders = new Set();
+    // Own outgoing is fanned out as one row per target device; keep a single
+    // UI copy per client_msg_id to avoid rendering every envelope separately.
+    const seenOwnClientMsgIds = new Set();
 
     for (const item of history) {
       // History is device-scoped.  Never try to decrypt a fan-out copy that
@@ -1146,6 +1149,17 @@ export async function syncMessageHistory(options = {}) {
       if (existing && existing.plaintext &&
           !existing.plaintext.startsWith('[Сообщение не расшифровано') && !isEdited &&
           !isBrokenFilePlaintext(existing.plaintext)) {
+        if (Number(item.sender_id) === myId && item.client_msg_id) {
+          seenOwnClientMsgIds.add(item.client_msg_id);
+        }
+        continue;
+      }
+
+      // Collapse multi-device fan-out envelopes of our own messages.
+      // Only mark seen after a successful decrypt/save so a failed envelope
+      // does not block another target-device copy of the same message.
+      const isOwnRow = Number(item.sender_id) === myId && !!item.client_msg_id;
+      if (isOwnRow && seenOwnClientMsgIds.has(item.client_msg_id)) {
         continue;
       }
 
@@ -1168,14 +1182,39 @@ export async function syncMessageHistory(options = {}) {
         text = locallyStored.plaintext;
         throw { __alreadyDecrypted: true };
       }
-          let senderBundle = await getSenderBundle(item.sender_id);
-          let senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
-          if (!senderDevice && !forceRefreshedSenders.has(String(item.sender_id))) {
-            forceRefreshedSenders.add(String(item.sender_id));
-            senderBundle = await getCachedKeyBundle(item.sender_id, true);
-            senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
+          // Own outgoing rows: DH was sealed to the recipient device's IK,
+          // not to the sender device. Resolve the peer key accordingly.
+          const isOwnOutgoing = Number(item.sender_id) === myId;
+          let fromIdentityKey;
+          let peerUserIdForPin = Number(item.sender_id);
+          let peerDeviceIdForPin = Number(item.sender_device_id);
+
+          if (isOwnOutgoing) {
+            const keyOwnerUserId = Number(item.recipient_id) || peerId;
+            const keyDeviceId = Number(item.recipient_device_id) || 0;
+            let recipBundle = await getCachedKeyBundle(keyOwnerUserId);
+            let recipDevice = keyDeviceId
+              ? recipBundle?.devices?.find(d => Number(d.device_id) === keyDeviceId)
+              : null;
+            if (!recipDevice) {
+              recipBundle = await getCachedKeyBundle(keyOwnerUserId, true);
+              recipDevice = keyDeviceId
+                ? recipBundle?.devices?.find(d => Number(d.device_id) === keyDeviceId)
+                : null;
+            }
+            fromIdentityKey = recipDevice?.identity_key;
+            peerUserIdForPin = keyOwnerUserId;
+            peerDeviceIdForPin = keyDeviceId;
+          } else {
+            let senderBundle = await getSenderBundle(item.sender_id);
+            let senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
+            if (!senderDevice && !forceRefreshedSenders.has(String(item.sender_id))) {
+              forceRefreshedSenders.add(String(item.sender_id));
+              senderBundle = await getCachedKeyBundle(item.sender_id, true);
+              senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
+            }
+            fromIdentityKey = senderDevice?.identity_key;
           }
-          const fromIdentityKey = senderDevice?.identity_key;
 
           const decrypted = await decryptMessagePayload({
             ciphertext: item.ciphertext,
@@ -1184,6 +1223,10 @@ export async function syncMessageHistory(options = {}) {
             from_identity_key: fromIdentityKey,
             sender_user_id: item.sender_id,
             sender_device_id: item.sender_device_id,
+            peer_user_id: peerUserIdForPin,
+            peer_device_id: peerDeviceIdForPin,
+            recipient_id: item.recipient_id,
+            recipient_device_id: item.recipient_device_id,
             chat_user_id: peerId,
             chat_id: String(peerId),
             to_user_id: Number(item.sender_id) === myId ? peerId : myId,
@@ -1224,6 +1267,11 @@ export async function syncMessageHistory(options = {}) {
           last_ts: Math.max(currentContact?.last_ts || 0, item.timestamp * 1000)
         });
         continue;
+      }
+
+      // Successful decrypt: collapse further fan-out envelopes of this message.
+      if (isOwnRow) {
+        seenOwnClientMsgIds.add(item.client_msg_id);
       }
 
       await saveContact({
@@ -1318,9 +1366,13 @@ export async function decryptMessagePayload(payload) {
   const nonce = toUint8Array(payload.nonce);
   let fromIdentityKey = toUint8Array(payload.from_identity_key);
 
-  // TOFU pinning: verify and pin identity key; displays warning on change.
-  const pinUserId = Number(payload.from_user_id ?? payload.sender_user_id);
-  const pinDeviceId = Number(payload.from_device_id ?? payload.sender_device_id);
+  const myIdEarly = Number(localStorage.getItem("user_id"));
+  const senderEarly = Number(payload.from_user_id ?? payload.sender_user_id ?? payload.sender_id ?? 0);
+  const isOwnOutgoing = senderEarly > 0 && senderEarly === myIdEarly;
+
+  // TOFU pin the actual DH peer device (recipient for own outgoing, sender otherwise).
+  const pinUserId = Number(payload.peer_user_id ?? payload.from_user_id ?? payload.sender_user_id);
+  const pinDeviceId = Number(payload.peer_device_id ?? payload.from_device_id ?? payload.sender_device_id);
   if (pinUserId && pinDeviceId && fromIdentityKey.length) {
     await verifyPeerIdentityKey(pinUserId, pinDeviceId, fromIdentityKey);
   }
@@ -1356,7 +1408,7 @@ export async function decryptMessagePayload(payload) {
   const rawTs = Number(payload.timestamp ?? payload.created_at ?? payload.ts ?? payload.edited_at ?? 0);
   const tsSec = rawTs > 1e11 ? Math.floor(rawTs / 1000) : rawTs;
 
-  if (!fromIdentityKey.length && senderUserId) {
+  if (!fromIdentityKey.length && senderUserId && !isOwnOutgoing) {
     try {
       const bundle = await getCachedKeyBundle(senderUserId);
       const targetDev = bundle?.devices?.find(d => Number(d.device_id) === pinDeviceId) || bundle?.devices?.[0];
@@ -1453,18 +1505,46 @@ export async function decryptMessagePayload(payload) {
     textBytes = await tryDecryptWithIK(fromIdentityKey);
   }
 
-  // If initial decryption failed or key was missing, try sender's key bundle
-  // (soft refresh: getCachedKeyBundle dedups + rate-limits forceRefresh).
-  if (!textBytes && senderUserId) {
+  // If initial decryption failed or key was missing, try the peer's key bundle
+  // (recipient devices for own outgoing; sender devices for incoming).
+  // Soft refresh: getCachedKeyBundle dedups + rate-limits forceRefresh.
+  const fallbackUserId = isOwnOutgoing
+    ? Number(payload.recipient_id ?? payload.recipient_user_id ?? recipientUserId ?? chatPartnerId)
+    : senderUserId;
+  const fallbackDeviceId = isOwnOutgoing
+    ? Number(payload.recipient_device_id ?? 0)
+    : pinDeviceId;
+  if (!textBytes && fallbackUserId) {
     try {
-      const bundle = await getCachedKeyBundle(senderUserId);
-      for (const dev of (bundle?.devices || [])) {
+      const bundle = await getCachedKeyBundle(fallbackUserId);
+      const devices = bundle?.devices || [];
+      const ordered = fallbackDeviceId
+        ? [...devices].sort((a, b) =>
+            (Number(b.device_id) === fallbackDeviceId ? 1 : 0) -
+            (Number(a.device_id) === fallbackDeviceId ? 1 : 0))
+        : devices;
+      for (const dev of ordered) {
         if (!dev.identity_key) continue;
+        if (isOwnOutgoing && fallbackDeviceId && Number(dev.device_id) !== fallbackDeviceId) {
+          // Prefer the exact sealed-to device; allow others only as last resort below.
+          continue;
+        }
         const candidateIK = toUint8Array(dev.identity_key);
         textBytes = await tryDecryptWithIK(candidateIK);
         if (textBytes) {
           fromIdentityKey = candidateIK;
           break;
+        }
+      }
+      if (!textBytes && isOwnOutgoing && fallbackDeviceId) {
+        for (const dev of devices) {
+          if (!dev.identity_key || Number(dev.device_id) === fallbackDeviceId) continue;
+          const candidateIK = toUint8Array(dev.identity_key);
+          textBytes = await tryDecryptWithIK(candidateIK);
+          if (textBytes) {
+            fromIdentityKey = candidateIK;
+            break;
+          }
         }
       }
     } catch (e) {
