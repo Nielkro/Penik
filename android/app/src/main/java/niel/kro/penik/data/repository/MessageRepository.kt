@@ -836,8 +836,10 @@ class MessageRepository @Inject constructor(
                             }
                         }
                         Log.d("PenikMsg", "syncHistory item: msgId=${msg.msgId}, clientMsgId=${msg.clientMsgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, existingLocalId=${existing?.localId}")
+                        val isOwnOutgoing = msg.senderId == myId
                         val isEdited = msg.editedAt != null && (existing == null || existing.editedAt == null || (msg.editedAt * 1000 > (existing.editedAt ?: 0L)))
-                        if (existing == null || isEdited) {
+                        val isFailed = existing?.text?.startsWith("[Ошибка") == true || existing?.text?.startsWith("[Сообщение не расшифровано") == true
+                        if (existing == null || isEdited || isFailed) {
                             var isDecryptFailed = false
                             val text = if (msg.plaintext != null) {
                                 msg.plaintext
@@ -846,46 +848,68 @@ class MessageRepository @Inject constructor(
                                     val ciphertextBytes = java.util.Base64.getDecoder().decode(msg.ciphertext)
                                     val saltBytes = java.util.Base64.getDecoder().decode(msg.encryptionSalt)
                                     val nonceBytes = java.util.Base64.getDecoder().decode(msg.encryptionNonce)
-                                    
-                                    val senderBundle = if (bundleCache.containsKey(msg.senderId)) {
-                                        bundleCache[msg.senderId]
+
+                                    val targetUserId = if (isOwnOutgoing) msg.chatUserId else msg.senderId
+                                    val targetDeviceId = if (isOwnOutgoing) msg.recipientDeviceId else msg.senderDeviceId
+
+                                    val peerBundle = if (bundleCache.containsKey(targetUserId)) {
+                                        bundleCache[targetUserId]
                                     } else {
                                         val b = runCatching {
-                                            val resp = if (msg.senderId == myId) apiService.getKeyBundleSelf(msg.senderId) else apiService.getKeyBundle(msg.senderId)
+                                            val resp = if (targetUserId == myId) apiService.getKeyBundleSelf(targetUserId) else apiService.getKeyBundle(targetUserId)
                                             if (resp.isSuccessful) resp.body() else null
                                         }.getOrNull()
-                                        bundleCache[msg.senderId] = b
+                                        bundleCache[targetUserId] = b
                                         b
                                     }
-                                    val senderDevice = senderBundle?.devices?.find { it.deviceId == msg.senderDeviceId }
-                                    val senderIK = java.util.Base64.getDecoder().decode(senderDevice?.identityKey ?: "")
-                                    
+
+                                    val candidateDevices = buildList {
+                                        if (targetDeviceId != null && targetDeviceId > 0) {
+                                            peerBundle?.devices?.find { it.deviceId == targetDeviceId }?.let { add(it) }
+                                        }
+                                        peerBundle?.devices?.forEach { d ->
+                                            if (d.deviceId != targetDeviceId) add(d)
+                                        }
+                                    }
+
                                     val decryptTs = msg.editedAt ?: msg.createdAt
-                                    decryptMessagePayload(
-                                        myDeviceId = tokenStorage.getDeviceId(),
-                                        fromIdentityKey = senderIK,
-                                        ciphertext = ciphertextBytes,
-                                        salt = saltBytes,
-                                        nonce = nonceBytes,
-                                        senderUserId = msg.senderId,
-                                        recipientUserId = if (msg.senderId == myId) msg.chatUserId else myId,
-                                        clientMsgId = msg.clientMsgId ?: "",
-                                        timestamp = decryptTs
-                                    )
+                                    var decrypted: String? = null
+                                    for (device in candidateDevices) {
+                                        val ik = runCatching { java.util.Base64.getDecoder().decode(device.identityKey) }.getOrNull() ?: continue
+                                        val res = runCatching {
+                                            decryptMessagePayload(
+                                                myDeviceId = tokenStorage.getDeviceId(),
+                                                fromIdentityKey = ik,
+                                                ciphertext = ciphertextBytes,
+                                                salt = saltBytes,
+                                                nonce = nonceBytes,
+                                                senderUserId = msg.senderId,
+                                                recipientUserId = if (isOwnOutgoing) msg.chatUserId else myId,
+                                                clientMsgId = msg.clientMsgId ?: "",
+                                                timestamp = decryptTs
+                                            )
+                                        }.getOrNull()
+                                        if (res != null) {
+                                            decrypted = res
+                                            break
+                                        }
+                                    }
+
+                                    decrypted ?: throw Exception("Could not decrypt with any device key of target user $targetUserId")
                                 } catch (e: Exception) {
-                                    Log.e("PenikMsg", "FAILED TO DECRYPT HISTORY MSG msgId=${msg.msgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, clientMsgId=${msg.clientMsgId}", e)
+                                    Log.e("PenikMsg", "FAILED TO DECRYPT HISTORY MSG msgId=${msg.msgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, recipientDeviceId=${msg.recipientDeviceId}, clientMsgId=${msg.clientMsgId}", e)
                                     isDecryptFailed = true
-                                    existing?.text?.takeIf { it.isNotBlank() } ?: "[Сообщение не расшифровано]"
+                                    existing?.text?.takeIf { it.isNotBlank() && !it.startsWith("[Сообщение не расшифровано") && !it.startsWith("[Ошибка") } ?: "[Сообщение не расшифровано]"
                                 }
                             } else {
-                                existing?.text?.takeIf { it.isNotBlank() } ?: "[Сообщение не расшифровано]"
+                                existing?.text?.takeIf { it.isNotBlank() && !it.startsWith("[Сообщение не расшифровано") && !it.startsWith("[Ошибка") } ?: "[Сообщение не расшифровано]"
                             }
                             
                             val finalText = if (text.isBlank()) "[Сообщение не расшифровано]" else text
                             val editedAtMs = msg.editedAt?.let { it * 1000 }
                             if (existing != null) {
-                                if (editedAtMs != null && !isDecryptFailed && finalText.isNotBlank()) {
-                                    messageDao.updateMessageText(existing.localId, msg.msgId, finalText, editedAtMs)
+                                if (!isDecryptFailed && finalText.isNotBlank() && !finalText.startsWith("[Сообщение не расшифровано") && !finalText.startsWith("[Ошибка")) {
+                                    messageDao.updateMessageText(existing.localId, msg.msgId, finalText, editedAtMs ?: existing.editedAt ?: 0L)
                                 }
                             } else {
                                 newMessages.add(HistoryMsgDecrypted(msg.chatUserId, finalText, msg.senderId, msg.createdAt * 1000))
@@ -1099,11 +1123,13 @@ class MessageRepository @Inject constructor(
     }
 
     private suspend fun tryFallbackDecrypt(msg: WebSocketEvent.MsgRecvEncrypted, myId: Long): String? {
-        val devices = getKeyBundleCached(msg.fromUserId, isSelf = msg.fromUserId == myId)
+        val isOwnOutgoing = msg.fromUserId == myId
+        val targetUserId = if (isOwnOutgoing) msg.chatUserId else msg.fromUserId
+        val devices = getKeyBundleCached(targetUserId, isSelf = targetUserId == myId)
         if (devices.isEmpty()) return null
 
         val myDeviceId = tokenStorage.getDeviceId()
-        val recipientUserId = if (msg.fromUserId == myId) msg.chatUserId else myId
+        val recipientUserId = if (isOwnOutgoing) msg.chatUserId else myId
 
         val targetDevices = if (msg.fromDeviceId > 0) {
             devices.filter { it.deviceId == msg.fromDeviceId } + devices.filter { it.deviceId != msg.fromDeviceId }
@@ -1113,7 +1139,7 @@ class MessageRepository @Inject constructor(
 
         for (device in targetDevices) {
             val ik = runCatching { android.util.Base64.decode(device.identityKey, android.util.Base64.DEFAULT) }.getOrNull() ?: continue
-            identityPins.verify(msg.fromUserId, device.deviceId, ik)
+            identityPins.verify(targetUserId, device.deviceId, ik)
             val text = runCatching {
                 decryptMessagePayload(
                     myDeviceId = myDeviceId,
@@ -1162,14 +1188,18 @@ class MessageRepository @Inject constructor(
         // The row records the sender device id but not its public key, so every
         // key in the sender's bundle is tried; only one can produce a valid tag.
         val myId = tokenStorage.getUserId()
-        val devices = getKeyBundleCached(body.senderId, isSelf = body.senderId == myId)
+        val isOwnOutgoing = body.senderId == myId
+        val targetUserId = if (isOwnOutgoing) body.chatUserId else body.senderId
+        val targetDeviceId = if (isOwnOutgoing) body.recipientDeviceId else body.senderDeviceId
+
+        val devices = getKeyBundleCached(targetUserId, isSelf = targetUserId == myId)
         if (devices.isEmpty()) return null
 
         val myDeviceId = tokenStorage.getDeviceId()
-        val recipientUserId = if (body.senderId == myId) body.chatUserId else myId
+        val recipientUserId = if (isOwnOutgoing) body.chatUserId else myId
 
-        val targetDevices = if (body.senderDeviceId != null && body.senderDeviceId > 0) {
-            devices.filter { it.deviceId == body.senderDeviceId } + devices.filter { it.deviceId != body.senderDeviceId }
+        val targetDevices = if (targetDeviceId != null && targetDeviceId > 0) {
+            devices.filter { it.deviceId == targetDeviceId } + devices.filter { it.deviceId != targetDeviceId }
         } else {
             devices
         }
