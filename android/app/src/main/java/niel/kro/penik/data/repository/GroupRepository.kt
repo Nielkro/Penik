@@ -176,9 +176,12 @@ class GroupRepository @Inject constructor(
     /* ── Key acquisition ── */
 
     /** Return the group key for a version, fetching + unwrapping the envelope if needed. */
-    suspend fun ensureGroupKey(groupId: Long, version: Long): ByteArray? {
+    suspend fun ensureGroupKey(groupId: Long, version: Long, forceRefresh: Boolean = false): ByteArray? {
         val cacheKey = Pair(groupId, version)
-        if (failedKeyVersions.contains(cacheKey)) return null
+        if (forceRefresh) {
+            failedKeyVersions.remove(cacheKey)
+            deviceKeyCache.clear()
+        } else if (failedKeyVersions.contains(cacheKey)) return null
 
         dao.getGroupKey(groupId, version)?.let { return it.key }
 
@@ -420,7 +423,7 @@ class GroupRepository @Inject constructor(
     suspend fun backfillCurrentKey(groupId: Long): Int {
         val group = dao.getGroup(groupId)
         val version = group?.currentKeyVersion ?: runCatching { currentVersion(groupId) }.getOrNull() ?: return 0
-        val groupKey = ensureGroupKey(groupId, version) ?: return 0
+        val groupKey = ensureGroupKey(groupId, version, forceRefresh = true) ?: return 0
 
         var members = dao.getMembers(groupId)
         if (members.isEmpty()) {
@@ -454,7 +457,12 @@ class GroupRepository @Inject constructor(
     /** Create a new key version and upload envelopes for all active devices. */
     suspend fun rotateAndDistribute(groupId: Long): Long? {
         invalidateDeviceKeyCache()
-        val resp = api.rotateGroupKey(groupId).body() ?: return null
+        val rotateResp = runCatching { api.rotateGroupKey(groupId) }.getOrNull()
+        if (rotateResp?.isSuccessful != true) {
+            Log.w("GroupRepo", "rotateGroupKey failed for group=$groupId code=${rotateResp?.code()}")
+            return null
+        }
+        val resp = rotateResp.body() ?: return null
         val version = resp.keyVersion
         val groupKey = groupCrypto.generateGroupKey()
         dao.saveGroupKey(GroupKeyEntity(groupId, version, groupKey))
@@ -462,7 +470,24 @@ class GroupRepository @Inject constructor(
         val userIds = resp.devices.map { it.userId }.distinct()
         val devices = fetchDeviceKeys(userIds)
         if (devices.isNotEmpty()) {
-            api.uploadGroupEnvelopes(groupId, version, UploadEnvelopesRequest(wrapKeyForDevices(groupKey, devices, groupId, version)))
+            val upload = runCatching {
+                api.uploadGroupEnvelopes(groupId, version, UploadEnvelopesRequest(wrapKeyForDevices(groupKey, devices, groupId, version)))
+            }.getOrNull()
+            if (upload?.isSuccessful != true) {
+                Log.e("GroupRepo", "uploadGroupEnvelopes failed for group=$groupId v=$version code=${upload?.code()}")
+                return null
+            }
+            // Verify the envelopes actually landed; a silent miss leaves the
+            // rejoined device with no key and manual rotation "does nothing".
+            val covered = runCatching {
+                api.listEnvelopeDevices(groupId, version).body()?.deviceIds?.toSet() ?: emptySet()
+            }.getOrNull() ?: emptySet()
+            val missing = devices.map { it.deviceId }.filter { it !in covered }
+            if (missing.isNotEmpty()) {
+                Log.e("GroupRepo", "envelopes missing after upload for group=$groupId v=$version devices=$missing")
+            }
+        } else {
+            Log.w("GroupRepo", "rotateAndDistribute: no device keys resolved for group=$groupId v=$version")
         }
         dao.getGroup(groupId)?.let { dao.upsertGroup(it.copy(currentKeyVersion = version)) }
         return version
@@ -676,6 +701,59 @@ class GroupRepository @Inject constructor(
 
     /* ── Offline history sync (ciphertext) ── */
 
+    /** One decrypt pass over server history. Returns true if any message was skipped for a missing key. */
+    private suspend fun syncHistoryPass(groupId: Long): Boolean {
+        var cursor: Long? = null
+        var missingKey = false
+        do {
+            val page = api.getGroupHistory(groupId, 100, cursor).body() ?: return missingKey
+            for (m in page.messages) {
+                val existing = dao.getMessage(groupId, m.messageId)
+                val isEdited = m.editedAt != null && (existing == null || existing.editedAt == null || (m.editedAt * 1000 > (existing.editedAt ?: 0L)))
+                if (existing != null && !isEdited && existing.serverId != 0L) continue
+                val groupKey = ensureGroupKey(groupId, m.keyVersion) ?: run { missingKey = true; continue }
+                val verifyingKey = fetchDeviceSigningKey(groupId, m.senderDeviceId, m.senderUserId)
+                val ts = m.editedAt ?: m.createdAt
+                val text = runCatching {
+                    String(
+                        groupCrypto.decryptVerifiedMessage(
+                            Base64.decode(m.ciphertext, urlB64Flags), verifyingKey, groupKey,
+                            Base64.decode(m.salt, urlB64Flags),
+                            Base64.decode(m.nonce, urlB64Flags),
+                            groupId, m.keyVersion, m.senderUserId, m.messageId, ts
+                        ),
+                        Charsets.UTF_8
+                    )
+                }.getOrNull() ?: continue
+
+                if (existing != null) {
+                    if (m.editedAt != null) {
+                        dao.updateMessageText(groupId, m.messageId, text, m.editedAt * 1000)
+                    }
+                } else {
+                    dao.upsertMessage(
+                        GroupMessageEntity(
+                            groupId = groupId,
+                            messageId = m.messageId,
+                            serverId = m.id,
+                            replyToMsgId = m.replyToMsgId,
+                            senderUserId = m.senderUserId,
+                            senderDeviceId = m.senderDeviceId,
+                            keyVersion = m.keyVersion,
+                            text = text,
+                            createdAt = m.createdAt,
+                            sentByMe = m.senderUserId == myUserId(),
+                            delivered = true,
+                            editedAt = m.editedAt?.let { it * 1000 }
+                        )
+                    )
+                }
+            }
+            cursor = page.nextCursor?.toLongOrNull()
+        } while (cursor != null)
+        return missingKey
+    }
+
     suspend fun syncHistory(groupId: Long) {
         try {
             // Decrypting envelopes needs the sender's identity key, resolved via the
@@ -684,60 +762,19 @@ class GroupRepository @Inject constructor(
             if (dao.getMembers(groupId).isEmpty()) {
                 runCatching { refreshMembers(groupId) }
             }
-            var cursor: Long? = null
-            var missingKey = false
-            do {
-                val page = api.getGroupHistory(groupId, 100, cursor).body() ?: return
-                for (m in page.messages) {
-                    val existing = dao.getMessage(groupId, m.messageId)
-                    val isEdited = m.editedAt != null && (existing == null || existing.editedAt == null || (m.editedAt * 1000 > (existing.editedAt ?: 0L)))
-                    if (existing != null && !isEdited && existing.serverId != 0L) continue
-                    val groupKey = ensureGroupKey(groupId, m.keyVersion) ?: run { missingKey = true; continue }
-                    val verifyingKey = fetchDeviceSigningKey(groupId, m.senderDeviceId, m.senderUserId)
-                    val ts = m.editedAt ?: m.createdAt
-                    val text = runCatching {
-                        String(
-                            groupCrypto.decryptVerifiedMessage(
-                                Base64.decode(m.ciphertext, urlB64Flags), verifyingKey, groupKey,
-                                Base64.decode(m.salt, urlB64Flags),
-                                Base64.decode(m.nonce, urlB64Flags),
-                                groupId, m.keyVersion, m.senderUserId, m.messageId, ts
-                            ),
-                            Charsets.UTF_8
-                        )
-                    }.getOrNull() ?: continue
-
-                    if (existing != null) {
-                        if (m.editedAt != null) {
-                            dao.updateMessageText(groupId, m.messageId, text, m.editedAt * 1000)
-                        }
-                    } else {
-                        dao.upsertMessage(
-                            GroupMessageEntity(
-                                groupId = groupId,
-                                messageId = m.messageId,
-                                serverId = m.id,
-                                replyToMsgId = m.replyToMsgId,
-                                senderUserId = m.senderUserId,
-                                senderDeviceId = m.senderDeviceId,
-                                keyVersion = m.keyVersion,
-                                text = text,
-                                createdAt = m.createdAt,
-                                sentByMe = m.senderUserId == myUserId(),
-                                delivered = true,
-                                editedAt = m.editedAt?.let { it * 1000 }
-                            )
-                        )
-                    }
-                }
-                cursor = page.nextCursor?.toLongOrNull()
-            } while (cursor != null)
+            val missingKey = syncHistoryPass(groupId)
             // A privileged member repairs missing envelopes for the current epoch
             // so reinstalled/rejoined devices recover without a manual rotation.
+            // Afterwards the poisoned failure cache is dropped and the pass is
+            // retried once, so the just-backfilled key is actually used.
             if (missingKey) {
                 val role = myRoleIn(groupId)
                 if (role == "owner" || role == "admin") {
-                    runCatching { backfillCurrentKey(groupId) }
+                    val healed = runCatching { backfillCurrentKey(groupId) }.getOrNull() ?: 0
+                    if (healed > 0) {
+                        failedKeyVersions.removeIf { it.first == groupId }
+                        runCatching { syncHistoryPass(groupId) }
+                    }
                 }
             }
         } catch (e: Exception) {

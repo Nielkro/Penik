@@ -200,7 +200,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 groupRepository.onAck(event.groupId, event.messageId, event.id)
             }
             is WebSocketEvent.GroupKeyAvailable -> {
-                groupRepository.ensureGroupKey(event.groupId, event.keyVersion)
+                // Force: a single earlier 404 must not poison this version forever
+                // (the envelope may have been uploaded after our first fetch).
+                groupRepository.ensureGroupKey(event.groupId, event.keyVersion, forceRefresh = true)
                 groupRepository.syncHistory(event.groupId)
             }
             is WebSocketEvent.GroupHistoryReady -> {

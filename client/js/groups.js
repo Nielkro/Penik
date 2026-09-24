@@ -120,12 +120,15 @@ function myDeviceId() { return Number(localStorage.getItem('device_id')); }
 // activeDeviceKeys returns [{ device_id, ik_pub, signing_key }] for every device of the given
 // user ids, using the shared getCachedKeyBundle cache (single source of truth,
 // inflight dedup, force-refresh cooldown — avoids /keys/bundle stampedes).
-async function fetchDeviceKeys(userIds) {
+// Rotation/backfill paths must pass forceRefresh=true: a 5-minute stale bundle
+// would otherwise wrap the new epoch key for a dead device id and the rejoined
+// device would never receive its envelope.
+async function fetchDeviceKeys(userIds, forceRefresh = false) {
   const result = [];
   for (const uid of userIds) {
     let bundle;
     try {
-      bundle = await getCachedKeyBundle(uid);
+      bundle = await getCachedKeyBundle(uid, forceRefresh);
     } catch (e) {
       continue;
     }
@@ -166,12 +169,16 @@ const failedKeyVersionsGlobal = new Set();
 
 // ensureGroupKey returns the plaintext group key for a version, fetching and
 // unwrapping the device envelope if it is not cached locally.
-export async function ensureGroupKey(groupId, version) {
+// Pass { force: true } after a rotation/backfill notification: a single earlier
+// 404 must not poison the version forever when the envelope landed later.
+export async function ensureGroupKey(groupId, version, { force = false } = {}) {
   const cached = await getGroupKey(groupId, version);
   if (cached) return cached;
 
   const cacheKey = `${groupId}:${version}`;
-  if (failedKeyVersionsGlobal.has(cacheKey)) {
+  if (force) {
+    failedKeyVersionsGlobal.delete(cacheKey);
+  } else if (failedKeyVersionsGlobal.has(cacheKey)) {
     throw new Error(`Key envelope permanently missing (cached 404)`);
   }
 
@@ -327,7 +334,7 @@ export async function acceptInvitation(groupId) {
   // whatever history that key covers.
   try {
     const version = await currentVersion(groupId);
-    await ensureGroupKey(groupId, version);
+    await ensureGroupKey(groupId, version, { force: true });
     await syncHistory(groupId);
   } catch (e) {
     console.warn('[groups] key fetch on accept failed', e.message);
@@ -460,6 +467,8 @@ export async function removeMember(groupId, userId) {
 
 // rotateAndDistribute creates a new key version and uploads envelopes for every
 // currently active device. Only owner/admin may call this (server-enforced).
+// Bundles are force-refreshed: wrapping from a stale 5-minute cache would stage
+// the epoch key for a dead device id and leave the rejoined device keyless.
 export async function rotateAndDistribute(groupId) {
   const resp = await apiRotateGroupKey(groupId);
   const version = Number(resp.key_version);
@@ -467,10 +476,22 @@ export async function rotateAndDistribute(groupId) {
   await saveGroupKey(groupId, version, groupKey);
 
   const userIds = [...new Set((resp.devices || []).map(d => Number(d.user_id)))];
-  const devices = await fetchDeviceKeys(userIds);
+  const devices = await fetchDeviceKeys(userIds, true);
   if (devices.length) {
     const envelopes = await wrapKeyForDevices(groupKey, devices, groupId, version);
     await uploadGroupEnvelopes(groupId, version, envelopes);
+    // Verify the envelopes actually landed; a silent miss leaves the rejoined
+    // device with no key while rotation "succeeds".
+    try {
+      const { device_ids } = await apiGet(`/groups/${groupId}/keys/${version}/devices`);
+      const covered = new Set((device_ids || []).map(Number));
+      const missing = devices.map(d => Number(d.device_id)).filter(id => !covered.has(id));
+      if (missing.length) console.error('[groups] envelopes missing after upload v' + version, missing);
+    } catch (e) {
+      console.warn('[groups] envelope-coverage verify failed', e.message);
+    }
+  } else {
+    console.warn('[groups] rotate: no device keys resolved for v' + version);
   }
   // Reflect the new current version locally.
   const g = await dbGetGroup(groupId);
@@ -508,7 +529,7 @@ export async function backfillCurrentKey(groupId) {
     .map(m => Number(m.user_id));
   if (!activeUserIds.length) return 0;
 
-  const devices = await fetchDeviceKeys(activeUserIds);
+  const devices = await fetchDeviceKeys(activeUserIds, true);
   if (!devices.length) return 0;
 
   // Which of those devices already have an envelope for this version?
@@ -797,7 +818,7 @@ export function registerGroupWSListeners() {
     const groupId = Number(frame.group_id);
     const version = Number(frame.key_version);
     try {
-      await ensureGroupKey(groupId, version);
+      await ensureGroupKey(groupId, version, { force: true });
       const g = await dbGetGroup(groupId);
       if (g && version > Number(g.current_key_version || 0)) {
         g.current_key_version = version;
@@ -839,6 +860,9 @@ export function registerGroupWSListeners() {
     // pending invitee has no right to list the roster until they accept.
     try { await syncGroups(); } catch (e) { console.warn('[groups] sync on member change failed', e.message); }
     try { await refreshMembers(groupId); } catch { /* pending invitee: not yet allowed */ }
+    // An owner/admin heals missing envelopes for the current epoch so a
+    // rejoined or reinstalled device gets its key without manual steps.
+    try { await backfillCurrentKey(groupId); } catch { /* non-privileged: server rejects */ }
     emit({ type: 'members', groupId });
   });
 
