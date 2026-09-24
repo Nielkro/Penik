@@ -50,7 +50,7 @@ fun NavGraph(
         startupViewModel.verifyDeviceKeys()
     }
 
-    if (keyMismatch) {
+    if (keyMismatch && startupViewModel.isLoggedIn()) {
         AlertDialog(
             onDismissRequest = {},
             title = { Text("Ключи устройства расходятся") },
@@ -148,6 +148,9 @@ fun NavGraph(
         }
 
         composable(Screen.Main.route) {
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                startupViewModel.verifyDeviceKeys()
+            }
             MainScreen(
                 onChatClick = { userId, name ->
                     navController.navigate(Screen.ChatRoom.createRoute(userId, name))

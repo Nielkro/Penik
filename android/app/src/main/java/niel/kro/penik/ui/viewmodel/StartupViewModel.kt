@@ -70,6 +70,7 @@ class StartupViewModel @Inject constructor(
     }
 
     fun logout() {
+        _keyMismatch.value = false
         webSocketManager.disconnect()
         authRepository.logout()
     }
