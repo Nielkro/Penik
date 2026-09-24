@@ -54,6 +54,13 @@ class MessageRepository @Inject constructor(
         hopelessDecrypt.removeIf { it.startsWith("dm:$userId:") }
     }
 
+    private fun isPlaceholderName(name: String): Boolean {
+        if (name.isBlank() || name == "Неизвестный") return true
+        // Stubs of the form "Пользователь 25" / "Пользователь #25".
+        val rest = name.removePrefix("Пользователь").trim().removePrefix("#").trim()
+        return name.startsWith("Пользователь") && rest.all { it.isDigit() } && rest.isNotEmpty()
+    }
+
     suspend fun getKeyBundleCached(userId: Long, isSelf: Boolean = false, forceRefresh: Boolean = false): List<niel.kro.penik.data.network.api.DeviceBundle> {
         val now = System.currentTimeMillis()
         if (!forceRefresh) {
@@ -62,16 +69,22 @@ class MessageRepository @Inject constructor(
                 return cached.second
             }
         }
-        val devices: List<niel.kro.penik.data.network.api.DeviceBundle> = try {
+        // Never cache failures: a 429/5xx during a storm would pin an empty
+        // device list for the whole TTL, and every send built from it is
+        // rejected by the server as "invalid devices count (1..50)".
+        try {
             val response = if (isSelf) apiService.getKeyBundleSelf(userId) else apiService.getKeyBundle(userId)
-            if (response.isSuccessful) response.body()?.devices ?: emptyList() else emptyList()
+            if (response.isSuccessful) {
+                val devices = response.body()?.devices ?: emptyList()
+                val ttl = if (isSelf) 30 * 1000L else 2 * 60 * 1000L
+                bundleCache[userId] = Pair(now + ttl, devices)
+                return devices
+            }
+            Log.w("PenikMsg", "Key bundle fetch for $userId failed: HTTP ${response.code()}")
         } catch (e: Exception) {
             Log.e("PenikMsg", "Failed to fetch key bundle for $userId", e)
-            bundleCache[userId]?.second ?: emptyList()
         }
-        val ttl = if (isSelf) 30 * 1000L else 2 * 60 * 1000L
-        bundleCache[userId] = Pair(now + ttl, devices)
-        return devices
+        return bundleCache[userId]?.second ?: emptyList()
     }
 
     fun invalidateKeyBundle(userId: Long) {
@@ -394,10 +407,18 @@ class MessageRepository @Inject constructor(
             messageDao.updateMessageText(clientMsgId, null, text, 0L)
         }
 
-        val recipientBundles: List<niel.kro.penik.data.network.api.DeviceBundle> = getKeyBundleCached(toUserId, isSelf = isSelfChat)
+        var recipientBundles: List<niel.kro.penik.data.network.api.DeviceBundle> = getKeyBundleCached(toUserId, isSelf = isSelfChat)
+        // A stale/empty snapshot (e.g. fetched during a 429 storm) must not
+        // produce a frame the server rejects with "invalid devices count".
+        if (recipientBundles.isEmpty()) {
+            recipientBundles = getKeyBundleCached(toUserId, isSelf = isSelfChat, forceRefresh = true)
+        }
         var senderBundles: List<niel.kro.penik.data.network.api.DeviceBundle> = if (isSelfChat) emptyList() else getKeyBundleCached(myId, isSelf = true)
         if (!isSelfChat && senderBundles.size <= 1) {
             senderBundles = getKeyBundleCached(myId, isSelf = true, forceRefresh = true)
+        }
+        if (recipientBundles.isEmpty() && senderBundles.isEmpty()) {
+            throw Exception("Нет доступных устройств получателя (проверьте соединение и попробуйте снова)")
         }
 
         val myDeviceId = tokenStorage.getDeviceId()
@@ -1040,7 +1061,7 @@ class MessageRepository @Inject constructor(
                     val latest = chatMessages.maxByOrNull { it.createdAt }
                     if (latest != null && !latest.text.startsWith("[Ошибка") && !latest.text.startsWith("[Сообщение не расшифровано")) {
                         val existing = chatRepository.getChat(chatUserId)
-                        val profile = if (existing == null || existing.name.isBlank()) {
+                        val profile = if (existing == null || existing.name.isBlank() || isPlaceholderName(existing.name)) {
                             try {
                                 apiService.getUserProfile(chatUserId).body()
                             } catch (_: Exception) {
@@ -1067,12 +1088,16 @@ class MessageRepository @Inject constructor(
                     val existingChat = chatRepository.getChat(chatUserId)
                     val latestMsg = msgs.filter { it.text != "[DELETED]" }.maxByOrNull { it.timestamp }
                     if (latestMsg != null) {
-                        val profile = if (existingChat == null || existingChat.name.isBlank()) {
+                        // A "Пользователь N" stub saved during an outage (401/429)
+                        // counts as missing — otherwise the real name is never
+                        // refetched and every chat keeps showing the user id.
+                        val profile = if (existingChat == null || existingChat.name.isBlank() || isPlaceholderName(existingChat.name)) {
                             try {
                                 apiService.getUserProfile(chatUserId).body()
                             } catch (_: Exception) { null }
                         } else null
-                        val name = profile?.name?.ifBlank { profile.nickname } ?: existingChat?.name?.takeIf { it.isNotBlank() } ?: "Пользователь $chatUserId"
+                        val existingName = existingChat?.name?.takeIf { it.isNotBlank() && !isPlaceholderName(it) }
+                        val name = profile?.name?.ifBlank { profile.nickname } ?: existingName ?: "Пользователь $chatUserId"
                         val nickname = profile?.nickname ?: existingChat?.nickname.orEmpty()
                         chatRepository.updateLastMessage(
                             userId = chatUserId,

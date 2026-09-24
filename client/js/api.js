@@ -42,6 +42,16 @@ export function getFullApiUrl(urlOrPath) {
   return `${origin}/${urlOrPath}`;
 }
 
+// Auth-path requests 401 as part of normal UX (wrong password at login), so a
+// global "session dead" broadcast must ignore them — otherwise every failed
+// login would nuke the session. /logout is excluded too: logout() calls it
+// with an already-dead token, which must not re-trigger logout().
+function isAuthPath(path) {
+  return path === '/login' || path.startsWith('/login?') ||
+    path === '/register' || path.startsWith('/register?') ||
+    path === '/logout' || path.startsWith('/logout?');
+}
+
 // ApiError carries the HTTP status next to the message so callers can branch on
 // it — 404 for a missing resource, 410 for an expired CDN link, 0 when the
 // request never reached the server.
@@ -174,6 +184,9 @@ async function request(method, path, body, opts = {}) {
           return resp.body;
         }
       }
+      if (resp.status === 401 && !isAuthPath(path)) {
+        window.dispatchEvent(new Event('penik:unauthorized'));
+      }
       const msg = formatHttpError(resp.status, resp.body);
       throw new ApiError(msg, resp.status);
     }
@@ -204,6 +217,9 @@ async function request(method, path, body, opts = {}) {
   }
 
   if (!res.ok) {
+    if (res.status === 401 && !isAuthPath(path)) {
+      window.dispatchEvent(new Event('penik:unauthorized'));
+    }
     const msg = formatHttpError(res.status, data);
     throw new ApiError(msg, res.status);
   }

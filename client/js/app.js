@@ -193,6 +193,7 @@ function parseHash() {
 }
 
 let _devicesBackTarget = '#settings';
+let unauthorizedHookInstalled = false;
 
 export function setDevicesBackTarget(target) {
   _devicesBackTarget = target || '#settings';
@@ -1460,6 +1461,20 @@ export async function syncMessageHistory(options = {}) {
   }
 }
 
+/**
+ * Messages that failed decrypt even with force-refreshed bundles (the private
+ * key is gone — reinstall without backup, or a desynced device). Retrying them
+ * on every sync burns 1000+ AEAD attempts and hammers /keys/bundle into 429s.
+ * Cleared when the peer's devices change.
+ */
+const hopelessDecrypt = new Set();
+export function clearHopelessFor(userId) {
+  const prefix = `${userId}:`;
+  for (const k of hopelessDecrypt) {
+    if (k.startsWith(prefix)) hopelessDecrypt.delete(k);
+  }
+}
+
 export async function decryptMessagePayload(payload) {
   const toUint8Array = (val) => {
     if (!val) return new Uint8Array(0);
@@ -1661,14 +1676,18 @@ export async function decryptMessagePayload(payload) {
       }
       return null;
     };
+    const hopelessKey = `${fallbackUserId}:${clientMsgId || ""}`;
     try {
       const bundle = await getCachedKeyBundle(fallbackUserId);
       textBytes = await tryBundleDevices(bundle?.devices || []);
-      if (!textBytes) {
+      if (!textBytes && !hopelessDecrypt.has(hopelessKey)) {
         // The peer may have reinstalled after our bundle snapshot: the cached
         // keys are dead, but the fresh bundle has the live one. Retry once.
+        // A message that fails even with fresh bundles is marked hopeless so
+        // opening a chat doesn't DDoS /keys/bundle on every sync.
         const fresh = await getCachedKeyBundle(fallbackUserId, true);
         textBytes = await tryBundleDevices(fresh?.devices || []);
+        if (!textBytes) hopelessDecrypt.add(hopelessKey);
       }
     } catch (e) {
       console.warn("Key bundle fallback decryption attempt failed:", e);
@@ -1838,6 +1857,7 @@ function setupGlobalWSListeners() {
   ws.on(OP.USER_DEVICES_CHANGED, (payload) => {
     if (payload && payload.user_id) {
       invalidateKeyBundle(payload.user_id);
+      clearHopelessFor(payload.user_id);
     }
   });
   ws.on(OP.USER_AVATAR_UPDATE, (payload) => {
@@ -1905,6 +1925,18 @@ function setupGlobalWSListeners() {
     console.warn('[ws] Session revoked or expired by server');
     logout();
   });
+  // Any REST 401 (revoked/expired token) ends the session once, instead of
+  // letting background sync loops hammer the server with a dead token.
+  if (!unauthorizedHookInstalled) {
+    unauthorizedHookInstalled = true;
+    let loggingOut = false;
+    window.addEventListener('penik:unauthorized', () => {
+      if (loggingOut || !getToken()) return;
+      loggingOut = true;
+      console.warn('[api] Session dead (401), logging out');
+      logout().catch(() => {}).finally(() => { loggingOut = false; });
+    });
+  }
 
   ws.onConnect(async () => {
     // Publish current local public identity key

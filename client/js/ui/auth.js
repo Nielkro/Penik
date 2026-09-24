@@ -1,12 +1,12 @@
-import { apiPost, apiGet, setToken, getUserById, getToken, BASE, deviceChallenge, deviceRebind } from "../api.js";
+import { apiPost, apiGet, apiDelete, setToken, getUserById, getToken, BASE, deviceChallenge, deviceRebind } from "../api.js";
 import {
   getPersistentDeviceName, getClientPlatform, getClientLocation,
   saveIdentityKey, saveIKPrivate, saveIKPublic, getIKPrivate, getIKPublic,
   saveSigningPrivate, saveSigningPublic, getSigningPrivate, getSigningPublic
 } from "../storage.js";
-import { navigate, setCurrentUser, restoreE2EEKeys, backupE2EEKeys } from "../app.js";
-import { el, showToast, spinner, avatar, showConfirmModal, showPinModal, formatDate, formatTime } from "./components.js";
-import { generateKeyPair, generateSigningKeyPair, encryptIdentityEnvelope, derivePublicKey, computeDeviceRebindProof, decodeKey } from "../crypto.js";
+import { navigate, setCurrentUser, restoreE2EEKeys } from "../app.js";
+import { el, showToast, spinner, avatar, showConfirmModal, formatDate, formatTime } from "./components.js";
+import { generateKeyPair, generateSigningKeyPair, encryptIdentityEnvelope, computeDeviceRebindProof, decodeKey } from "../crypto.js";
 import { ws, OP } from "../ws.js";
 
 function authErr(errEl, msg) {
@@ -800,43 +800,39 @@ export function renderAuth(container, initialMode = "welcome") {
         }
       };
 
-      // Action 3: Reset backup (Forgotten E2EE password - overwrites server backup)
+      // Action 3: Reset backup (Forgotten E2EE password - no new password needed)
       const handleReset = async () => {
         const confirmed = await showConfirmModal(
-          "Сброс E2EE ключей",
-          "Вы уверены? Старый бэкап на сервере будет перезаписан. Другие устройства не смогут восстановить старые ключи.",
-          "Сбросить ключи",
+          "Начать с чистого листа?",
+          "Бэкап ключей на сервере будет удалён, для устройства создастся свежий ключ. Старая переписка не восстановится, на других устройствах бэкап тоже пропадёт.",
+          "Удалить бэкап и продолжить",
           "Отмена",
           true
         );
         if (!confirmed) return;
 
-        const newPass = await showPinModal("Придумайте новый e2ee-пароль", "Минимум 6 символов");
-        if (!newPass) return;
-        if (newPass.length < 6) {
-          showToast("Новый пароль должен быть не менее 6 символов", "error");
-          return;
-        }
-
         clearErr();
         try {
-          // Generate a fresh keypair and encrypt with the new E2EE password
-          const ik = await generateKeyPair();
-          const sk = await generateSigningKeyPair();
-          const envelope = await encryptIdentityEnvelope({ privateKey: ik.privateKey }, newPass);
+          // Delete server backups so future logins don't nag for a password.
+          const ids = (state.availableBackups || []).map(b => b.id).filter(Boolean);
+          for (const id of ids) {
+            try {
+              await apiDelete(`/keys/backups/${encodeURIComponent(id)}`);
+            } catch (e) {
+              console.warn("[auth] backup delete failed:", e?.message || e);
+            }
+          }
 
-          // Save keys locally
-          await saveIdentityKey(envelope);
+          // Fresh device keypair, no password involved.
+          const ik = await generateKeyPair();
           await saveIKPrivate(ik.privateKey);
           await saveIKPublic(ik.publicKey);
+          const sk = await generateSigningKeyPair();
           await saveSigningPrivate(sk.privateKey);
           await saveSigningPublic(sk.publicKey);
 
-          // Upload backup to server
-          await backupE2EEKeys(newPass);
-
-          // Publish the fresh public key for this device (the row may still
-          // pin the previous key — 409 means logout + fresh login is needed).
+          // Publish the fresh public key for this device (a pinned row 409s —
+          // then logout + fresh login is needed).
           await publishDeviceKeys();
 
           const user = await getUserById(state.tempUserId);
@@ -846,10 +842,10 @@ export function renderAuth(container, initialMode = "welcome") {
             setCurrentUser(user.user || user);
           }
 
-          showToast("Бэкап ключей сброшен. Начато с чистого листа!", "success");
+          showToast("Начато с чистого листа!", "success");
           navigate("#chats");
         } catch (err) {
-          showErr(err.message || "Ошибка сброса бэкапа ключей.");
+          showErr(err.message || "Ошибка сброса ключей.");
         }
       };
 
