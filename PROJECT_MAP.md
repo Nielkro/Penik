@@ -49,7 +49,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `.github/workflows/android.yml` — GitHub Actions workflow assembling `app-debug.apk`, computing SHA256 checksums, publishing rolling `android-latest` prereleases on every push to `master`, and publishing immutable `android-v<version>` GitHub releases on `version.json` bumps.
 - `.github/workflows/desktop.yml` — GitHub Actions workflow building Linux (WebKitGTK) and Windows (WebView2) desktop binaries, computing SHA256 checksums, and publishing rolling `desktop-latest` prereleases.
 - `penik.caddy` — Caddy site config for `/etc/caddy/sites-enabled/penik.caddy` routing `penik.ru` (landing), `web.penik.ru` (SPA web client), and `api.penik.ru` (reverse proxy to 127.0.0.1:8143).
-- `landing/index.html` — Standalone landing page promoting the messenger, providing web client entry and Android APK download links.
+- `landing/index.html` — Standalone landing page (moved from the repo root `index.html`) promoting the messenger, providing web client entry and Android APK download links.
 - `version.json` — Canonical version policy JSON template specifying minimum/latest Android version codes, crypto version requirement, APK download URL, and release notes.
 
 ### Browser client transport
