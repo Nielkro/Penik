@@ -5,7 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 import niel.kro.penik.data.network.websocket.WebSocketEvent
@@ -54,6 +56,18 @@ class StartupViewModel @Inject constructor(
     }
 
     fun isLoggedIn(): Boolean = authRepository.isLoggedIn()
+
+    private val _keyMismatch = MutableStateFlow(false)
+    val keyMismatch: StateFlow<Boolean> = _keyMismatch.asStateFlow()
+
+    /** One-shot check on app start: is our local key the one the server shows peers? */
+    fun verifyDeviceKeys() {
+        if (!authRepository.isLoggedIn()) return
+        viewModelScope.launch {
+            _keyMismatch.value = authRepository.verifyOwnKeyPublished() ==
+                AuthRepository.OwnKeyStatus.MISMATCH
+        }
+    }
 
     fun logout() {
         webSocketManager.disconnect()

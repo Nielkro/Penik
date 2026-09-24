@@ -309,18 +309,23 @@ class AuthViewModel @Inject constructor(
     fun skipE2eeBackup(onSuccess: () -> Unit) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            try {
-                // Generate a unique fresh X25519 keypair for this specific device
-                authRepository.generateAndSaveKeys()
-                messageRepository.syncHistory()
-                authRepository.getToken()?.let { tok ->
-                    webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, tok)
+            // Keep the login-time keys (already published at login) and make
+            // sure the server advertises them. Rotating here without a new
+            // device row would desync crypto in both directions (server pins
+            // one public key per device and rejects mutations with 409).
+            authRepository.ensureDeviceKeysPublished().fold(
+                onSuccess = {
+                    messageRepository.syncHistory()
+                    authRepository.getToken()?.let { tok ->
+                        webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, tok)
+                    }
+                    _uiState.value = _uiState.value.copy(isLoading = false)
+                    onSuccess()
+                },
+                onFailure = { e ->
+                    _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: "Ошибка инициализации ключей устройства")
                 }
-                _uiState.value = _uiState.value.copy(isLoading = false)
-                onSuccess()
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: "Ошибка инициализации ключей устройства")
-            }
+            )
         }
     }
 }

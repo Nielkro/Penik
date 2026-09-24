@@ -15,6 +15,38 @@ function authErr(errEl, msg) {
   showToast(msg, "error");
 }
 
+/**
+ * Publish the current local identity + signing keys for this session device.
+ * Skipping the backup (or resetting it) replaces local keys; without this
+ * call the server keeps advertising the stale key and every peer seals
+ * messages to a key this device does not hold — total bilateral blackout.
+ * Throws ConflictError when the device row is pinned to a different key; the
+ * only fix then is logout + fresh login (allocates a new device row).
+ */
+async function publishDeviceKeys() {
+  const pub = await getIKPublic();
+  if (!pub || pub.length !== 32) throw new Error("Нет локального ключа устройства");
+  const spub = await getSigningPublic();
+  try {
+    await apiPost("/keys/init", {
+      ik_pub: btoa(String.fromCharCode(...new Uint8Array(pub))),
+      ...(spub && spub.length === 32
+        ? { signing_key: btoa(String.fromCharCode(...new Uint8Array(spub))) }
+        : {}),
+      crypto_version: 2,
+    });
+  } catch (e) {
+    if (e && e.status === 409) {
+      const err = Object.assign(
+        new Error("Ключ устройства конфликтует с сервером. Выйдите из аккаунта и войдите заново"),
+        { code: "KEY_CONFLICT" }
+      );
+      throw err;
+    }
+    throw e;
+  }
+}
+
 async function resolveIdentityKeyPair() {
   const priv = await getIKPrivate();
   const pub = await getIKPublic();
@@ -740,13 +772,16 @@ export function renderAuth(container, initialMode = "welcome") {
         skipBtn.disabled = true;
         clearErr();
         try {
-          // Generate new identity keypair for this device only
+          // Generate new identity keypair for this device only, then publish
+          // it: without the publish peers keep encrypting to the stale
+          // server-side key and nothing decrypts in either direction.
           const ik = await generateKeyPair();
           await saveIKPrivate(ik.privateKey);
           await saveIKPublic(ik.publicKey);
           const sk = await generateSigningKeyPair();
           await saveSigningPrivate(sk.privateKey);
           await saveSigningPublic(sk.publicKey);
+          await publishDeviceKeys();
 
           const user = await getUserById(state.tempUserId);
           if (user) {
@@ -800,7 +835,10 @@ export function renderAuth(container, initialMode = "welcome") {
           // Upload backup to server
           await backupE2EEKeys(newPass);
 
-          // Upload public key to database (server will register this)
+          // Publish the fresh public key for this device (the row may still
+          // pin the previous key — 409 means logout + fresh login is needed).
+          await publishDeviceKeys();
+
           const user = await getUserById(state.tempUserId);
           if (user) {
             user.user_id = user.id;

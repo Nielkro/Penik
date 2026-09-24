@@ -5,7 +5,7 @@ import {
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
   findAndResolvePendingSentMessage, deleteChatData, deleteMessage,
   getMessageByClientId, isMessageDeletedLocally,
-  getIKPrivate, saveIKPrivate, getIKPublic, saveIKPublic,
+  getIKPrivate, saveIKPrivate, getIKPublic, saveIKPublic, getSigningPublic,
   getPersistentDeviceName, getClientPlatform,
   getAllGroupKeysPlain, saveGroupKey, getAllPinnedIKs,
   getAllGroupMessages, saveGroupMessage
@@ -1924,6 +1924,7 @@ function setupGlobalWSListeners() {
     if (pubKey) {
       ws.send(0x12, { x25519_pub: new Uint8Array(pubKey) });
     }
+    verifyOwnKeyPublishedOnce();
     await flushOutbox();
     await syncMessageHistory();
     await refreshContactProfiles();
@@ -1943,6 +1944,36 @@ function setupGlobalWSListeners() {
       console.warn('[groups] sync on connect failed', e.message);
     }
   });
+}
+
+let _ownKeyVerified = false;
+// Once per page load, check that the server advertises our local public key
+// for this device. A mismatch (local keys replaced without publish, or a
+// foreign backup restored onto a pinned row) breaks crypto in both directions
+// and no rotation or re-invite can fix it — only logout + fresh login.
+async function verifyOwnKeyPublishedOnce() {
+  if (_ownKeyVerified) return;
+  _ownKeyVerified = true;
+  try {
+    const myId = Number(localStorage.getItem("user_id"));
+    const myDeviceId = Number(localStorage.getItem("device_id"));
+    const localPub = await getIKPublic().catch(() => null);
+    if (!myId || !myDeviceId || !localPub) return;
+    const bundle = await apiGet(`/keys/bundle/${myId}`);
+    const dev = (bundle?.devices || []).find(d => Number(d.device_id) === myDeviceId);
+    if (!dev?.identity_key) return;
+    const bin = atob(dev.identity_key);
+    const serverPub = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) serverPub[i] = bin.charCodeAt(i);
+    const local = new Uint8Array(localPub);
+    const equal = serverPub.length === local.length && serverPub.every((b, i) => b === local[i]);
+    if (!equal) {
+      console.error("[E2EE] local identity key does NOT match server record for this device — re-login required");
+      showToast("Ключи устройства расходятся с сервером. Выйдите из аккаунта и войдите заново", "error");
+    }
+  } catch (e) {
+    console.warn("[E2EE] own-key verify failed:", e?.message || e);
+  }
 }
 
 // refreshContactProfiles re-reads the display name of every known contact.
@@ -2106,6 +2137,26 @@ export async function restoreE2EEKeys(passphrase, backupId = null) {
   await saveIKPrivate(privBytes);
   await saveIKPublic(derivedPub);
   state.privateIK = privBytes;
+
+  // The restored key must be the one the server advertises for this device.
+  // A fresh login without local keys creates a row with no key yet (publish
+  // inserts it); restoring a foreign backup onto a pinned row 409s — then
+  // only logout + fresh login recovers.
+  try {
+    const spub = await getSigningPublic().catch(() => null);
+    await apiPost("/keys/init", {
+      ik_pub: btoa(String.fromCharCode(...new Uint8Array(derivedPub))),
+      ...(spub && spub.length === 32
+        ? { signing_key: btoa(String.fromCharCode(...new Uint8Array(spub))) }
+        : {}),
+      crypto_version: 2,
+    });
+  } catch (e) {
+    if (e && e.status === 409) {
+      throw new Error("Бэкап не соответствует этому устройству. Выйдите из аккаунта и войдите заново");
+    }
+    console.warn("[E2EE] key publish after restore failed:", e?.message || e);
+  }
 
   console.log("E2EE keys and group keys successfully restored from server backup!");
 }

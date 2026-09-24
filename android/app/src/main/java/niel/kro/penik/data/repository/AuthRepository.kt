@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.api.DeviceResponse
+import niel.kro.penik.data.network.api.KeysInitRequestBody
 import niel.kro.penik.data.network.api.LoginRequestBody
 import niel.kro.penik.data.network.api.RegisterRequestBody
 import niel.kro.penik.domain.model.AuthResponse
@@ -79,6 +80,66 @@ class AuthRepository @Inject constructor(
         val pub = tokenStorage.getSigningPublicKey()
         if (priv != null && pub != null) return Pair(priv, pub)
         return generateAndSaveSigningKeys()
+    }
+
+    enum class OwnKeyStatus { OK, MISMATCH, UNKNOWN }
+
+    /**
+     * Make sure this device has identity keys and that the server advertises
+     * exactly this public key for it. Replacing local keys without publishing
+     * (skip/reset flows) permanently desyncs the device: peers encrypt to the
+     * stale server key and nothing decrypts in either direction.
+     */
+    suspend fun ensureDeviceKeysPublished(): Result<Unit> {
+        return try {
+            var pub = tokenStorage.getPublicKey()
+            if (tokenStorage.getPrivateKey() == null || pub == null) {
+                pub = generateAndSaveKeys().second
+            }
+            val signingPub = tokenStorage.getSigningPublicKey()
+                ?: stableSigningKeyPair().second
+            val resp = apiService.uploadIdentityKeys(
+                KeysInitRequestBody(
+                    ikPub = Base64.getEncoder().encodeToString(pub),
+                    signingKey = Base64.getEncoder().encodeToString(signingPub),
+                    cryptoVersion = 2
+                )
+            )
+            if (resp.isSuccessful) {
+                Result.success(Unit)
+            } else if (resp.code() == 409) {
+                Result.failure(Exception("Ключ устройства конфликтует с сервером. Выйдите из аккаунта и войдите заново"))
+            } else {
+                Result.failure(Exception(parseServerError(resp.code(), resp.errorBody()?.string())))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(mapException(e)))
+        }
+    }
+
+    /**
+     * Compare the local public key with the one the server advertises for this
+     * device. MISMATCH means every 1:1 message and group envelope is sealed to
+     * a key this device does not hold — the only fix is logout + fresh login
+     * (which allocates a new device row for the current key).
+     */
+    suspend fun verifyOwnKeyPublished(): OwnKeyStatus {
+        val userId = tokenStorage.getUserId()
+        val deviceId = tokenStorage.getDeviceId()
+        val localPub = tokenStorage.getPublicKey() ?: return OwnKeyStatus.UNKNOWN
+        if (userId <= 0L || deviceId <= 0L) return OwnKeyStatus.UNKNOWN
+        return try {
+            val resp = apiService.getKeyBundleSelf(userId)
+            if (!resp.isSuccessful) return OwnKeyStatus.UNKNOWN
+            val dev = resp.body()?.devices?.find { it.deviceId == deviceId }
+                ?: return OwnKeyStatus.MISMATCH
+            val serverPub = runCatching {
+                Base64.getDecoder().decode(dev.identityKey)
+            }.getOrNull() ?: return OwnKeyStatus.UNKNOWN
+            if (serverPub.contentEquals(localPub)) OwnKeyStatus.OK else OwnKeyStatus.MISMATCH
+        } catch (_: Exception) {
+            OwnKeyStatus.UNKNOWN
+        }
     }
 
     // clientPlatform reports the Android OS version, e.g. "Android 14", so the
@@ -545,6 +606,14 @@ class AuthRepository @Inject constructor(
                     }
                 }
 
+                // If the session was not re-bound to the backup's original device,
+                // the current device row may advertise a different public key.
+                // Publish the restored one so peers can reach this device.
+                val publishResult = ensureDeviceKeysPublished()
+                if (publishResult.isFailure) {
+                    return Result.failure(publishResult.exceptionOrNull()!!)
+                }
+
                 // Pull message history for the re-bound device
                 try {
                     database.messageDao().deleteAllUndecryptedMessages()
@@ -632,7 +701,13 @@ class AuthRepository @Inject constructor(
             if (response.isSuccessful) {
                 tokenStorage.savePrivateKey(privateKey)
                 tokenStorage.savePublicKey(publicKey)
-                Result.success(Unit)
+                // The device row is pinned to the previous public key
+                // (server rejects mutations with 409). Publish the new one so
+                // peers and group rotations actually target this device.
+                ensureDeviceKeysPublished().fold(
+                    onSuccess = { Result.success(Unit) },
+                    onFailure = { e -> Result.failure(e) }
+                )
             } else {
                 Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
             }
