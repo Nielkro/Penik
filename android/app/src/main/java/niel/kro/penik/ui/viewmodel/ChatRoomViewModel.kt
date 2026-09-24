@@ -123,6 +123,11 @@ class ChatRoomViewModel @Inject constructor(
     init {
         loadSafetyNumber()
         loadPeerCalls()
+        if (chatUserId > 0) {
+            viewModelScope.launch {
+                runCatching { messageRepository.syncHistory(chatUserId) }
+            }
+        }
         viewModelScope.launch {
             webSocketManager.events.collect { event ->
                 if (event is niel.kro.penik.data.network.websocket.WebSocketEvent.CallLog) {

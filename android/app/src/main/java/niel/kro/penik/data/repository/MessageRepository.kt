@@ -801,8 +801,10 @@ class MessageRepository @Inject constructor(
     suspend fun syncHistory(chatUserId: Long? = null, beforeId: Long? = null, limit: Int = 500) {
         reconcileLocalChats()
         try {
-            val maxServerId = if (chatUserId == null && beforeId == null) {
-                messageDao.getAllMessages().mapNotNull { it.serverId }.maxOrNull()
+            val allLocal = messageDao.getAllMessages()
+            val hasUndecrypted = allLocal.any { it.text.startsWith("[Ошибка") || it.text.startsWith("[Сообщение не расшифровано") }
+            val maxServerId = if (chatUserId == null && beforeId == null && !hasUndecrypted) {
+                allLocal.mapNotNull { it.serverId }.maxOrNull()
             } else null
 
             val response = apiService.getMessageHistory(
@@ -1050,19 +1052,25 @@ class MessageRepository @Inject constructor(
 
         // 1. Fast-path: modern V2 AAD (client_msg_id binding, no timestamp)
         if (senderUserId != 0L || recipientUserId != 0L) {
-            val v2Aad = e2eeCrypto.buildPairwiseAadV2(senderUserId, recipientUserId, clientMsgId)
-            try {
-                val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, aad = v2Aad)
-                return String(plaintextBytes, Charsets.UTF_8)
-            } catch (_: Exception) {}
+            val candidatePairs = listOf(
+                Pair(senderUserId, recipientUserId),
+                Pair(recipientUserId, senderUserId)
+            ).distinct()
 
-            // In self-chat or inverted routing, also try inverted V2
-            if (recipientUserId != 0L && senderUserId != 0L && recipientUserId != senderUserId) {
-                val v2Inverted = e2eeCrypto.buildPairwiseAadV2(recipientUserId, senderUserId, clientMsgId)
+            for (pair in candidatePairs) {
+                val v2Aad = e2eeCrypto.buildPairwiseAadV2(pair.first, pair.second, clientMsgId)
                 try {
-                    val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, aad = v2Inverted)
+                    val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, aad = v2Aad)
                     return String(plaintextBytes, Charsets.UTF_8)
                 } catch (_: Exception) {}
+
+                if (clientMsgId.isNotEmpty()) {
+                    val v2AadEmpty = e2eeCrypto.buildPairwiseAadV2(pair.first, pair.second, "")
+                    try {
+                        val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, aad = v2AadEmpty)
+                        return String(plaintextBytes, Charsets.UTF_8)
+                    } catch (_: Exception) {}
+                }
             }
         }
 

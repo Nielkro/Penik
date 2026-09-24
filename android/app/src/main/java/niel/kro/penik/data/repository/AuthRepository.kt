@@ -547,6 +547,7 @@ class AuthRepository @Inject constructor(
 
                 // Pull message history for the re-bound device
                 try {
+                    database.messageDao().deleteAllUndecryptedMessages()
                     messageRepositoryProvider.get().syncHistory()
                 } catch (e: Exception) {
                     android.util.Log.w("AuthRepository", "Failed to sync message history after restore: ${e.message}")
