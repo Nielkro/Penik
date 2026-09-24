@@ -43,6 +43,9 @@ class MessageRepository @Inject constructor(
     private val bundleCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, List<niel.kro.penik.data.network.api.DeviceBundle>>>()
     private val bundleForceAt = java.util.concurrent.ConcurrentHashMap<Long, Long>()
     private val bundleInflight = java.util.concurrent.ConcurrentHashMap<Long, kotlinx.coroutines.Deferred<List<niel.kro.penik.data.network.api.DeviceBundle>>>()
+    private val bundleScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    )
 
     /**
      * Server message ids that failed decrypt even with freshly fetched key
@@ -76,19 +79,26 @@ class MessageRepository @Inject constructor(
                 return cached.second
             }
         }
-        bundleInflight[userId]?.let { return it.await() }
-        val deferred = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).async {
-            fetchKeyBundle(userId, isSelf, now)
+        val deferred: kotlinx.coroutines.Deferred<List<niel.kro.penik.data.network.api.DeviceBundle>>
+        val owner: Boolean
+        synchronized(bundleInflight) {
+            val existing = bundleInflight[userId]
+            if (existing != null) {
+                deferred = existing
+                owner = false
+            } else {
+                deferred = bundleScope.async(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                    fetchKeyBundle(userId, isSelf, System.currentTimeMillis())
+                }
+                bundleInflight[userId] = deferred
+                owner = true
+            }
         }
-        val existing = bundleInflight.putIfAbsent(userId, deferred)
-        if (existing != null) {
-            deferred.cancel()
-            return existing.await()
-        }
+        if (owner) deferred.start()
         return try {
             deferred.await()
         } finally {
-            bundleInflight.remove(userId, deferred)
+            if (owner) bundleInflight.remove(userId, deferred)
         }
     }
 
