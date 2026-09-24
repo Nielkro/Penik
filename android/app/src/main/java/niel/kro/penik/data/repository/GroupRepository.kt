@@ -126,10 +126,12 @@ class GroupRepository @Inject constructor(
     private val deviceKeyCache = java.util.concurrent.ConcurrentHashMap<Long, List<DeviceKey>>()
     private val failedKeyVersions: MutableSet<Pair<Long, Long>> =
         java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private val chunkedSupportCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, Boolean>>()
 
     fun invalidateDeviceKeyCache() {
         deviceKeyCache.clear()
         failedKeyVersions.clear()
+        chunkedSupportCache.clear()
     }
 
     private suspend fun fetchDeviceKeys(userIds: List<Long>): List<DeviceKey> {
@@ -329,6 +331,11 @@ class GroupRepository @Inject constructor(
     }
 
     suspend fun isChunkedEncryptionSupported(groupId: Long): Boolean {
+        val now = System.currentTimeMillis()
+        val cached = chunkedSupportCache[groupId]
+        if (cached != null && cached.first > now) {
+            return cached.second
+        }
         return try {
             var memberIds = dao.getMembers(groupId).map { it.userId }
             if (memberIds.isEmpty()) {
@@ -337,16 +344,19 @@ class GroupRepository @Inject constructor(
             }
             if (memberIds.isEmpty()) return false
             val myId = myUserId()
+            var supported = true
             for (uid in memberIds) {
                 val resp = runCatching {
                     if (uid == myId) api.getKeyBundleSelf(uid) else api.getKeyBundle(uid)
                 }.getOrNull()
                 val devices = if (resp?.isSuccessful == true) resp.body()?.devices ?: emptyList() else emptyList()
                 if (devices.isEmpty() || devices.any { it.cryptoVersion < 2 }) {
-                    return false
+                    supported = false
+                    break
                 }
             }
-            true
+            chunkedSupportCache[groupId] = Pair(now + 2 * 60 * 1000L, supported)
+            supported
         } catch (e: Exception) {
             android.util.Log.w("GroupRepo", "Failed to check chunked encryption support for group $groupId", e)
             false

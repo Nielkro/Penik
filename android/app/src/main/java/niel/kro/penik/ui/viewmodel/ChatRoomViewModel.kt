@@ -435,15 +435,15 @@ class ChatRoomViewModel @Inject constructor(
 
     private suspend fun calculateSafetyData(): SafetyBundle {
         val myId = tokenStorage.getUserId()
-        val bundle1 = apiService.getKeyBundle(myId).body()
-        val bundle2 = apiService.getKeyBundle(chatUserId).body()
+        val devices1 = messageRepository.getKeyBundleCached(myId, isSelf = true)
+        val devices2 = messageRepository.getKeyBundleCached(chatUserId, isSelf = (chatUserId == myId))
 
-        val keys1 = bundle1?.devices?.mapNotNull { dev ->
-            dev.identityKey?.let { android.util.Base64.decode(it, android.util.Base64.DEFAULT) }
-        } ?: emptyList()
-        val keys2 = bundle2?.devices?.mapNotNull { dev ->
-            dev.identityKey?.let { android.util.Base64.decode(it, android.util.Base64.DEFAULT) }
-        } ?: emptyList()
+        val keys1 = devices1.mapNotNull { dev ->
+            dev.identityKey.takeIf { it.isNotBlank() }?.let { android.util.Base64.decode(it, android.util.Base64.DEFAULT) }
+        }
+        val keys2 = devices2.mapNotNull { dev ->
+            dev.identityKey.takeIf { it.isNotBlank() }?.let { android.util.Base64.decode(it, android.util.Base64.DEFAULT) }
+        }
 
         if (keys1.isEmpty() || keys2.isEmpty()) {
             throw Exception("Ключи устройств не найдены")

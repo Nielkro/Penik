@@ -302,12 +302,23 @@ class CallManager @Inject constructor(
         return Pair(masterHex, words)
     }
 
+    private val peerIkCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, ByteArray>>()
+
     private suspend fun fetchPeerIdentityKey(userId: Long): ByteArray? {
+        val now = System.currentTimeMillis()
+        val cached = peerIkCache[userId]
+        if (cached != null && cached.first > now) {
+            return cached.second
+        }
         return try {
             val resp = apiService.getKeyBundle(userId)
             if (resp.isSuccessful) {
                 val dev = resp.body()?.devices?.firstOrNull { it.identityKey.isNotBlank() }
-                dev?.identityKey?.let { android.util.Base64.decode(it, android.util.Base64.DEFAULT) }
+                val key = dev?.identityKey?.let { android.util.Base64.decode(it, android.util.Base64.DEFAULT) }
+                if (key != null) {
+                    peerIkCache[userId] = Pair(now + 5 * 60 * 1000L, key)
+                }
+                key
             } else null
         } catch (e: Exception) {
             Log.w(TAG, "Failed to fetch peer identity key for $userId: ${e.message}")

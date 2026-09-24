@@ -1991,7 +1991,7 @@ async function verifyOwnKeyPublishedOnce() {
     const myDeviceId = Number(localStorage.getItem("device_id"));
     const localPub = await getIKPublic().catch(() => null);
     if (!myId || !myDeviceId || !localPub) return;
-    const bundle = await apiGet(`/keys/bundle/${myId}`);
+    const bundle = await getCachedKeyBundle(myId);
     const dev = (bundle?.devices || []).find(d => Number(d.device_id) === myDeviceId);
     if (!dev?.identity_key) return;
     const bin = atob(dev.identity_key);

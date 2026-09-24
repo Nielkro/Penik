@@ -886,7 +886,6 @@ class MessageRepository @Inject constructor(
                 val messages = response.body() ?: emptyList()
                 val myId = tokenStorage.getUserId()
                 val newMessages = mutableListOf<HistoryMsgDecrypted>()
-                val bundleCache = mutableMapOf<Long, niel.kro.penik.data.network.api.KeyBundleResponse?>()
                 Log.d("PenikMsg", "syncHistory: received ${messages.size} history items from server (afterId=$maxServerId, beforeId=$beforeId, chatUserId=$chatUserId)")
                 val entities = buildList {
                     messages.forEach { msg ->
@@ -943,31 +942,25 @@ class MessageRepository @Inject constructor(
                                         else -> msg.senderDeviceId
                                     }
 
-                                    suspend fun getCachedBundle(uid: Long, force: Boolean = false): niel.kro.penik.data.network.api.KeyBundleResponse? {
-                                        if (!force && bundleCache.containsKey(uid)) return bundleCache[uid]
-                                        val b = runCatching {
-                                            val resp = if (uid == myId) apiService.getKeyBundleSelf(uid) else apiService.getKeyBundle(uid)
-                                            if (resp.isSuccessful) resp.body() else null
-                                        }.getOrNull()
-                                        bundleCache[uid] = b
-                                        return b
-                                    }
-
                                     suspend fun collectCandidates(force: Boolean): List<niel.kro.penik.data.network.api.DeviceBundle> {
-                                        val primaryBundle = getCachedBundle(primaryTargetUserId, force)
-                                        val chatUserBundle = if (msg.chatUserId != primaryTargetUserId) getCachedBundle(msg.chatUserId, force) else null
-                                        val myBundle = if (myId != primaryTargetUserId && myId != msg.chatUserId) getCachedBundle(myId, force) else null
+                                        val primaryDevices = getKeyBundleCached(primaryTargetUserId, isSelf = (primaryTargetUserId == myId), forceRefresh = force)
+                                        val chatUserDevices = if (msg.chatUserId != primaryTargetUserId) {
+                                            getKeyBundleCached(msg.chatUserId, isSelf = (msg.chatUserId == myId), forceRefresh = force)
+                                        } else emptyList()
+                                        val myDevices = if (myId != primaryTargetUserId && myId != msg.chatUserId) {
+                                            getKeyBundleCached(myId, isSelf = true, forceRefresh = force)
+                                        } else emptyList()
                                         return buildList {
                                             if (primaryTargetDeviceId != null && primaryTargetDeviceId > 0) {
-                                                primaryBundle?.devices?.find { it.deviceId == primaryTargetDeviceId }?.let { add(it) }
+                                                primaryDevices.find { it.deviceId == primaryTargetDeviceId }?.let { add(it) }
                                             }
-                                            primaryBundle?.devices?.forEach { d ->
+                                            primaryDevices.forEach { d ->
                                                 if (none { it.deviceId == d.deviceId }) add(d)
                                             }
-                                            chatUserBundle?.devices?.forEach { d ->
+                                            chatUserDevices.forEach { d ->
                                                 if (none { it.deviceId == d.deviceId }) add(d)
                                             }
-                                            myBundle?.devices?.forEach { d ->
+                                            myDevices.forEach { d ->
                                                 if (none { it.deviceId == d.deviceId }) add(d)
                                             }
                                         }
