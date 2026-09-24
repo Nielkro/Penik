@@ -55,6 +55,7 @@ class MessageRepository @Inject constructor(
      * message finally decrypts.
      */
     private val hopelessDecrypt = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val historySyncInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun clearHopelessFor(userId: Long) {
         hopelessDecrypt.removeIf { it.startsWith("dm:$userId:") }
@@ -868,10 +869,15 @@ class MessageRepository @Inject constructor(
     }
 
     suspend fun syncHistory(chatUserId: Long? = null, beforeId: Long? = null, limit: Int = 500) {
-        reconcileLocalChats()
+        val syncKey = "$chatUserId:$beforeId"
+        if (!historySyncInFlight.add(syncKey)) return
         try {
+            reconcileLocalChats()
             val allLocal = messageDao.getAllMessages()
-            val hasUndecrypted = allLocal.any { it.text.startsWith("[Ошибка") || it.text.startsWith("[Сообщение не расшифровано") }
+            val hasUndecrypted = allLocal.any { msg ->
+                val hopelessKey = "dm:${msg.chatUserId}:${msg.serverId}"
+                !hopelessDecrypt.contains(hopelessKey) && (msg.text.startsWith("[Ошибка") || msg.text.startsWith("[Сообщение не расшифровано"))
+            }
             val maxServerId = if (chatUserId == null && beforeId == null && !hasUndecrypted) {
                 allLocal.mapNotNull { it.serverId }.maxOrNull()
             } else null
@@ -1139,6 +1145,8 @@ class MessageRepository @Inject constructor(
             }
         } catch (e: Exception) {
             android.util.Log.e("MessageRepository", "Failed to sync history", e)
+        } finally {
+            historySyncInFlight.remove(syncKey)
         }
     }
 

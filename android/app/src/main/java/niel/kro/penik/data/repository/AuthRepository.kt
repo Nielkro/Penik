@@ -129,9 +129,8 @@ class AuthRepository @Inject constructor(
         val localPub = tokenStorage.getPublicKey() ?: return OwnKeyStatus.UNKNOWN
         if (userId <= 0L || deviceId <= 0L) return OwnKeyStatus.UNKNOWN
         return try {
-            val resp = apiService.getKeyBundleSelf(userId)
-            if (!resp.isSuccessful) return OwnKeyStatus.UNKNOWN
-            val dev = resp.body()?.devices?.find { it.deviceId == deviceId }
+            val devices = messageRepositoryProvider.get().getKeyBundleCached(userId, isSelf = true)
+            val dev = devices.find { it.deviceId == deviceId }
                 ?: return OwnKeyStatus.MISMATCH
             val serverPub = runCatching {
                 Base64.getDecoder().decode(dev.identityKey)
