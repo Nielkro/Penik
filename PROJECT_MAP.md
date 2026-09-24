@@ -68,7 +68,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ### Desktop client (Wails v2)
 
 - `desktop/main.go` — Wails application entry point configuring window options, single-instance lock, tray menu, asset server, and WebKit/WebView2 customizations.
--`desktop/app.go` — Backend methods exposed to JavaScript (config persistence, window control, native notifications, file dialogs, update checking).
+- `desktop/app.go` — Backend methods exposed to JavaScript (config persistence, window control, native notifications, file dialogs, update checking).
 - `desktop/native_call.go` — Native Go LiveKit call engine powered by server-sdk-go/v2 and Pion WebRTC for zero-lag, browser-independent desktop voice and video calls.
 - `desktop/opus_cgo.go` — Direct CGO bindings to libopus for high-fidelity 48kHz VoIP audio encoding and decoding.
 - `desktop/rnnoise_cgo.go` — Direct CGO bindings to librnnoise for real-time recurrent neural network (RNN) microphone noise suppression.
@@ -80,7 +80,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `desktop/webkit_linux_41.go` — WebKitGTK 4.1 initialization for Linux: enables WebRTC, MediaStream, media source, developer extras, and handles permission requests.
 - `desktop/webkit_linux_40.go` — WebKitGTK 4.0 initialization for Linux: enables WebRTC and MediaStream.
 - `desktop/webkit_other.go` — No-op WebKit setup for non-Linux platforms.
-- `desktop/tray_linux.go` / `desktop/tray_windows.go` / `desktop/tray_darwin.go` — Platform-specific system tray lifecycle and context menus.
+- `desktop/tray.go` — Platform-specific system tray lifecycle and context menus.
 
 ### Android client transport
 
@@ -98,7 +98,6 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 ### Browser client
 
-- `index.html` — Root HTML template for the web client and application container.
 - `client/index.html` — Source HTML entry point for the Vite client.
 - `client/css/main.css` — Core browser UI styles: layout, navigation, chats, groups, forms, responsive behavior, and the `.msg-time-tooltip` hover popup.
 - `client/js/app.js` — Main application controller: user state, hash navigation, screen layout, storage initialization, REST/WebSocket/crypto coordination, pairwise history decrypt (recipient-device peer key for own outgoing, fan-out collapse by client_msg_id), key-bundle re-exports, per-chat history watermarks for `before_id` scroll pagination, sync decrypt counters, and `window.__penikDebug()` / `__penikSyncStats()` / `__penikTryDecrypt(id)` console diagnostics.
@@ -170,7 +169,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/components/AvatarCropDialog.kt` — Dialog for interactive cropping, scaling, panning, rotating, and preparing profile avatars before upload.
 - `android/app/src/main/java/niel/kro/penik/ui/components/AttachmentPickerBottomSheet.kt` — Modern Material 3 bottom sheet for chat attachments with emojis, descriptive metadata hints, and photo/file/camera/audio options.
 - `android/app/src/main/java/niel/kro/penik/ui/components/Stickers.kt` — Sticker picker bottom sheet with tabs and recents, Telegram sticker pack import dialog, sticker pack detail modal, and seamless sticker message rendering.
--`android/app/src/main/java/niel/kro/penik/ui/util/DeviceUtils.kt` — Device metadata helper formatting marketing device names from manufacturer and model strings without brand duplication.
+- `android/app/src/main/java/niel/kro/penik/ui/util/DeviceUtils.kt` — Device metadata helper formatting marketing device names from manufacturer and model strings without brand duplication.
 - `android/app/src/main/java/niel/kro/penik/ui/util/QrCodeGenerator.kt` — Encodes string payloads (such as E2EE safety fingerprint URLs) into QR code Bitmaps using ZXing.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/DirectReplyReceiver.kt` — BroadcastReceiver handling inline direct replies from the notification shade without opening the app.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/MarkAsReadReceiver.kt` — BroadcastReceiver for the notification "Mark as read" action clearing unread counters and dismissing notifications.
@@ -258,7 +257,7 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 - `server/go.mod` — Describes the Go server module and its dependencies.
 - `client/package.json` — Describes npm scripts, dependencies, and build config for the web client.
-- `client/scripts/build-sw.js` — Post-build step that stamps a unique version (git SHA, `SW_VERSION`, or timestamp) into `dist/sw.js` so browsers reinstall the service worker on every release.
+- `client/scripts/build-sw.js` — Post-build step that stamps a unique version (git SHA, `SW_VERSION`, or timestamp) into `client/dist/sw.js` so browsers reinstall the service worker on every release.
 - `client/vite.config.js` — Vite configuration for development and production build of the browser client.
 - `client/tsconfig.json` — Type-check-only TypeScript config for the browser sources: `checkJs` over plain JavaScript with `noEmit`, driven by `npm run typecheck`.
 - `client/tsconfig.sw.json` — Separate type-check config for the service worker, which needs the WebWorker lib instead of DOM.
@@ -288,7 +287,6 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/README.md` — Server-side details: Go backend stack, environment configuration, REST endpoints, and WebSocket opcode table.
 - `PROJECT_MAP.md` — This index of core source files and their purpose.
 - `SECURITY_AUDIT.md` — Security audit report with a registry of findings and their remediation status.
-- `AUDIT.md` — Review of the browser client's cryptographic implementation.
 - `Docs/README.md` — Documentation sitemap and navigation index.
 - `Docs/REST_API.md` — Full REST API reference: auth, profiles, keys, pairing, groups, attachments, and rate limits.
 - `Docs/WEBSOCKET.md` — Complete WebSocket protocol reference: connection upgrade, binary framing, opcodes (0x01-0x28), and MsgPack payloads.

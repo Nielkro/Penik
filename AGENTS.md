@@ -38,7 +38,7 @@ chore: untrack uploaded files, ignore server/data/upload
 - Do NOT update, rewrite, or add new cryptographic algorithms/protocols to Kotlin (`E2EECrypto.kt`, `GroupCrypto.kt`) or JavaScript (`client/js/crypto.js`). They remain strictly as legacy, frozen fallbacks for v1 backward compatibility.
 - ALL new cryptographic features (ciphers, key exchanges, PQ keys, streaming, chunking, AAD formats, zeroization) MUST be implemented exclusively in the Rust core (`rust/penik-crypto`) and exposed via:
   - Android JNI (`penik_crypto.so` via `RustCryptoCore`)
-  - WebAssembly (`penik_crypto.wasm` via `pkg/penik-crypto-wasm`)
+  - WebAssembly (`penik_crypto.wasm` via `client/pkg/penik-crypto-wasm`)
 
 ## 6. One-Time Keys (OTK) Policy (DEPRECATED)
 - **One-Time Keys (OTK) / Prekeys are strictly DEPRECATED and obsolete.**
@@ -49,5 +49,7 @@ chore: untrack uploaded files, ignore server/data/upload
 - **Code-Modifying / Write Subagents:** If subagents are tasked with modifying code, editing files, or running build/refactoring tasks:
   - Strictly **ONLY ONE** write subagent may be active at any given time.
   - The subagent is disposable / single-use for that task and must handle changes across all relevant layers (Rust core, Go server, Web, Android) within that single invocation. Never spawn multiple concurrent subagents to edit code simultaneously.
+  - After a write subagent finishes, the **main agent** must verify the project base (the foundation/fundamentals, NOT a database): check with `git status` / `git diff` that no needed files were deleted, nothing unrelated was removed, and the edits only touch the intended files. If the subagent damaged the base, the main agent fixes it before proceeding.
+  - The **main agent** performs the `git add` / `git commit` itself. Write subagents must never commit; their edits become part of one commit made by the main agent.
 
 
