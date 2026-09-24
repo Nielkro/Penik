@@ -39,6 +39,10 @@ server/data/*.gz
 server/data/*.tar.gz
 server/cmd/server/server
 server/server
+server/server_bin
+/Developments/
+/desktop/penik-desktop
+/server/data/
 penik-server
 *.apk
 landing/*.apk
