@@ -212,6 +212,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 // best-effort since a pending invitee can't list the roster.
                 runCatching { groupRepository.syncGroups(force = true) }
                 runCatching { groupRepository.refreshMembers(event.groupId) }
+                // An owner/admin heals missing envelopes for the current epoch so
+                // a rejoined or reinstalled device gets its key without manual steps.
+                runCatching { groupRepository.backfillCurrentKey(event.groupId) }
             }
             is WebSocketEvent.GroupAvatarUpdate -> {
                 niel.kro.penik.data.repository.AvatarCacheBus.bumpGroup(event.groupId, event.ts)

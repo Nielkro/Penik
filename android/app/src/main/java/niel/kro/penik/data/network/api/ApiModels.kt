@@ -286,6 +286,11 @@ data class GroupEnvelopeResponse(
 data class GroupKeyVersionsResponse(val versions: List<Long> = emptyList())
 
 @Serializable
+data class EnvelopeDevicesResponse(
+    @SerialName("device_ids") val deviceIds: List<Long> = emptyList()
+)
+
+@Serializable
 data class GroupHistoryMessage(
     val id: Long,
     @SerialName("message_id") val messageId: String,

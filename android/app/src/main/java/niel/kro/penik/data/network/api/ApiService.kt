@@ -131,6 +131,9 @@ interface ApiService {
     @GET("groups/{groupId}/keys/{version}")
     suspend fun getGroupEnvelope(@Path("groupId") groupId: Long, @Path("version") version: Long): Response<GroupEnvelopeResponse>
 
+    @GET("groups/{groupId}/keys/{version}/devices")
+    suspend fun listEnvelopeDevices(@Path("groupId") groupId: Long, @Path("version") version: Long): Response<EnvelopeDevicesResponse>
+
     @POST("groups/{groupId}/keys/{version}/envelopes")
     suspend fun uploadGroupEnvelopes(@Path("groupId") groupId: Long, @Path("version") version: Long, @Body body: UploadEnvelopesRequest): Response<Unit>
 

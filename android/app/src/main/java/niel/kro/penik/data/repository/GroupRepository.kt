@@ -369,6 +369,12 @@ class GroupRepository @Inject constructor(
         // a server reconciliation so sending is enabled immediately.
         syncGroups(force = true)
         refreshMembers(groupId)
+        // Fetch the current epoch key before history: without it every server
+        // message is skipped as undecryptable and the group looks empty.
+        runCatching {
+            val version = currentVersion(groupId)
+            ensureGroupKey(groupId, version)
+        }
         runCatching { pullHistoryPacket(groupId) }
         syncHistory(groupId)
     }
@@ -403,6 +409,46 @@ class GroupRepository @Inject constructor(
     suspend fun changeMemberRole(groupId: Long, userId: Long, role: String) {
         api.changeGroupMemberRole(groupId, userId, ChangeRoleRequest(role))
         refreshMembers(groupId)
+    }
+
+    /**
+     * Re-wrap the current group key for every active member device that is
+     * still missing an envelope for it (e.g. a device created after the last
+     * rotation, or a member who reinstalled without a backup). Owner/admin
+     * only; returns the number of devices backfilled. Mirrors the web client.
+     */
+    suspend fun backfillCurrentKey(groupId: Long): Int {
+        val group = dao.getGroup(groupId)
+        val version = group?.currentKeyVersion ?: runCatching { currentVersion(groupId) }.getOrNull() ?: return 0
+        val groupKey = ensureGroupKey(groupId, version) ?: return 0
+
+        var members = dao.getMembers(groupId)
+        if (members.isEmpty()) {
+            runCatching { refreshMembers(groupId) }
+            members = dao.getMembers(groupId)
+        }
+        val activeUserIds = members.filter { it.status == "active" }.map { it.userId }.distinct()
+        if (activeUserIds.isEmpty()) return 0
+        val devices = fetchDeviceKeys(activeUserIds)
+        if (devices.isEmpty()) return 0
+
+        val covered = runCatching {
+            api.listEnvelopeDevices(groupId, version).body()?.deviceIds?.toSet() ?: emptySet()
+        }.getOrNull() ?: emptySet()
+        val missing = devices.filter { it.deviceId !in covered }
+        if (missing.isEmpty()) return 0
+
+        val resp = runCatching {
+            api.uploadGroupEnvelopes(groupId, version, UploadEnvelopesRequest(wrapKeyForDevices(groupKey, missing, groupId, version)))
+        }.getOrNull()
+        if (resp?.isSuccessful != true) return 0
+        return missing.size
+    }
+
+    private suspend fun myRoleIn(groupId: Long): String? {
+        val me = myUserId()
+        dao.getMembers(groupId).find { it.userId == me }?.let { return it.role }
+        return runCatching { refreshMembers(groupId) }.getOrNull()?.find { it.userId == me }?.role
     }
 
     /** Create a new key version and upload envelopes for all active devices. */
@@ -441,8 +487,25 @@ class GroupRepository @Inject constructor(
 
     suspend fun sendMessage(groupId: Long, text: String, replyToMsgId: String? = null, existingMessageId: String? = null): String? {
         // Always query the server for the latest key version to avoid mismatch if offline during rotation.
-        val version = currentVersion(groupId)
-        val groupKey = ensureGroupKey(groupId, version) ?: return null
+        var version = currentVersion(groupId)
+        var groupKey = ensureGroupKey(groupId, version)
+        if (groupKey == null) {
+            // No envelope for this device (reinstall, rejoin, missed rotation).
+            // A privileged member repairs it by rotating; a plain member asks an
+            // owner/admin to backfill via the missing-envelope path.
+            val role = myRoleIn(groupId)
+            if (role == "owner" || role == "admin") {
+                Log.d("GroupRepo", "sendMessage: no key v=$version, auto-rotating as $role")
+                val rotated = runCatching { rotateAndDistribute(groupId) }.getOrNull()
+                if (rotated != null) {
+                    version = rotated
+                    groupKey = ensureGroupKey(groupId, version)
+                }
+            } else {
+                Log.w("GroupRepo", "sendMessage: no key v=$version and role=$role cannot rotate")
+            }
+            if (groupKey == null) return null
+        }
 
         val messageId = existingMessageId ?: UUID.randomUUID().toString()
         // created_at is bound into the AAD and must match what the server persists
@@ -622,13 +685,14 @@ class GroupRepository @Inject constructor(
                 runCatching { refreshMembers(groupId) }
             }
             var cursor: Long? = null
+            var missingKey = false
             do {
                 val page = api.getGroupHistory(groupId, 100, cursor).body() ?: return
                 for (m in page.messages) {
                     val existing = dao.getMessage(groupId, m.messageId)
                     val isEdited = m.editedAt != null && (existing == null || existing.editedAt == null || (m.editedAt * 1000 > (existing.editedAt ?: 0L)))
                     if (existing != null && !isEdited && existing.serverId != 0L) continue
-                    val groupKey = ensureGroupKey(groupId, m.keyVersion) ?: continue
+                    val groupKey = ensureGroupKey(groupId, m.keyVersion) ?: run { missingKey = true; continue }
                     val verifyingKey = fetchDeviceSigningKey(groupId, m.senderDeviceId, m.senderUserId)
                     val ts = m.editedAt ?: m.createdAt
                     val text = runCatching {
@@ -668,6 +732,14 @@ class GroupRepository @Inject constructor(
                 }
                 cursor = page.nextCursor?.toLongOrNull()
             } while (cursor != null)
+            // A privileged member repairs missing envelopes for the current epoch
+            // so reinstalled/rejoined devices recover without a manual rotation.
+            if (missingKey) {
+                val role = myRoleIn(groupId)
+                if (role == "owner" || role == "admin") {
+                    runCatching { backfillCurrentKey(groupId) }
+                }
+            }
         } catch (e: Exception) {
             Log.e("GroupRepository", "Failed to sync group history", e)
         }
