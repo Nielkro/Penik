@@ -1,5 +1,7 @@
 # План: Desktop-клиент на Wails (Go + WebView2/WebKitGTK) — Windows + Linux
 
+**Status: implemented**
+
 ## 1. Цель
 Упаковать существующий веб-клиент `client/` в нативное desktop-приложение через Wails v2.
 Windows собирается с WebView2, Linux — с WebKitGTK, фронт общий на 100% (чаты, группы, E2EE через `penik-crypto.wasm`, звонки через `livekit-client`).

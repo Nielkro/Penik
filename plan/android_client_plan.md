@@ -1,5 +1,7 @@
 # План разработки Android-клиента для Penik Messenger
 
+**Status: implemented**
+
 Этот документ описывает техническую спецификацию, архитектуру и пошаговый план разработки нативного Android-клиента для мессенджера Penik. 
 
 Android-клиент взаимодействует с сервером напрямую через текстовые сообщения в бинарном WebSocket-протоколе (MessagePack) и стандартные REST эндпоинты.
@@ -95,7 +97,7 @@ Android-клиент взаимодействует с сервером напр
 ## 4. Сетевой протокол взаимодействия
 
 Все детали взаимодействия по REST API и WebSocket выделены в отдельный подробный документ:
-👉 **[Спецификация сетевого протокола Penik Messenger (REST & WebSocket)](file:///filepomorika/Mysor/RandomProjets/Penik/plan/api_protocol.md)**.
+👉 **Спецификация сетевого протокола:** [`Docs/REST_API.md`](../Docs/REST_API.md) и [`Docs/WEBSOCKET.md`](../Docs/WEBSOCKET.md).
 
 Перед началом реализации сетевого слоя OkHttp и парсера MessagePack необходимо ознакомиться с этим файлом.
 

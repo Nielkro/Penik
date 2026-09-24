@@ -1,5 +1,7 @@
 # Plan note: delete E2EE? — lose vs gain
 
+**Status: active** (reference decision note)
+
 ## Lose
 
 - Confidentiality from server/host: today history is ciphertext; without E2EE

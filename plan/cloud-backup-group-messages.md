@@ -1,5 +1,7 @@
 # Plan: Include Group Messages in E2EE Cloud Backup (Payload v3)
 
+**Status: implemented**
+
 ## 1. Problem Statement
 
 ### 1.1 Context & The Disappearing Pre-Join Messages

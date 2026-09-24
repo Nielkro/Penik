@@ -43,7 +43,7 @@ android/         Android-клиент (Gradle, Compose, JNI Rust Crypto)
 landing/         Лендинг penik.ru
 Dockerfile / docker-compose.yml / penik.caddy  упаковка и деплой сервера
 tests/           E2E и кросс-языковые тесты криптографии (Python, Rust, JS)
-plan/            Спецификации протоколов: api_protocol, e2ee_plan, groups_plan, android_client_plan, micro_rust_core_plan, new_device_key_invalidation_plan
+plan/            Спецификации и планы: groups_plan, android_client_plan, micro_rust_core_plan, new_device_key_invalidation_plan, wails_desktop_plan, device-rebind-ik-proof, cloud-backup-group-messages, e2ee-removal-tradeoffs
 PROJECT_MAP.md   Индекс файлов проекта с описанием назначения каждого
 SECURITY_AUDIT.md Аудит безопасности с реестром находок
 ```
@@ -118,7 +118,7 @@ bash ./gradlew assembleDebug
 ### Сквозное шифрование
 
 - **Личные сообщения (AAD v2):** У каждого устройства своя долговременная пара X25519 (identity key). Общий секрет выводится через X25519, из него по HKDF со случайной 32-байтной солью — ключ сообщения (`info: penik-pairwise-message-v1`), шифрование ***REDACTED-BY-FILTER-REPO*** со случайным nonce. Аутентификационные данные (AAD v2: `["2", sender, recipient, client_msg_id]`) связывают участников и ID сообщения без привязки к локальному времени устройств, что исключает ошибки расшифровки при рассинхронизации часов. Поддерживается обратная совместимость с сообщениями AAD v1.
-- **Группы:** У каждой эпохи группы свой 32-байтный ключ. Он оборачивается отдельно под каждое устройство-получателя на парном X25519-секрете и складывается на сервер как непрозрачный конверт (`group_key_envelopes`). Ключ сообщения выводится из группового по HKDF (`info: penik-group-message-v1`), а `groupId`, версия ключа, id сообщения, транспортный отправитель (`sender_user_id`) и время привязываются как AAD v2 — это исключает подмену авторства сервером и переносы шифртекста между чатами. При смене состава группы ключ ротируется.
+- **Группы:** У каждой эпохи группы свой 32-байтный ключ. Он оборачивается отдельно под каждое устройство-получателя на парном X25519-секрете и складывается на сервер как непрозрачный конверт (`group_key_envelopes`). Ключ сообщения выводится из группового по HKDF (`info: penik-group-message-v1`), и как AAD v2 привязываются `groupId`, версия ключа, транспортный отправитель (`sender_user_id`), id сообщения и время — это исключает подмену авторства сервером и переносы шифртекста между чатами. При смене состава группы ключ ротируется.
 - **Нативное ядро Rust & Zeroize:** Все тяжелые и критические криптооперации на Android (X25519, ***REDACTED-BY-FILTER-REPO***, HKDF, PBKDF2, AAD, Safety Numbers) выполняются через нативные JNI-биндинги `penik-crypto` с автоматическим fallback на Kotlin. Память приватных ключей при уничтожении объектов очищается нулями (`zeroize`). Разблокировка бэкапа ключей через нативный Rust PBKDF2 (600 000 итераций) происходит в 10–20 раз быстрее.
 - **Синхронизация времени:** Сервер предоставляет эндпоинт `GET /api/v1/time`. Клиенты (Android и Web) при старте и реконнекте калибруют локальное смещение времени относительно сервера с компенсацией половины RTT. Сервер клэмпит время входящих сообщений (`msgTS <= now`) и атомарно обновляет `devices.last_seen`, гарантируя, что статус присутствия никогда не отстает от времени отправленных сообщений.
 - **Бэкап ключей:** Приватный ключ шифруется парольной фразой: PBKDF2 (600 000 итераций) → AES-GCM. Сервер хранит только непрозрачный blob.
@@ -160,16 +160,16 @@ REST под `/api/v1/` — регистрация, профили, синхро�
 
 | Диапазон | Назначение |
 |----------|-----------|
-| `0x01`–`0x0e` | личные сообщения: отправка, доставка, ack, оффлайн-батч, ping/pong, удаление и очистка чата, правки, обновление профиля |
+| `0x01`–`0x0f` | личные сообщения: отправка, доставка, ack, оффлайн-батч, ping/pong, удаление и очистка чата, правки, обновление профиля, смена устройств |
 | `0x10`–`0x1f` | ключи, retry, прочтения, pairing, статусы, аватары, presence, shutdown, typing |
-| `0x20`–`0x29` | группы: сообщения, ack, доставка/прочтение, доступность ключа, смена состава, история, аватар, правки |
+| `0x20`–`0x2c` | группы: сообщения, ack, доставка/прочтение, доступность ключа, смена состава, история, аватар, правки и удаления |
 | `0x30`–`0x39` | звонки: offer, incoming, accept/accepted, reject, end, «принято на другом устройстве», log, state replay, peer state |
 
-Точные структуры — в `server/internal/ws/protocol.go`, описание протокола — в `plan/api_protocol.md` и `Docs/WEBSOCKET.md`.
+Точные структуры — в `server/internal/ws/protocol.go`, описание протокола — в `Docs/WEBSOCKET.md` (REST — `Docs/REST_API.md`). Поле `from_identity_key` в `MSG_RECV` несёт публичный ключ отправителя — по нему получатель выбирает парный сеанс расшифровки.
 
 ### Хранение
 
-SQLite в режиме WAL с включёнными внешними ключами. Сессионные токены хранятся в виде криптографических SHA-256 хешей (`token_hash`). Основные таблицы: `users`, `devices`, `identity_keys`, `device_public_keys`, `chats`, `messages`, `sessions`, `key_backups`, `pairing_sessions`, `groups`, `group_members`, `group_key_versions`, `group_key_envelopes`, `group_messages`, `group_message_devices`, `group_history_packets`, `sticker_packs`, `stickers`, `user_stickers`. Канонический DDL — `server/internal/db/schema.sql`.
+SQLite в режиме WAL с включёнными внешними ключами. Сессионные токены хранятся в виде криптографических SHA-256 хешей (`token_hash`). Основные таблицы: `users`, `devices`, `identity_keys`, `device_public_keys`, `chats`, `messages`, `sessions`, `key_backups`, `pairing_sessions`, `pairing_tokens`, `device_history_exclusions`, `groups`, `group_members`, `group_key_versions`, `group_key_envelopes`, `group_messages`, `group_message_devices`, `group_history_packets`, `sticker_packs`, `stickers`, `user_sticker_packs`, `calls`, `attachments`, `bots`. Канонический DDL — `server/internal/db/schema.sql`.
 
 Аватары хранятся на диске в `UPLOAD_DIR` как WebP 256×256; при загрузке аватаров действует защита от декомпрессионных бомб (предварительное чтение заголовков через `image.DecodeConfig` и лимит габаритов).
 
@@ -181,11 +181,16 @@ SQLite в режиме WAL с включёнными внешними ключа
 
 | Действие | Лимит |
 |----------|-------|
-| Регистрация / вход | по IP |
+| Регистрация / вход | 10 / мин на IP |
+| Проверка никнейма и публичный профиль | 20 / 10 мин на IP |
+| Смена никнейма | не чаще 1 раза в 7 дней |
 | Запрос key bundle | 60 / мин на пользователя |
 | Групповые изменения | 30 / мин на пользователя |
 | Ротация группового ключа | 10 / мин на пользователя |
-| Запросы звонков | 10 / мин на пользователя |
+| Загрузка вложений | 60 / мин на пользователя |
+| Device challenge (rebind устройства) | 5 / мин на пользователя |
+| Исходящие звонки (`OpCallOffer`, WS) | 5 / мин на аккаунт |
+| Кадры WebSocket | 10 кадров / 2 с на опкод (drop, затем close 1008) |
 
 Плюс глобальный лимит размера тела запроса, строгий Content-Security-Policy (CSP), CORS с проверкой origin и CSRF-защита в `server/internal/middleware/`.
 
@@ -205,7 +210,7 @@ python3 tests/e2e/test_crypto_core.py
 node client/js/crypto.test.js
 node client/js/groups.crypto.test.js
 
-# 5. Полный E2E прогон (поднимает эфемерный сервер, 34 проверки)
+# 5. Полный E2E прогон (поднимает эфемерный сервер, 12 сценариев)
 python3 scripts/run_e2e.py
 ```
 

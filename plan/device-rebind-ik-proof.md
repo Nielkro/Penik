@@ -1,5 +1,7 @@
 # Plan: Device Identity Key Proof-of-Possession for Session Rebind
 
+**Status: implemented**
+
 ## 1. Problem & Context
 
 ### 1.1 What Device Binding Is & Why It Exists

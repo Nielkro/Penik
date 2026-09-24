@@ -17,7 +17,7 @@
         |                                                                                             |
         v                                                                                             v
  [ Primary LiveKit Server ]  <-------- (Automatic Failover on Error) -------->  [ Secondary/Fallback LiveKit Server ]
-  (wss://livekit.home.penik.ru)                                                  (wss://call.api.penik.ru)
+  (wss://livekit.example.com)                                                    (wss://fallback.example.com)
 ```
 
 ---
@@ -28,8 +28,8 @@
 
 | Переменная | Описание | Обязательность |
 |------------|----------|----------------|
-| `LIVEKIT_URL` | Основной URL WebSocket-сервера LiveKit (например, `wss://livekit.home.penik.ru`) | **Обязательно** |
-| `LIVEKIT_FALLBACK_URL` | Резервный/дополнительный URL LiveKit (например, `wss://call.api.penik.ru`) | **Обязательно** |
+| `LIVEKIT_URL` | Основной URL WebSocket-сервера LiveKit (например, `wss://livekit.example.com`) | **Обязательно** |
+| `LIVEKIT_FALLBACK_URL` | Резервный/дополнительный URL LiveKit (например, `wss://fallback.example.com`) | **Обязательно** |
 | `LIVEKIT_API_KEY` | API-ключ для генерации LiveKit JWT токенов | **Обязательно** |
 | `LIVEKIT_API_SECRET` | API-секрет для генерации LiveKit JWT токенов | **Обязательно** |
 
