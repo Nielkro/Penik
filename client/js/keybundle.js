@@ -8,6 +8,7 @@ const bundleMemoryCache = new Map(); // userId -> { bundle, expiresAt }
 const bundleInflight = new Map(); // userId -> Promise<bundle>
 const bundleForceCooldown = new Map(); // userId -> ts of last force refresh
 const BUNDLE_FORCE_MIN_INTERVAL_MS = 10 * 1000;
+const BUNDLE_EMPTY_TTL_MS = 30 * 1000;
 
 export async function getCachedKeyBundle(userId, forceRefresh = false) {
   const key = String(userId);
@@ -34,7 +35,9 @@ export async function getCachedKeyBundle(userId, forceRefresh = false) {
     try {
       const bundle = await apiGet(`/keys/bundle/${userId}`);
       const myId = Number(localStorage.getItem("user_id"));
-      const ttl = Number(userId) === myId ? 30 * 1000 : 5 * 60 * 1000;
+    const ttl = bundle?.devices?.length
+      ? (Number(userId) === myId ? 30 * 1000 : 5 * 60 * 1000)
+      : BUNDLE_EMPTY_TTL_MS;
       bundleMemoryCache.set(key, { bundle, expiresAt: Date.now() + ttl });
       return bundle;
     } catch (e) {

@@ -702,12 +702,13 @@ class GroupRepository @Inject constructor(
     /* ── Offline history sync (ciphertext) ── */
 
     /** One decrypt pass over server history. Returns true if any message was skipped for a missing key. */
-    private suspend fun syncHistoryPass(groupId: Long): Boolean {
+    private suspend fun syncHistoryPass(groupId: Long, availableVersions: Set<Long>): Boolean {
         var cursor: Long? = null
         var missingKey = false
         do {
             val page = api.getGroupHistory(groupId, 100, cursor).body() ?: return missingKey
             for (m in page.messages) {
+                if (m.keyVersion !in availableVersions) continue
                 val existing = dao.getMessage(groupId, m.messageId)
                 val isEdited = m.editedAt != null && (existing == null || existing.editedAt == null || (m.editedAt * 1000 > (existing.editedAt ?: 0L)))
                 if (existing != null && !isEdited && existing.serverId != 0L) continue
@@ -762,7 +763,9 @@ class GroupRepository @Inject constructor(
             if (dao.getMembers(groupId).isEmpty()) {
                 runCatching { refreshMembers(groupId) }
             }
-            val missingKey = syncHistoryPass(groupId)
+            val availableVersions = api.listGroupKeyVersions(groupId).body()?.versions.orEmpty().toSet()
+            if (availableVersions.isEmpty()) return
+            val missingKey = syncHistoryPass(groupId, availableVersions)
             // A privileged member repairs missing envelopes for the current epoch
             // so reinstalled/rejoined devices recover without a manual rotation.
             // Afterwards the poisoned failure cache is dropped and the pass is
@@ -773,7 +776,7 @@ class GroupRepository @Inject constructor(
                     val healed = runCatching { backfillCurrentKey(groupId) }.getOrNull() ?: 0
                     if (healed > 0) {
                         failedKeyVersions.removeIf { it.first == groupId }
-                        runCatching { syncHistoryPass(groupId) }
+                        runCatching { syncHistoryPass(groupId, availableVersions) }
                     }
                 }
             }

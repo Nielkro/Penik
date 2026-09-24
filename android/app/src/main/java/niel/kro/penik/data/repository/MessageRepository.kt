@@ -40,6 +40,7 @@ class MessageRepository @Inject constructor(
     private val identityPins: IdentityPinStore,
 ) {
     private val bundleCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, List<niel.kro.penik.data.network.api.DeviceBundle>>>()
+    private val bundleForceAt = java.util.concurrent.ConcurrentHashMap<Long, Long>()
 
     /**
      * Server message ids that failed decrypt even with freshly fetched key
@@ -63,6 +64,10 @@ class MessageRepository @Inject constructor(
 
     suspend fun getKeyBundleCached(userId: Long, isSelf: Boolean = false, forceRefresh: Boolean = false): List<niel.kro.penik.data.network.api.DeviceBundle> {
         val now = System.currentTimeMillis()
+        if (forceRefresh && now - (bundleForceAt[userId] ?: 0L) < 10_000L) {
+            return bundleCache[userId]?.second ?: emptyList()
+        }
+        if (forceRefresh) bundleForceAt[userId] = now
         if (!forceRefresh) {
             val cached = bundleCache[userId]
             if (cached != null && cached.first > now) {
@@ -76,7 +81,7 @@ class MessageRepository @Inject constructor(
             val response = if (isSelf) apiService.getKeyBundleSelf(userId) else apiService.getKeyBundle(userId)
             if (response.isSuccessful) {
                 val devices = response.body()?.devices ?: emptyList()
-                val ttl = if (isSelf) 30 * 1000L else 2 * 60 * 1000L
+                val ttl = if (devices.isEmpty()) 10_000L else if (isSelf) 30 * 1000L else 2 * 60 * 1000L
                 bundleCache[userId] = Pair(now + ttl, devices)
                 return devices
             }
@@ -89,6 +94,7 @@ class MessageRepository @Inject constructor(
 
     fun invalidateKeyBundle(userId: Long) {
         bundleCache.remove(userId)
+        bundleForceAt.remove(userId)
     }
 
     suspend fun isChunkedEncryptionSupported(peerUserId: Long): Boolean {
