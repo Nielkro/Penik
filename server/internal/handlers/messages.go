@@ -90,22 +90,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 			 WHERE m.purge_pending = 0
 			   AND m.id NOT IN (SELECT message_id FROM device_history_exclusions WHERE device_id = ?)
 			   AND (
-              (m.sender_user_id = ? AND (
-                  m.sender_device_id = ?
-                  OR m.sender_device_id IN (
-                      SELECT dpk.device_id FROM device_public_keys dpk
-                      JOIN devices d ON d.id = dpk.device_id
-                      WHERE d.user_id = ? AND dpk.x25519_pub = (SELECT x25519_pub FROM device_public_keys WHERE device_id = ?)
-                  )
-              ) AND m.deleted_by_sender = 0
-               AND (m.sender_user_id != m.recipient_user_id OR (
-                   m.recipient_device_id = ?
-                   OR m.recipient_device_id IN (
-                       SELECT dpk.device_id FROM device_public_keys dpk
-                       JOIN devices d ON d.id = dpk.device_id
-                       WHERE d.user_id = ? AND dpk.x25519_pub = (SELECT x25519_pub FROM device_public_keys WHERE device_id = ?)
-                   )
-               )))
+              (m.sender_user_id = ? AND m.sender_user_id != m.recipient_user_id AND m.deleted_by_sender = 0)
               OR
               (m.recipient_user_id = ? AND (
                   m.recipient_device_id = ?
@@ -118,8 +103,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 			   )`
 		args := []any{
 			userID, deviceID,
-			userID, deviceID, userID, deviceID,
-			deviceID, userID, deviceID,
+			userID,
 			userID, deviceID, userID, deviceID,
 		}
 

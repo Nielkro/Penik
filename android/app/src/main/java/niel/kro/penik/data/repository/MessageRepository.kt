@@ -851,26 +851,48 @@ class MessageRepository @Inject constructor(
                                     val saltBytes = java.util.Base64.getDecoder().decode(msg.encryptionSalt)
                                     val nonceBytes = java.util.Base64.getDecoder().decode(msg.encryptionNonce)
 
-                                    val targetUserId = if (isOwnOutgoing) msg.chatUserId else msg.senderId
-                                    val targetDeviceId = if (isOwnOutgoing) msg.recipientDeviceId else msg.senderDeviceId
+                                    val isOwnSender = msg.senderId == myId
+                                    val isSelfFanout = isOwnSender && msg.recipientId == myId
+                                    val isDirectOutgoing = isOwnSender && msg.recipientId != myId
 
-                                    val peerBundle = if (bundleCache.containsKey(targetUserId)) {
-                                        bundleCache[targetUserId]
-                                    } else {
-                                        val b = runCatching {
-                                            val resp = if (targetUserId == myId) apiService.getKeyBundleSelf(targetUserId) else apiService.getKeyBundle(targetUserId)
-                                            if (resp.isSuccessful) resp.body() else null
-                                        }.getOrNull()
-                                        bundleCache[targetUserId] = b
-                                        b
+                                    val primaryTargetUserId = when {
+                                        isSelfFanout -> myId
+                                        isDirectOutgoing -> msg.recipientId.takeIf { it > 0 } ?: msg.chatUserId
+                                        else -> msg.senderId
                                     }
 
+                                    val primaryTargetDeviceId = when {
+                                        isSelfFanout -> msg.senderDeviceId
+                                        isDirectOutgoing -> msg.recipientDeviceId
+                                        else -> msg.senderDeviceId
+                                    }
+
+                                    suspend fun getCachedBundle(uid: Long): niel.kro.penik.data.network.api.KeyBundleResponse? {
+                                        if (bundleCache.containsKey(uid)) return bundleCache[uid]
+                                        val b = runCatching {
+                                            val resp = if (uid == myId) apiService.getKeyBundleSelf(uid) else apiService.getKeyBundle(uid)
+                                            if (resp.isSuccessful) resp.body() else null
+                                        }.getOrNull()
+                                        bundleCache[uid] = b
+                                        return b
+                                    }
+
+                                    val primaryBundle = getCachedBundle(primaryTargetUserId)
+                                    val chatUserBundle = if (msg.chatUserId != primaryTargetUserId) getCachedBundle(msg.chatUserId) else null
+                                    val myBundle = if (myId != primaryTargetUserId && myId != msg.chatUserId) getCachedBundle(myId) else null
+
                                     val candidateDevices = buildList {
-                                        if (targetDeviceId != null && targetDeviceId > 0) {
-                                            peerBundle?.devices?.find { it.deviceId == targetDeviceId }?.let { add(it) }
+                                        if (primaryTargetDeviceId != null && primaryTargetDeviceId > 0) {
+                                            primaryBundle?.devices?.find { it.deviceId == primaryTargetDeviceId }?.let { add(it) }
                                         }
-                                        peerBundle?.devices?.forEach { d ->
-                                            if (d.deviceId != targetDeviceId) add(d)
+                                        primaryBundle?.devices?.forEach { d ->
+                                            if (none { it.deviceId == d.deviceId }) add(d)
+                                        }
+                                        chatUserBundle?.devices?.forEach { d ->
+                                            if (none { it.deviceId == d.deviceId }) add(d)
+                                        }
+                                        myBundle?.devices?.forEach { d ->
+                                            if (none { it.deviceId == d.deviceId }) add(d)
                                         }
                                     }
 
@@ -886,7 +908,7 @@ class MessageRepository @Inject constructor(
                                                 salt = saltBytes,
                                                 nonce = nonceBytes,
                                                 senderUserId = msg.senderId,
-                                                recipientUserId = if (isOwnOutgoing) msg.chatUserId else myId,
+                                                recipientUserId = if (isOwnSender) msg.chatUserId else myId,
                                                 clientMsgId = msg.clientMsgId ?: "",
                                                 timestamp = decryptTs
                                             )
@@ -897,7 +919,7 @@ class MessageRepository @Inject constructor(
                                         }
                                     }
 
-                                    decrypted ?: throw Exception("Could not decrypt with any device key of target user $targetUserId")
+                                    decrypted ?: throw Exception("Could not decrypt with any device key (tried ${candidateDevices.size} devices across users)")
                                 } catch (e: Exception) {
                                     Log.e("PenikMsg", "FAILED TO DECRYPT HISTORY MSG msgId=${msg.msgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, recipientDeviceId=${msg.recipientDeviceId}, clientMsgId=${msg.clientMsgId}", e)
                                     isDecryptFailed = true
