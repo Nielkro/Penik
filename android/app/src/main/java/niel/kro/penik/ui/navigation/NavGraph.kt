@@ -26,6 +26,9 @@ import niel.kro.penik.ui.viewmodel.StartupViewModel
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import niel.kro.penik.ui.theme.LocalAppColors
@@ -40,9 +43,33 @@ fun NavGraph(
     val context = androidx.compose.ui.platform.LocalContext.current
     val updateStatus by startupViewModel.updateStatus.collectAsState()
     val downloadState by startupViewModel.downloadState.collectAsState()
+    val keyMismatch by startupViewModel.keyMismatch.collectAsState()
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
         startupViewModel.checkForUpdates()
+        startupViewModel.verifyDeviceKeys()
+    }
+
+    if (keyMismatch) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Ключи устройства расходятся") },
+            text = {
+                Text(
+                    "Локальный ключ этого устройства не совпадает с ключом на сервере. " +
+                        "Сообщения не расшифровываются и не доходят до собеседников. " +
+                        "Выйдите из аккаунта и войдите заново — будет создано новое устройство с корректным ключом."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    startupViewModel.logout()
+                    navController.navigate(Screen.Auth.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }) { Text("Выйти и войти заново") }
+            }
+        )
     }
 
     UpdateDialog(
