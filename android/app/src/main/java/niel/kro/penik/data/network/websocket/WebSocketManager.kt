@@ -99,6 +99,7 @@ sealed class WebSocketEvent {
     ) : WebSocketEvent()
 
     data class GroupKeyAvailable(val groupId: Long, val keyVersion: Long) : WebSocketEvent()
+    data class GroupHistoryReady(val groupId: Long) : WebSocketEvent()
     data class GroupMemberChanged(val groupId: Long, val membershipVersion: Long) : WebSocketEvent()
 
     data class MsgStatusItem(
@@ -258,6 +259,7 @@ object Opcode {
     const val GROUP_MEMBER_CHANGED: Byte = 0x24
     const val GROUP_MESSAGE_DELIVERED: Byte = 0x25
     const val GROUP_MESSAGE_READ: Byte = 0x26
+    const val GROUP_HISTORY_READY: Byte = 0x27
     const val GROUP_AVATAR_UPDATE: Byte = 0x28
     const val GROUP_MESSAGE_EDIT: Byte = 0x29
     const val GROUP_MESSAGE_EDIT_NOTIFY: Byte = 0x2a
@@ -590,6 +592,7 @@ class WebSocketManager @Inject constructor(
             Opcode.GROUP_MESSAGE_ACK -> handleGroupMessageAck(payload)
             Opcode.GROUP_KEY_AVAILABLE -> handleGroupKeyAvailable(payload)
             Opcode.GROUP_MEMBER_CHANGED -> handleGroupMemberChanged(payload)
+            Opcode.GROUP_HISTORY_READY -> handleGroupHistoryReady(payload)
             Opcode.GROUP_AVATAR_UPDATE -> handleGroupAvatarUpdate(payload)
             Opcode.GROUP_MESSAGE_EDIT_NOTIFY -> handleGroupMessageEditNotify(payload)
             Opcode.GROUP_MESSAGE_DELETE_NOTIFY -> handleGroupMessageDeleteNotify(payload)
@@ -1279,6 +1282,18 @@ class WebSocketManager @Inject constructor(
                 WebSocketEvent.GroupKeyAvailable(
                     (map["group_id"] as? Number)?.toLong() ?: 0,
                     (map["key_version"] as? Number)?.toLong() ?: 0
+                )
+            )
+        }
+    }
+
+    private fun handleGroupHistoryReady(payload: ByteArray) {
+        val unpacker = MessagePack.newDefaultUnpacker(ByteArrayInputStream(payload))
+        val map = unpacker.readMsgRecvMap(); unpacker.close()
+        scope.launch {
+            _events.emit(
+                WebSocketEvent.GroupHistoryReady(
+                    (map["group_id"] as? Number)?.toLong() ?: 0
                 )
             )
         }

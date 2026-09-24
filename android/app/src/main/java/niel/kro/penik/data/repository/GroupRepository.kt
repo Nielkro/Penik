@@ -648,6 +648,10 @@ class GroupRepository @Inject constructor(
         }
     }
 
+    suspend fun pullHistoryPacketForRetry(groupId: Long) {
+        pullHistoryPacket(groupId)
+    }
+
     private suspend fun pullHistoryPacket(groupId: Long) {
         val resp = api.getGroupHistoryPacket(groupId)
         if (!resp.isSuccessful) return

@@ -36,10 +36,10 @@ func fetchHistory(database *db.DB, groupID, userID, deviceID int64) *httptest.Re
 	return w
 }
 
-// TestHistoryPacketUploadFetchDeleteOnFetch covers the happy path: an admin
-// stages a packet for a pending invitee's device, the invitee accepts, fetches
-// it once (200 with the ciphertext), and a second fetch is 404 (delete-on-fetch).
-func TestHistoryPacketUploadFetchDeleteOnFetch(t *testing.T) {
+// TestHistoryPacketUploadFetchRetry covers the happy path: an admin stages a
+// packet for a pending invitee's device, the invitee accepts, and the client
+// can fetch the same packet again while retrying decryption.
+func TestHistoryPacketUploadFetchRetry(t *testing.T) {
 	database, err := db.Open(filepath.Join(t.TempDir(), "hist.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -84,10 +84,10 @@ func TestHistoryPacketUploadFetchDeleteOnFetch(t *testing.T) {
 		t.Fatalf("wrong sender device: %v", got["sender_device_id"])
 	}
 
-	// Second fetch: nothing left (delete-on-fetch).
-	if w := fetchHistory(database, groupID, bobID, bobDev); w.Code != http.StatusNotFound {
-		t.Fatalf("second fetch: expected 404 got %d", w.Code)
-	}
+    // A retry must still receive the packet until its TTL expires.
+    if w := fetchHistory(database, groupID, bobID, bobDev); w.Code != http.StatusOK {
+        t.Fatalf("second fetch: expected 200 got %d", w.Code)
+    }
 }
 
 // TestHistoryPacketExpired verifies an expired packet is treated as absent.

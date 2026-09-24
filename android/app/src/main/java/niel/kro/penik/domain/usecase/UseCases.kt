@@ -203,6 +203,9 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 groupRepository.ensureGroupKey(event.groupId, event.keyVersion)
                 groupRepository.syncHistory(event.groupId)
             }
+            is WebSocketEvent.GroupHistoryReady -> {
+                runCatching { groupRepository.pullHistoryPacketForRetry(event.groupId) }
+            }
             is WebSocketEvent.GroupMemberChanged -> {
                 // Sync the group list first: a fresh invitation surfaces here as a
                 // pending group that doesn't exist locally yet. Member refresh is

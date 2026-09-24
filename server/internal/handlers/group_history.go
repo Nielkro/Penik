@@ -145,10 +145,11 @@ func UploadGroupHistoryPackets(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 	}
 }
 
-// GetGroupHistoryPacket returns and immediately deletes the caller device's
-// pending history packet for a group (delete-on-fetch). The caller must be an
-// active member — a pending invitee has no packet to read until they accept.
-// 404 means there is nothing staged (never was, already fetched, or expired).
+// GetGroupHistoryPacket returns the caller device's pending history packet for a
+// group. The packet remains available until its TTL expires because decryption
+// can fail transiently while the client refreshes identity keys. The caller
+// must be an active member — a pending invitee has no packet to read until they
+// accept. 404 means there is nothing staged or the packet expired.
 func GetGroupHistoryPacket(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -162,15 +163,12 @@ func GetGroupHistoryPacket(database *db.DB) http.HandlerFunc {
 		deviceID := middleware.DeviceIDFromCtx(r.Context())
 		now := time.Now().Unix()
 
-		// Delete-on-fetch: the RETURNING row is the only copy the device gets, so
-		// a successful read also removes the packet in the same statement. An
-		// expired packet is treated as absent.
 		var hist, salt, nonce []byte
 		var senderDevice int64
 		err := database.QueryRowContext(r.Context(),
-			`DELETE FROM group_history_packets
-			 WHERE group_id=? AND device_id=? AND expires_at>?
-			 RETURNING encrypted_history,encryption_salt,encryption_nonce,sender_device_id`,
+			`SELECT encrypted_history,encryption_salt,encryption_nonce,sender_device_id
+			 FROM group_history_packets
+			 WHERE group_id=? AND device_id=? AND expires_at>?`,
 			groupID, deviceID, now).Scan(&hist, &salt, &nonce, &senderDevice)
 		if err == sql.ErrNoRows {
 			http.Error(w, "no history packet", http.StatusNotFound)
