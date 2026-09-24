@@ -207,7 +207,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 // Sync the group list first: a fresh invitation surfaces here as a
                 // pending group that doesn't exist locally yet. Member refresh is
                 // best-effort since a pending invitee can't list the roster.
-                runCatching { groupRepository.syncGroups() }
+                runCatching { groupRepository.syncGroups(force = true) }
                 runCatching { groupRepository.refreshMembers(event.groupId) }
             }
             is WebSocketEvent.GroupAvatarUpdate -> {

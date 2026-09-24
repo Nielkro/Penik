@@ -277,9 +277,9 @@ class GroupRepository @Inject constructor(
 
     private var lastSyncGroupsTime: Long = 0L
 
-    suspend fun syncGroups(): List<GroupEntity> {
+    suspend fun syncGroups(force: Boolean = false): List<GroupEntity> {
         val now = System.currentTimeMillis()
-        if (now - lastSyncGroupsTime < 5000L) {
+        if (!force && now - lastSyncGroupsTime < 5000L) {
             // Retrieve currently saved groups from database directly to avoid spamming the network
             return dao.observeGroups().firstOrNull() ?: emptyList()
         }
@@ -329,9 +329,23 @@ class GroupRepository @Inject constructor(
     }
 
     suspend fun acceptInvitation(groupId: Long) {
-        api.acceptGroupInvitation(groupId)
+        val response = api.acceptGroupInvitation(groupId)
+        if (!response.isSuccessful) {
+            throw IllegalStateException("Не удалось принять приглашение: HTTP ${response.code()}")
+        }
+
+        // A group may have been locally marked as removed before it was invited
+        // again. Do not reuse stale membership/key failure state from that
+        // previous membership epoch.
+        invalidateDeviceKeyCache()
+        failedKeyVersions.removeIf { it.first == groupId }
+
+        // The regular sync cache can still contain the pending invitation. Force
+        // a server reconciliation so sending is enabled immediately.
+        syncGroups(force = true)
         refreshMembers(groupId)
         runCatching { pullHistoryPacket(groupId) }
+        syncHistory(groupId)
     }
 
     suspend fun declineInvitation(groupId: Long) {

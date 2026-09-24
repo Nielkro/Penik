@@ -73,7 +73,7 @@ class GroupsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 groupRepository.acceptInvitation(groupId)
-                groupRepository.syncGroups()
+                groupRepository.syncGroups(force = true)
             } catch (e: Exception) {
                 _error.value = e.message ?: "Не удалось принять приглашение"
             }
@@ -344,7 +344,7 @@ class GroupChatViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 groupRepository.acceptInvitation(groupId)
-                groupRepository.syncGroups()
+                groupRepository.syncGroups(force = true)
                 _members.value = groupRepository.refreshMembers(groupId)
                 onDone?.invoke()
             } catch (e: Exception) {
