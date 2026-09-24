@@ -283,13 +283,34 @@ class GroupRepository @Inject constructor(
             // Retrieve currently saved groups from database directly to avoid spamming the network
             return dao.observeGroups().firstOrNull() ?: emptyList()
         }
-        val resp = api.listGroups().body() ?: return emptyList()
+        val response = api.listGroups()
+        if (!response.isSuccessful) return emptyList()
+        val resp = response.body() ?: return emptyList()
         val entities = resp.groups.map {
             GroupEntity(it.id, it.name, it.ownerUserId, it.role, it.status, it.membershipVersion, it.currentKeyVersion, it.createdAt)
         }
         entities.forEach { dao.upsertGroup(it) }
+
+        // The server list is authoritative for active and pending membership.
+        // A removed member must not retain a usable local group, its messages,
+        // or its old epoch keys after the membership has ended.
+        val serverGroupIds = entities.map { it.id }.toSet()
+        dao.getAllGroups()
+            .asSequence()
+            .map { it.id }
+            .filter { it !in serverGroupIds }
+            .forEach { forgetGroup(it) }
         lastSyncGroupsTime = now
         return entities
+    }
+
+    suspend fun forgetGroup(groupId: Long) {
+        dao.clearMembers(groupId)
+        dao.clearKeys(groupId)
+        dao.clearMessages(groupId)
+        dao.deleteGroup(groupId)
+        failedKeyVersions.removeIf { it.first == groupId }
+        deviceKeyCache.clear()
     }
 
     suspend fun refreshMembers(groupId: Long): List<GroupMemberEntity> {
@@ -334,9 +355,13 @@ class GroupRepository @Inject constructor(
             throw IllegalStateException("Не удалось принять приглашение: HTTP ${response.code()}")
         }
 
-        // A group may have been locally marked as removed before it was invited
-        // again. Do not reuse stale membership/key failure state from that
-        // previous membership epoch.
+        // Re-entry is a new local membership epoch. Drop any data left from a
+        // previous membership before accepting the new key and history packet;
+        // otherwise the packet importer treats old rows as duplicates and the
+        // old group key can make the new membership unusable.
+        dao.clearMembers(groupId)
+        dao.clearKeys(groupId)
+        dao.clearMessages(groupId)
         invalidateDeviceKeyCache()
         failedKeyVersions.removeIf { it.first == groupId }
 

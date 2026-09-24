@@ -204,7 +204,7 @@ func main() {
 	mux.Handle("POST /api/v1/groups/{group_id}/members",
 		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.InviteMember(database, hub)))))
 	mux.Handle("DELETE /api/v1/groups/{group_id}/members/{user_id}",
-		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.RemoveMember(database)))))
+		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.RemoveMember(database, hub)))))
 	mux.Handle("PATCH /api/v1/groups/{group_id}/members/{user_id}",
 		authMW(groupWriteLimiter.Limit(http.HandlerFunc(handlers.ChangeMemberRole(database)))))
 	mux.Handle("POST /api/v1/groups/{group_id}/accept",
@@ -417,4 +417,3 @@ func backfillLegacyAttachments(database *db.DB, uploadDir string) error {
 	}
 	return nil
 }
-

@@ -490,7 +490,7 @@ func AcceptInvitation(database *db.DB) http.HandlerFunc {
 
 // RemoveMember removes a user from a group. Owner/admin only. Bumps
 // membership_version so a key rotation can follow. The owner cannot be removed.
-func RemoveMember(database *db.DB) http.HandlerFunc {
+func RemoveMember(database *db.DB, hubs ...*ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID, ok := groupIDFromPath(w, r)
 		if !ok {
@@ -545,6 +545,9 @@ func RemoveMember(database *db.DB) http.HandlerFunc {
 		if err := tx.Commit(); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
+		}
+		if len(hubs) > 0 {
+			notifyMemberChanged(database, r, hubs[0], groupID, targetID, mv)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -830,4 +833,3 @@ func GetGroupAvatar(database *db.DB, cfg *config.Config) http.HandlerFunc {
 		w.Write(avatar)
 	}
 }
-
