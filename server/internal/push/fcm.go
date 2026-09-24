@@ -164,15 +164,21 @@ func (c *FCMClient) signJWT(header, claims []byte) (string, error) {
 	return input + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
-func SendDevicePush(token string, data map[string]string) {
+type UnregisteredCallback func(deadToken string)
+
+func SendDevicePush(token string, data map[string]string, onUnregistered ...UnregisteredCallback) {
 	client := GetFCMClient()
 	if client == nil {
 		return
 	}
-	go client.sendPushPayload(token, data)
+	var cb UnregisteredCallback
+	if len(onUnregistered) > 0 {
+		cb = onUnregistered[0]
+	}
+	go client.sendPushPayload(token, data, cb)
 }
 
-func (c *FCMClient) sendPushPayload(token string, data map[string]string) {
+func (c *FCMClient) sendPushPayload(token string, data map[string]string, onUnregistered UnregisteredCallback) {
 	accessToken, err := c.getAccessToken()
 	if err != nil {
 		log.Printf("push: failed to get access token: %v", err)
@@ -212,5 +218,8 @@ func (c *FCMClient) sendPushPayload(token string, data map[string]string) {
 	} else {
 		respBody, _ := io.ReadAll(resp.Body)
 		log.Printf("push: send failed with status %d: %s", resp.StatusCode, string(respBody))
+		if resp.StatusCode == http.StatusNotFound && onUnregistered != nil {
+			onUnregistered(token)
+		}
 	}
 }

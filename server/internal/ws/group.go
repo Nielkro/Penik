@@ -185,6 +185,8 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 			"row_id":         fmt.Sprintf("%d", rowID),
 			"message_id":     msg.MessageID,
 			"timestamp":      fmt.Sprintf("%d", now*1000),
+		}, func(deadToken string) {
+			_, _ = c.db.Exec("UPDATE devices SET fcm_token = '' WHERE fcm_token = ?", deadToken)
 		})
 	}
 

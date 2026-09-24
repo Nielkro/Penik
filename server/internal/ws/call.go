@@ -443,6 +443,8 @@ func (c *Client) handleCallOffer(payload []byte) error {
 				"livekit_fallback_url": c.cfg.LiveKitFallbackURL,
 				"token":     token,
 				"timestamp": fmt.Sprintf("%d", time.Now().Unix()*1000),
+			}, func(deadToken string) {
+				_, _ = c.db.Exec("UPDATE devices SET fcm_token = '' WHERE fcm_token = ?", deadToken)
 			})
 		}
 	}

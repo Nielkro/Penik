@@ -674,6 +674,8 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 			"timestamp":      fmt.Sprintf("%d", now*1000),
 			"sender_user_id": fmt.Sprintf("%d", senderUserID),
 			"msg_id":         fmt.Sprintf("%d", d.msgRecv.MsgID),
+		}, func(deadToken string) {
+			_, _ = c.db.Exec("UPDATE devices SET fcm_token = '' WHERE fcm_token = ?", deadToken)
 		})
 	}
 

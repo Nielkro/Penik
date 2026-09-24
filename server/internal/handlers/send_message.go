@@ -228,6 +228,8 @@ func SendMessage(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 				"msg_id":         fmt.Sprintf("%d", d.msgRecv.MsgID),
 				"timestamp":      fmt.Sprintf("%d", now*1000),
 				"sender_user_id": fmt.Sprintf("%d", senderUserID),
+			}, func(deadToken string) {
+				_, _ = database.Exec("UPDATE devices SET fcm_token = '' WHERE fcm_token = ?", deadToken)
 			})
 		}
 
