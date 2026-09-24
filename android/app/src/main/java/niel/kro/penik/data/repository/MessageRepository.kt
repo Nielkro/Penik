@@ -2,6 +2,7 @@ package niel.kro.penik.data.repository
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.async
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -41,6 +42,7 @@ class MessageRepository @Inject constructor(
 ) {
     private val bundleCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, List<niel.kro.penik.data.network.api.DeviceBundle>>>()
     private val bundleForceAt = java.util.concurrent.ConcurrentHashMap<Long, Long>()
+    private val bundleInflight = java.util.concurrent.ConcurrentHashMap<Long, kotlinx.coroutines.Deferred<List<niel.kro.penik.data.network.api.DeviceBundle>>>()
 
     /**
      * Server message ids that failed decrypt even with freshly fetched key
@@ -74,6 +76,23 @@ class MessageRepository @Inject constructor(
                 return cached.second
             }
         }
+        bundleInflight[userId]?.let { return it.await() }
+        val deferred = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).async {
+            fetchKeyBundle(userId, isSelf, now)
+        }
+        val existing = bundleInflight.putIfAbsent(userId, deferred)
+        if (existing != null) {
+            deferred.cancel()
+            return existing.await()
+        }
+        return try {
+            deferred.await()
+        } finally {
+            bundleInflight.remove(userId, deferred)
+        }
+    }
+
+    private suspend fun fetchKeyBundle(userId: Long, isSelf: Boolean, now: Long): List<niel.kro.penik.data.network.api.DeviceBundle> {
         // Never cache failures: a 429/5xx during a storm would pin an empty
         // device list for the whole TTL, and every send built from it is
         // rejected by the server as "invalid devices count (1..50)".

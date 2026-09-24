@@ -50,6 +50,7 @@ class GroupRepository @Inject constructor(
     private val identityPins: IdentityPinStore,
 ) {
     private val urlB64Flags = Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
+    private val historySyncInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
 
     fun observeGroups() = dao.observeGroups()
     fun observeGroup(groupId: Long) = dao.observeGroup(groupId)
@@ -756,6 +757,7 @@ class GroupRepository @Inject constructor(
     }
 
     suspend fun syncHistory(groupId: Long) {
+        if (!historySyncInFlight.add(groupId)) return
         try {
             // Decrypting envelopes needs the sender's identity key, resolved via the
             // member list. If members haven't been fetched yet, do it now so history
@@ -782,6 +784,8 @@ class GroupRepository @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e("GroupRepository", "Failed to sync group history", e)
+        } finally {
+            historySyncInFlight.remove(groupId)
         }
     }
 
