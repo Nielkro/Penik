@@ -44,3 +44,10 @@ chore: untrack uploaded files, ignore server/data/upload
 - **One-Time Keys (OTK) / Prekeys are strictly DEPRECATED and obsolete.**
 - Do NOT generate, publish, require, or architect new features relying on OTK or prekey pools. They are legacy and scheduled for removal. Direct X25519 identity key exchange with ephemeral sender keys is standard.
 
+## 7. Subagent Invocation Policy
+- **Read-Only / Research Subagents:** You may invoke as many concurrent or sequential research/read-only subagents as needed to explore the codebase, analyze logs, read documentation, or inspect multiple modules in parallel.
+- **Code-Modifying / Write Subagents:** If subagents are tasked with modifying code, editing files, or running build/refactoring tasks:
+  - Strictly **ONLY ONE** write subagent may be active at any given time.
+  - The subagent is disposable / single-use for that task and must handle changes across all relevant layers (Rust core, Go server, Web, Android) within that single invocation. Never spawn multiple concurrent subagents to edit code simultaneously.
+
+

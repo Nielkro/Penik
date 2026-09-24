@@ -23,13 +23,15 @@ import (
 )
 
 type deviceChallengeRequest struct {
-	TargetDeviceID int64 `json:"target_device_id"`
+	TargetDeviceID int64  `json:"target_device_id"`
+	IKPub          string `json:"ik_pub"`
 }
 
 type deviceChallengeResponse struct {
-	Nonce     string `json:"nonce"`
-	EphPub    string `json:"eph_pub"`
-	ExpiresAt int64  `json:"expires_at"`
+	TargetDeviceID int64  `json:"target_device_id"`
+	Nonce          string `json:"nonce"`
+	EphPub         string `json:"eph_pub"`
+	ExpiresAt      int64  `json:"expires_at"`
 }
 
 type deviceRebindRequest struct {
@@ -72,7 +74,28 @@ func DeviceChallenge(database *db.DB, cfg *config.Config, store *DeviceChallenge
 			return
 		}
 
-		if req.TargetDeviceID <= 0 {
+		targetDeviceID := req.TargetDeviceID
+		if strings.TrimSpace(req.IKPub) != "" {
+			ikBytes, err := decodeBase64Flexible(req.IKPub)
+			if err == nil && len(ikBytes) >= 32 {
+				// Normalize to 32 bytes if 33 bytes with 0x05 prefix
+				var cleanIK [32]byte
+				copy(cleanIK[:], ikBytes[len(ikBytes)-32:])
+				var resolvedID int64
+				err := database.QueryRowContext(r.Context(),
+					`SELECT d.id FROM devices d
+					 JOIN device_public_keys dpk ON dpk.device_id = d.id
+					 WHERE d.user_id = ? AND dpk.x25519_pub = ?
+					 ORDER BY (SELECT COUNT(*) FROM messages WHERE recipient_device_id = d.id) DESC, d.id DESC
+					 LIMIT 1`,
+					userID, cleanIK[:]).Scan(&resolvedID)
+				if err == nil && resolvedID > 0 {
+					targetDeviceID = resolvedID
+				}
+			}
+		}
+
+		if targetDeviceID <= 0 {
 			http.Error(w, "invalid target_device_id", http.StatusBadRequest)
 			return
 		}
@@ -81,7 +104,7 @@ func DeviceChallenge(database *db.DB, cfg *config.Config, store *DeviceChallenge
 		var exists int
 		err := database.QueryRowContext(r.Context(),
 			`SELECT 1 FROM devices WHERE id = ? AND user_id = ?`,
-			req.TargetDeviceID, userID).Scan(&exists)
+			targetDeviceID, userID).Scan(&exists)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				http.Error(w, "device not found", http.StatusNotFound)
@@ -95,13 +118,13 @@ func DeviceChallenge(database *db.DB, cfg *config.Config, store *DeviceChallenge
 		var pubKey []byte
 		err = database.QueryRowContext(r.Context(),
 			`SELECT x25519_pub FROM device_public_keys WHERE device_id = ?`,
-			req.TargetDeviceID).Scan(&pubKey)
+			targetDeviceID).Scan(&pubKey)
 		if err != nil || len(pubKey) < 32 {
 			http.Error(w, "target device has no identity key", http.StatusBadRequest)
 			return
 		}
 
-		nonce, ephPub, expiresAt, err := store.CreateChallenge(userID, req.TargetDeviceID)
+		nonce, ephPub, expiresAt, err := store.CreateChallenge(userID, targetDeviceID)
 		if err != nil {
 			log.Printf("device challenge: failed to generate challenge: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -110,9 +133,10 @@ func DeviceChallenge(database *db.DB, cfg *config.Config, store *DeviceChallenge
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(deviceChallengeResponse{
-			Nonce:     base64.StdEncoding.EncodeToString(nonce),
-			EphPub:    base64.StdEncoding.EncodeToString(ephPub),
-			ExpiresAt: expiresAt.Unix(),
+			TargetDeviceID: targetDeviceID,
+			Nonce:          base64.StdEncoding.EncodeToString(nonce),
+			EphPub:         base64.StdEncoding.EncodeToString(ephPub),
+			ExpiresAt:      expiresAt.Unix(),
 		})
 	}
 }

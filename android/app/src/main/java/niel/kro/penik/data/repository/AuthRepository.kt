@@ -125,7 +125,10 @@ class AuthRepository @Inject constructor(
                         tokenStorage.saveAuth(body.token, body.userId, body.deviceId)
 
                         val challengeResp = apiService.deviceChallenge(
-                            niel.kro.penik.data.network.api.DeviceChallengeRequest(body.targetDeviceId)
+                            niel.kro.penik.data.network.api.DeviceChallengeRequest(
+                                targetDeviceId = body.targetDeviceId,
+                                ikPub = ikPubBase64
+                            )
                         )
                         if (challengeResp.isSuccessful) {
                             val challenge = challengeResp.body()!!
@@ -481,50 +484,58 @@ class AuthRepository @Inject constructor(
                 tokenStorage.savePrivateKey(privKey)
                 tokenStorage.savePublicKey(derivedPubKey)
 
-                // Rebind session to original device_id if target device differs from current
-                val targetDeviceId = (body.deviceId?.takeIf { it > 0L }) ?: jsonDeviceId
+                // Rebind session to original device_id if restored identity key belongs to an existing device
                 val currentDeviceId = tokenStorage.getDeviceId()
                 val userId = tokenStorage.getUserId()
+                val derivedPubKeyB64 = Base64.getEncoder().encodeToString(derivedPubKey)
 
-                if (targetDeviceId != null && targetDeviceId > 0L && targetDeviceId != currentDeviceId && userId > 0L) {
+                if (userId > 0L) {
                     try {
+                        val requestedTargetId = (body.deviceId?.takeIf { it > 0L }) ?: (jsonDeviceId?.takeIf { it > 0L }) ?: 0L
                         val challengeResp = apiService.deviceChallenge(
-                            niel.kro.penik.data.network.api.DeviceChallengeRequest(targetDeviceId)
+                            niel.kro.penik.data.network.api.DeviceChallengeRequest(
+                                targetDeviceId = requestedTargetId,
+                                ikPub = derivedPubKeyB64
+                            )
                         )
                         if (challengeResp.isSuccessful && challengeResp.body() != null) {
                             val challenge = challengeResp.body()!!
-                            val ephPubBytes = Base64.getDecoder().decode(challenge.ephPub)
-                            val nonceBytes = Base64.getDecoder().decode(challenge.nonce)
+                            val resolvedTargetDeviceId = if (challenge.targetDeviceId > 0L) challenge.targetDeviceId else requestedTargetId
 
-                            val proofBytes = if (niel.kro.penik.data.crypto.RustCryptoCore.isAvailable()) {
-                                niel.kro.penik.data.crypto.RustCryptoCore.computeDeviceRebindProof(
-                                    privKey,
-                                    ephPubBytes,
-                                    nonceBytes,
-                                    userId,
-                                    targetDeviceId
-                                )
-                            } else null
+                            if (resolvedTargetDeviceId > 0L && resolvedTargetDeviceId != currentDeviceId) {
+                                val ephPubBytes = Base64.getDecoder().decode(challenge.ephPub)
+                                val nonceBytes = Base64.getDecoder().decode(challenge.nonce)
 
-                            if (proofBytes != null && proofBytes.size == 32) {
-                                val proofB64 = Base64.getEncoder().encodeToString(proofBytes)
-                                val rebindResp = apiService.deviceRebind(
-                                    niel.kro.penik.data.network.api.DeviceRebindRequest(
-                                        deviceId = targetDeviceId,
-                                        nonce = challenge.nonce,
-                                        proof = proofB64
+                                val proofBytes = if (niel.kro.penik.data.crypto.RustCryptoCore.isAvailable()) {
+                                    niel.kro.penik.data.crypto.RustCryptoCore.computeDeviceRebindProof(
+                                        privKey,
+                                        ephPubBytes,
+                                        nonceBytes,
+                                        userId,
+                                        resolvedTargetDeviceId
                                     )
-                                )
-                                if (rebindResp.isSuccessful && rebindResp.body()?.success == true) {
-                                    val token = tokenStorage.getToken() ?: ""
-                                    val remappedDeviceId = rebindResp.body()?.deviceId ?: targetDeviceId
-                                    tokenStorage.saveAuth(token, userId, remappedDeviceId)
-                                    android.util.Log.i("AuthRepository", "Device successfully re-bound to $remappedDeviceId")
+                                } else null
+
+                                if (proofBytes != null && proofBytes.size == 32) {
+                                    val proofB64 = Base64.getEncoder().encodeToString(proofBytes)
+                                    val rebindResp = apiService.deviceRebind(
+                                        niel.kro.penik.data.network.api.DeviceRebindRequest(
+                                            deviceId = resolvedTargetDeviceId,
+                                            nonce = challenge.nonce,
+                                            proof = proofB64
+                                        )
+                                    )
+                                    if (rebindResp.isSuccessful && rebindResp.body()?.success == true) {
+                                        val token = tokenStorage.getToken() ?: ""
+                                        val remappedDeviceId = rebindResp.body()?.deviceId ?: resolvedTargetDeviceId
+                                        tokenStorage.saveAuth(token, userId, remappedDeviceId)
+                                        android.util.Log.i("AuthRepository", "Device successfully re-bound to $remappedDeviceId")
+                                    } else {
+                                        android.util.Log.w("AuthRepository", "Device rebind rejected by server: ${rebindResp.code()} ${rebindResp.errorBody()?.string()}")
+                                    }
                                 } else {
-                                    android.util.Log.w("AuthRepository", "Device rebind rejected by server: ${rebindResp.code()} ${rebindResp.errorBody()?.string()}")
+                                    android.util.Log.w("AuthRepository", "Failed to compute device rebind proof")
                                 }
-                            } else {
-                                android.util.Log.w("AuthRepository", "Failed to compute device rebind proof")
                             }
                         } else {
                             android.util.Log.w("AuthRepository", "Device challenge request failed: ${challengeResp.code()} ${challengeResp.errorBody()?.string()}")

@@ -39,11 +39,13 @@ data class AuthResponseBody(
 
 @Serializable
 data class DeviceChallengeRequest(
-    @SerialName("target_device_id") val targetDeviceId: Long
+    @SerialName("target_device_id") val targetDeviceId: Long = 0L,
+    @SerialName("ik_pub") val ikPub: String? = null
 )
 
 @Serializable
 data class DeviceChallengeResponse(
+    @SerialName("target_device_id") val targetDeviceId: Long = 0L,
     val nonce: String,
     @SerialName("eph_pub") val ephPub: String,
     @SerialName("expires_at") val expiresAt: Long
