@@ -1629,9 +1629,7 @@ export async function decryptMessagePayload(payload) {
     ? Number(payload.recipient_device_id ?? 0)
     : pinDeviceId;
   if (!textBytes && fallbackUserId) {
-    try {
-      const bundle = await getCachedKeyBundle(fallbackUserId);
-      const devices = bundle?.devices || [];
+    const tryBundleDevices = async (devices) => {
       const ordered = fallbackDeviceId
         ? [...devices].sort((a, b) =>
             (Number(b.device_id) === fallbackDeviceId ? 1 : 0) -
@@ -1644,22 +1642,33 @@ export async function decryptMessagePayload(payload) {
           continue;
         }
         const candidateIK = toUint8Array(dev.identity_key);
-        textBytes = await tryDecryptWithIK(candidateIK);
-        if (textBytes) {
+        const res = await tryDecryptWithIK(candidateIK);
+        if (res) {
           fromIdentityKey = candidateIK;
-          break;
+          return res;
         }
       }
-      if (!textBytes && isOwnOutgoing && fallbackDeviceId) {
+      if (isOwnOutgoing && fallbackDeviceId) {
         for (const dev of devices) {
           if (!dev.identity_key || Number(dev.device_id) === fallbackDeviceId) continue;
           const candidateIK = toUint8Array(dev.identity_key);
-          textBytes = await tryDecryptWithIK(candidateIK);
-          if (textBytes) {
+          const res = await tryDecryptWithIK(candidateIK);
+          if (res) {
             fromIdentityKey = candidateIK;
-            break;
+            return res;
           }
         }
+      }
+      return null;
+    };
+    try {
+      const bundle = await getCachedKeyBundle(fallbackUserId);
+      textBytes = await tryBundleDevices(bundle?.devices || []);
+      if (!textBytes) {
+        // The peer may have reinstalled after our bundle snapshot: the cached
+        // keys are dead, but the fresh bundle has the live one. Retry once.
+        const fresh = await getCachedKeyBundle(fallbackUserId, true);
+        textBytes = await tryBundleDevices(fresh?.devices || []);
       }
     } catch (e) {
       console.warn("Key bundle fallback decryption attempt failed:", e);

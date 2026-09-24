@@ -229,6 +229,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
             }
             is WebSocketEvent.UserDevicesChanged -> {
                 messageRepository.invalidateKeyBundle(event.userId)
+                messageRepository.clearHopelessFor(event.userId)
             }
             is WebSocketEvent.MsgRetryReq -> {
                 messageRepository.handleMsgRetryReq(event.msgId, event.requesterDeviceId)

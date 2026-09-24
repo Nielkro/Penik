@@ -41,6 +41,19 @@ class MessageRepository @Inject constructor(
 ) {
     private val bundleCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, List<niel.kro.penik.data.network.api.DeviceBundle>>>()
 
+    /**
+     * Server message ids that failed decrypt even with freshly fetched key
+     * bundles. Retrying them on every sync is pointless (the private key is
+     * gone, e.g. reinstall without backup) and spams 100+ AEAD failures per
+     * message into logcat. Cleared when the peer's devices change or when a
+     * message finally decrypts.
+     */
+    private val hopelessDecrypt = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    fun clearHopelessFor(userId: Long) {
+        hopelessDecrypt.removeIf { it.startsWith("dm:$userId:") }
+    }
+
     suspend fun getKeyBundleCached(userId: Long, isSelf: Boolean = false, forceRefresh: Boolean = false): List<niel.kro.penik.data.network.api.DeviceBundle> {
         val now = System.currentTimeMillis()
         if (!forceRefresh) {
@@ -846,7 +859,14 @@ class MessageRepository @Inject constructor(
                             val text = if (msg.plaintext != null) {
                                 msg.plaintext
                             } else if (msg.ciphertext != null && msg.encryptionSalt != null && msg.encryptionNonce != null) {
-                                try {
+                                // Already proven undecryptable with fresh bundles: don't burn
+                                // 100+ AEAD attempts on every sync; retry only after the
+                                // peer's devices change (which clears this marker).
+                                val hopelessKey = "dm:${msg.chatUserId}:${msg.msgId}"
+                                if (hopelessDecrypt.contains(hopelessKey)) {
+                                    isDecryptFailed = true
+                                    existing?.text?.takeIf { it.isNotBlank() } ?: "[Сообщение не расшифровано]"
+                                } else try {
                                     val ciphertextBytes = java.util.Base64.getDecoder().decode(msg.ciphertext)
                                     val saltBytes = java.util.Base64.getDecoder().decode(msg.encryptionSalt)
                                     val nonceBytes = java.util.Base64.getDecoder().decode(msg.encryptionNonce)
@@ -867,8 +887,8 @@ class MessageRepository @Inject constructor(
                                         else -> msg.senderDeviceId
                                     }
 
-                                    suspend fun getCachedBundle(uid: Long): niel.kro.penik.data.network.api.KeyBundleResponse? {
-                                        if (bundleCache.containsKey(uid)) return bundleCache[uid]
+                                    suspend fun getCachedBundle(uid: Long, force: Boolean = false): niel.kro.penik.data.network.api.KeyBundleResponse? {
+                                        if (!force && bundleCache.containsKey(uid)) return bundleCache[uid]
                                         val b = runCatching {
                                             val resp = if (uid == myId) apiService.getKeyBundleSelf(uid) else apiService.getKeyBundle(uid)
                                             if (resp.isSuccessful) resp.body() else null
@@ -877,49 +897,62 @@ class MessageRepository @Inject constructor(
                                         return b
                                     }
 
-                                    val primaryBundle = getCachedBundle(primaryTargetUserId)
-                                    val chatUserBundle = if (msg.chatUserId != primaryTargetUserId) getCachedBundle(msg.chatUserId) else null
-                                    val myBundle = if (myId != primaryTargetUserId && myId != msg.chatUserId) getCachedBundle(myId) else null
-
-                                    val candidateDevices = buildList {
-                                        if (primaryTargetDeviceId != null && primaryTargetDeviceId > 0) {
-                                            primaryBundle?.devices?.find { it.deviceId == primaryTargetDeviceId }?.let { add(it) }
-                                        }
-                                        primaryBundle?.devices?.forEach { d ->
-                                            if (none { it.deviceId == d.deviceId }) add(d)
-                                        }
-                                        chatUserBundle?.devices?.forEach { d ->
-                                            if (none { it.deviceId == d.deviceId }) add(d)
-                                        }
-                                        myBundle?.devices?.forEach { d ->
-                                            if (none { it.deviceId == d.deviceId }) add(d)
-                                        }
-                                    }
-
-                                    val decryptTs = msg.editedAt ?: msg.createdAt
-                                    var decrypted: String? = null
-                                    for (device in candidateDevices) {
-                                        val ik = runCatching { java.util.Base64.getDecoder().decode(device.identityKey) }.getOrNull() ?: continue
-                                        val res = runCatching {
-                                            decryptMessagePayload(
-                                                myDeviceId = tokenStorage.getDeviceId(),
-                                                fromIdentityKey = ik,
-                                                ciphertext = ciphertextBytes,
-                                                salt = saltBytes,
-                                                nonce = nonceBytes,
-                                                senderUserId = msg.senderId,
-                                                recipientUserId = if (isOwnSender) msg.chatUserId else myId,
-                                                clientMsgId = msg.clientMsgId ?: "",
-                                                timestamp = decryptTs
-                                            )
-                                        }.getOrNull()
-                                        if (res != null) {
-                                            decrypted = res
-                                            break
+                                    suspend fun collectCandidates(force: Boolean): List<niel.kro.penik.data.network.api.DeviceBundle> {
+                                        val primaryBundle = getCachedBundle(primaryTargetUserId, force)
+                                        val chatUserBundle = if (msg.chatUserId != primaryTargetUserId) getCachedBundle(msg.chatUserId, force) else null
+                                        val myBundle = if (myId != primaryTargetUserId && myId != msg.chatUserId) getCachedBundle(myId, force) else null
+                                        return buildList {
+                                            if (primaryTargetDeviceId != null && primaryTargetDeviceId > 0) {
+                                                primaryBundle?.devices?.find { it.deviceId == primaryTargetDeviceId }?.let { add(it) }
+                                            }
+                                            primaryBundle?.devices?.forEach { d ->
+                                                if (none { it.deviceId == d.deviceId }) add(d)
+                                            }
+                                            chatUserBundle?.devices?.forEach { d ->
+                                                if (none { it.deviceId == d.deviceId }) add(d)
+                                            }
+                                            myBundle?.devices?.forEach { d ->
+                                                if (none { it.deviceId == d.deviceId }) add(d)
+                                            }
                                         }
                                     }
 
-                                    decrypted ?: throw Exception("Could not decrypt with any device key (tried ${candidateDevices.size} devices across users)")
+                                    suspend fun tryCandidates(devices: List<niel.kro.penik.data.network.api.DeviceBundle>): String? {
+                                        val decryptTs = msg.editedAt ?: msg.createdAt
+                                        for (device in devices) {
+                                            val ik = runCatching { java.util.Base64.getDecoder().decode(device.identityKey) }.getOrNull() ?: continue
+                                            val res = runCatching {
+                                                decryptMessagePayload(
+                                                    myDeviceId = tokenStorage.getDeviceId(),
+                                                    fromIdentityKey = ik,
+                                                    ciphertext = ciphertextBytes,
+                                                    salt = saltBytes,
+                                                    nonce = nonceBytes,
+                                                    senderUserId = msg.senderId,
+                                                    recipientUserId = if (isOwnSender) msg.chatUserId else myId,
+                                                    clientMsgId = msg.clientMsgId ?: "",
+                                                    timestamp = decryptTs
+                                                )
+                                            }.getOrNull()
+                                            if (res != null) return res
+                                        }
+                                        return null
+                                    }
+
+                                    // The peer may have reinstalled since our bundle snapshot:
+                                    // retry once with force-refreshed bundles before giving up.
+                                    var decrypted = tryCandidates(collectCandidates(false))
+                                    if (decrypted == null) {
+                                        decrypted = tryCandidates(collectCandidates(true))
+                                    }
+
+                                    if (decrypted != null) {
+                                        hopelessDecrypt.remove(hopelessKey)
+                                    } else {
+                                        hopelessDecrypt.add(hopelessKey)
+                                        throw Exception("Could not decrypt with any device key (peer may have reinstalled without backup)")
+                                    }
+                                    decrypted
                                 } catch (e: Exception) {
                                     Log.e("PenikMsg", "FAILED TO DECRYPT HISTORY MSG msgId=${msg.msgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, recipientDeviceId=${msg.recipientDeviceId}, clientMsgId=${msg.clientMsgId}", e)
                                     isDecryptFailed = true
@@ -1155,35 +1188,40 @@ class MessageRepository @Inject constructor(
     private suspend fun tryFallbackDecrypt(msg: WebSocketEvent.MsgRecvEncrypted, myId: Long): String? {
         val isOwnOutgoing = msg.fromUserId == myId
         val targetUserId = if (isOwnOutgoing) msg.chatUserId else msg.fromUserId
-        val devices = getKeyBundleCached(targetUserId, isSelf = targetUserId == myId)
-        if (devices.isEmpty()) return null
 
-        val myDeviceId = tokenStorage.getDeviceId()
-        val recipientUserId = if (isOwnOutgoing) msg.chatUserId else myId
+        // The peer may have reinstalled after our bundle snapshot: retry once
+        // with a force-refreshed bundle before declaring the message dead.
+        for (attempt in 0..1) {
+            val devices = getKeyBundleCached(targetUserId, isSelf = targetUserId == myId, forceRefresh = attempt == 1)
+            if (devices.isEmpty()) continue
 
-        val targetDevices = if (msg.fromDeviceId > 0) {
-            devices.filter { it.deviceId == msg.fromDeviceId } + devices.filter { it.deviceId != msg.fromDeviceId }
-        } else {
-            devices
-        }
+            val myDeviceId = tokenStorage.getDeviceId()
+            val recipientUserId = if (isOwnOutgoing) msg.chatUserId else myId
 
-        for (device in targetDevices) {
-            val ik = runCatching { android.util.Base64.decode(device.identityKey, android.util.Base64.DEFAULT) }.getOrNull() ?: continue
-            identityPins.verify(targetUserId, device.deviceId, ik)
-            val text = runCatching {
-                decryptMessagePayload(
-                    myDeviceId = myDeviceId,
-                    fromIdentityKey = ik,
-                    ciphertext = msg.ciphertext,
-                    salt = msg.salt,
-                    nonce = msg.nonce,
-                    senderUserId = msg.fromUserId,
-                    recipientUserId = recipientUserId,
-                    clientMsgId = msg.clientMsgId ?: "",
-                    timestamp = msg.ts
-                )
-            }.getOrNull() ?: continue
-            return text
+            val targetDevices = if (msg.fromDeviceId > 0) {
+                devices.filter { it.deviceId == msg.fromDeviceId } + devices.filter { it.deviceId != msg.fromDeviceId }
+            } else {
+                devices
+            }
+
+            for (device in targetDevices) {
+                val ik = runCatching { android.util.Base64.decode(device.identityKey, android.util.Base64.DEFAULT) }.getOrNull() ?: continue
+                identityPins.verify(targetUserId, device.deviceId, ik)
+                val text = runCatching {
+                    decryptMessagePayload(
+                        myDeviceId = myDeviceId,
+                        fromIdentityKey = ik,
+                        ciphertext = msg.ciphertext,
+                        salt = msg.salt,
+                        nonce = msg.nonce,
+                        senderUserId = msg.fromUserId,
+                        recipientUserId = recipientUserId,
+                        clientMsgId = msg.clientMsgId ?: "",
+                        timestamp = msg.ts
+                    )
+                }.getOrNull() ?: continue
+                return text
+            }
         }
         return null
     }
