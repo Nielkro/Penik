@@ -53,12 +53,12 @@ class GroupsViewModel @Inject constructor(
         }
     }
 
-    fun createGroup(name: String, onCreated: (Long, String) -> Unit) {
+    fun createGroup(name: String, isE2EE: Boolean = false, onCreated: (Long, String) -> Unit) {
         if (name.isBlank()) return
         viewModelScope.launch {
             _busy.value = true
             try {
-                val group = groupRepository.createGroup(name.trim(), emptyList())
+                val group = groupRepository.createGroup(name.trim(), emptyList(), isE2EE)
                 if (group != null) onCreated(group.id, group.name)
                 else _error.value = "Не удалось создать группу"
             } catch (e: Exception) {

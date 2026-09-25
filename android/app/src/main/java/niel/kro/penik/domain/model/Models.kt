@@ -14,7 +14,8 @@ data class Chat(
     val avatarUrl: String? = null,
     val lastMessage: String? = null,
     val lastMessageTimestamp: Long? = null,
-    val unreadCount: Int = 0
+    val unreadCount: Int = 0,
+    val isE2EE: Boolean = false
 )
 
 data class Message(
@@ -26,7 +27,8 @@ data class Message(
     val timestamp: Long,
     val isSentByMe: Boolean,
     val delivered: Boolean = false,
-    val deliveredAt: Long? = null
+    val deliveredAt: Long? = null,
+    val isE2EE: Boolean = false
 )
 
 data class AuthResponse(
@@ -54,5 +56,6 @@ data class HistoryMessage(
     val senderId: Long,
     val plaintext: String,
     val createdAt: Long,
-    val delivered: Int
+    val delivered: Int,
+    val isE2EE: Boolean = false
 )

@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -58,6 +59,10 @@ class ChatRoomViewModel @Inject constructor(
     val isOnline: StateFlow<Boolean> = webSocketManager.isOnline
 
     val isSelfChat: Boolean = chatUserId == tokenStorage.getUserId()
+
+    val isE2EE: StateFlow<Boolean> = chatRepository.observeChat(chatUserId)
+        .map { it?.isE2EE ?: false }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val callState = callManager.state
 
@@ -301,7 +306,7 @@ class ChatRoomViewModel @Inject constructor(
             val useChunked = messageRepository.isChunkedEncryptionSupported(chatUserId)
 
             // 3. Upload and send with progress
-            attachmentManager.uploadAndEncryptAttachment(context, mediaInfo, clientMsgId, caption, useChunked = useChunked)
+            attachmentManager.uploadAndEncryptAttachment(context, mediaInfo, clientMsgId, caption, useChunked = useChunked, isE2EE = isE2EE.value)
                 .onSuccess { finalJsonPayload ->
                     messageRepository.sendMessage(chatUserId, finalJsonPayload, null, existingClientMsgId = clientMsgId)
                     chatRepository.updateLastMessage(chatUserId, finalJsonPayload, System.currentTimeMillis(), name = chatName)

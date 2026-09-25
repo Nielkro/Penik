@@ -54,6 +54,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -479,6 +480,7 @@ fun ChatListItem(
     unreadCount: Int,
     isGroup: Boolean = false,
     avatarKey: Any? = null,
+    isE2EE: Boolean = false,
     onClick: () -> Unit,
     onAvatarClick: ((String) -> Unit)? = null
 ) {
@@ -527,14 +529,22 @@ fun ChatListItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = name,
-                    color = if (hasCustomAvatar) LocalAppColors.current.textPrimary else initialsColor(userId, name),
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 16.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isE2EE) {
+                        Text(
+                            text = "🔒 ",
+                            fontSize = 14.sp
+                        )
+                    }
+                    Text(
+                        text = name,
+                        color = if (hasCustomAvatar) LocalAppColors.current.textPrimary else initialsColor(userId, name),
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 if (lastMessage != null) {
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
@@ -593,6 +603,7 @@ fun SearchUserItem(
     lastMessage: String? = null,
     timestamp: Long? = null,
     avatarKey: Any? = null,
+    onSecretChatClick: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     var hasCustomAvatar by remember(userId, avatarKey) { mutableStateOf(false) }
@@ -650,6 +661,21 @@ fun SearchUserItem(
                 color = LocalAppColors.current.textMuted,
                 fontSize = 12.sp
             )
+        }
+
+        if (onSecretChatClick != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(
+                onClick = onSecretChatClick,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = "Секретный чат",
+                    tint = LocalAppColors.current.accent,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }
@@ -1091,8 +1117,12 @@ private suspend fun downloadAndDecryptAttachment(context: Context, attachment: F
             }
             inputStream.use { it.readBytes() }
         }
-        val key = Base64.getDecoder().decode(attachment.key)
-        val plaintext = E2EECrypto().decryptFileChaCha20(encrypted, key)
+        val plaintext = if (attachment.key.isNotBlank()) {
+            val key = Base64.getDecoder().decode(attachment.key)
+            E2EECrypto().decryptFileChaCha20(encrypted, key)
+        } else {
+            encrypted
+        }
         val temporary = File(cacheDir, "${output.name}.tmp")
         temporary.outputStream().use { it.write(plaintext) }
         if (!temporary.renameTo(output)) {

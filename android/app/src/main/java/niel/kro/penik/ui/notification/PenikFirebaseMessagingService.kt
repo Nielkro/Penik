@@ -154,7 +154,8 @@ class PenikFirebaseMessagingService : FirebaseMessagingService() {
                 ciphertext = android.util.Base64.decode(m.ciphertext, GROUP_B64_FLAGS),
                 salt = android.util.Base64.decode(m.salt, GROUP_B64_FLAGS),
                 nonce = android.util.Base64.decode(m.nonce, GROUP_B64_FLAGS),
-                createdAt = m.createdAt
+                createdAt = m.createdAt,
+                plaintext = m.plaintext
             )?.text
         }.onFailure { Log.e("PenikFCM", "resolve group push failed", it) }.getOrNull()
     }

@@ -38,8 +38,9 @@ CREATE TABLE IF NOT EXISTS chats (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user1_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   user2_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  is_e2ee INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
-  UNIQUE(user1_id, user2_id)
+  UNIQUE(user1_id, user2_id, is_e2ee)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -131,6 +132,7 @@ CREATE TABLE IF NOT EXISTS groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    is_e2ee INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     membership_version INTEGER NOT NULL DEFAULT 1,
@@ -187,14 +189,13 @@ CREATE TABLE IF NOT EXISTS group_messages (
     reply_to_msg_id TEXT,
     sender_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     sender_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-    key_version INTEGER NOT NULL,
-    ciphertext BLOB NOT NULL,
-    encryption_salt BLOB NOT NULL,
-    encryption_nonce BLOB NOT NULL,
+    key_version INTEGER NOT NULL DEFAULT 0,
+    plaintext TEXT DEFAULT NULL,
+    ciphertext BLOB DEFAULT NULL,
+    encryption_salt BLOB DEFAULT NULL,
+    encryption_nonce BLOB DEFAULT NULL,
     created_at INTEGER NOT NULL,
     edited_at INTEGER DEFAULT NULL,
-    FOREIGN KEY(group_id, key_version)
-        REFERENCES group_key_versions(group_id, key_version),
     UNIQUE(group_id, sender_user_id, message_id)
 );
 

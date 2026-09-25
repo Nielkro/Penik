@@ -155,6 +155,8 @@ type MsgSendEncrypted struct {
 	MsgID        string       `msgpack:"msg_id"`
 	ReplyToMsgID *string      `msgpack:"reply_to_msg_id"`
 	CreatedAt    int64        `msgpack:"created_at,omitempty"`
+	Plaintext    string       `msgpack:"plaintext,omitempty"`
+	IsE2EE       bool         `msgpack:"is_e2ee,omitempty"`
 	Devices      []E2EPayload `msgpack:"devices"`
 }
 
@@ -162,14 +164,16 @@ type MsgRecvEncrypted struct {
 	FromUserID        int64   `msgpack:"from_user_id"`
 	FromDeviceID      int64   `msgpack:"from_device_id"`
 	RecipientDeviceID int64   `msgpack:"recipient_device_id"`
-	FromIdentityKey   []byte  `msgpack:"from_identity_key"`
+	FromIdentityKey   []byte  `msgpack:"from_identity_key,omitempty"`
 	ChatUserID        int64   `msgpack:"chat_user_id"`
 	MsgID             int64   `msgpack:"msg_id"`
 	ClientMsgID       string  `msgpack:"client_msg_id"`
 	ReplyToMsgID      *string `msgpack:"reply_to_msg_id"`
-	Ciphertext        []byte  `msgpack:"ciphertext"`
-	Salt              []byte  `msgpack:"salt"`
-	Nonce             []byte  `msgpack:"nonce"`
+	Plaintext         string  `msgpack:"plaintext,omitempty"`
+	IsE2EE            bool    `msgpack:"is_e2ee,omitempty"`
+	Ciphertext        []byte  `msgpack:"ciphertext,omitempty"`
+	Salt              []byte  `msgpack:"salt,omitempty"`
+	Nonce             []byte  `msgpack:"nonce,omitempty"`
 	TS                int64   `msgpack:"ts"`
 	V                 int     `msgpack:"v,omitempty"`
 }
@@ -178,6 +182,8 @@ type MsgEditEncrypted struct {
 	ToUserID   int64        `msgpack:"to_user_id"`
 	MsgID      string       `msgpack:"msg_id"` // client_msg_id
 	EditedAt   int64        `msgpack:"edited_at,omitempty"`
+	Plaintext  string       `msgpack:"plaintext,omitempty"`
+	IsE2EE     bool         `msgpack:"is_e2ee,omitempty"`
 	Devices    []E2EPayload `msgpack:"devices"`
 }
 
@@ -185,13 +191,15 @@ type MsgEditNotify struct {
 	FromUserID        int64  `msgpack:"from_user_id"`
 	FromDeviceID      int64  `msgpack:"from_device_id"`
 	RecipientDeviceID int64  `msgpack:"recipient_device_id"`
-	FromIdentityKey   []byte `msgpack:"from_identity_key"`
+	FromIdentityKey   []byte `msgpack:"from_identity_key,omitempty"`
 	ChatUserID        int64  `msgpack:"chat_user_id"`
 	MsgID             int64  `msgpack:"msg_id"`
 	ClientMsgID       string `msgpack:"client_msg_id"`
-	Ciphertext        []byte `msgpack:"ciphertext"`
-	Salt              []byte `msgpack:"salt"`
-	Nonce             []byte `msgpack:"nonce"`
+	Plaintext         string `msgpack:"plaintext,omitempty"`
+	IsE2EE            bool   `msgpack:"is_e2ee,omitempty"`
+	Ciphertext        []byte `msgpack:"ciphertext,omitempty"`
+	Salt              []byte `msgpack:"salt,omitempty"`
+	Nonce             []byte `msgpack:"nonce,omitempty"`
 	EditedAt          int64  `msgpack:"edited_at"`
 }
 
@@ -255,10 +263,12 @@ type GroupMessageSend struct {
 	GroupID      int64   `msgpack:"group_id"`
 	MessageID    string  `msgpack:"message_id"`
 	ReplyToMsgID *string `msgpack:"reply_to_msg_id"`
-	KeyVersion   int64   `msgpack:"key_version"`
-	Ciphertext   []byte  `msgpack:"ciphertext"`
-	Salt         []byte  `msgpack:"salt"`
-	Nonce        []byte  `msgpack:"nonce"`
+	KeyVersion   int64   `msgpack:"key_version,omitempty"`
+	Plaintext    string  `msgpack:"plaintext,omitempty"`
+	IsE2EE       bool    `msgpack:"is_e2ee,omitempty"`
+	Ciphertext   []byte  `msgpack:"ciphertext,omitempty"`
+	Salt         []byte  `msgpack:"salt,omitempty"`
+	Nonce        []byte  `msgpack:"nonce,omitempty"`
 	CreatedAt    int64   `msgpack:"created_at"`
 }
 
@@ -269,10 +279,12 @@ type GroupMessageRecv struct {
 	ReplyToMsgID   *string `msgpack:"reply_to_msg_id"`
 	SenderUserID   int64   `msgpack:"sender_user_id"`
 	SenderDeviceID int64   `msgpack:"sender_device_id"`
-	KeyVersion     int64   `msgpack:"key_version"`
-	Ciphertext     []byte  `msgpack:"ciphertext"`
-	Salt           []byte  `msgpack:"salt"`
-	Nonce          []byte  `msgpack:"nonce"`
+	KeyVersion     int64   `msgpack:"key_version,omitempty"`
+	Plaintext      string  `msgpack:"plaintext,omitempty"`
+	IsE2EE         bool    `msgpack:"is_e2ee,omitempty"`
+	Ciphertext     []byte  `msgpack:"ciphertext,omitempty"`
+	Salt           []byte  `msgpack:"salt,omitempty"`
+	Nonce          []byte  `msgpack:"nonce,omitempty"`
 	CreatedAt      int64   `msgpack:"created_at"`
 }
 
@@ -295,10 +307,12 @@ type GroupMessageRead struct {
 type GroupMessageEdit struct {
 	GroupID    int64  `msgpack:"group_id"`
 	MessageID  string `msgpack:"message_id"`
-	KeyVersion int64  `msgpack:"key_version"`
-	Ciphertext []byte `msgpack:"ciphertext"`
-	Salt       []byte `msgpack:"salt"`
-	Nonce      []byte `msgpack:"nonce"`
+	KeyVersion int64  `msgpack:"key_version,omitempty"`
+	Plaintext  string `msgpack:"plaintext,omitempty"`
+	IsE2EE     bool   `msgpack:"is_e2ee,omitempty"`
+	Ciphertext []byte `msgpack:"ciphertext,omitempty"`
+	Salt       []byte `msgpack:"salt,omitempty"`
+	Nonce      []byte `msgpack:"nonce,omitempty"`
 	EditedAt   int64  `msgpack:"edited_at,omitempty"`
 }
 
@@ -307,10 +321,12 @@ type GroupMessageEditNotify struct {
 	MessageID      string `msgpack:"message_id"`
 	SenderUserID   int64  `msgpack:"sender_user_id"`
 	SenderDeviceID int64  `msgpack:"sender_device_id"`
-	KeyVersion     int64  `msgpack:"key_version"`
-	Ciphertext     []byte `msgpack:"ciphertext"`
-	Salt           []byte `msgpack:"salt"`
-	Nonce          []byte `msgpack:"nonce"`
+	KeyVersion     int64  `msgpack:"key_version,omitempty"`
+	Plaintext      string `msgpack:"plaintext,omitempty"`
+	IsE2EE         bool   `msgpack:"is_e2ee,omitempty"`
+	Ciphertext     []byte `msgpack:"ciphertext,omitempty"`
+	Salt           []byte `msgpack:"salt,omitempty"`
+	Nonce          []byte `msgpack:"nonce,omitempty"`
 	EditedAt       int64  `msgpack:"edited_at"`
 }
 

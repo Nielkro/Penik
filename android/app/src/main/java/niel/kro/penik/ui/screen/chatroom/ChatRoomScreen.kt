@@ -369,6 +369,7 @@ fun ChatRoomScreen(
     val isOnline by viewModel.isOnline.collectAsState()
     val isUnauthorized = connectionState == niel.kro.penik.data.network.websocket.ConnectionState.UNAUTHORIZED
     val isSelfChat = viewModel.isSelfChat
+    val isE2EE by viewModel.isE2EE.collectAsState()
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
     var showProfileDialog by remember { mutableStateOf(false) }
     var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
@@ -1120,7 +1121,7 @@ fun ChatRoomScreen(
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f, fill = false)
                                 )
-                                if (!isSelfChat) {
+                                if (!isSelfChat && isE2EE) {
                                     Icon(
                                         imageVector = Icons.Default.Lock,
                                         contentDescription = "Код безопасности E2EE",
@@ -1220,14 +1221,16 @@ fun ChatRoomScreen(
                                     showProfileDialog = true
                                 }
                             )
-                            DropdownMenuItem(
-                                text = { Text("Код безопасности E2EE", color = LocalAppColors.current.textPrimary) },
-                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = LocalAppColors.current.success) },
-                                onClick = {
-                                    showOverflowMenu = false
-                                    viewModel.onSafetyClick()
-                                }
-                            )
+                            if (isE2EE) {
+                                DropdownMenuItem(
+                                    text = { Text("Код безопасности E2EE", color = LocalAppColors.current.textPrimary) },
+                                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = LocalAppColors.current.success) },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        viewModel.onSafetyClick()
+                                    }
+                                )
+                            }
                         }
                         DropdownMenuItem(
                             text = { Text("Удалить чат", color = Color(0xFFEF5350)) },

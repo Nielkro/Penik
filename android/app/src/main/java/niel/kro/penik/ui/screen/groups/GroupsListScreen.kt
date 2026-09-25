@@ -19,10 +19,15 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -60,6 +65,7 @@ fun GroupsListScreen(
     val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
     var newGroupName by remember { mutableStateOf("") }
+    var isE2EESelected by remember { mutableStateOf(false) }
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(error) {
@@ -174,36 +180,68 @@ fun GroupsListScreen(
 
     if (showCreateDialog) {
         AlertDialog(
-            onDismissRequest = { showCreateDialog = false; newGroupName = "" },
+            onDismissRequest = {
+                showCreateDialog = false
+                newGroupName = ""
+                isE2EESelected = false
+            },
             containerColor = LocalAppColors.current.panel,
             titleContentColor = LocalAppColors.current.textPrimary,
             title = { Text("Создать группу", fontWeight = FontWeight.SemiBold) },
             text = {
-                OutlinedTextField(
-                    value = newGroupName,
-                    onValueChange = { newGroupName = it },
-                    label = { Text("Название группы") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = LocalAppColors.current.inputBg,
-                        unfocusedContainerColor = LocalAppColors.current.inputBg,
-                        focusedBorderColor = LocalAppColors.current.accent,
-                        unfocusedBorderColor = LocalAppColors.current.border,
-                        focusedTextColor = LocalAppColors.current.textPrimary,
-                        unfocusedTextColor = LocalAppColors.current.textPrimary,
-                        focusedLabelColor = LocalAppColors.current.accent,
-                        unfocusedLabelColor = LocalAppColors.current.textMuted
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column {
+                    OutlinedTextField(
+                        value = newGroupName,
+                        onValueChange = { newGroupName = it },
+                        label = { Text("Название группы") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = LocalAppColors.current.inputBg,
+                            unfocusedContainerColor = LocalAppColors.current.inputBg,
+                            focusedBorderColor = LocalAppColors.current.accent,
+                            unfocusedBorderColor = LocalAppColors.current.border,
+                            focusedTextColor = LocalAppColors.current.textPrimary,
+                            unfocusedTextColor = LocalAppColors.current.textPrimary,
+                            focusedLabelColor = LocalAppColors.current.accent,
+                            unfocusedLabelColor = LocalAppColors.current.textMuted
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isE2EESelected = !isE2EESelected }
+                    ) {
+                        Checkbox(
+                            checked = isE2EESelected,
+                            onCheckedChange = { isE2EESelected = it },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = LocalAppColors.current.accent,
+                                uncheckedColor = LocalAppColors.current.border
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "🔒 Сквозное шифрование (E2EE)",
+                            color = LocalAppColors.current.textPrimary,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.createGroup(newGroupName) { id, name ->
-                            showCreateDialog = false
-                            newGroupName = ""
-                            onGroupClick(id, name)
+                        val nameToCreate = newGroupName.trim()
+                        if (nameToCreate.isNotBlank()) {
+                            viewModel.createGroup(nameToCreate, isE2EE = isE2EESelected) { id, name ->
+                                showCreateDialog = false
+                                newGroupName = ""
+                                isE2EESelected = false
+                                onGroupClick(id, name)
+                            }
                         }
                     },
                     enabled = newGroupName.isNotBlank() && !busy
@@ -212,7 +250,11 @@ fun GroupsListScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCreateDialog = false; newGroupName = "" }) {
+                TextButton(onClick = {
+                    showCreateDialog = false
+                    newGroupName = ""
+                    isE2EESelected = false
+                }) {
                     Text("Отмена", color = LocalAppColors.current.textMuted)
                 }
             }

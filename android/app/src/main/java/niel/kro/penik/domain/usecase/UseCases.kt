@@ -185,7 +185,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 val msgEntity = groupRepository.handleIncoming(
                     event.groupId, event.id, event.messageId, event.senderUserId, event.senderDeviceId,
                     event.keyVersion, event.ciphertext, event.salt, event.nonce, event.createdAt,
-                    event.replyToMsgId
+                    event.replyToMsgId, event.plaintext
                 )
                 if (msgEntity != null && !msgEntity.sentByMe) {
                     appNotificationManager.showGroupMessageNotification(

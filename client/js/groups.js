@@ -296,19 +296,21 @@ async function fetchDeviceSigningKey(groupId, deviceId, senderUserId = null) {
 
 /* ── Public API: group lifecycle ── */
 
-export async function createGroup(name, memberUserIds) {
-  const group = await apiCreateGroup({ name, member_user_ids: memberUserIds });
+export async function createGroup(name, memberUserIds, isE2EE = false) {
+  const group = await apiCreateGroup({ name, member_user_ids: memberUserIds, is_e2ee: isE2EE });
   await saveGroup(group);
 
-  // Generate the epoch-1 key and distribute envelopes to all active devices.
-  const groupKey = generateGroupKey();
-  await saveGroupKey(group.id, 1, groupKey);
+  if (isE2EE) {
+    // Generate the epoch-1 key and distribute envelopes to all active devices.
+    const groupKey = generateGroupKey();
+    await saveGroupKey(group.id, 1, groupKey);
 
-  // Only the owner is active at creation; invitees are pending until they accept.
-  const devices = await fetchDeviceKeys([myUserId()]);
-  if (devices.length) {
-    const envelopes = await wrapKeyForDevices(groupKey, devices, group.id, 1);
-    await uploadGroupEnvelopes(group.id, 1, envelopes);
+    // Only the owner is active at creation; invitees are pending until they accept.
+    const devices = await fetchDeviceKeys([myUserId()]);
+    if (devices.length) {
+      const envelopes = await wrapKeyForDevices(groupKey, devices, group.id, 1);
+      await uploadGroupEnvelopes(group.id, 1, envelopes);
+    }
   }
   await refreshMembers(group.id);
   return group;
@@ -554,6 +556,34 @@ export async function backfillCurrentKey(groupId) {
 
 export async function sendGroupMessage(groupId, text, replyToMsgId = null) {
   const group = await dbGetGroup(groupId);
+  const isE2EE = Boolean(group?.is_e2ee);
+
+  if (!isE2EE) {
+    const messageId = crypto.randomUUID();
+    const createdAt = getServerTimeSec();
+    const senderUserId = myUserId();
+
+    const localRecord = {
+      group_id: groupId, message_id: messageId, id: 0,
+      reply_to_msg_id: replyToMsgId,
+      sender_user_id: senderUserId, sender_device_id: myDeviceId(),
+      key_version: 0, plaintext: text, created_at: createdAt, delivered: 0,
+      is_e2ee: false,
+    };
+    await saveGroupMessage(localRecord);
+    emit({ type: 'message', groupId: Number(groupId) });
+    window.dispatchEvent(new CustomEvent("local-group-msg-sent", { detail: { groupId: Number(groupId), record: localRecord } }));
+
+    ws.send(OP.GROUP_MESSAGE_SEND, {
+      group_id: groupId, message_id: messageId,
+      reply_to_msg_id: replyToMsgId || undefined,
+      plaintext: text,
+      is_e2ee: false,
+      created_at: createdAt,
+    });
+    return messageId;
+  }
+
   let version = group ? Number(group.current_key_version) : await currentVersion(groupId);
   let groupKey;
   try {
@@ -633,6 +663,28 @@ export async function decryptIncoming(frame) {
   const existing = await getGroupMessage(groupId, messageId);
   const isEdited = frame.edited_at && (!existing || !existing.edited_at || (Number(frame.edited_at) * 1000 > existing.edited_at));
   if (existing && existing.id && !isEdited) return null;
+
+  if (frame.plaintext || (!frame.is_e2ee && frame.plaintext !== undefined)) {
+    const text = frame.plaintext;
+    const createdAt = Number(frame.created_at);
+    const editedAt = frame.edited_at ? Number(frame.edited_at) * 1000 : null;
+    const record = {
+      group_id: groupId,
+      message_id: messageId,
+      id: Number(frame.id || 0),
+      reply_to_msg_id: frame.reply_to_msg_id || null,
+      sender_user_id: senderUserId,
+      sender_device_id: senderDeviceId,
+      key_version: 0,
+      plaintext: text,
+      created_at: createdAt,
+      edited_at: editedAt,
+      delivered: 1,
+      is_e2ee: false
+    };
+    await saveGroupMessage(record);
+    return record;
+  }
 
   let groupKey;
   try {

@@ -413,12 +413,19 @@ class MessageRepository @Inject constructor(
         messageDao.insertMessage(entity)
     }
 
-    suspend fun sendMessage(toUserId: Long, text: String, replyToMsgId: String? = null, existingClientMsgId: String? = null): String {
+    suspend fun sendMessage(
+        toUserId: Long,
+        text: String,
+        replyToMsgId: String? = null,
+        existingClientMsgId: String? = null,
+        isE2EE: Boolean? = null
+    ): String {
         val clientMsgId = existingClientMsgId ?: UUID.randomUUID().toString()
         val myId = tokenStorage.getUserId()
         val isSelfChat = toUserId == myId
+        val chatIsE2EE = isE2EE ?: (chatRepository.getChat(toUserId)?.isE2EE ?: false)
 
-        Log.d("PenikMsg", "sendMessage: clientMsgId=$clientMsgId, toUserId=$toUserId, isSelfChat=$isSelfChat, textLength=${text.length}")
+        Log.d("PenikMsg", "sendMessage: clientMsgId=$clientMsgId, toUserId=$toUserId, isSelfChat=$isSelfChat, isE2EE=$chatIsE2EE, textLength=${text.length}")
         // Match web client reply logic: use parent's clientMsgId (UUID) or serverId
         val resolvedReplyToMsgId = if (!replyToMsgId.isNullOrBlank()) {
             val parentObj = messageDao.findMessageByLocalId(replyToMsgId) 
@@ -436,11 +443,18 @@ class MessageRepository @Inject constructor(
                 timestamp = System.currentTimeMillis(),
                 sentByMe = true,
                 delivered = false,
-                replyToMsgId = resolvedReplyToMsgId
+                replyToMsgId = resolvedReplyToMsgId,
+                isE2EE = chatIsE2EE
             )
             messageDao.insertMessage(entity)
         } else {
             messageDao.updateMessageText(clientMsgId, null, text, 0L)
+        }
+
+        if (!chatIsE2EE) {
+            val nowSec = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
+            webSocketManager.sendMessage(toUserId, text, clientMsgId, resolvedReplyToMsgId, createdAt = nowSec)
+            return clientMsgId
         }
 
         var recipientBundles: List<niel.kro.penik.data.network.api.DeviceBundle> = getKeyBundleCached(toUserId, isSelf = isSelfChat)
@@ -645,48 +659,55 @@ class MessageRepository @Inject constructor(
             }
         }
 
-        val pinResult = identityPins.verify(event.fromUserId, event.fromDeviceId, event.fromIdentityKey)
-        if (pinResult == niel.kro.penik.data.crypto.IdentityPinStore.Result.UPDATED) {
-            val sysEntity = niel.kro.penik.data.local.entity.MessageEntity(
-                localId = "sys-keychange-${System.currentTimeMillis()}-${event.fromUserId}",
-                chatUserId = event.chatUserId,
-                senderId = 0,
-                text = "⚠️ Код безопасности изменился!",
-                timestamp = toMs(event.ts) - 1,
-                sentByMe = false,
-                delivered = true
-            )
-            messageDao.insertMessage(sysEntity)
+        if (event.isE2EE && event.fromIdentityKey.isNotEmpty()) {
+            val pinResult = identityPins.verify(event.fromUserId, event.fromDeviceId, event.fromIdentityKey)
+            if (pinResult == niel.kro.penik.data.crypto.IdentityPinStore.Result.UPDATED) {
+                val sysEntity = niel.kro.penik.data.local.entity.MessageEntity(
+                    localId = "sys-keychange-${System.currentTimeMillis()}-${event.fromUserId}",
+                    chatUserId = event.chatUserId,
+                    senderId = 0,
+                    text = "⚠️ Код безопасности изменился!",
+                    timestamp = toMs(event.ts) - 1,
+                    sentByMe = false,
+                    delivered = true,
+                    isE2EE = true
+                )
+                messageDao.insertMessage(sysEntity)
+            }
         }
 
         var decryptSuccess = true
-        val decryptedText = try {
-            decryptMessagePayload(
-                myDeviceId = tokenStorage.getDeviceId(),
-                fromIdentityKey = event.fromIdentityKey,
-                ciphertext = event.ciphertext,
-                salt = event.salt,
-                nonce = event.nonce,
-                senderUserId = event.fromUserId,
-                recipientUserId = if (sentByMe) event.chatUserId else myId,
-                clientMsgId = event.clientMsgId ?: "",
-                timestamp = event.ts,
-                v = event.v
-            )
-        } catch (e: Exception) {
-            decryptSuccess = false
-            if (isSelfChat) {
-                return Pair("", false)
+        val decryptedText = if (!event.plaintext.isNullOrEmpty()) {
+            event.plaintext
+        } else {
+            try {
+                decryptMessagePayload(
+                    myDeviceId = tokenStorage.getDeviceId(),
+                    fromIdentityKey = event.fromIdentityKey,
+                    ciphertext = event.ciphertext,
+                    salt = event.salt,
+                    nonce = event.nonce,
+                    senderUserId = event.fromUserId,
+                    recipientUserId = if (sentByMe) event.chatUserId else myId,
+                    clientMsgId = event.clientMsgId ?: "",
+                    timestamp = event.ts,
+                    v = event.v
+                )
+            } catch (e: Exception) {
+                decryptSuccess = false
+                if (isSelfChat) {
+                    return Pair("", false)
+                }
+                if (event.msgId > 0 && event.fromDeviceId > 0) {
+                    webSocketManager.sendMsgRetryReq(event.msgId, event.fromDeviceId)
+                }
+                "[Ошибка расшифрования сообщения: ${e.message}]"
             }
-            if (event.msgId > 0 && event.fromDeviceId > 0) {
-                webSocketManager.sendMsgRetryReq(event.msgId, event.fromDeviceId)
-            }
-            "[Ошибка расшифрования сообщения: ${e.message}]"
         }
 
         if (existing != null) {
             if (decryptSuccess) {
-                val updated = existing.copy(text = decryptedText)
+                val updated = existing.copy(text = decryptedText, isE2EE = event.isE2EE)
                 messageDao.insertMessage(updated)
                 if (!sentByMe) {
                     webSocketManager.sendDelivered(event.msgId)
@@ -704,7 +725,8 @@ class MessageRepository @Inject constructor(
             timestamp = toMs(event.ts),
             sentByMe = sentByMe,
             delivered = true,
-            replyToMsgId = event.replyToMsgId
+            replyToMsgId = event.replyToMsgId,
+            isE2EE = event.isE2EE
         )
         messageDao.insertMessage(entity)
         if (!sentByMe && decryptSuccess) {
@@ -1037,7 +1059,8 @@ class MessageRepository @Inject constructor(
                                     deliveredAt = msg.deliveredAt,
                                     read = msg.read == 1,
                                     replyToMsgId = msg.replyToMsgId,
-                                    editedAt = editedAtMs
+                                    editedAt = editedAtMs,
+                                    isE2EE = msg.isE2EE
                                 ))
                             }
                         }
@@ -1382,21 +1405,25 @@ class MessageRepository @Inject constructor(
         val sentByMe = event.fromUserId == myId
         val myDeviceId = tokenStorage.getDeviceId()
 
-        val decryptedText = try {
-            decryptMessagePayload(
-                myDeviceId = myDeviceId,
-                fromIdentityKey = event.fromIdentityKey,
-                ciphertext = event.ciphertext,
-                salt = event.salt,
-                nonce = event.nonce,
-                senderUserId = event.fromUserId,
-                recipientUserId = if (sentByMe) event.chatUserId else myId,
-                clientMsgId = event.clientMsgId,
-                timestamp = event.editedAt
-            )
-        } catch (e: Exception) {
-            Log.e("PenikMsg", "Failed to decrypt MsgEditNotify", e)
-            return
+        val decryptedText = if (!event.plaintext.isNullOrEmpty()) {
+            event.plaintext
+        } else {
+            try {
+                decryptMessagePayload(
+                    myDeviceId = myDeviceId,
+                    fromIdentityKey = event.fromIdentityKey,
+                    ciphertext = event.ciphertext,
+                    salt = event.salt,
+                    nonce = event.nonce,
+                    senderUserId = event.fromUserId,
+                    recipientUserId = if (sentByMe) event.chatUserId else myId,
+                    clientMsgId = event.clientMsgId,
+                    timestamp = event.editedAt
+                )
+            } catch (e: Exception) {
+                Log.e("PenikMsg", "Failed to decrypt MsgEditNotify", e)
+                return
+            }
         }
 
         val editedAtMs = toMs(event.editedAt)
@@ -1440,6 +1467,17 @@ class MessageRepository @Inject constructor(
             editedAt = editedAtMs
         )
         updateChatLastMessage(chatUserId)
+
+        val isE2EE = existingMsg?.isE2EE ?: (chatRepository.getChat(chatUserId)?.isE2EE ?: false)
+        if (!isE2EE) {
+            webSocketManager.sendEdit(
+                toUserId = chatUserId,
+                clientMsgId = clientMsgId,
+                newText = finalPayload,
+                editedAt = nowSec
+            )
+            return
+        }
 
         // 2. Fetch peer + self devices & encrypt
         val myDeviceId = tokenStorage.getDeviceId()

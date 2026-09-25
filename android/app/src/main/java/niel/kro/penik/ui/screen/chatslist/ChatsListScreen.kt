@@ -193,13 +193,21 @@ fun ChatsListContent(
             )
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(searchResults, key = { it.id }) { user ->
+                    val peerName = user.name.ifBlank { user.nickname }
                     SearchUserItem(
                         name = user.name,
                         userId = user.id,
                         nickname = user.nickname,
                         avatarKey = userAvatarKeys[user.id],
+                        onSecretChatClick = {
+                            viewModel.startDirectChat(user.id, peerName, user.nickname, isE2EE = true) {
+                                onChatClick(user.id, peerName)
+                            }
+                        },
                         onClick = {
-                            onChatClick(user.id, user.name.ifBlank { user.nickname })
+                            viewModel.startDirectChat(user.id, peerName, user.nickname, isE2EE = false) {
+                                onChatClick(user.id, peerName)
+                            }
                         }
                     )
                     HorizontalDivider(color = LocalAppColors.current.border, modifier = Modifier.padding(horizontal = 16.dp))
@@ -224,6 +232,7 @@ fun ChatsListContent(
                             unreadCount = item.unreadCount,
                             isGroup = item is FeedItem.GroupItem,
                             avatarKey = if (item is FeedItem.GroupItem) groupAvatarKeys[item.id] else userAvatarKeys[item.id],
+                            isE2EE = item.isE2EE,
                             onClick = {
                                 if (item is FeedItem.GroupItem) {
                                     onGroupClick(item.id, item.name)
@@ -313,6 +322,7 @@ fun ChatsListContent(
                             unreadCount = item.unreadCount,
                             isGroup = item is FeedItem.GroupItem,
                             avatarKey = if (item is FeedItem.GroupItem) groupAvatarKeys[item.id] else userAvatarKeys[item.id],
+                            isE2EE = item.isE2EE,
                             onClick = {
                                 if (item is FeedItem.GroupItem) {
                                     onGroupClick(item.id, item.name)

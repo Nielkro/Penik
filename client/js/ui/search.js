@@ -6,9 +6,11 @@ import { avatar, el, showToast, spinner } from "./components.js";
 export function renderSearch(container) {
   container.innerHTML = "";
 
+  const isSecretMode = location.hash.includes("secret=1");
+
   const header = el("div", { class: "search-header" },
     el("button", { class: "icon-btn", onclick: () => navigate("#chats"), title: "Назад" }, "←"),
-    el("h2", { class: "search-title" }, "Поиск людей")
+    el("h2", { class: "search-title" }, isSecretMode ? "Новый секретный чат (E2EE)" : "Поиск людей")
   );
 
   const searchInput = el("input", {
@@ -69,11 +71,11 @@ export function renderSearch(container) {
 
       const startChat = async () => {
         try {
-          await saveContact({ ...user, user_id: user.user_id });
+          await saveContact({ ...user, user_id: user.user_id, is_e2ee: isSecretMode });
         } catch {
           // contact already saved or save failed, non-fatal
         }
-        navigate(`#chat/${user.user_id}`);
+        navigate(isSecretMode ? `#secret-chat/${user.user_id}` : `#chat/${user.user_id}`);
       };
 
       item.addEventListener("click", startChat);

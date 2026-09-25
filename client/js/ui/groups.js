@@ -36,8 +36,9 @@ export function buildGroupListItem(g, onChange) {
   const isPending = g.status === "pending";
   const previewSpan = el("span", { class: "chatlist-item-preview" }, isPending ? "Приглашение в группу" : "...");
 
+  const lockIcon = g.is_e2ee ? " 🔒" : "";
   const info = el("div", { class: "chatlist-item-info" },
-    el("span", { class: "chatlist-item-name" }, g.name),
+    el("span", { class: "chatlist-item-name" }, g.name + lockIcon),
     previewSpan,
   );
 
@@ -182,6 +183,11 @@ export async function renderGroupList(container) {
 
 export function showCreateGroupModal(onDone) {
   const nameInput = el("input", { type: "text", class: "chatlist-search", placeholder: "Название группы" });
+  const e2eeCheckbox = el("input", { type: "checkbox", id: "create-group-e2ee", style: "cursor:pointer;" });
+  const e2eeLabel = el("label", {
+    for: "create-group-e2ee",
+    style: "display:flex;align-items:center;gap:8px;font-size:13px;color:#bbb;margin-top:10px;cursor:pointer;user-select:none;"
+  }, e2eeCheckbox, el("span", {}, "🔒 Защищённая E2EE группа (сквозное шифрование)"));
   const status = el("div", { style: "min-height:18px;color:#ff5252;font-size:13px;margin-top:6px;" });
   const createBtn = el("button", { class: "btn-primary", style: "padding:8px 16px;font-size:14px;" }, "Создать");
   const cancelBtn = el("button", { class: "btn-secondary", style: "font-size:14px;" }, "Отмена");
@@ -189,7 +195,7 @@ export function showCreateGroupModal(onDone) {
   const overlay = el("div", { style: OVERLAY_STYLE },
     el("div", { style: BOX_STYLE },
       el("h3", { style: "font-size:18px;margin-bottom:12px;color:#fff;text-align:center;" }, "Новая группа"),
-      nameInput, status,
+      nameInput, e2eeLabel, status,
       el("div", { style: "display:flex;gap:8px;justify-content:flex-end;margin-top:12px;" }, cancelBtn, createBtn),
     ),
   );
@@ -203,9 +209,10 @@ export function showCreateGroupModal(onDone) {
     if (!name) { status.textContent = "Введите название"; return; }
     createBtn.disabled = true;
     try {
-      const group = await createGroup(name, []);
+      const isE2EE = Boolean(e2eeCheckbox.checked);
+      const group = await createGroup(name, [], isE2EE);
       close();
-      showToast("Группа создана");
+      showToast(isE2EE ? "E2EE группа создана" : "Облачная группа создана");
       if (typeof onDone === "function") await onDone(group);
       navigate(`#group/${group.id}`);
     } catch (e) {

@@ -239,6 +239,11 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate ed25519 signing key: %w", err)
 	}
 
+	if err := migrateCloudAndE2EE(sqlDB); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db: migrate cloud and e2ee: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
 }
 
@@ -1175,6 +1180,53 @@ func migrateEd25519SigningKey(database *sql.DB) error {
 	}
 	return nil
 }
+
+func migrateCloudAndE2EE(database *sql.DB) error {
+	// 1. Migrate chats table
+	hasChatE2EE, err := tableHasColumn(database, "chats", "is_e2ee")
+	if err != nil {
+		return err
+	}
+	if !hasChatE2EE {
+		if _, err := database.Exec("ALTER TABLE chats ADD COLUMN is_e2ee INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return fmt.Errorf("add is_e2ee to chats: %w", err)
+		}
+		// Existing chats are treated as E2EE
+		if _, err := database.Exec("UPDATE chats SET is_e2ee = 1"); err != nil {
+			return fmt.Errorf("set existing chats to e2ee: %w", err)
+		}
+	}
+	_, _ = database.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_participants_e2ee ON chats(user1_id, user2_id, is_e2ee)")
+
+	// 2. Migrate groups table
+	hasGroupE2EE, err := tableHasColumn(database, "groups", "is_e2ee")
+	if err != nil {
+		return err
+	}
+	if !hasGroupE2EE {
+		if _, err := database.Exec("ALTER TABLE groups ADD COLUMN is_e2ee INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return fmt.Errorf("add is_e2ee to groups: %w", err)
+		}
+		// Existing groups are treated as E2EE
+		if _, err := database.Exec("UPDATE groups SET is_e2ee = 1"); err != nil {
+			return fmt.Errorf("set existing groups to e2ee: %w", err)
+		}
+	}
+
+	// 3. Migrate group_messages table
+	hasGroupPlaintext, err := tableHasColumn(database, "group_messages", "plaintext")
+	if err != nil {
+		return err
+	}
+	if !hasGroupPlaintext {
+		if _, err := database.Exec("ALTER TABLE group_messages ADD COLUMN plaintext TEXT DEFAULT NULL"); err != nil {
+			return fmt.Errorf("add plaintext to group_messages: %w", err)
+		}
+	}
+
+	return nil
+}
+
 
 
 

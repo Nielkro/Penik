@@ -278,15 +278,16 @@ export async function renderChatList(container) {
       } else {
         const avatarEl = avatar(entry, 48, avatarUpdateTimestamps.get(String(entry.user_id)));
         enableAvatarFullscreen(avatarEl, () => entry.name || entry.nickname || "");
+        const lockIcon = entry.is_e2ee ? "🔒 " : "";
         const item = el("li", { class: "chatlist-item" },
           avatarEl,
           el("div", { class: "chatlist-item-info" },
-            el("span", { class: "chatlist-item-name" }, entry.name || entry.nickname || ""),
+            el("span", { class: "chatlist-item-name" }, lockIcon + (entry.name || entry.nickname || "")),
             el("span", { class: "chatlist-item-preview" }, getMessagePreview(entry.last_message || ""))
           ),
           el("span", { class: "chatlist-item-time" }, entry.last_ts ? formatTime(normalizeTs(entry.last_ts)) : "")
         );
-        item.addEventListener("click", () => navigate(`#chat/${entry.user_id}`));
+        item.addEventListener("click", () => navigate(entry.is_e2ee ? `#secret-chat/${entry.user_id}` : `#chat/${entry.user_id}`));
         listEl.appendChild(item);
       }
     }
@@ -375,7 +376,8 @@ function showCreateMenu(anchor, onGroupCreated) {
   };
 
   menu.append(
-    mkItem("🔍", "Новый чат", () => navigate("#search")),
+    mkItem("💬", "Новый чат", () => navigate("#search")),
+    mkItem("🔒", "Секретный чат", () => navigate("#search?secret=1")),
     mkItem("👥", "Новая группа", () => showCreateGroupModal(onGroupCreated)),
   );
 
@@ -392,14 +394,14 @@ function showCreateMenu(anchor, onGroupCreated) {
 
 // ── Chat view ────────────────────────────────────────────────────────────────
 
-export async function renderChat(container, userId) {
+export async function renderChat(container, userId, isE2EE = false) {
   container.innerHTML = "";
 
   const me = getCurrentUser();
   const myId = me && (me.id || me.user_id);
   const isSelfChat = Number(userId) === Number(myId);
 
-  if (userId) {
+  if (userId && isE2EE) {
     prefetchKeyBundle(userId);
   }
 
@@ -510,7 +512,8 @@ export async function renderChat(container, userId) {
 
   let avatarEl = avatar(contact, 40, avatarUpdateTimestamps.get(String(userId)));
   enableAvatarFullscreen(avatarEl, () => contact.name || contact.nickname || "");
-  const nameEl = el("span", { class: "chat-header-name" }, contact.name || contact.nickname);
+  const lockPrefix = isE2EE ? "🔒 " : "";
+  const nameEl = el("span", { class: "chat-header-name" }, lockPrefix + (contact.name || contact.nickname));
   // Subtitle: nickname until presence resolves, then "в сети" / "был(а) в сети …".
   const nickEl = el("span", { class: "chat-header-nick" }, contact.nickname ? `@${contact.nickname}` : "");
   const headerChildren = [
@@ -521,7 +524,7 @@ export async function renderChat(container, userId) {
   ];
   if (audioCallBtn) headerChildren.push(audioCallBtn);
   if (videoCallBtn) headerChildren.push(videoCallBtn);
-  if (safetyBtn) headerChildren.push(safetyBtn);
+  if (safetyBtn && isE2EE) headerChildren.push(safetyBtn);
   if (deleteBtn) headerChildren.push(deleteBtn);
 
   const header = el("div", { class: "chat-header" }, ...headerChildren);
@@ -660,7 +663,7 @@ export async function renderChat(container, userId) {
       // into a dead subtree.
       if (!chatWrap.isConnected) return;
       contact = resolved;
-      nameEl.textContent = resolved.name || resolved.nickname || "";
+      nameEl.textContent = (isE2EE ? "🔒 " : "") + (resolved.name || resolved.nickname || "");
       // Leave nickEl to refreshPresence() below — it owns the subtitle once
       // presence resolves, so it doesn't get clobbered by the nickname here.
       const newAvatar = avatar(resolved, 40, avatarUpdateTimestamps.get(String(userId)));
@@ -752,10 +755,10 @@ export async function renderChat(container, userId) {
     ]);
 
     if (!msgs || msgs.length === 0) {
-      await syncMessageHistory({ chat_user_id: userId, limit: 100 }).catch(() => {});
+      await syncMessageHistory({ chat_user_id: userId, is_e2ee: isE2EE, limit: 100 }).catch(() => {});
       msgs = await getMessages(userId, 50).catch(() => []);
     } else {
-      syncMessageHistory({ chat_user_id: userId, limit: 100 }).catch(() => {});
+      syncMessageHistory({ chat_user_id: userId, is_e2ee: isE2EE, limit: 100 }).catch(() => {});
     }
 
     messages = (msgs || []).filter(m => m.plaintext !== "[DELETED]");
@@ -1517,34 +1520,46 @@ export async function renderChat(container, userId) {
     appSounds.playMessageSent();
 
     try {
-      // Adaptively select chunked vs monolithic encryption based on recipient & own device crypto_version
-      let useChunked = true;
-      try {
-        const bundle = await getCachedKeyBundle(userId);
-        const devices = bundle?.devices || [];
-        if (!devices.length || devices.some(d => Number(d.crypto_version || 1) < 2)) {
-          useChunked = false;
-        } else if (Number(userId) !== Number(myId)) {
-          const selfBundle = await getCachedKeyBundle(myId);
-          const selfDevices = selfBundle?.devices || [];
-          if (selfDevices.some(d => Number(d.crypto_version || 1) < 2)) {
-            useChunked = false;
-          }
-        }
-      } catch (e) {
-        console.warn("Failed to check peer crypto version, falling back to monolithic", e);
-        useChunked = false;
-      }
-
+      let cdnUrl = "";
+      let keyStr = "";
       const localBlob = file;
-      const { encryptedBlob, key } = await encryptBlob(file, null, useChunked);
 
-      // 2. Upload to server with progress events
-      const cdnUrl = await uploadAttachment(encryptedBlob, file.name, (loaded, total) => {
-        window.dispatchEvent(new CustomEvent("penik:upload-progress", {
-          detail: { msgId, loaded, total }
-        }));
-      });
+      if (!isE2EE) {
+        cdnUrl = await uploadAttachment(file, file.name, (loaded, total) => {
+          window.dispatchEvent(new CustomEvent("penik:upload-progress", {
+            detail: { msgId, loaded, total }
+          }));
+        });
+      } else {
+        // Adaptively select chunked vs monolithic encryption based on recipient & own device crypto_version
+        let useChunked = true;
+        try {
+          const bundle = await getCachedKeyBundle(userId);
+          const devices = bundle?.devices || [];
+          if (!devices.length || devices.some(d => Number(d.crypto_version || 1) < 2)) {
+            useChunked = false;
+          } else if (Number(userId) !== Number(myId)) {
+            const selfBundle = await getCachedKeyBundle(myId);
+            const selfDevices = selfBundle?.devices || [];
+            if (selfDevices.some(d => Number(d.crypto_version || 1) < 2)) {
+              useChunked = false;
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to check peer crypto version, falling back to monolithic", e);
+          useChunked = false;
+        }
+
+        const { encryptedBlob, key } = await encryptBlob(file, null, useChunked);
+        keyStr = encodeKey(key);
+
+        // Upload encrypted blob to server with progress events
+        cdnUrl = await uploadAttachment(encryptedBlob, file.name, (loaded, total) => {
+          window.dispatchEvent(new CustomEvent("penik:upload-progress", {
+            detail: { msgId, loaded, total }
+          }));
+        });
+      }
 
       // Cache original unencrypted BlobUrl locally for sender so no redownload is needed
       decryptedBlobCache.set(cdnUrl, localBlobUrl);
@@ -1628,7 +1643,7 @@ export async function renderChat(container, userId) {
           name: file.name,
           size: file.size,
           mime: file.type || "application/octet-stream",
-          key: encodeKey(key),
+          key: keyStr,
           thumb: thumbBase64
         }
       };
@@ -1653,7 +1668,10 @@ export async function renderChat(container, userId) {
       const ws = getWS();
       if (!ws || !ws.isConnected()) throw new Error("Нет соединения");
 
-      const ciphertexts = await encryptMessagePayload(payloadStr, userId, msgId, now);
+      let ciphertexts = null;
+      if (isE2EE) {
+        ciphertexts = await encryptMessagePayload(payloadStr, userId, msgId, now);
+      }
 
       const storedMsg = {
         msg_id: msgId,
@@ -1664,23 +1682,35 @@ export async function renderChat(container, userId) {
         created_at: now,
         delivered: 0,
         pending: 1,
+        is_e2ee: isE2EE,
         ciphertexts: ciphertexts,
         reply_to_msg_id: currentReply ? currentReply.msg_id : null
       };
       await saveMessage(storedMsg);
-      await saveContact({ ...contact, last_message: getMessagePreview(payloadStr), last_ts: now });
+      await saveContact({ ...contact, last_message: getMessagePreview(payloadStr), last_ts: now, is_e2ee: isE2EE });
       triggerChatListUpdate();
 
       addPendingAck(msgId, { tempId: msgId, userId: userId });
 
       let sent = false;
       try {
-        sent = ws.send(0x01, {
-          to_user_id: Number(userId),
-          devices: ciphertexts,
-          msg_id: msgId,
-          reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined
-        });
+        if (!isE2EE) {
+          sent = ws.send(0x01, {
+            to_user_id: Number(userId),
+            plaintext: payloadStr,
+            is_e2ee: false,
+            msg_id: msgId,
+            reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined
+          });
+        } else {
+          sent = ws.send(0x01, {
+            to_user_id: Number(userId),
+            devices: ciphertexts,
+            is_e2ee: true,
+            msg_id: msgId,
+            reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined
+          });
+        }
       } catch (sendErr) {
         console.warn("WebSocket send threw an error:", sendErr);
       }
@@ -1726,18 +1756,31 @@ export async function renderChat(container, userId) {
       triggerChatListUpdate();
 
       try {
-        const ciphertexts = await encryptMessagePayload(finalText, userId, msgId, now);
         const ws = getWS();
-        if (ws && ws.isConnected() && ciphertexts) {
-          ws.send(OP.MSG_EDIT, {
-            to_user_id: Number(userId),
-            msg_id: String(msgId),
-            devices: ciphertexts,
-            edited_at: Math.floor(now / 1000)
-          });
+        if (ws && ws.isConnected()) {
+          if (!isE2EE) {
+            ws.send(OP.MSG_EDIT, {
+              to_user_id: Number(userId),
+              msg_id: String(msgId),
+              plaintext: finalText,
+              is_e2ee: false,
+              edited_at: Math.floor(now / 1000)
+            });
+          } else {
+            const ciphertexts = await encryptMessagePayload(finalText, userId, msgId, now);
+            if (ciphertexts) {
+              ws.send(OP.MSG_EDIT, {
+                to_user_id: Number(userId),
+                msg_id: String(msgId),
+                devices: ciphertexts,
+                is_e2ee: true,
+                edited_at: Math.floor(now / 1000)
+              });
+            }
+          }
         }
       } catch (err) {
-        console.warn("Failed to encrypt edited message:", err);
+        console.warn("Failed to edit message:", err);
       }
       return;
     }
@@ -1771,10 +1814,12 @@ export async function renderChat(container, userId) {
     appSounds.playMessageSent();
 
     let ciphertexts = null;
-    try {
-      ciphertexts = await encryptMessagePayload(text, userId, msgId, now);
-    } catch (encErr) {
-      console.warn("Failed to encrypt message immediately (will retry on flush):", encErr);
+    if (isE2EE) {
+      try {
+        ciphertexts = await encryptMessagePayload(text, userId, msgId, now);
+      } catch (encErr) {
+        console.warn("Failed to encrypt message immediately (will retry on flush):", encErr);
+      }
     }
 
     const storedMsg = {
@@ -1786,20 +1831,29 @@ export async function renderChat(container, userId) {
       created_at: now,
       delivered: 0,
       pending: 1,
+      is_e2ee: isE2EE,
       ciphertexts: ciphertexts,
       reply_to_msg_id: currentReply ? currentReply.msg_id : null
     };
     await saveMessage(storedMsg);
-    await saveContact({ ...contact, last_message: getMessagePreview(text), last_ts: now });
+    await saveContact({ ...contact, last_message: getMessagePreview(text), last_ts: now, is_e2ee: isE2EE });
     triggerChatListUpdate();
 
     const ws = getWS();
-    if (ws && ws.isConnected() && ciphertexts) {
+    if (ws && ws.isConnected() && (!isE2EE || ciphertexts)) {
       addPendingAck(msgId, { tempId: msgId, userId: userId });
       try {
-        const sent = ws.send(0x01, {
+        const sent = !isE2EE ? ws.send(0x01, {
+          to_user_id: Number(userId),
+          plaintext: text,
+          is_e2ee: false,
+          msg_id: msgId,
+          created_at: Math.floor(now / 1000),
+          reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined
+        }) : ws.send(0x01, {
           to_user_id: Number(userId),
           devices: ciphertexts,
+          is_e2ee: true,
           msg_id: msgId,
           created_at: Math.floor(now / 1000),
           reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined
@@ -1835,10 +1889,12 @@ export async function renderChat(container, userId) {
     scrollDown.scrollToBottom();
 
     let ciphertexts = null;
-    try {
-      ciphertexts = await encryptMessagePayload(payload, userId, msgId, now);
-    } catch (encErr) {
-      console.warn("Failed to encrypt sticker immediately:", encErr);
+    if (isE2EE) {
+      try {
+        ciphertexts = await encryptMessagePayload(payload, userId, msgId, now);
+      } catch (encErr) {
+        console.warn("Failed to encrypt sticker immediately:", encErr);
+      }
     }
 
     const storedMsg = {
@@ -1850,20 +1906,29 @@ export async function renderChat(container, userId) {
       created_at: now,
       delivered: 0,
       pending: 1,
+      is_e2ee: isE2EE,
       ciphertexts: ciphertexts,
       reply_to_msg_id: currentReply ? currentReply.msg_id : null
     };
     await saveMessage(storedMsg);
-    await saveContact({ ...contact, last_message: getMessagePreview(payload), last_ts: now });
+    await saveContact({ ...contact, last_message: getMessagePreview(payload), last_ts: now, is_e2ee: isE2EE });
     triggerChatListUpdate();
 
     const ws = getWS();
-    if (ws && ws.isConnected() && ciphertexts) {
+    if (ws && ws.isConnected() && (!isE2EE || ciphertexts)) {
       addPendingAck(msgId, { tempId: msgId, userId: userId });
       try {
-        const sent = ws.send(0x01, {
+        const sent = !isE2EE ? ws.send(0x01, {
+          to_user_id: Number(userId),
+          plaintext: payload,
+          is_e2ee: false,
+          msg_id: msgId,
+          created_at: Math.floor(now / 1000),
+          reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined
+        }) : ws.send(0x01, {
           to_user_id: Number(userId),
           devices: ciphertexts,
+          is_e2ee: true,
           msg_id: msgId,
           created_at: Math.floor(now / 1000),
           reply_to_msg_id: currentReply ? String(currentReply.msg_id) : undefined

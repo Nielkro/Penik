@@ -187,7 +187,15 @@ const routes = {
 
 function parseHash() {
   const hash = location.hash || '';
-  if (hash.startsWith('#chat/')) return { screen: 'chat', userId: hash.slice(6) };
+  if (hash.startsWith('#chat/')) {
+    const raw = hash.slice(6);
+    const [userIdPart, query] = raw.split('?');
+    const isE2EE = query ? new URLSearchParams(query).get('e2ee') === '1' : false;
+    return { screen: 'chat', userId: userIdPart, isE2EE };
+  }
+  if (hash.startsWith('#secret-chat/')) {
+    return { screen: 'chat', userId: hash.slice(13), isE2EE: true };
+  }
   if (hash.startsWith('#group/')) return { screen: 'group', userId: hash.slice(7) };
   return { screen: hash || '#chats' };
 }
@@ -317,7 +325,7 @@ function showAuth(mode) {
   buildAuthLayout(mode);
 }
 
-function showMain(screen, userId) {
+function showMain(screen, userId, isE2EE = false) {
   const layout = buildMainLayout();
   const mainWrap = document.getElementById('main-wrap');
 
@@ -343,7 +351,7 @@ function showMain(screen, userId) {
   if (screen === 'chat' && userId) {
     layout.chatScreen.classList.add('active');
     layout.chatScreen.innerHTML = '';
-    renderChat(layout.chatScreen, userId);
+    renderChat(layout.chatScreen, userId, isE2EE);
     /* Also show chat list on wide screens */
     if (window.innerWidth >= 700) {
       layout.chatListScreen.classList.add('active');
@@ -415,7 +423,7 @@ function showMain(screen, userId) {
 
 /* ── Router ── */
 function handleRoute() {
-  const { screen, userId } = parseHash();
+  const { screen, userId, isE2EE } = parseHash();
 
   if (!getToken()) {
     if (screen === '#register') {
@@ -439,7 +447,7 @@ function handleRoute() {
   }
 
   if (screen === 'chat') {
-    showMain('chat', userId);
+    showMain('chat', userId, isE2EE);
   } else if (screen === 'group') {
     showMain('group', userId);
   } else {
@@ -781,7 +789,7 @@ async function onMsgRecvGlobal(payload) {
   let decryptSuccess = true;
   let plaintext = "";
   if (payload.plaintext) {
-    plaintext = `[Нешифрованное] ${payload.plaintext}`;
+    plaintext = payload.plaintext;
   } else if (payload.ciphertext) {
     try {
       // The server may replay a message after reconnect/reload. OTPKs are
@@ -1165,6 +1173,9 @@ export async function syncMessageHistory(options = {}) {
     }
     if (options.chat_user_id) {
       url += `&chat_user_id=${options.chat_user_id}`;
+    }
+    if (options.is_e2ee != null) {
+      url += `&is_e2ee=${options.is_e2ee ? 1 : 0}`;
     }
     const history = await apiGet(url);
     if (!history || !Array.isArray(history) || history.length === 0) {
@@ -1778,6 +1789,28 @@ export async function flushOutbox() {
     });
     for (const msg of unsent) {
       const clientMsgId = msg.client_msg_id || String(msg.msg_id);
+      const isE2EE = msg.is_e2ee !== false && (msg.ciphertexts?.length > 0 || msg.is_e2ee === true);
+
+      if (!isE2EE) {
+        addPendingAck(clientMsgId, { tempId: msg.msg_id, userId: msg.chat_id });
+        const msgCreatedAt = Number(msg.created_at || getServerTimeMs());
+        const tsSec = msgCreatedAt > 1e11 ? Math.floor(msgCreatedAt / 1000) : msgCreatedAt;
+        const sent = ws.send(0x01, {
+          to_user_id: Number(msg.chat_id),
+          plaintext: msg.plaintext || "",
+          is_e2ee: false,
+          msg_id: clientMsgId,
+          created_at: tsSec,
+          reply_to_msg_id: msg.reply_to_msg_id ? String(msg.reply_to_msg_id) : undefined
+        });
+        if (!sent) {
+          pendingAcks.delete(clientMsgId);
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+        continue;
+      }
+
       let ciphertexts = msg.ciphertexts;
       if (!ciphertexts || !ciphertexts.length) {
         try {
@@ -1802,6 +1835,7 @@ export async function flushOutbox() {
       const sent = ws.send(0x01, {
         to_user_id: Number(msg.chat_id),
         devices: uniqueDevices,
+        is_e2ee: true,
         msg_id: clientMsgId,
         created_at: tsSec,
         reply_to_msg_id: msg.reply_to_msg_id ? String(msg.reply_to_msg_id) : undefined
@@ -1823,8 +1857,13 @@ export async function flushOutbox() {
 async function onMsgEditNotifyGlobal(payload) {
   if (!payload) return;
   try {
-    const res = await decryptMessagePayload(payload);
-    const text = (typeof res === "object" && res !== null && "text" in res) ? res.text : String(res || "");
+    let text = "";
+    if (payload.plaintext != null) {
+      text = payload.plaintext;
+    } else {
+      const res = await decryptMessagePayload(payload);
+      text = (typeof res === "object" && res !== null && "text" in res) ? res.text : String(res || "");
+    }
     const msgId = payload.client_msg_id || payload.msg_id;
     const editedAt = payload.edited_at ? payload.edited_at * 1000 : Date.now();
     await updateMessageText(msgId, text, editedAt);

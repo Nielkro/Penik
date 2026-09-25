@@ -16,7 +16,8 @@ data class MessageEntity(
     val deliveredAt: Long? = null,
     val read: Boolean = false,
     val replyToMsgId: String? = null,
-    val editedAt: Long? = null
+    val editedAt: Long? = null,
+    val isE2EE: Boolean = false
 )
 
 @Entity(tableName = "chats")
@@ -27,7 +28,8 @@ data class ChatEntity(
     val avatarUrl: String? = null,
     val lastMessage: String? = null,
     val lastMessageTimestamp: Long? = null,
-    val unreadCount: Int = 0
+    val unreadCount: Int = 0,
+    val isE2EE: Boolean = false
 )
 
 @Entity(tableName = "groups")
@@ -39,7 +41,8 @@ data class GroupEntity(
     val status: String = "active",
     val membershipVersion: Long = 1,
     val currentKeyVersion: Long = 1,
-    val createdAt: Long = 0
+    val createdAt: Long = 0,
+    val isE2EE: Boolean = false
 )
 
 @Entity(tableName = "group_members", primaryKeys = ["groupId", "userId"])

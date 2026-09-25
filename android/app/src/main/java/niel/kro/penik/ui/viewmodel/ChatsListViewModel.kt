@@ -36,6 +36,7 @@ sealed interface FeedItem {
     val lastMessage: String?
     val lastMessageTimestamp: Long?
     val unreadCount: Int
+    val isE2EE: Boolean
 
     data class ChatItem(
         override val id: Long,
@@ -43,7 +44,8 @@ sealed interface FeedItem {
         val nickname: String,
         override val lastMessage: String?,
         override val lastMessageTimestamp: Long?,
-        override val unreadCount: Int
+        override val unreadCount: Int,
+        override val isE2EE: Boolean = false
     ) : FeedItem
 
     data class GroupItem(
@@ -52,7 +54,8 @@ sealed interface FeedItem {
         override val lastMessage: String?,
         override val lastMessageTimestamp: Long?,
         override val unreadCount: Int,
-        val status: String
+        val status: String,
+        override val isE2EE: Boolean = false
     ) : FeedItem
 }
 
@@ -78,7 +81,7 @@ class ChatsListViewModel @Inject constructor(
             list.filter { it.userId != myId }
                 .map {
                     val displayName = it.name.ifBlank { it.nickname.ifBlank { "Пользователь ${it.userId}" } }
-                    FeedItem.ChatItem(it.userId, displayName, it.nickname, it.lastMessage, it.lastMessageTimestamp, it.unreadCount)
+                    FeedItem.ChatItem(it.userId, displayName, it.nickname, it.lastMessage, it.lastMessageTimestamp, it.unreadCount, it.isE2EE)
                 }
         },
         groupRepository.observeGroups().flatMapLatest { groups ->
@@ -93,7 +96,8 @@ class ChatsListViewModel @Inject constructor(
                                 lastMessage = null,
                                 lastMessageTimestamp = null,
                                 unreadCount = 0,
-                                status = group.status
+                                status = group.status,
+                                isE2EE = group.isE2EE
                             )
                         )
                     } else if (lastMsg.sentByMe) {
@@ -104,7 +108,8 @@ class ChatsListViewModel @Inject constructor(
                                 lastMessage = "Вы: ${lastMsg.text}",
                                 lastMessageTimestamp = lastMsg.createdAt * 1000,
                                 unreadCount = 0,
-                                status = group.status
+                                status = group.status,
+                                isE2EE = group.isE2EE
                             )
                         )
                     } else {
@@ -118,7 +123,8 @@ class ChatsListViewModel @Inject constructor(
                                 lastMessage = "$senderName: ${lastMsg.text}",
                                 lastMessageTimestamp = lastMsg.createdAt * 1000,
                                 unreadCount = 0,
-                                status = group.status
+                                status = group.status,
+                                isE2EE = group.isE2EE
                             )
                         }.onStart {
                             emit(
@@ -128,7 +134,8 @@ class ChatsListViewModel @Inject constructor(
                                     lastMessage = lastMsg.text,
                                     lastMessageTimestamp = lastMsg.createdAt * 1000,
                                     unreadCount = 0,
-                                    status = group.status
+                                    status = group.status,
+                                    isE2EE = group.isE2EE
                                 )
                             )
                         }
@@ -212,5 +219,12 @@ class ChatsListViewModel @Inject constructor(
     fun logout(onLogout: () -> Unit) {
         logoutUseCase()
         onLogout()
+    }
+
+    fun startDirectChat(userId: Long, name: String, nickname: String, isE2EE: Boolean, onDone: () -> Unit) {
+        viewModelScope.launch {
+            chatRepository.getOrCreateChat(userId = userId, nickname = nickname, name = name, isE2EE = isE2EE)
+            onDone()
+        }
     }
 }

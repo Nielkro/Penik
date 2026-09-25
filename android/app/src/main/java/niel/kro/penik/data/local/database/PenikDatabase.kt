@@ -20,7 +20,7 @@ import niel.kro.penik.data.local.entity.MessageEntity
         GroupEntity::class, GroupMemberEntity::class,
         GroupKeyEntity::class, GroupMessageEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class PenikDatabase : RoomDatabase() {
@@ -97,6 +97,13 @@ abstract class PenikDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE messages ADD COLUMN editedAt INTEGER DEFAULT NULL")
                 db.execSQL("ALTER TABLE group_messages ADD COLUMN editedAt INTEGER DEFAULT NULL")
+            }
+        }
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE chats ADD COLUMN isE2EE INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE groups ADD COLUMN isE2EE INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE messages ADD COLUMN isE2EE INTEGER NOT NULL DEFAULT 1")
             }
         }
     }

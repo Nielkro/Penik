@@ -261,21 +261,24 @@ class GroupRepository @Inject constructor(
 
     /* ── Lifecycle ── */
 
-    suspend fun createGroup(name: String, memberUserIds: List<Long>): GroupEntity? {
-        val resp = api.createGroup(CreateGroupRequest(name, memberUserIds))
+    suspend fun createGroup(name: String, memberUserIds: List<Long>, isE2EE: Boolean = false): GroupEntity? {
+        val resp = api.createGroup(CreateGroupRequest(name, memberUserIds, isE2EE))
         val body = resp.body() ?: return null
         val entity = GroupEntity(
             id = body.id, name = body.name, ownerUserId = body.ownerUserId,
             role = body.role ?: "owner", membershipVersion = body.membershipVersion,
             currentKeyVersion = body.currentKeyVersion, createdAt = body.createdAt,
+            isE2EE = body.isE2EE
         )
         dao.upsertGroup(entity)
 
-        val groupKey = groupCrypto.generateGroupKey()
-        dao.saveGroupKey(GroupKeyEntity(body.id, 1, groupKey))
-        val devices = fetchDeviceKeys(listOf(myUserId()))
-        if (devices.isNotEmpty()) {
-            api.uploadGroupEnvelopes(body.id, 1, UploadEnvelopesRequest(wrapKeyForDevices(groupKey, devices, body.id, 1)))
+        if (body.isE2EE) {
+            val groupKey = groupCrypto.generateGroupKey()
+            dao.saveGroupKey(GroupKeyEntity(body.id, 1, groupKey))
+            val devices = fetchDeviceKeys(listOf(myUserId()))
+            if (devices.isNotEmpty()) {
+                api.uploadGroupEnvelopes(body.id, 1, UploadEnvelopesRequest(wrapKeyForDevices(groupKey, devices, body.id, 1)))
+            }
         }
         refreshMembers(body.id)
         return entity
@@ -293,7 +296,7 @@ class GroupRepository @Inject constructor(
         if (!response.isSuccessful) return emptyList()
         val resp = response.body() ?: return emptyList()
         val entities = resp.groups.map {
-            GroupEntity(it.id, it.name, it.ownerUserId, it.role, it.status, it.membershipVersion, it.currentKeyVersion, it.createdAt)
+            GroupEntity(it.id, it.name, it.ownerUserId, it.role, it.status, it.membershipVersion, it.currentKeyVersion, it.createdAt, it.isE2EE)
         }
         entities.forEach { dao.upsertGroup(it) }
 
@@ -522,6 +525,26 @@ class GroupRepository @Inject constructor(
     }
 
     suspend fun sendMessage(groupId: Long, text: String, replyToMsgId: String? = null, existingMessageId: String? = null): String? {
+        val group = dao.getGroup(groupId)
+        val isE2EE = group?.isE2EE ?: true
+        val messageId = existingMessageId ?: UUID.randomUUID().toString()
+        val createdAt = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
+        val senderUserId = myUserId()
+
+        if (!isE2EE) {
+            dao.upsertMessage(
+                GroupMessageEntity(
+                    groupId = groupId, messageId = messageId, serverId = 0,
+                    senderUserId = senderUserId, senderDeviceId = myDeviceId(),
+                    keyVersion = 0, text = text, createdAt = createdAt,
+                    sentByMe = true, delivered = false,
+                    replyToMsgId = replyToMsgId
+                )
+            )
+            ws.sendGroupCloudMessage(groupId, messageId, text, createdAt, replyToMsgId)
+            return messageId
+        }
+
         // Always query the server for the latest key version to avoid mismatch if offline during rotation.
         var version = currentVersion(groupId)
         var groupKey = ensureGroupKey(groupId, version)
@@ -543,12 +566,6 @@ class GroupRepository @Inject constructor(
             if (groupKey == null) return null
         }
 
-        val messageId = existingMessageId ?: UUID.randomUUID().toString()
-        // created_at is bound into the AAD and must match what the server persists
-        // and relays. Server and web work in Unix seconds — sending milliseconds
-        // here made the recipient's AAD mismatch and decryption fail.
-        val createdAt = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
-        val senderUserId = myUserId()
         val signingKey = myPrivateSigningKey()
         val enc = groupCrypto.encryptSignedMessage(
             text.toByteArray(Charsets.UTF_8), signingKey, groupKey, groupId, version, senderUserId, messageId, createdAt
@@ -619,24 +636,28 @@ class GroupRepository @Inject constructor(
     suspend fun handleIncoming(
         groupId: Long, id: Long, messageId: String, senderUserId: Long, senderDeviceId: Long,
         keyVersion: Long, ciphertext: ByteArray, salt: ByteArray, nonce: ByteArray, createdAt: Long,
-        replyToMsgId: String? = null
+        replyToMsgId: String? = null, plaintext: String? = null
     ): GroupMessageEntity? {
         dao.getMessage(groupId, messageId)?.let { if (it.serverId != 0L) return null }
 
-        val groupKey = ensureGroupKey(groupId, keyVersion)
-        if (groupKey == null) {
-            Log.w("GroupRepo", "key unavailable for group=$groupId v=$keyVersion")
-            return null
-        }
-        val verifyingKey = fetchDeviceSigningKey(groupId, senderDeviceId, senderUserId)
-        val text = runCatching {
-            String(
-                groupCrypto.decryptVerifiedMessage(ciphertext, verifyingKey, groupKey, salt, nonce, groupId, keyVersion, senderUserId, messageId, createdAt),
-                Charsets.UTF_8,
-            )
-        }.getOrElse {
-            Log.e("GroupRepo", "decrypt/signature verification failed for group=$groupId msg=$messageId")
-            return null
+        val text = if (!plaintext.isNullOrEmpty()) {
+            plaintext
+        } else {
+            val groupKey = ensureGroupKey(groupId, keyVersion)
+            if (groupKey == null) {
+                Log.w("GroupRepo", "key unavailable for group=$groupId v=$keyVersion")
+                return null
+            }
+            val verifyingKey = fetchDeviceSigningKey(groupId, senderDeviceId, senderUserId)
+            runCatching {
+                String(
+                    groupCrypto.decryptVerifiedMessage(ciphertext, verifyingKey, groupKey, salt, nonce, groupId, keyVersion, senderUserId, messageId, createdAt),
+                    Charsets.UTF_8,
+                )
+            }.getOrElse {
+                Log.e("GroupRepo", "decrypt/signature verification failed for group=$groupId msg=$messageId")
+                return null
+            }
         }
         val entity = GroupMessageEntity(
             groupId = groupId, messageId = messageId, serverId = id,
@@ -668,9 +689,17 @@ class GroupRepository @Inject constructor(
 
         if (finalPayload.isBlank()) return
 
+        val isE2EE = dao.getGroup(groupId)?.isE2EE ?: true
+        val editedAt = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
+
+        if (!isE2EE) {
+            dao.updateMessageText(groupId, messageId, finalPayload, editedAt * 1000)
+            ws.sendGroupCloudEdit(groupId, messageId, finalPayload, editedAt)
+            return
+        }
+
         val version = currentVersion(groupId)
         val groupKey = ensureGroupKey(groupId, version) ?: return
-        val editedAt = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
         val senderUserId = myUserId()
         val signingKey = myPrivateSigningKey()
         val enc = groupCrypto.encryptSignedMessage(
@@ -682,6 +711,10 @@ class GroupRepository @Inject constructor(
     }
 
     suspend fun handleIncomingEdit(event: WebSocketEvent.GroupMsgEditNotify) {
+        if (!event.plaintext.isNullOrEmpty()) {
+            dao.updateMessageText(event.groupId, event.messageId, event.plaintext, event.editedAt)
+            return
+        }
         val groupKey = ensureGroupKey(event.groupId, event.keyVersion) ?: return
         val verifyingKey = fetchDeviceSigningKey(event.groupId, event.senderDeviceId, event.senderUserId)
         val editedAtSec = event.editedAt / 1000
@@ -719,24 +752,29 @@ class GroupRepository @Inject constructor(
         do {
             val page = api.getGroupHistory(groupId, 100, cursor).body() ?: return missingKey
             for (m in page.messages) {
-                if (m.keyVersion !in availableVersions) continue
                 val existing = dao.getMessage(groupId, m.messageId)
                 val isEdited = m.editedAt != null && (existing == null || existing.editedAt == null || (m.editedAt * 1000 > (existing.editedAt ?: 0L)))
                 if (existing != null && !isEdited && existing.serverId != 0L) continue
-                val groupKey = ensureGroupKey(groupId, m.keyVersion) ?: run { missingKey = true; continue }
-                val verifyingKey = fetchDeviceSigningKey(groupId, m.senderDeviceId, m.senderUserId)
-                val ts = m.editedAt ?: m.createdAt
-                val text = runCatching {
-                    String(
-                        groupCrypto.decryptVerifiedMessage(
-                            Base64.decode(m.ciphertext, urlB64Flags), verifyingKey, groupKey,
-                            Base64.decode(m.salt, urlB64Flags),
-                            Base64.decode(m.nonce, urlB64Flags),
-                            groupId, m.keyVersion, m.senderUserId, m.messageId, ts
-                        ),
-                        Charsets.UTF_8
-                    )
-                }.getOrNull() ?: continue
+
+                val text = if (!m.plaintext.isNullOrEmpty()) {
+                    m.plaintext
+                } else {
+                    if (m.keyVersion !in availableVersions) continue
+                    val groupKey = ensureGroupKey(groupId, m.keyVersion) ?: run { missingKey = true; continue }
+                    val verifyingKey = fetchDeviceSigningKey(groupId, m.senderDeviceId, m.senderUserId)
+                    val ts = m.editedAt ?: m.createdAt
+                    runCatching {
+                        String(
+                            groupCrypto.decryptVerifiedMessage(
+                                Base64.decode(m.ciphertext, urlB64Flags), verifyingKey, groupKey,
+                                Base64.decode(m.salt, urlB64Flags),
+                                Base64.decode(m.nonce, urlB64Flags),
+                                groupId, m.keyVersion, m.senderUserId, m.messageId, ts
+                            ),
+                            Charsets.UTF_8
+                        )
+                    }.getOrNull() ?: continue
+                }
 
                 if (existing != null) {
                     if (m.editedAt != null) {

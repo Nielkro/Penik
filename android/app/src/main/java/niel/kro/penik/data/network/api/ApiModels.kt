@@ -93,7 +93,8 @@ data class HistoryMessageResponse(
     @SerialName("encryption_nonce") val encryptionNonce: String? = null,
     @SerialName("sender_device_id") val senderDeviceId: Long? = null,
     @SerialName("recipient_device_id") val recipientDeviceId: Long? = null,
-    @SerialName("edited_at") val editedAt: Long? = null
+    @SerialName("edited_at") val editedAt: Long? = null,
+    @SerialName("is_e2ee") val isE2EE: Boolean = true
 )
 
 @Serializable
@@ -170,7 +171,8 @@ data class PairingClaimResponse(
 @Serializable
 data class CreateGroupRequest(
     val name: String,
-    @SerialName("member_user_ids") val memberUserIds: List<Long> = emptyList()
+    @SerialName("member_user_ids") val memberUserIds: List<Long> = emptyList(),
+    @SerialName("is_e2ee") val isE2EE: Boolean = false
 )
 
 @Serializable
@@ -182,7 +184,8 @@ data class GroupResponse(
     val status: String = "active",
     @SerialName("membership_version") val membershipVersion: Long = 1,
     @SerialName("current_key_version") val currentKeyVersion: Long = 1,
-    @SerialName("created_at") val createdAt: Long = 0
+    @SerialName("created_at") val createdAt: Long = 0,
+    @SerialName("is_e2ee") val isE2EE: Boolean = true
 )
 
 @Serializable
@@ -296,13 +299,15 @@ data class GroupHistoryMessage(
     @SerialName("message_id") val messageId: String,
     @SerialName("sender_user_id") val senderUserId: Long,
     @SerialName("sender_device_id") val senderDeviceId: Long,
-    @SerialName("key_version") val keyVersion: Long,
-    val ciphertext: String,
-    val salt: String,
-    val nonce: String,
+    @SerialName("key_version") val keyVersion: Long = 0L,
+    val plaintext: String? = null,
+    val ciphertext: String? = null,
+    val salt: String? = null,
+    val nonce: String? = null,
     @SerialName("created_at") val createdAt: Long,
     @SerialName("reply_to_msg_id") val replyToMsgId: String? = null,
-    @SerialName("edited_at") val editedAt: Long? = null
+    @SerialName("edited_at") val editedAt: Long? = null,
+    @SerialName("is_e2ee") val isE2EE: Boolean = true
 )
 
 @Serializable

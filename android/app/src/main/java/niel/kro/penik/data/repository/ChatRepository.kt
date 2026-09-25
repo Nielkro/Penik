@@ -15,21 +15,29 @@ class ChatRepository @Inject constructor(
 ) {
 
     fun getAllChats(): Flow<List<ChatEntity>> = chatDao.getAllChats()
+    fun observeChat(userId: Long): Flow<ChatEntity?> = chatDao.observeChat(userId)
 
-    suspend fun getOrCreateChat(userId: Long, nickname: String, name: String, avatarUrl: String?): ChatEntity {
+    suspend fun getOrCreateChat(
+        userId: Long,
+        nickname: String = "",
+        name: String = "",
+        avatarUrl: String? = null,
+        isE2EE: Boolean = false
+    ): ChatEntity {
         val existing = chatDao.getChat(userId)
         if (existing != null) return existing
         val chat = ChatEntity(
             userId = userId,
             nickname = nickname,
             name = name,
-            avatarUrl = avatarUrl
+            avatarUrl = avatarUrl,
+            isE2EE = isE2EE
         )
         chatDao.insertChat(chat)
         return chat
     }
 
-    suspend fun updateLastMessage(userId: Long, text: String, timestamp: Long, name: String = "", nickname: String = "") {
+    suspend fun updateLastMessage(userId: Long, text: String, timestamp: Long, name: String = "", nickname: String = "", isE2EE: Boolean? = null) {
         val existing = chatDao.getChat(userId)
         var newName = name.takeIf { it.isNotBlank() } ?: existing?.name.orEmpty()
         var newNickname = nickname.takeIf { it.isNotBlank() } ?: existing?.nickname.orEmpty()
@@ -53,7 +61,8 @@ class ChatRepository @Inject constructor(
             avatarUrl = existing?.avatarUrl,
             lastMessage = finalText,
             lastMessageTimestamp = finalTs,
-            unreadCount = existing?.unreadCount ?: 0
+            unreadCount = existing?.unreadCount ?: 0,
+            isE2EE = isE2EE ?: existing?.isE2EE ?: false
         )
         android.util.Log.d("PenikChatRepo", "updateLastMessage -> saving chat: userId=$userId, name=$newName, lastMsg='$finalText', ts=$finalTs, unread=${entity.unreadCount}")
         chatDao.insertChat(entity)
@@ -85,7 +94,7 @@ class ChatRepository @Inject constructor(
 
     suspend fun getChat(userId: Long): ChatEntity? = chatDao.getChat(userId)
 
-    suspend fun upsertContact(userId: Long, nickname: String, name: String, avatarUrl: String?) {
+    suspend fun upsertContact(userId: Long, nickname: String, name: String, avatarUrl: String?, isE2EE: Boolean? = null) {
         val existing = chatDao.getChat(userId)
         val lastMsg = messageDao.getLastMessageForChat(userId)
         val finalLastMessage = existing?.lastMessage?.takeIf { it.isNotBlank() } ?: lastMsg?.text
@@ -97,7 +106,8 @@ class ChatRepository @Inject constructor(
             avatarUrl = avatarUrl ?: existing?.avatarUrl,
             lastMessage = finalLastMessage,
             lastMessageTimestamp = finalTimestamp,
-            unreadCount = existing?.unreadCount ?: 0
+            unreadCount = existing?.unreadCount ?: 0,
+            isE2EE = isE2EE ?: existing?.isE2EE ?: false
         )
         android.util.Log.d("PenikChatRepo", "upsertContact -> saving chat: userId=$userId, name=${entity.name}, lastMsg='${entity.lastMessage}', ts=${entity.lastMessageTimestamp}")
         chatDao.insertChat(entity)

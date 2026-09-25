@@ -32,6 +32,7 @@ type historyMessageResponse struct {
 	RecipientDeviceID *int64  `json:"recipient_device_id,omitempty"`
 	PrekeyID          *int64  `json:"prekey_id,omitempty"`
 	EditedAt          *int64  `json:"edited_at,omitempty"`
+	IsE2EE            bool    `json:"is_e2ee"`
 }
 
 // GetMessageHistory handles GET /api/v1/messages/history.
@@ -84,25 +85,31 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				m.sender_device_id,
 				m.recipient_device_id,
 				m.prekey_id,
-				m.edited_at
+				m.edited_at,
+				c.is_e2ee
 			 FROM messages m
 			 JOIN chats c ON c.id = m.chat_id
 			 WHERE m.purge_pending = 0
 			   AND m.id NOT IN (SELECT message_id FROM device_history_exclusions WHERE device_id = ?)
 			   AND (
-              (m.sender_user_id = ? AND m.sender_user_id != m.recipient_user_id AND m.deleted_by_sender = 0)
-              OR
-              (m.recipient_user_id = ? AND (
-                  m.recipient_device_id = ?
-                  OR m.recipient_device_id IN (
-                      SELECT dpk.device_id FROM device_public_keys dpk
-                      JOIN devices d ON d.id = dpk.device_id
-                      WHERE d.user_id = ? AND dpk.x25519_pub = (SELECT x25519_pub FROM device_public_keys WHERE device_id = ?)
-                  )
-              ) AND m.deleted_by_recipient = 0)
+			      (c.is_e2ee = 0 AND (m.sender_user_id = ? OR m.recipient_user_id = ?) AND ((m.sender_user_id = ? AND m.deleted_by_sender = 0) OR (m.recipient_user_id = ? AND m.deleted_by_recipient = 0)))
+			      OR
+			      (c.is_e2ee = 1 AND (
+					(m.sender_user_id = ? AND m.sender_user_id != m.recipient_user_id AND m.deleted_by_sender = 0)
+					OR
+					(m.recipient_user_id = ? AND (
+						m.recipient_device_id = ?
+						OR m.recipient_device_id IN (
+							SELECT dpk.device_id FROM device_public_keys dpk
+							JOIN devices d ON d.id = dpk.device_id
+							WHERE d.user_id = ? AND dpk.x25519_pub = (SELECT x25519_pub FROM device_public_keys WHERE device_id = ?)
+						)
+					) AND m.deleted_by_recipient = 0)
+			      ))
 			   )`
 		args := []any{
 			userID, deviceID,
+			userID, userID, userID, userID,
 			userID,
 			userID, deviceID, userID, deviceID,
 		}
@@ -125,6 +132,13 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 			}
 		}
 
+		if e2eeStr := r.URL.Query().Get("is_e2ee"); e2eeStr != "" {
+			if e2eeVal, err := strconv.Atoi(e2eeStr); err == nil {
+				query += " AND c.is_e2ee = ?"
+				args = append(args, e2eeVal)
+			}
+		}
+
 		query += " ORDER BY m.id DESC LIMIT ?"
 		args = append(args, limit)
 
@@ -138,6 +152,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 		list := make([]historyMessageResponse, 0)
 		for rows.Next() {
 			var m historyMessageResponse
+			var isE2EEInt int
 			if err := rows.Scan(
 				&m.ID,
 				&m.ChatID,
@@ -158,9 +173,11 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				&m.RecipientDeviceID,
 				&m.PrekeyID,
 				&m.EditedAt,
+				&isE2EEInt,
 			); err != nil {
 				continue
 			}
+			m.IsE2EE = isE2EEInt == 1
 			list = append(list, m)
 		}
 

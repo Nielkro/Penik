@@ -1087,12 +1087,12 @@ function createUploadOverlay(uploadMsgId, totalSize = 0) {
   return overlay;
 }
 
-// A file is downloadable only with a real server URL and a non-empty key.
-// Optimistic payloads (upload_msg_id + blob:/local: and no key) must not fetch.
+// A file is downloadable with a real server URL.
+// Optimistic payloads (upload_msg_id + blob:/local:) must not fetch.
 function isDownloadableFile(f) {
   if (!f) return false;
   const url = String(f.url || "");
-  return Boolean(f.key) && url.startsWith("/api/v1/attachments/");
+  return !f.upload_msg_id && url.startsWith("/api/v1/attachments/");
 }
 
 function renderFileCard(container, fileMsg) {
@@ -1503,10 +1503,13 @@ async function downloadAndDecryptFile(fileInfo, isPreviewClick = false, btn = nu
           throw new AttachmentError("Сервер вернул пустой файл (0 байт)");
         }
 
-        const keyBytes = decodeKey(fileInfo.key);
-        const decryptedBytes = await decryptFileChaCha20(encryptedBytes, keyBytes);
+        let finalBytes = encryptedBytes;
+        if (fileInfo.key) {
+          const keyBytes = decodeKey(fileInfo.key);
+          finalBytes = await decryptFileChaCha20(encryptedBytes, keyBytes);
+        }
 
-        const blob = new Blob([/** @type {BlobPart} */ (decryptedBytes)], { type: fileInfo.mime || "application/octet-stream" });
+        const blob = new Blob([/** @type {BlobPart} */ (finalBytes)], { type: fileInfo.mime || "application/octet-stream" });
         blobUrl = URL.createObjectURL(blob);
         saveCachedMedia(fileInfo.url, blob, fileInfo.mime).catch(() => {});
       }

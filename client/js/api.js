@@ -428,7 +428,7 @@ export function uploadPairingHistory(id, body) { return request('PUT', `/pairing
 
 /* ── Groups ── */
 
-export function createGroup({ name, member_user_ids }) { return post('/groups', { name, member_user_ids }); }
+export function createGroup({ name, member_user_ids, is_e2ee }) { return post('/groups', { name, member_user_ids, is_e2ee: Boolean(is_e2ee) }); }
 export function listGroups() { return get('/groups'); }
 export function getGroup(groupId) { return get(`/groups/${groupId}`); }
 export function renameGroup(groupId, name) { return patch(`/groups/${groupId}`, { name }); }

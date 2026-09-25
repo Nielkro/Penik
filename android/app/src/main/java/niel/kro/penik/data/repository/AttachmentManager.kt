@@ -110,18 +110,29 @@ class AttachmentManager(
         info: LocalMediaInfo,
         clientMsgId: String,
         textCaption: String = "",
-        useChunked: Boolean = true
+        useChunked: Boolean = true,
+        isE2EE: Boolean = true
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             UploadProgressBus.update(clientMsgId, 0, info.fileSize)
 
-            // 1. Encrypt raw file via ***REDACTED-BY-FILTER-REPO*** (PCK1 chunked or monolithic legacy)
-            val encResult = e2eeCrypto.encryptFileChaCha20(info.rawBytes, useChunked = useChunked)
+            val bytesToUpload: ByteArray
+            val keyString: String
 
-            // 2. Upload ciphertext with chunked live progress tracking
+            if (isE2EE) {
+                // 1. Encrypt raw file via Rust core (PCK1 chunked or monolithic legacy)
+                val encResult = e2eeCrypto.encryptFileChaCha20(info.rawBytes, useChunked = useChunked)
+                bytesToUpload = encResult.encryptedBytes
+                keyString = Base64.encodeToString(encResult.keyBytes, Base64.NO_WRAP)
+            } else {
+                bytesToUpload = info.rawBytes
+                keyString = ""
+            }
+
+            // 2. Upload with live progress tracking
             val progressBody = ProgressRequestBody(
-                "application/octet-stream".toMediaTypeOrNull(),
-                encResult.encryptedBytes
+                (info.mimeType.takeIf { !isE2EE } ?: "application/octet-stream").toMediaTypeOrNull(),
+                bytesToUpload
             ) { loaded, total ->
                 UploadProgressBus.update(clientMsgId, loaded, if (total > 0) total else info.fileSize)
             }
@@ -133,7 +144,7 @@ class AttachmentManager(
             val attachmentUrl = uploadResponse.body()!!.url
 
             // Pre-cache unencrypted plaintext file in local attachment cache under final URL and key
-            cacheLocalPlaintext(context, attachmentUrl, Base64.encodeToString(encResult.keyBytes, Base64.NO_WRAP), info.fileName, info.rawBytes)
+            cacheLocalPlaintext(context, attachmentUrl, keyString, info.fileName, info.rawBytes)
 
             UploadProgressBus.remove(clientMsgId)
 
@@ -142,7 +153,7 @@ class AttachmentManager(
                 put("name", info.fileName)
                 put("size", info.fileSize)
                 put("mime", info.mimeType)
-                put("key", Base64.encodeToString(encResult.keyBytes, Base64.NO_WRAP))
+                put("key", keyString)
                 if (!info.thumbBase64.isNullOrBlank()) {
                     put("thumb", info.thumbBase64)
                 }

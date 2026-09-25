@@ -53,7 +53,9 @@ sealed class WebSocketEvent {
         val nonce: ByteArray,
         val ts: Long,
         val replyToMsgId: String? = null,
-        val v: Int = 1
+        val v: Int = 1,
+        val plaintext: String? = null,
+        val isE2EE: Boolean = true
     ) : WebSocketEvent()
 
     data class MsgAck(
@@ -89,7 +91,9 @@ sealed class WebSocketEvent {
         val salt: ByteArray,
         val nonce: ByteArray,
         val createdAt: Long,
-        val replyToMsgId: String? = null
+        val replyToMsgId: String? = null,
+        val plaintext: String? = null,
+        val isE2EE: Boolean = true
     ) : WebSocketEvent()
 
     data class GroupMessageAck(
@@ -127,7 +131,9 @@ sealed class WebSocketEvent {
         val ciphertext: ByteArray,
         val salt: ByteArray,
         val nonce: ByteArray,
-        val editedAt: Long
+        val editedAt: Long,
+        val plaintext: String? = null,
+        val isE2EE: Boolean = false
     ) : WebSocketEvent() {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -137,7 +143,8 @@ sealed class WebSocketEvent {
                 fromIdentityKey.contentEquals(other.fromIdentityKey) && chatUserId == other.chatUserId &&
                 msgId == other.msgId && clientMsgId == other.clientMsgId &&
                 ciphertext.contentEquals(other.ciphertext) && salt.contentEquals(other.salt) &&
-                nonce.contentEquals(other.nonce) && editedAt == other.editedAt
+                nonce.contentEquals(other.nonce) && editedAt == other.editedAt &&
+                plaintext == other.plaintext && isE2EE == other.isE2EE
         }
         override fun hashCode(): Int = clientMsgId.hashCode()
     }
@@ -150,7 +157,9 @@ sealed class WebSocketEvent {
         val ciphertext: ByteArray,
         val salt: ByteArray,
         val nonce: ByteArray,
-        val editedAt: Long
+        val editedAt: Long,
+        val plaintext: String? = null,
+        val isE2EE: Boolean = false
     ) : WebSocketEvent() {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -160,7 +169,7 @@ sealed class WebSocketEvent {
                 senderUserId == other.senderUserId && senderDeviceId == other.senderDeviceId &&
                 keyVersion == other.keyVersion && ciphertext.contentEquals(other.ciphertext) &&
                 salt.contentEquals(other.salt) && nonce.contentEquals(other.nonce) &&
-                editedAt == other.editedAt
+                editedAt == other.editedAt && plaintext == other.plaintext && isE2EE == other.isE2EE
         }
         override fun hashCode(): Int = messageId.hashCode()
     }
@@ -1031,6 +1040,8 @@ class WebSocketManager @Inject constructor(
             var salt = ByteArray(0)
             var nonce = ByteArray(0)
             var editedAt = 0L
+            var plaintext: String? = null
+            var isE2EE = false
 
             for (i in 0 until size) {
                 val key = unpacker.unpackString()
@@ -1046,6 +1057,8 @@ class WebSocketManager @Inject constructor(
                     "salt" -> { val len = unpacker.unpackBinaryHeader(); salt = unpacker.readPayload(len) }
                     "nonce" -> { val len = unpacker.unpackBinaryHeader(); nonce = unpacker.readPayload(len) }
                     "edited_at" -> editedAt = unpacker.unpackLong()
+                    "plaintext" -> plaintext = unpacker.unpackString()
+                    "is_e2ee" -> isE2EE = unpacker.unpackBoolean()
                     else -> unpacker.unpackValue()
                 }
             }
@@ -1062,7 +1075,9 @@ class WebSocketManager @Inject constructor(
                         ciphertext = ciphertext,
                         salt = salt,
                         nonce = nonce,
-                        editedAt = editedAt * 1000
+                        editedAt = editedAt * 1000,
+                        plaintext = plaintext,
+                        isE2EE = isE2EE
                     )
                 )
             }
@@ -1084,6 +1099,8 @@ class WebSocketManager @Inject constructor(
             var salt = ByteArray(0)
             var nonce = ByteArray(0)
             var editedAt = 0L
+            var plaintext: String? = null
+            var isE2EE = false
 
             for (i in 0 until size) {
                 val key = unpacker.unpackString()
@@ -1098,6 +1115,8 @@ class WebSocketManager @Inject constructor(
                     "salt" -> { val len = unpacker.unpackBinaryHeader(); salt = unpacker.readPayload(len) }
                     "nonce" -> { val len = unpacker.unpackBinaryHeader(); nonce = unpacker.readPayload(len) }
                     "edited_at" -> editedAt = unpacker.unpackLong()
+                    "plaintext" -> plaintext = unpacker.unpackString()
+                    "is_e2ee" -> isE2EE = unpacker.unpackBoolean()
                     else -> unpacker.unpackValue()
                 }
             }
@@ -1113,7 +1132,9 @@ class WebSocketManager @Inject constructor(
                         ciphertext = ciphertext,
                         salt = salt,
                         nonce = nonce,
-                        editedAt = editedAt * 1000
+                        editedAt = editedAt * 1000,
+                        plaintext = plaintext,
+                        isE2EE = isE2EE
                     )
                 )
             }
@@ -1227,6 +1248,8 @@ class WebSocketManager @Inject constructor(
         var senderDeviceId = 0L; var keyVersion = 0L
         var ciphertext = ByteArray(0); var salt = ByteArray(0); var nonce = ByteArray(0); var createdAt = 0L
         var replyToMsgId: String? = null
+        var plaintext: String? = null
+        var isE2EE = true
         for (i in 0 until size) {
             val key = unpacker.unpackString()
             if (unpacker.nextFormat == MessageFormat.NIL) { unpacker.unpackNil(); continue }
@@ -1238,6 +1261,8 @@ class WebSocketManager @Inject constructor(
                 "sender_user_id" -> senderUserId = unpacker.unpackLong()
                 "sender_device_id" -> senderDeviceId = unpacker.unpackLong()
                 "key_version" -> keyVersion = unpacker.unpackLong()
+                "plaintext" -> plaintext = unpacker.unpackString()
+                "is_e2ee" -> isE2EE = unpacker.unpackBoolean()
                 "ciphertext" -> { val len = unpacker.unpackBinaryHeader(); ciphertext = unpacker.readPayload(len) }
                 "salt" -> { val len = unpacker.unpackBinaryHeader(); salt = unpacker.readPayload(len) }
                 "nonce" -> { val len = unpacker.unpackBinaryHeader(); nonce = unpacker.readPayload(len) }
@@ -1250,7 +1275,8 @@ class WebSocketManager @Inject constructor(
             _events.emit(
                 WebSocketEvent.GroupMessageRecv(
                     groupId, id, messageId, senderUserId, senderDeviceId,
-                    keyVersion, ciphertext, salt, nonce, createdAt, replyToMsgId
+                    keyVersion, ciphertext, salt, nonce, createdAt, replyToMsgId,
+                    plaintext, isE2EE
                 )
             )
         }
@@ -1373,6 +1399,8 @@ class WebSocketManager @Inject constructor(
         var v = 1
 
         var replyToMsgId: String? = null
+        var plaintext: String? = null
+        var isE2EE = true
 
         for (i in 0 until size) {
             val key = unpackString()
@@ -1391,6 +1419,8 @@ class WebSocketManager @Inject constructor(
                 "msg_id" -> msgId = unpackLong()
                 "client_msg_id" -> clientMsgId = unpackString()
                 "reply_to_msg_id" -> replyToMsgId = unpackString()
+                "plaintext" -> plaintext = unpackString()
+                "is_e2ee" -> isE2EE = unpackBoolean()
                 "ciphertext" -> {
                     val len = unpackBinaryHeader()
                     ciphertext = readPayload(len)
@@ -1421,14 +1451,16 @@ class WebSocketManager @Inject constructor(
             nonce = nonce,
             ts = ts * 1000,
             replyToMsgId = replyToMsgId,
-            v = v
+            v = v,
+            plaintext = plaintext,
+            isE2EE = isE2EE
         )
     }
 
     fun sendEncryptedMessage(toUserId: Long, clientMsgId: String, devices: List<E2EDevicePayload>, replyToMsgId: String? = null, createdAt: Long = 0L) {
         val bos = ByteArrayOutputStream()
         val packer = MessagePack.newDefaultPacker(bos)
-        var mapSize = 3
+        var mapSize = 4
         if (replyToMsgId != null) mapSize++
         if (createdAt > 0L) mapSize++
         packer.packMapHeader(mapSize)
@@ -1436,6 +1468,8 @@ class WebSocketManager @Inject constructor(
         packer.packLong(toUserId)
         packer.packString("msg_id")
         packer.packString(clientMsgId)
+        packer.packString("is_e2ee")
+        packer.packBoolean(true)
         if (createdAt > 0L) {
             packer.packString("created_at")
             packer.packLong(createdAt)
@@ -1474,16 +1508,35 @@ class WebSocketManager @Inject constructor(
         webSocket?.send(frame.toByteString(0, frame.size))
     }
 
-    fun sendMessage(toUserId: Long, text: String, clientMsgId: String = UUID.randomUUID().toString()) {
+    fun sendMessage(
+        toUserId: Long,
+        text: String,
+        clientMsgId: String = UUID.randomUUID().toString(),
+        replyToMsgId: String? = null,
+        createdAt: Long = 0L
+    ) {
         val bos = ByteArrayOutputStream()
         val packer = MessagePack.newDefaultPacker(bos)
-        packer.packMapHeader(3)
+        var mapSize = 4
+        if (replyToMsgId != null) mapSize++
+        if (createdAt > 0L) mapSize++
+        packer.packMapHeader(mapSize)
         packer.packString("to_user_id")
         packer.packLong(toUserId)
         packer.packString("plaintext")
         packer.packString(text)
         packer.packString("msg_id")
         packer.packString(clientMsgId)
+        packer.packString("is_e2ee")
+        packer.packBoolean(false)
+        if (createdAt > 0L) {
+            packer.packString("created_at")
+            packer.packLong(createdAt)
+        }
+        if (replyToMsgId != null) {
+            packer.packString("reply_to_msg_id")
+            packer.packString(replyToMsgId)
+        }
         packer.close()
 
         val payload = bos.toByteArray()
@@ -1491,6 +1544,24 @@ class WebSocketManager @Inject constructor(
         frame[0] = Opcode.MSG_SEND
         payload.copyInto(frame, 1)
         webSocket?.send(frame.toByteString(0, frame.size))
+    }
+
+    fun sendGroupCloudMessage(groupId: Long, messageId: String, text: String, createdAt: Long, replyToMsgId: String? = null) {
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        var size = 5
+        if (replyToMsgId != null) size++
+        packer.packMapHeader(size)
+        packer.packString("group_id"); packer.packLong(groupId)
+        packer.packString("message_id"); packer.packString(messageId)
+        packer.packString("plaintext"); packer.packString(text)
+        packer.packString("is_e2ee"); packer.packBoolean(false)
+        packer.packString("created_at"); packer.packLong(createdAt)
+        if (replyToMsgId != null) {
+            packer.packString("reply_to_msg_id"); packer.packString(replyToMsgId)
+        }
+        packer.close()
+        sendFrame(Opcode.GROUP_MESSAGE_SEND, bos.toByteArray())
     }
 
     fun sendDelivered(msgId: Long) {
@@ -1608,13 +1679,15 @@ class WebSocketManager @Inject constructor(
     fun sendEncryptedEdit(toUserId: Long, clientMsgId: String, devices: List<E2EDevicePayload>, editedAt: Long = 0L) {
         val bos = ByteArrayOutputStream()
         val packer = MessagePack.newDefaultPacker(bos)
-        var mapSize = 3
+        var mapSize = 4
         if (editedAt > 0L) mapSize++
         packer.packMapHeader(mapSize)
         packer.packString("to_user_id")
         packer.packLong(toUserId)
         packer.packString("msg_id")
         packer.packString(clientMsgId)
+        packer.packString("is_e2ee")
+        packer.packBoolean(true)
         if (editedAt > 0L) {
             packer.packString("edited_at")
             packer.packLong(editedAt)
@@ -1649,16 +1722,58 @@ class WebSocketManager @Inject constructor(
         webSocket?.send(frame.toByteString(0, frame.size))
     }
 
+    fun sendEdit(toUserId: Long, clientMsgId: String, newText: String, editedAt: Long = 0L) {
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        var mapSize = 4
+        if (editedAt > 0L) mapSize++
+        packer.packMapHeader(mapSize)
+        packer.packString("to_user_id"); packer.packLong(toUserId)
+        packer.packString("msg_id"); packer.packString(clientMsgId)
+        packer.packString("plaintext"); packer.packString(newText)
+        packer.packString("is_e2ee"); packer.packBoolean(false)
+        if (editedAt > 0L) {
+            packer.packString("edited_at")
+            packer.packLong(editedAt)
+        }
+        packer.close()
+
+        val payload = bos.toByteArray()
+        val frame = ByteArray(1 + payload.size)
+        frame[0] = Opcode.MSG_EDIT
+        payload.copyInto(frame, 1)
+        webSocket?.send(frame.toByteString(0, frame.size))
+    }
+
     fun sendGroupMessageEdit(groupId: Long, messageId: String, keyVersion: Long, ciphertext: ByteArray, salt: ByteArray, nonce: ByteArray, editedAt: Long) {
         val bos = ByteArrayOutputStream()
         val packer = MessagePack.newDefaultPacker(bos)
-        packer.packMapHeader(7)
+        packer.packMapHeader(8)
         packer.packString("group_id"); packer.packLong(groupId)
         packer.packString("message_id"); packer.packString(messageId)
+        packer.packString("is_e2ee"); packer.packBoolean(true)
         packer.packString("key_version"); packer.packLong(keyVersion)
         packer.packString("ciphertext"); packer.packBinaryHeader(ciphertext.size); packer.addPayload(ciphertext)
         packer.packString("salt"); packer.packBinaryHeader(salt.size); packer.addPayload(salt)
         packer.packString("nonce"); packer.packBinaryHeader(nonce.size); packer.addPayload(nonce)
+        packer.packString("edited_at"); packer.packLong(editedAt)
+        packer.close()
+
+        val payload = bos.toByteArray()
+        val frame = ByteArray(1 + payload.size)
+        frame[0] = Opcode.GROUP_MESSAGE_EDIT
+        payload.copyInto(frame, 1)
+        webSocket?.send(frame.toByteString(0, frame.size))
+    }
+
+    fun sendGroupCloudEdit(groupId: Long, messageId: String, newText: String, editedAt: Long) {
+        val bos = ByteArrayOutputStream()
+        val packer = MessagePack.newDefaultPacker(bos)
+        packer.packMapHeader(5)
+        packer.packString("group_id"); packer.packLong(groupId)
+        packer.packString("message_id"); packer.packString(messageId)
+        packer.packString("plaintext"); packer.packString(newText)
+        packer.packString("is_e2ee"); packer.packBoolean(false)
         packer.packString("edited_at"); packer.packLong(editedAt)
         packer.close()
 
