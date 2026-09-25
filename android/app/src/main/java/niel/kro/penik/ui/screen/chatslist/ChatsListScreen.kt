@@ -2,13 +2,21 @@ package niel.kro.penik.ui.screen.chatslist
 
 import niel.kro.penik.ui.theme.LocalAppColors
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Menu
@@ -59,6 +67,8 @@ fun ChatsListContent(
     onOpenDrawer: (() -> Unit)? = null,
     viewModel: ChatsListViewModel = hiltViewModel()
 ) {
+    val isArchiveOpen by viewModel.isArchiveOpen.collectAsState()
+    val archivedCount by viewModel.archivedCount.collectAsState()
     val feed by viewModel.feed.collectAsState()
     val isInitialLoading by viewModel.isInitialLoading.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
@@ -115,6 +125,12 @@ fun ChatsListContent(
                             unfocusedTextColor = LocalAppColors.current.textPrimary
                         )
                     )
+                } else if (isArchiveOpen) {
+                    Text(
+                        text = "Архив чатов",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp
+                    )
                 } else {
                     Column {
                         Text(
@@ -142,6 +158,14 @@ fun ChatsListContent(
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Закрыть поиск",
+                            tint = LocalAppColors.current.textPrimary
+                        )
+                    }
+                } else if (isArchiveOpen) {
+                    IconButton(onClick = { viewModel.closeArchive() }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Назад",
                             tint = LocalAppColors.current.textPrimary
                         )
                     }
@@ -281,19 +305,69 @@ fun ChatsListContent(
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                item(key = "self_chat") {
-                    SearchUserItem(
-                        name = SELF_CHAT_NAME,
-                        userId = viewModel.selfChatEntry?.id ?: 0L,
-                        nickname = "",
-                        lastMessage = selfChatLastMessage?.text,
-                        timestamp = selfChatLastMessage?.timestamp,
-                        onClick = {
-                            val myId = viewModel.selfChatEntry?.id ?: return@SearchUserItem
-                            onChatClick(myId, SELF_CHAT_NAME)
+                if (!isArchiveOpen) {
+                    item(key = "self_chat") {
+                        SearchUserItem(
+                            name = SELF_CHAT_NAME,
+                            userId = viewModel.selfChatEntry?.id ?: 0L,
+                            nickname = "",
+                            lastMessage = selfChatLastMessage?.text,
+                            timestamp = selfChatLastMessage?.timestamp,
+                            onClick = {
+                                val myId = viewModel.selfChatEntry?.id ?: return@SearchUserItem
+                                onChatClick(myId, SELF_CHAT_NAME)
+                            }
+                        )
+                        HorizontalDivider(color = LocalAppColors.current.border, modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+                    if (archivedCount > 0) {
+                        item(key = "archive_folder") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.openArchive() }
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .background(LocalAppColors.current.panelSecondary, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("📁", fontSize = 22.sp)
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Архив чатов",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 16.sp,
+                                        color = LocalAppColors.current.textPrimary
+                                    )
+                                    val chatWord = if (archivedCount % 10 == 1 && archivedCount % 100 != 11) "чат" else if (archivedCount % 10 in 2..4 && (archivedCount % 100 !in 12..14)) "чата" else "чатов"
+                                    Text(
+                                        text = "$archivedCount $chatWord",
+                                        fontSize = 13.sp,
+                                        color = LocalAppColors.current.textMuted
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .background(LocalAppColors.current.accent.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "$archivedCount",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = LocalAppColors.current.accent
+                                    )
+                                }
+                            }
+                            HorizontalDivider(color = LocalAppColors.current.border, modifier = Modifier.padding(horizontal = 16.dp))
                         }
-                    )
-                    HorizontalDivider(color = LocalAppColors.current.border, modifier = Modifier.padding(horizontal = 16.dp))
+                    }
                 }
                 if (filteredFeed.isEmpty()) {
                     if (!isInitialLoading) {
@@ -305,7 +379,7 @@ fun ChatsListContent(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "Нет переписок",
+                                    text = if (isArchiveOpen) "Архив пуст" else "Нет переписок",
                                     color = LocalAppColors.current.textMuted,
                                     fontSize = 16.sp
                                 )

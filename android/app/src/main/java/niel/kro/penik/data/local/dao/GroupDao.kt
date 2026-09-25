@@ -23,6 +23,18 @@ interface GroupDao {
     @Query("SELECT * FROM groups ORDER BY id")
     fun observeGroups(): Flow<List<GroupEntity>>
 
+    @Query("SELECT * FROM groups WHERE is_archived = 0 ORDER BY id")
+    fun observeActiveGroups(): Flow<List<GroupEntity>>
+
+    @Query("SELECT * FROM groups WHERE is_archived = 1 ORDER BY id")
+    fun observeArchivedGroups(): Flow<List<GroupEntity>>
+
+    @Query("SELECT COUNT(*) FROM groups WHERE is_archived = 1")
+    fun getArchivedCount(): Flow<Int>
+
+    @Query("UPDATE groups SET is_archived = :isArchived WHERE id = :groupId")
+    suspend fun setArchived(groupId: Long, isArchived: Boolean)
+
     @Query("SELECT * FROM groups ORDER BY id")
     suspend fun getAllGroups(): List<GroupEntity>
 

@@ -20,7 +20,7 @@ import niel.kro.penik.data.local.entity.MessageEntity
         GroupEntity::class, GroupMemberEntity::class,
         GroupKeyEntity::class, GroupMessageEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class PenikDatabase : RoomDatabase() {
@@ -104,6 +104,33 @@ abstract class PenikDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE chats ADD COLUMN isE2EE INTEGER NOT NULL DEFAULT 1")
                 db.execSQL("ALTER TABLE groups ADD COLUMN isE2EE INTEGER NOT NULL DEFAULT 1")
                 db.execSQL("ALTER TABLE messages ADD COLUMN isE2EE INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE groups ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE groups SET is_archived = 1 WHERE isE2EE = 1")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS chats_new (
+                        userId INTEGER NOT NULL,
+                        nickname TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        avatarUrl TEXT,
+                        lastMessage TEXT,
+                        lastMessageTimestamp INTEGER,
+                        unreadCount INTEGER NOT NULL,
+                        isE2EE INTEGER NOT NULL DEFAULT 0,
+                        is_archived INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(userId, isE2EE)
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT OR IGNORE INTO chats_new(userId, nickname, name, avatarUrl, lastMessage, lastMessageTimestamp, unreadCount, isE2EE, is_archived)
+                    SELECT userId, nickname, name, avatarUrl, lastMessage, lastMessageTimestamp, unreadCount, COALESCE(isE2EE, 0), CASE WHEN COALESCE(isE2EE, 0) = 1 THEN 1 ELSE 0 END
+                    FROM chats
+                """.trimIndent())
+                db.execSQL("DROP TABLE chats")
+                db.execSQL("ALTER TABLE chats_new RENAME TO chats")
             }
         }
     }

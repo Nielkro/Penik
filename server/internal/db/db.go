@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -1194,6 +1195,36 @@ func migrateCloudAndE2EE(database *sql.DB) error {
 		// Existing chats are treated as E2EE
 		if _, err := database.Exec("UPDATE chats SET is_e2ee = 1"); err != nil {
 			return fmt.Errorf("set existing chats to e2ee: %w", err)
+		}
+	}
+
+	// In SQLite, ALTER TABLE ADD COLUMN does not remove existing table-level UNIQUE(user1_id, user2_id).
+	// Check if the table definition still has the old 2-column unique constraint and recreate it if needed.
+	var createSQL string
+	err = database.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='chats'").Scan(&createSQL)
+	if err == nil {
+		normalizedSQL := strings.ReplaceAll(createSQL, " ", "")
+		if strings.Contains(normalizedSQL, "UNIQUE(user1_id,user2_id)") && !strings.Contains(normalizedSQL, "UNIQUE(user1_id,user2_id,is_e2ee)") {
+			_, err = database.Exec(`
+				PRAGMA foreign_keys=OFF;
+				CREATE TABLE chats_migrated (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					user1_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+					user2_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+					is_e2ee INTEGER NOT NULL DEFAULT 0,
+					created_at INTEGER NOT NULL,
+					UNIQUE(user1_id, user2_id, is_e2ee)
+				);
+				INSERT INTO chats_migrated(id, user1_id, user2_id, is_e2ee, created_at)
+					SELECT id, user1_id, user2_id, COALESCE(is_e2ee, 1), created_at FROM chats;
+				DROP TABLE chats;
+				ALTER TABLE chats_migrated RENAME TO chats;
+				CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_participants_e2ee ON chats(user1_id, user2_id, is_e2ee);
+				PRAGMA foreign_keys=ON;
+			`)
+			if err != nil {
+				return fmt.Errorf("recreate chats table without legacy unique: %w", err)
+			}
 		}
 	}
 	_, _ = database.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_participants_e2ee ON chats(user1_id, user2_id, is_e2ee)")

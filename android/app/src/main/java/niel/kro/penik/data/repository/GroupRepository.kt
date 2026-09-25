@@ -53,6 +53,10 @@ class GroupRepository @Inject constructor(
     private val historySyncInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
 
     fun observeGroups() = dao.observeGroups()
+    fun observeActiveGroups() = dao.observeActiveGroups()
+    fun observeArchivedGroups() = dao.observeArchivedGroups()
+    fun getArchivedCount() = dao.getArchivedCount()
+    suspend fun setArchived(groupId: Long, isArchived: Boolean) = dao.setArchived(groupId, isArchived)
     fun observeGroup(groupId: Long) = dao.observeGroup(groupId)
     fun observeMessages(groupId: Long) = dao.observeMessages(groupId)
     fun observeLastMessageForGroup(groupId: Long) = dao.observeLastMessageForGroup(groupId)

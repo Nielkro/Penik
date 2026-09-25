@@ -203,7 +203,9 @@ export async function renderChatList(container) {
           }
         }
 
-        return { ...c, _kind: "chat", last_message, last_ts };
+        const isE2EE = !!c.is_e2ee;
+        const isArchived = c.is_archived !== undefined ? !!c.is_archived : isE2EE;
+        return { ...c, _kind: "chat", last_message, last_ts, is_e2ee: isE2EE, is_archived: isArchived };
       }));
       return enriched;
     } catch {
@@ -236,9 +238,29 @@ export async function renderChatList(container) {
   let groups = await loadGroupEntries();
   await loadSelfChat();
 
+  let isArchiveView = false;
+  const titleEl = header.querySelector(".chatlist-title");
+
   function render(filter) {
     listEl.innerHTML = "";
-    if (selfChatEntry && (!filter || "избранное".includes(filter))) {
+    if (titleEl) {
+      titleEl.textContent = isArchiveView ? "Архив чатов" : "Чаты";
+    }
+
+    if (isArchiveView) {
+      const backItem = el("li", { class: "chatlist-item chatlist-archive-item", style: "cursor: pointer; background: var(--input-bg, rgba(255,255,255,0.05)); margin-bottom: 6px; border-radius: 10px;" },
+        el("div", { class: "chatlist-item-avatar-placeholder", style: "display:flex;align-items:center;justify-content:center;font-size:20px;width:48px;height:48px;border-radius:50%;background:var(--panel-secondary, #252535);" }, "⬅"),
+        el("div", { class: "chatlist-item-info" },
+          el("span", { class: "chatlist-item-name", style: "font-weight: 600;" }, "Назад к чатам"),
+          el("span", { class: "chatlist-item-preview" }, "Выйти из архива")
+        )
+      );
+      backItem.addEventListener("click", () => {
+        isArchiveView = false;
+        render(searchInput.value.trim().toLowerCase());
+      });
+      listEl.appendChild(backItem);
+    } else if (selfChatEntry && (!filter || "избранное".includes(filter))) {
       const selfAvatar = avatar({ name: "Избранное" }, 48);
       selfAvatar.addEventListener("click", (e) => e.stopPropagation());
       selfAvatar.style.cursor = "default";
@@ -253,8 +275,8 @@ export async function renderChatList(container) {
       selfItem.addEventListener("click", () => navigate(`#chat/${myId}`));
       listEl.appendChild(selfItem);
     }
+
     // Merge personal chats and groups, then sort by most recent activity.
-    // Quiet conversations and pending invites (last_ts 0) sink to the bottom.
     let merged = [...contacts, ...groups];
     if (filter) {
       merged = merged.filter(x =>
@@ -264,8 +286,30 @@ export async function renderChatList(container) {
     }
     merged.sort((a, b) => (normalizeTs(b.last_ts) || 0) - (normalizeTs(a.last_ts) || 0));
 
-    if (!merged.length && !selfChatEntry) {
-      listEl.appendChild(el("li", { class: "chatlist-empty" }, "Пусто. Найдите пользователя или создайте группу."));
+    if (!isArchiveView) {
+      const archivedCount = merged.filter(x => !!x.is_archived).length;
+      if (archivedCount > 0 && !filter) {
+        const archiveItem = el("li", { class: "chatlist-item chatlist-archive-item", style: "cursor: pointer; background: var(--input-bg, rgba(255,255,255,0.05)); margin-bottom: 6px; border-radius: 10px;" },
+          el("div", { class: "chatlist-item-avatar-placeholder", style: "display:flex;align-items:center;justify-content:center;font-size:22px;width:48px;height:48px;border-radius:50%;background:var(--panel-secondary, #252535);" }, "📁"),
+          el("div", { class: "chatlist-item-info" },
+            el("span", { class: "chatlist-item-name", style: "font-weight: 600;" }, "Архив чатов"),
+            el("span", { class: "chatlist-item-preview" }, `${archivedCount} ${archivedCount === 1 ? 'чат' : 'чатов'}`)
+          ),
+          el("span", { class: "chatlist-item-time", style: "background: var(--accent, #5b6ef5); color: #fff; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 11px;" }, String(archivedCount))
+        );
+        archiveItem.addEventListener("click", () => {
+          isArchiveView = true;
+          render("");
+        });
+        listEl.appendChild(archiveItem);
+      }
+      merged = merged.filter(x => !x.is_archived);
+    } else {
+      merged = merged.filter(x => !!x.is_archived);
+    }
+
+    if (!merged.length && (!selfChatEntry || isArchiveView)) {
+      listEl.appendChild(el("li", { class: "chatlist-empty" }, isArchiveView ? "В архиве нет чатов." : "Пусто. Найдите пользователя или создайте группу."));
       return;
     }
 
@@ -347,7 +391,9 @@ async function loadGroupEntries() {
         last_ts = normalizeTs(g.created_at || g.created || 0);
       }
     } catch { /* preview falls back to role/empty */ }
-    return { ...g, _kind: "group", last_ts, last_message };
+    const isE2EE = !!g.is_e2ee;
+    const isArchived = g.is_archived !== undefined ? !!g.is_archived : isE2EE;
+    return { ...g, _kind: "group", last_ts, last_message, is_e2ee: isE2EE, is_archived: isArchived };
   }));
 }
 

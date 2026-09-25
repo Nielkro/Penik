@@ -20,16 +20,18 @@ data class MessageEntity(
     val isE2EE: Boolean = false
 )
 
-@Entity(tableName = "chats")
+@Entity(tableName = "chats", primaryKeys = ["userId", "isE2EE"])
 data class ChatEntity(
-    @PrimaryKey val userId: Long,
+    val userId: Long,
     val nickname: String,
     val name: String,
     val avatarUrl: String? = null,
     val lastMessage: String? = null,
     val lastMessageTimestamp: Long? = null,
     val unreadCount: Int = 0,
-    val isE2EE: Boolean = false
+    val isE2EE: Boolean = false,
+    @androidx.room.ColumnInfo(name = "is_archived")
+    val isArchived: Boolean = false
 )
 
 @Entity(tableName = "groups")
@@ -42,7 +44,9 @@ data class GroupEntity(
     val membershipVersion: Long = 1,
     val currentKeyVersion: Long = 1,
     val createdAt: Long = 0,
-    val isE2EE: Boolean = false
+    val isE2EE: Boolean = false,
+    @androidx.room.ColumnInfo(name = "is_archived")
+    val isArchived: Boolean = false
 )
 
 @Entity(tableName = "group_members", primaryKeys = ["groupId", "userId"])

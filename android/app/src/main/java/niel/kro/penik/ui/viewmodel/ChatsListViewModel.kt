@@ -37,6 +37,7 @@ sealed interface FeedItem {
     val lastMessageTimestamp: Long?
     val unreadCount: Int
     val isE2EE: Boolean
+    val isArchived: Boolean
 
     data class ChatItem(
         override val id: Long,
@@ -45,7 +46,8 @@ sealed interface FeedItem {
         override val lastMessage: String?,
         override val lastMessageTimestamp: Long?,
         override val unreadCount: Int,
-        override val isE2EE: Boolean = false
+        override val isE2EE: Boolean = false,
+        override val isArchived: Boolean = false
     ) : FeedItem
 
     data class GroupItem(
@@ -55,7 +57,8 @@ sealed interface FeedItem {
         override val lastMessageTimestamp: Long?,
         override val unreadCount: Int,
         val status: String,
-        override val isE2EE: Boolean = false
+        override val isE2EE: Boolean = false,
+        override val isArchived: Boolean = false
     ) : FeedItem
 }
 
@@ -72,82 +75,111 @@ class ChatsListViewModel @Inject constructor(
     private val messageRepository: MessageRepository
 ) : ViewModel() {
 
+    private val _isArchiveOpen = MutableStateFlow(false)
+    val isArchiveOpen: StateFlow<Boolean> = _isArchiveOpen.asStateFlow()
+
+    val archivedCount: StateFlow<Int> = combine(
+        chatRepository.getArchivedCount(),
+        groupRepository.getArchivedCount()
+    ) { c, g -> c + g }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    fun openArchive() { _isArchiveOpen.value = true }
+    fun closeArchive() { _isArchiveOpen.value = false }
+
+    fun toggleChatArchived(userId: Long, isE2EE: Boolean, currentArchived: Boolean) {
+        viewModelScope.launch {
+            chatRepository.setArchived(userId, isE2EE, !currentArchived)
+        }
+    }
+
+    fun toggleGroupArchived(groupId: Long, currentArchived: Boolean) {
+        viewModelScope.launch {
+            groupRepository.setArchived(groupId, !currentArchived)
+        }
+    }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val feed: StateFlow<List<FeedItem>> = combine(
-        loadChatsUseCase().map { list ->
-            val myId = authRepository.getUserId() ?: 0L
-            android.util.Log.d("PenikFeed", "loadChatsUseCase emitted ${list.size} chats from DB: ${list.map { "id=${it.userId}, name=${it.name}, lastMsg=${it.lastMessage}" }}")
-            // Exclude any ghost self-chat entry that may have been created before this fix.
-            list.filter { it.userId != myId }
-                .map {
-                    val displayName = it.name.ifBlank { it.nickname.ifBlank { "Пользователь ${it.userId}" } }
-                    FeedItem.ChatItem(it.userId, displayName, it.nickname, it.lastMessage, it.lastMessageTimestamp, it.unreadCount, it.isE2EE)
-                }
-        },
-        groupRepository.observeGroups().flatMapLatest { groups ->
-            if (groups.isEmpty()) return@flatMapLatest flowOf(emptyList<FeedItem.GroupItem>())
-            val flows = groups.map { group ->
-                groupRepository.observeLastMessageForGroup(group.id).flatMapLatest { lastMsg ->
-                    if (lastMsg == null) {
-                        flowOf(
-                            FeedItem.GroupItem(
-                                id = group.id,
-                                name = group.name,
-                                lastMessage = null,
-                                lastMessageTimestamp = null,
-                                unreadCount = 0,
-                                status = group.status,
-                                isE2EE = group.isE2EE
-                            )
-                        )
-                    } else if (lastMsg.sentByMe) {
-                        flowOf(
-                            FeedItem.GroupItem(
-                                id = group.id,
-                                name = group.name,
-                                lastMessage = "Вы: ${lastMsg.text}",
-                                lastMessageTimestamp = lastMsg.createdAt * 1000,
-                                unreadCount = 0,
-                                status = group.status,
-                                isE2EE = group.isE2EE
-                            )
-                        )
-                    } else {
-                        groupRepository.observeMember(group.id, lastMsg.senderUserId).map { member ->
-                            val senderName = member?.let { m ->
-                                m.name.ifBlank { m.nickname.ifBlank { "Пользователь ${lastMsg.senderUserId}" } }
-                            } ?: "Пользователь ${lastMsg.senderUserId}"
-                            FeedItem.GroupItem(
-                                id = group.id,
-                                name = group.name,
-                                lastMessage = "$senderName: ${lastMsg.text}",
-                                lastMessageTimestamp = lastMsg.createdAt * 1000,
-                                unreadCount = 0,
-                                status = group.status,
-                                isE2EE = group.isE2EE
-                            )
-                        }.onStart {
-                            emit(
+    val feed: StateFlow<List<FeedItem>> = _isArchiveOpen.flatMapLatest { showArchived ->
+        val chatsFlow = if (showArchived) chatRepository.getArchivedChats() else chatRepository.getActiveChats()
+        val groupsFlow = if (showArchived) groupRepository.observeArchivedGroups() else groupRepository.observeActiveGroups()
+
+        combine(
+            chatsFlow.map { list ->
+                val myId = authRepository.getUserId() ?: 0L
+                list.filter { it.userId != myId }
+                    .map {
+                        val displayName = it.name.ifBlank { it.nickname.ifBlank { "Пользователь ${it.userId}" } }
+                        FeedItem.ChatItem(it.userId, displayName, it.nickname, it.lastMessage, it.lastMessageTimestamp, it.unreadCount, it.isE2EE, it.isArchived)
+                    }
+            },
+            groupsFlow.flatMapLatest { groups ->
+                if (groups.isEmpty()) return@flatMapLatest flowOf(emptyList<FeedItem.GroupItem>())
+                val flows = groups.map { group ->
+                    groupRepository.observeLastMessageForGroup(group.id).flatMapLatest { lastMsg ->
+                        if (lastMsg == null) {
+                            flowOf(
                                 FeedItem.GroupItem(
                                     id = group.id,
                                     name = group.name,
-                                    lastMessage = lastMsg.text,
+                                    lastMessage = null,
+                                    lastMessageTimestamp = null,
+                                    unreadCount = 0,
+                                    status = group.status,
+                                    isE2EE = group.isE2EE,
+                                    isArchived = group.isArchived
+                                )
+                            )
+                        } else if (lastMsg.sentByMe) {
+                            flowOf(
+                                FeedItem.GroupItem(
+                                    id = group.id,
+                                    name = group.name,
+                                    lastMessage = "Вы: ${lastMsg.text}",
                                     lastMessageTimestamp = lastMsg.createdAt * 1000,
                                     unreadCount = 0,
                                     status = group.status,
-                                    isE2EE = group.isE2EE
+                                    isE2EE = group.isE2EE,
+                                    isArchived = group.isArchived
                                 )
                             )
+                        } else {
+                            groupRepository.observeMember(group.id, lastMsg.senderUserId).map { member ->
+                                val senderName = member?.let { m ->
+                                    m.name.ifBlank { m.nickname.ifBlank { "Пользователь ${lastMsg.senderUserId}" } }
+                                } ?: "Пользователь ${lastMsg.senderUserId}"
+                                FeedItem.GroupItem(
+                                    id = group.id,
+                                    name = group.name,
+                                    lastMessage = "$senderName: ${lastMsg.text}",
+                                    lastMessageTimestamp = lastMsg.createdAt * 1000,
+                                    unreadCount = 0,
+                                    status = group.status,
+                                    isE2EE = group.isE2EE,
+                                    isArchived = group.isArchived
+                                )
+                            }.onStart {
+                                emit(
+                                    FeedItem.GroupItem(
+                                        id = group.id,
+                                        name = group.name,
+                                        lastMessage = lastMsg.text,
+                                        lastMessageTimestamp = lastMsg.createdAt * 1000,
+                                        unreadCount = 0,
+                                        status = group.status,
+                                        isE2EE = group.isE2EE,
+                                        isArchived = group.isArchived
+                                    )
+                                )
+                            }
                         }
                     }
                 }
+                combine(flows) { it.toList() }
             }
-            combine(flows) { it.toList() }
+        ) { chatsList, groupsList ->
+            val sorted = (chatsList + groupsList).sortedByDescending { it.lastMessageTimestamp ?: 0L }
+            sorted
         }
-    ) { chatsList, groupsList ->
-        val sorted = (chatsList + groupsList).sortedByDescending { it.lastMessageTimestamp ?: 0L }
-        android.util.Log.d("PenikFeed", "Combined feed emitted ${sorted.size} items: ${sorted.map { "${it.id}:${it.name}:${it.lastMessage}" }}")
-        sorted
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val connectionState = webSocketManager.connectionState
