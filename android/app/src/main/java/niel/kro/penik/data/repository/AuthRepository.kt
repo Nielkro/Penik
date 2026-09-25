@@ -130,8 +130,10 @@ class AuthRepository @Inject constructor(
         if (userId <= 0L || deviceId <= 0L) return OwnKeyStatus.UNKNOWN
         return try {
             val devices = messageRepositoryProvider.get().getKeyBundleCached(userId, isSelf = true)
+            // If the server failed to respond or the device is not found in the list,
+            // the status is UNKNOWN (network or server issue), NOT a key mismatch.
             val dev = devices.find { it.deviceId == deviceId }
-                ?: return OwnKeyStatus.MISMATCH
+                ?: return OwnKeyStatus.UNKNOWN
             val serverPub = runCatching {
                 Base64.getDecoder().decode(dev.identityKey)
             }.getOrNull() ?: return OwnKeyStatus.UNKNOWN
