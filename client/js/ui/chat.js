@@ -182,8 +182,14 @@ export async function renderChatList(container) {
         let last_message = c.last_message || "";
         let last_ts = c.last_ts || 0;
 
+        const isE2EE = c.is_e2ee !== undefined ? !!c.is_e2ee : true;
+        const isArchived = c.is_archived !== undefined ? !!c.is_archived : isE2EE;
+        if (c.is_e2ee === undefined || c.is_archived === undefined) {
+          saveContact({ ...c, is_e2ee: isE2EE, is_archived: isArchived }).catch(() => {});
+        }
+
         try {
-          const msgs = await getMessages(c.user_id, 1);
+          const msgs = await getMessages(c.user_id, 1, null, isE2EE);
           if (msgs && msgs.length > 0) {
             const last = msgs[msgs.length - 1];
             const msgTs = last.created_at || 0;
@@ -203,11 +209,6 @@ export async function renderChatList(container) {
           }
         }
 
-        const isE2EE = c.is_e2ee !== undefined ? !!c.is_e2ee : true;
-        const isArchived = c.is_archived !== undefined ? !!c.is_archived : isE2EE;
-        if (c.is_e2ee === undefined || c.is_archived === undefined) {
-          saveContact({ ...c, is_e2ee: isE2EE, is_archived: isArchived }).catch(() => {});
-        }
         return { ...c, _kind: "chat", last_message, last_ts, is_e2ee: isE2EE, is_archived: isArchived };
       }));
       return enriched;
@@ -450,15 +451,7 @@ function showCreateMenu(anchor, onGroupCreated) {
 // ── Chat view ────────────────────────────────────────────────────────────────
 
 export async function renderChat(container, userId, isE2EEOpt = false) {
-  let isE2EE = Boolean(isE2EEOpt);
-  if (!isE2EE && userId) {
-    try {
-      const stored = await getContact(Number(userId));
-      if (stored && (stored.is_e2ee === true || stored.is_e2ee === undefined)) {
-        isE2EE = true;
-      }
-    } catch {}
-  }
+  const isE2EE = Boolean(isE2EEOpt);
 
   container.innerHTML = "";
 
@@ -530,7 +523,7 @@ export async function renderChat(container, userId, isE2EEOpt = false) {
     videoCallBtn.addEventListener("click", () => safeStartCall(true));
   }
 
-  const safetyBtn = isSelfChat ? null : el("button", {
+  const safetyBtn = (!isE2EE || isSelfChat) ? null : el("button", {
     class: "icon-btn chat-safety",
     title: "Код безопасности E2EE",
   }, svgIcon("M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", 18, "var(--accent)"));
@@ -709,9 +702,6 @@ export async function renderChat(container, userId, isE2EEOpt = false) {
   if (!isSelfChat) {
     (async () => {
       let resolved = await getContact(Number(userId));
-      if (resolved && resolved.is_e2ee !== undefined) {
-        isE2EE = !!resolved.is_e2ee;
-      }
       if (!resolved || resolved.name === "Неизвестный") {
         try {
           const res = await apiGet(`/users/${userId}`);
@@ -793,8 +783,10 @@ export async function renderChat(container, userId, isE2EEOpt = false) {
 
     const onLocalSent = (e) => {
       if (String(e.detail?.targetUserId) === String(userId) && e.detail?.storedMsg) {
-        appendMessage(e.detail.storedMsg);
-        scrollDown.scrollToBottom();
+        if (Boolean(e.detail.storedMsg.is_e2ee) === Boolean(isE2EE)) {
+          appendMessage(e.detail.storedMsg);
+          scrollDown.scrollToBottom();
+        }
       }
     };
     window.addEventListener("local-msg-sent", onLocalSent);
@@ -818,13 +810,13 @@ export async function renderChat(container, userId, isE2EEOpt = false) {
   let calls = [];
   try {
     let [msgs, peerCalls] = await Promise.all([
-      getMessages(userId, 50).catch(() => []),
+      getMessages(userId, 50, null, isE2EE).catch(() => []),
       listPeerCalls(userId, 50).catch(() => [])
     ]);
 
     if (!msgs || msgs.length === 0) {
       await syncMessageHistory({ chat_user_id: userId, is_e2ee: isE2EE, limit: 100 }).catch(() => {});
-      msgs = await getMessages(userId, 50).catch(() => []);
+      msgs = await getMessages(userId, 50, null, isE2EE).catch(() => []);
     } else {
       syncMessageHistory({ chat_user_id: userId, is_e2ee: isE2EE, limit: 100 }).catch(() => {});
     }
@@ -1388,7 +1380,7 @@ export async function renderChat(container, userId, isE2EEOpt = false) {
       // the same id range were never fetched, and local-first would skip them.
       let serverBeforeId = getHistoryWatermark(userId);
       if (serverBeforeId == null) {
-        await syncMessageHistory({ chat_user_id: userId, limit: 100 }).catch(() => {});
+        await syncMessageHistory({ chat_user_id: userId, is_e2ee: isE2EE, limit: 100 }).catch(() => {});
         serverBeforeId = getHistoryWatermark(userId);
       }
 
@@ -1396,6 +1388,7 @@ export async function renderChat(container, userId, isE2EEOpt = false) {
         try {
           const fetched = await syncMessageHistory({
             chat_user_id: userId,
+            is_e2ee: isE2EE,
             before_id: serverBeforeId,
             limit: 50
           });
@@ -1409,7 +1402,7 @@ export async function renderChat(container, userId, isE2EEOpt = false) {
         hasMoreOlder = false;
       }
 
-      const olderLocal = await getMessages(userId, 50, oldestTs);
+      const olderLocal = await getMessages(userId, 50, oldestTs, isE2EE);
       if (olderLocal.length > 0) {
         const seenIds = new Set(messages.map(m => String(m.msg_id)));
         const toPrepend = olderLocal.filter(m => !seenIds.has(String(m.msg_id)));
@@ -2122,7 +2115,8 @@ export async function renderChat(container, userId, isE2EEOpt = false) {
     },
     (msgId, newText, editedAt) => {
       updateDomMessageText(msgId, newText, editedAt);
-    }
+    },
+    isE2EE
   );
 
   const socket = getWS();

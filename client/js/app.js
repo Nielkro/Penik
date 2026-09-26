@@ -594,8 +594,8 @@ export async function logout() {
 let _activeChatCallback = null;
 let _chatListUpdateCallback = null;
 
-export function setActiveChatCallback(userId, fn, onAck, onStatus, onMessageEdited) {
-  _activeChatCallback = userId ? { userId, fn, onAck, onStatus, onMessageEdited } : null;
+export function setActiveChatCallback(userId, fn, onAck, onStatus, onMessageEdited, isE2EE = null) {
+  _activeChatCallback = userId ? { userId, fn, onAck, onStatus, onMessageEdited, isE2EE } : null;
 }
 
 export function setChatListUpdateCallback(cb) {
@@ -830,6 +830,7 @@ async function onMsgRecvGlobal(payload) {
     }
   }
 
+  const isE2EE = Boolean(payload.is_e2ee || payload.ciphertext);
   const inMsg = {
     msg_id: payload.msg_id,
     chat_id: String(chatPartnerId),
@@ -839,6 +840,7 @@ async function onMsgRecvGlobal(payload) {
     delivered: 1,
     client_msg_id: payload.client_msg_id,
     reply_to_msg_id: payload.reply_to_msg_id || null,
+    is_e2ee: isE2EE
   };
 
   await saveMessage(inMsg);
@@ -861,6 +863,7 @@ async function onMsgRecvGlobal(payload) {
     user_id: chatPartnerId,
     last_message: plaintext,
     last_ts: inMsg.created_at,
+    is_e2ee: isE2EE
   });
 
   if (ws) {
@@ -896,7 +899,9 @@ async function onMsgRecvGlobal(payload) {
   }
 
   if (_activeChatCallback && String(_activeChatCallback.userId) === String(chatPartnerId)) {
-    _activeChatCallback.fn(inMsg);
+    if (_activeChatCallback.isE2EE == null || Boolean(_activeChatCallback.isE2EE) === isE2EE) {
+      _activeChatCallback.fn(inMsg);
+    }
     if (ws && payload.msg_id && !isMine && decryptSuccess) {
       ws.send(0x18, { msg_id: Number(payload.msg_id) });
     }
@@ -1233,20 +1238,19 @@ export async function syncMessageHistory(options = {}) {
     };
 
     for (const item of history) {
-      // History is device-scoped.  Never try to decrypt a fan-out copy that
-      // belongs to another device of the same account (for example, the
-      // phone copy while this browser is the web device).  Such a copy uses
-      // that device's OTPK and can never be decrypted here.
-      // A fan-out row addressed to the phone must never be processed by the
-      // web client, even when the message was sent from this web client.
-      // The sender's copy is encrypted with the recipient device's OTPK.
-      const hasDeviceScope = item.recipient_device_id != null || item.sender_device_id != null;
-      const belongsToThisDevice = !hasDeviceScope ||
-        Number(item.recipient_device_id) === currentDeviceId ||
-        Number(item.sender_device_id) === currentDeviceId;
-      if (!belongsToThisDevice) {
-        stats.deviceSkipped++;
-        continue;
+      const isPlaintext = item.plaintext != null && item.plaintext !== "";
+      const isE2EE = item.is_e2ee !== false && !isPlaintext && item.ciphertext != null;
+      if (isE2EE) {
+        // History is device-scoped for E2EE messages. Never try to decrypt a fan-out
+        // copy that belongs to another device of the same account.
+        const hasDeviceScope = item.recipient_device_id != null || item.sender_device_id != null;
+        const belongsToThisDevice = !hasDeviceScope ||
+          Number(item.recipient_device_id) === currentDeviceId ||
+          Number(item.sender_device_id) === currentDeviceId;
+        if (!belongsToThisDevice) {
+          stats.deviceSkipped++;
+          continue;
+        }
       }
       const existing = await getMessage(item.id);
       const isEdited = item.edited_at && (!existing || !existing.edited_at || (item.edited_at * 1000 > existing.edited_at));
@@ -1450,12 +1454,15 @@ export async function syncMessageHistory(options = {}) {
         client_msg_id: item.client_msg_id,
         reply_to_msg_id: item.reply_to_msg_id || null,
         edited_at: item.edited_at ? item.edited_at * 1000 : null,
+        is_e2ee: isE2EE,
       };
       await saveMessage(storedMsg);
       stats.savedNew++;
 
       if (_activeChatCallback && String(_activeChatCallback.userId) === String(peerId)) {
-        _activeChatCallback.fn(storedMsg);
+        if (_activeChatCallback.isE2EE == null || Boolean(_activeChatCallback.isE2EE) === isE2EE) {
+          _activeChatCallback.fn(storedMsg);
+        }
       }
     }
 
@@ -1907,7 +1914,7 @@ function setupGlobalWSListeners() {
       if (_activeChatCallback && String(_activeChatCallback.userId) === String(payload.user_id)) {
         const chatScreen = document.getElementById('screen-chat');
         if (chatScreen && chatScreen.classList.contains('active')) {
-          renderChat(chatScreen, payload.user_id);
+          renderChat(chatScreen, payload.user_id, _activeChatCallback.isE2EE);
         }
       }
     }
@@ -1930,7 +1937,7 @@ function setupGlobalWSListeners() {
     if (_activeChatCallback && String(_activeChatCallback.userId) === String(userId)) {
       const chatScreen = document.getElementById('screen-chat');
       if (chatScreen && chatScreen.classList.contains('active')) {
-        renderChat(chatScreen, userId);
+        renderChat(chatScreen, userId, _activeChatCallback.isE2EE);
       }
     }
   });

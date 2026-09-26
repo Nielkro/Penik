@@ -240,7 +240,7 @@ async function unsealMessageRecord(msg) {
   return msg;
 }
 
-export async function getMessages(chatId, limit = 50, before = null) {
+export async function getMessages(chatId, limit = 50, before = null, isE2EE = null) {
   await openDB();
   return new Promise((resolve, reject) => {
     const transaction = _db.transaction("messages", "readonly");
@@ -285,7 +285,8 @@ export async function getMessages(chatId, limit = 50, before = null) {
           if (!seen.has(msgKey)) {
             seen.add(msgKey);
             const msgTs = getMsgTs(msg);
-            if (beforeTime == null || msgTs < beforeTime) {
+            const matchesE2EE = isE2EE == null || Boolean(msg.is_e2ee) === Boolean(isE2EE);
+            if (matchesE2EE && (beforeTime == null || msgTs < beforeTime)) {
               list.push(msg);
             }
           }
