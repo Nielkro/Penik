@@ -189,12 +189,11 @@ function parseHash() {
   const hash = location.hash || '';
   if (hash.startsWith('#chat/')) {
     const raw = hash.slice(6);
-    const [userIdPart, query] = raw.split('?');
-    const isE2EE = query ? new URLSearchParams(query).get('e2ee') === '1' : false;
-    return { screen: 'chat', userId: userIdPart, isE2EE };
+    const [userIdPart] = raw.split('?');
+    return { screen: 'chat', userId: userIdPart };
   }
   if (hash.startsWith('#secret-chat/')) {
-    return { screen: 'chat', userId: hash.slice(13), isE2EE: true };
+    return { screen: 'chat', userId: hash.slice(13) };
   }
   if (hash.startsWith('#group/')) return { screen: 'group', userId: hash.slice(7) };
   return { screen: hash || '#chats' };
@@ -325,7 +324,7 @@ function showAuth(mode) {
   buildAuthLayout(mode);
 }
 
-function showMain(screen, userId, isE2EE = false) {
+function showMain(screen, userId) {
   const layout = buildMainLayout();
   const mainWrap = document.getElementById('main-wrap');
 
@@ -351,7 +350,7 @@ function showMain(screen, userId, isE2EE = false) {
   if (screen === 'chat' && userId) {
     layout.chatScreen.classList.add('active');
     layout.chatScreen.innerHTML = '';
-    renderChat(layout.chatScreen, userId, isE2EE);
+    renderChat(layout.chatScreen, userId);
     /* Also show chat list on wide screens */
     if (window.innerWidth >= 700) {
       layout.chatListScreen.classList.add('active');
@@ -423,7 +422,7 @@ function showMain(screen, userId, isE2EE = false) {
 
 /* ── Router ── */
 function handleRoute() {
-  const { screen, userId, isE2EE } = parseHash();
+  const { screen, userId } = parseHash();
 
   if (!getToken()) {
     if (screen === '#register') {
@@ -447,7 +446,7 @@ function handleRoute() {
   }
 
   if (screen === 'chat') {
-    showMain('chat', userId, isE2EE);
+    showMain('chat', userId);
   } else if (screen === 'group') {
     showMain('group', userId);
   } else {
@@ -594,8 +593,8 @@ export async function logout() {
 let _activeChatCallback = null;
 let _chatListUpdateCallback = null;
 
-export function setActiveChatCallback(userId, fn, onAck, onStatus, onMessageEdited, isE2EE = null) {
-  _activeChatCallback = userId ? { userId, fn, onAck, onStatus, onMessageEdited, isE2EE } : null;
+export function setActiveChatCallback(userId, fn, onAck, onStatus, onMessageEdited) {
+  _activeChatCallback = userId ? { userId, fn, onAck, onStatus, onMessageEdited } : null;
 }
 
 export function setChatListUpdateCallback(cb) {
@@ -899,9 +898,7 @@ async function onMsgRecvGlobal(payload) {
   }
 
   if (_activeChatCallback && String(_activeChatCallback.userId) === String(chatPartnerId)) {
-    if (_activeChatCallback.isE2EE == null || Boolean(_activeChatCallback.isE2EE) === isE2EE) {
-      _activeChatCallback.fn(inMsg);
-    }
+    _activeChatCallback.fn(inMsg);
     if (ws && payload.msg_id && !isMine && decryptSuccess) {
       ws.send(0x18, { msg_id: Number(payload.msg_id) });
     }
@@ -1460,9 +1457,7 @@ export async function syncMessageHistory(options = {}) {
       stats.savedNew++;
 
       if (_activeChatCallback && String(_activeChatCallback.userId) === String(peerId)) {
-        if (_activeChatCallback.isE2EE == null || Boolean(_activeChatCallback.isE2EE) === isE2EE) {
-          _activeChatCallback.fn(storedMsg);
-        }
+        _activeChatCallback.fn(storedMsg);
       }
     }
 
@@ -1914,7 +1909,7 @@ function setupGlobalWSListeners() {
       if (_activeChatCallback && String(_activeChatCallback.userId) === String(payload.user_id)) {
         const chatScreen = document.getElementById('screen-chat');
         if (chatScreen && chatScreen.classList.contains('active')) {
-          renderChat(chatScreen, payload.user_id, _activeChatCallback.isE2EE);
+          renderChat(chatScreen, payload.user_id);
         }
       }
     }
@@ -1937,7 +1932,7 @@ function setupGlobalWSListeners() {
     if (_activeChatCallback && String(_activeChatCallback.userId) === String(userId)) {
       const chatScreen = document.getElementById('screen-chat');
       if (chatScreen && chatScreen.classList.contains('active')) {
-        renderChat(chatScreen, userId, _activeChatCallback.isE2EE);
+        renderChat(chatScreen, userId);
       }
     }
   });
