@@ -9,10 +9,10 @@ sealed class Screen(val route: String) {
     object Backup : Screen("backup")
     object Devices : Screen("devices")
     object PairingScanner : Screen("pairing/scanner")
-    object ChatRoom : Screen("chat/{chatUserId}/{chatName}") {
-        fun createRoute(chatUserId: Long, chatName: String): String {
+    object ChatRoom : Screen("chat/{chatUserId}/{chatName}?e2ee={isE2EE}") {
+        fun createRoute(chatUserId: Long, chatName: String, isE2EE: Boolean = false): String {
             val encodedName = Uri.encode(chatName.ifBlank { "Пользователь" })
-            return "chat/$chatUserId/$encodedName"
+            return "chat/$chatUserId/$encodedName?e2ee=$isE2EE"
         }
     }
     object GroupChat : Screen("group/{groupId}/{groupName}") {

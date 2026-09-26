@@ -58,7 +58,7 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CallsListScreen(
-    onChatClick: (Long, String) -> Unit,
+    onChatClick: (Long, String, Boolean) -> Unit,
     onBack: (() -> Unit)? = null,
     viewModel: CallsViewModel = hiltViewModel()
 ) {
@@ -172,7 +172,7 @@ fun CallsListScreen(
                         avatarKey = userAvatarKeys[call.peerId],
                         onItemClick = {
                             val name = call.peerName.ifBlank { call.peerNickname.ifBlank { "Пользователь" } }
-                            onChatClick(call.peerId, name)
+                            onChatClick(call.peerId, name, false)
                         },
                         onAudioCall = {
                             val name = call.peerName.ifBlank { call.peerNickname.ifBlank { "Пользователь" } }

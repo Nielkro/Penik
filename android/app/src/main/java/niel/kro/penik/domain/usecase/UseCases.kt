@@ -58,7 +58,7 @@ class SendMessageUseCase @Inject constructor(
 class LoadMessagesUseCase @Inject constructor(
     private val messageRepository: MessageRepository
 ) {
-    operator fun invoke(chatUserId: Long) = messageRepository.getMessagesForChat(chatUserId)
+    operator fun invoke(chatUserId: Long, isE2EE: Boolean? = null) = messageRepository.getMessagesForChat(chatUserId, isE2EE)
 }
 
 class DeleteMessageUseCase @Inject constructor(

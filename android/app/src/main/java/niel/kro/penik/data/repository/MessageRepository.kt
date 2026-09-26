@@ -386,8 +386,12 @@ class MessageRepository @Inject constructor(
         else -> jsonPrimitive.content == "1" || jsonPrimitive.content.equals("true", ignoreCase = true)
     }
 
-    fun getMessagesForChat(chatUserId: Long): Flow<List<MessageEntity>> {
-        return messageDao.getMessagesForChat(chatUserId)
+    fun getMessagesForChat(chatUserId: Long, isE2EE: Boolean? = null): Flow<List<MessageEntity>> {
+        return if (isE2EE != null) {
+            messageDao.getMessagesForChat(chatUserId, isE2EE)
+        } else {
+            messageDao.getMessagesForChat(chatUserId)
+        }
     }
 
     fun observeLastMessageForChat(chatUserId: Long) = messageDao.observeLastMessageForChat(chatUserId)

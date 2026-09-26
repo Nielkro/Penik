@@ -63,13 +63,17 @@ private const val SELF_CHAT_ICON = "\uD83D\uDCDD"
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatsListContent(
-    onChatClick: (Long, String) -> Unit,
+    onChatClick: (Long, String, Boolean) -> Unit,
     onGroupClick: (Long, String) -> Unit,
     onSettings: () -> Unit = {},
     onOpenDrawer: (() -> Unit)? = null,
     viewModel: ChatsListViewModel = hiltViewModel()
 ) {
     val isArchiveOpen by viewModel.isArchiveOpen.collectAsState()
+
+    androidx.activity.compose.BackHandler(enabled = isArchiveOpen) {
+        viewModel.closeArchive()
+    }
     val archivedCount by viewModel.archivedCount.collectAsState()
     val feed by viewModel.feed.collectAsState()
     val isInitialLoading by viewModel.isInitialLoading.collectAsState()
@@ -228,12 +232,12 @@ fun ChatsListContent(
                         avatarKey = userAvatarKeys[user.id],
                         onSecretChatClick = {
                             viewModel.startDirectChat(user.id, peerName, user.nickname, isE2EE = true) {
-                                onChatClick(user.id, peerName)
+                                onChatClick(user.id, peerName, true)
                             }
                         },
                         onClick = {
                             viewModel.startDirectChat(user.id, peerName, user.nickname, isE2EE = false) {
-                                onChatClick(user.id, peerName)
+                                onChatClick(user.id, peerName, false)
                             }
                         }
                     )
@@ -264,7 +268,7 @@ fun ChatsListContent(
                                 if (item is FeedItem.GroupItem) {
                                     onGroupClick(item.id, item.name)
                                 } else {
-                                    onChatClick(item.id, item.name)
+                                    onChatClick(item.id, item.name, item.isE2EE)
                                 }
                             },
                             onAvatarClick = { url -> fullscreenAvatarUrl = url }
@@ -298,7 +302,7 @@ fun ChatsListContent(
                                 if (item is FeedItem.GroupItem) {
                                     onGroupClick(item.id, item.name)
                                 } else {
-                                    onChatClick(item.id, item.name)
+                                    onChatClick(item.id, item.name, item.isE2EE)
                                 }
                             },
                             onAvatarClick = { url -> fullscreenAvatarUrl = url }
@@ -308,6 +312,25 @@ fun ChatsListContent(
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
+                if (isArchiveOpen) {
+                    item(key = "archive_info_banner") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .background(LocalAppColors.current.panelSecondary, RoundedCornerShape(12.dp))
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "🔒 Здесь сохранены ваши заархивированные E2EE чаты.\n\n⚡ Новые быстрые облачные чаты 1v1 доступны на главном экране и через поиск пользователей.",
+                                fontSize = 12.sp,
+                                color = LocalAppColors.current.textMuted,
+                                lineHeight = 17.sp
+                            )
+                        }
+                    }
+                }
                 if (!isArchiveOpen) {
                     item(key = "self_chat") {
                         SearchUserItem(
@@ -318,7 +341,7 @@ fun ChatsListContent(
                             timestamp = selfChatLastMessage?.timestamp,
                             onClick = {
                                 val myId = viewModel.selfChatEntry?.id ?: return@SearchUserItem
-                                onChatClick(myId, SELF_CHAT_NAME)
+                                onChatClick(myId, SELF_CHAT_NAME, false)
                             }
                         )
                         HorizontalDivider(color = LocalAppColors.current.border, modifier = Modifier.padding(horizontal = 16.dp))
@@ -327,9 +350,9 @@ fun ChatsListContent(
                         item(key = "archive_folder") {
                             Row(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { viewModel.openArchive() }
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                .fillMaxWidth()
+                                .clickable { viewModel.openArchive() }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Box(
@@ -404,7 +427,7 @@ fun ChatsListContent(
                                 if (item is FeedItem.GroupItem) {
                                     onGroupClick(item.id, item.name)
                                 } else {
-                                    onChatClick(item.id, item.name)
+                                    onChatClick(item.id, item.name, item.isE2EE)
                                 }
                             },
                             onLongClick = {

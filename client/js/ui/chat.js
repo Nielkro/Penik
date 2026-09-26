@@ -263,6 +263,12 @@ export async function renderChatList(container) {
         render(searchInput.value.trim().toLowerCase());
       });
       listEl.appendChild(backItem);
+
+      const infoBanner = el("div", {
+        class: "chatlist-archive-banner",
+        style: "padding: 12px 14px; margin: 6px 4px 12px 4px; background: rgba(91, 110, 245, 0.08); border: 1px solid rgba(91, 110, 245, 0.2); border-radius: 10px; font-size: 12px; color: var(--text-secondary, #99a); line-height: 1.4;"
+      }, "🔒 Здесь находятся заархивированные E2EE чаты. Новые быстрые облачные чаты 1v1 доступны на главном экране и через поиск.");
+      listEl.appendChild(infoBanner);
     } else if (selfChatEntry && (!filter || "избранное".includes(filter))) {
       const selfAvatar = avatar({ name: "Избранное" }, 48);
       selfAvatar.addEventListener("click", (e) => e.stopPropagation());

@@ -81,7 +81,7 @@ import niel.kro.penik.ui.viewmodel.ProfileViewModel
 
 @Composable
 fun MainScreen(
-    onChatClick: (Long, String) -> Unit,
+    onChatClick: (Long, String, Boolean) -> Unit,
     onGroupClick: (Long, String) -> Unit,
     onLogout: () -> Unit,
     onPairingScanner: () -> Unit,

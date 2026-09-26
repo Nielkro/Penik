@@ -13,6 +13,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE chatUserId = :chatUserId AND text != '[DELETED]' ORDER BY timestamp ASC, serverId ASC, rowid ASC")
     fun getMessagesForChat(chatUserId: Long): Flow<List<MessageEntity>>
 
+    @Query("SELECT * FROM messages WHERE chatUserId = :chatUserId AND isE2EE = :isE2EE AND text != '[DELETED]' ORDER BY timestamp ASC, serverId ASC, rowid ASC")
+    fun getMessagesForChat(chatUserId: Long, isE2EE: Boolean): Flow<List<MessageEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: MessageEntity)
 

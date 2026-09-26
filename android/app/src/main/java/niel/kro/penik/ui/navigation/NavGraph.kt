@@ -152,8 +152,8 @@ fun NavGraph(
                 startupViewModel.verifyDeviceKeys()
             }
             MainScreen(
-                onChatClick = { userId, name ->
-                    navController.navigate(Screen.ChatRoom.createRoute(userId, name))
+                onChatClick = { userId, name, isE2EE ->
+                    navController.navigate(Screen.ChatRoom.createRoute(userId, name, isE2EE))
                 },
                 onGroupClick = { groupId, name ->
                     navController.navigate(Screen.GroupChat.createRoute(groupId, name))
@@ -197,7 +197,11 @@ fun NavGraph(
             route = Screen.ChatRoom.route,
             arguments = listOf(
                 navArgument("chatUserId") { type = NavType.LongType },
-                navArgument("chatName") { type = NavType.StringType }
+                navArgument("chatName") { type = NavType.StringType },
+                navArgument("isE2EE") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
             )
         ) { backStackEntry ->
             val chatUserId = backStackEntry.arguments?.getLong("chatUserId") ?: return@composable

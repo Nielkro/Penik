@@ -54,15 +54,16 @@ class ChatRoomViewModel @Inject constructor(
 
     private val chatUserId: Long = savedStateHandle.get<Long>("chatUserId") ?: 0L
     private val chatName: String = savedStateHandle.get<String>("chatName") ?: ""
+    private val routeIsE2EE: Boolean = savedStateHandle.get<Boolean>("isE2EE") ?: false
 
     val connectionState = webSocketManager.connectionState
     val isOnline: StateFlow<Boolean> = webSocketManager.isOnline
 
     val isSelfChat: Boolean = chatUserId == tokenStorage.getUserId()
 
-    val isE2EE: StateFlow<Boolean> = chatRepository.observeChat(chatUserId)
-        .map { it?.isE2EE ?: false }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val isE2EE: StateFlow<Boolean> = chatRepository.observeChat(chatUserId, routeIsE2EE)
+        .map { it?.isE2EE ?: routeIsE2EE }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), routeIsE2EE)
 
     val callState = callManager.state
 
@@ -72,7 +73,7 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    val messages = loadMessagesUseCase(chatUserId)
+    val messages = loadMessagesUseCase(chatUserId, routeIsE2EE)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _safetyNumber = MutableStateFlow<String?>(null)
@@ -126,7 +127,9 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     init {
-        loadSafetyNumber()
+        if (routeIsE2EE) {
+            loadSafetyNumber()
+        }
         loadPeerCalls()
         if (chatUserId > 0) {
             viewModelScope.launch {
