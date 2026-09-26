@@ -387,11 +387,7 @@ class MessageRepository @Inject constructor(
     }
 
     fun getMessagesForChat(chatUserId: Long, isE2EE: Boolean? = null): Flow<List<MessageEntity>> {
-        return if (isE2EE != null) {
-            messageDao.getMessagesForChat(chatUserId, isE2EE)
-        } else {
-            messageDao.getMessagesForChat(chatUserId)
-        }
+        return messageDao.getMessagesForChat(chatUserId)
     }
 
     fun observeLastMessageForChat(chatUserId: Long) = messageDao.observeLastMessageForChat(chatUserId)
@@ -455,87 +451,8 @@ class MessageRepository @Inject constructor(
             messageDao.updateMessageText(clientMsgId, null, text, 0L)
         }
 
-        if (!chatIsE2EE) {
-            val nowSec = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
-            webSocketManager.sendMessage(toUserId, text, clientMsgId, resolvedReplyToMsgId, createdAt = nowSec)
-            return clientMsgId
-        }
-
-        var recipientBundles: List<niel.kro.penik.data.network.api.DeviceBundle> = getKeyBundleCached(toUserId, isSelf = isSelfChat)
-        // A stale/empty snapshot (e.g. fetched during a 429 storm) must not
-        // produce a frame the server rejects with "invalid devices count".
-        if (recipientBundles.isEmpty()) {
-            recipientBundles = getKeyBundleCached(toUserId, isSelf = isSelfChat, forceRefresh = true)
-        }
-        var senderBundles: List<niel.kro.penik.data.network.api.DeviceBundle> = if (isSelfChat) emptyList() else getKeyBundleCached(myId, isSelf = true)
-        if (!isSelfChat && senderBundles.size <= 1) {
-            senderBundles = getKeyBundleCached(myId, isSelf = true, forceRefresh = true)
-        }
-        if (recipientBundles.isEmpty() && senderBundles.isEmpty()) {
-            throw Exception("Нет доступных устройств получателя (проверьте соединение и попробуйте снова)")
-        }
-
-        val myDeviceId = tokenStorage.getDeviceId()
-        val allDevices: List<niel.kro.penik.data.network.api.DeviceBundle> = if (isSelfChat) {
-            recipientBundles.filter { it.deviceId != myDeviceId }
-        } else {
-            (recipientBundles + senderBundles).filter { it.deviceId != myDeviceId }
-        }
-
-        Log.d("PenikMsg", "sendMessage: myDeviceId=$myDeviceId, encrypted for ${allDevices.size} target devices (excluding self)")
-
-        val myPrivateIK = tokenStorage.getPrivateKey()
-            ?: throw Exception("Private Identity Key not found. Please log in again.")
-
-        // A key bundle does not name the device's owner, so it is recovered from
-        // which bundle the device came out of; pins are per (user, device).
-        val deviceOwners: Map<Long, Long> = buildMap {
-            senderBundles.forEach { put(it.deviceId, myId) }
-            recipientBundles.forEach { put(it.deviceId, toUserId) }
-        }
-
         val nowSec = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
-
-        val recipientInfos = ArrayList<E2EECrypto.DeviceRecipientInfo>(allDevices.size)
-        for (device in allDevices) {
-            val recipientIKPub = java.util.Base64.getDecoder().decode(device.identityKey)
-
-            // TOFU verification: inspect and warn if the identity key has changed
-            val targetUserId = deviceOwners[device.deviceId] ?: toUserId
-            val pinResult = identityPins.verify(targetUserId, device.deviceId, recipientIKPub)
-            if (pinResult == IdentityPinStore.Result.UPDATED) {
-                val sysEntity = niel.kro.penik.data.local.entity.MessageEntity(
-                    localId = "sys-keychange-${System.currentTimeMillis()}-$targetUserId",
-                    chatUserId = targetUserId,
-                    senderId = 0,
-                    text = "⚠️ Код безопасности изменился!",
-                    timestamp = System.currentTimeMillis() - 1,
-                    sentByMe = false,
-                    delivered = true
-                )
-                messageDao.insertMessage(sysEntity)
-            }
-
-            recipientInfos.add(
-                E2EECrypto.DeviceRecipientInfo(
-                    deviceId = device.deviceId,
-                    publicKey = recipientIKPub,
-                    cryptoVersion = device.cryptoVersion
-                )
-            )
-        }
-
-        val payloads = e2eeCrypto.encryptPairwiseBatch(
-            senderPrivateKey = myPrivateIK,
-            senderUserId = myId,
-            recipientUserId = toUserId,
-            clientMsgId = clientMsgId,
-            timestamp = nowSec,
-            plaintext = text.toByteArray(Charsets.UTF_8),
-            recipients = recipientInfos
-        )
-
-        webSocketManager.sendEncryptedMessage(toUserId, clientMsgId, payloads, resolvedReplyToMsgId, createdAt = nowSec)
+        webSocketManager.sendMessage(toUserId, text, clientMsgId, resolvedReplyToMsgId, createdAt = nowSec)
         return clientMsgId
     }
 

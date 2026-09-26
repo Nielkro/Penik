@@ -528,21 +528,16 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 		}
 	}
 
-	var isE2EEInt int = 0
-	if isE2EE {
-		isE2EEInt = 1
-	}
-
 	var chatID int64
 	u1, u2 := senderUserID, recipientUserID
 	if u1 > u2 {
 		u1, u2 = u2, u1
 	}
 	err = tx.QueryRowContext(ctx,
-		`SELECT id FROM chats WHERE user1_id=? AND user2_id=? AND is_e2ee=?`, u1, u2, isE2EEInt).Scan(&chatID)
+		`SELECT id FROM chats WHERE user1_id=? AND user2_id=? LIMIT 1`, u1, u2).Scan(&chatID)
 	if err == sql.ErrNoRows {
 		res, err2 := tx.ExecContext(ctx,
-			`INSERT INTO chats(user1_id,user2_id,is_e2ee,created_at) VALUES(?,?,?,?)`, u1, u2, isE2EEInt, now)
+			`INSERT INTO chats(user1_id,user2_id,is_e2ee,created_at) VALUES(?,?,0,?)`, u1, u2, now)
 		if err2 != nil {
 			return fmt.Errorf("create chat: %w", err2)
 		}

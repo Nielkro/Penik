@@ -535,12 +535,6 @@ fun ChatListItem(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isE2EE) {
-                        Text(
-                            text = "🔒 ",
-                            fontSize = 14.sp
-                        )
-                    }
                     Text(
                         text = name,
                         color = if (hasCustomAvatar) LocalAppColors.current.textPrimary else initialsColor(userId, name),
@@ -608,7 +602,6 @@ fun SearchUserItem(
     lastMessage: String? = null,
     timestamp: Long? = null,
     avatarKey: Any? = null,
-    onSecretChatClick: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     var hasCustomAvatar by remember(userId, avatarKey) { mutableStateOf(false) }
@@ -666,21 +659,6 @@ fun SearchUserItem(
                 color = LocalAppColors.current.textMuted,
                 fontSize = 12.sp
             )
-        }
-
-        if (onSecretChatClick != null) {
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(
-                onClick = onSecretChatClick,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = "Секретный чат",
-                    tint = LocalAppColors.current.accent,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
         }
     }
 }

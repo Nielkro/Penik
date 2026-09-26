@@ -54,16 +54,13 @@ class ChatRoomViewModel @Inject constructor(
 
     private val chatUserId: Long = savedStateHandle.get<Long>("chatUserId") ?: 0L
     private val chatName: String = savedStateHandle.get<String>("chatName") ?: ""
-    private val routeIsE2EE: Boolean = savedStateHandle.get<Boolean>("isE2EE") ?: false
 
     val connectionState = webSocketManager.connectionState
     val isOnline: StateFlow<Boolean> = webSocketManager.isOnline
 
     val isSelfChat: Boolean = chatUserId == tokenStorage.getUserId()
 
-    val isE2EE: StateFlow<Boolean> = chatRepository.observeChat(chatUserId, routeIsE2EE)
-        .map { it?.isE2EE ?: routeIsE2EE }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), routeIsE2EE)
+    val isE2EE: StateFlow<Boolean> = MutableStateFlow(false)
 
     val callState = callManager.state
 
@@ -73,7 +70,7 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    val messages = loadMessagesUseCase(chatUserId, routeIsE2EE)
+    val messages = loadMessagesUseCase(chatUserId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _safetyNumber = MutableStateFlow<String?>(null)
@@ -127,9 +124,6 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     init {
-        if (routeIsE2EE) {
-            loadSafetyNumber()
-        }
         loadPeerCalls()
         if (chatUserId > 0) {
             viewModelScope.launch {
@@ -254,14 +248,14 @@ class ChatRoomViewModel @Inject constructor(
         if (newText.isBlank()) return
         viewModelScope.launch {
             messageRepository.editMessage(chatUserId, clientMsgId, newText.trim())
-            chatRepository.updateLastMessage(chatUserId, newText.trim(), System.currentTimeMillis(), name = chatName, isE2EE = isE2EE.value)
+            chatRepository.updateLastMessage(chatUserId, newText.trim(), System.currentTimeMillis(), name = chatName)
         }
     }
 
     fun sendMessage(text: String, replyToMsgId: String? = null) {
         if (text.isBlank()) return
         viewModelScope.launch {
-            sendMessageUseCase(chatUserId, text, chatName, replyToMsgId, isE2EE = isE2EE.value)
+            sendMessageUseCase(chatUserId, text, chatName, replyToMsgId)
         }
     }
 
@@ -287,7 +281,7 @@ class ChatRoomViewModel @Inject constructor(
             put("url", "/api/v1/stickers/file/${sticker.packId}/$fileName")
         }.toString()
         viewModelScope.launch {
-            sendMessageUseCase(chatUserId, payload, chatName, replyToMsgId, isE2EE = isE2EE.value)
+            sendMessageUseCase(chatUserId, payload, chatName, replyToMsgId)
         }
     }
 
@@ -303,16 +297,13 @@ class ChatRoomViewModel @Inject constructor(
 
             // 1. Immediately insert optimistic message into chat
             messageRepository.insertOptimisticMessage(chatUserId, clientMsgId, mediaInfo.optimisticPayload, null)
-            chatRepository.updateLastMessage(chatUserId, mediaInfo.optimisticPayload, System.currentTimeMillis(), name = chatName, isE2EE = isE2EE.value)
+            chatRepository.updateLastMessage(chatUserId, mediaInfo.optimisticPayload, System.currentTimeMillis(), name = chatName)
 
-            // 2. Determine chunked encryption support based on recipient and own device crypto versions
-            val useChunked = messageRepository.isChunkedEncryptionSupported(chatUserId)
-
-            // 3. Upload and send with progress
-            attachmentManager.uploadAndEncryptAttachment(context, mediaInfo, clientMsgId, caption, useChunked = useChunked, isE2EE = isE2EE.value)
+            // 2. Upload and send with progress
+            attachmentManager.uploadAndEncryptAttachment(context, mediaInfo, clientMsgId, caption, useChunked = false, isE2EE = false)
                 .onSuccess { finalJsonPayload ->
-                    messageRepository.sendMessage(chatUserId, finalJsonPayload, null, existingClientMsgId = clientMsgId, isE2EE = isE2EE.value)
-                    chatRepository.updateLastMessage(chatUserId, finalJsonPayload, System.currentTimeMillis(), name = chatName, isE2EE = isE2EE.value)
+                    messageRepository.sendMessage(chatUserId, finalJsonPayload, null, existingClientMsgId = clientMsgId)
+                    chatRepository.updateLastMessage(chatUserId, finalJsonPayload, System.currentTimeMillis(), name = chatName)
                 }
                 .onFailure { err ->
                     viewModelScope.launch {

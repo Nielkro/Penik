@@ -19,10 +19,14 @@ class ChatRepository @Inject constructor(
     fun getArchivedChats(): Flow<List<ChatEntity>> = chatDao.getArchivedChats()
     fun getArchivedCount(): Flow<Int> = chatDao.getArchivedCount()
     fun observeChat(userId: Long): Flow<ChatEntity?> = chatDao.observeChat(userId)
-    fun observeChat(userId: Long, isE2EE: Boolean): Flow<ChatEntity?> = chatDao.observeChat(userId, isE2EE)
+    fun observeChat(userId: Long, isE2EE: Boolean): Flow<ChatEntity?> = chatDao.observeChat(userId)
+
+    suspend fun setArchived(userId: Long, isArchived: Boolean) {
+        chatDao.setArchived(userId, isArchived)
+    }
 
     suspend fun setArchived(userId: Long, isE2EE: Boolean, isArchived: Boolean) {
-        chatDao.setArchived(userId, isE2EE, isArchived)
+        chatDao.setArchived(userId, isArchived)
     }
 
     suspend fun getOrCreateChat(
@@ -32,15 +36,14 @@ class ChatRepository @Inject constructor(
         avatarUrl: String? = null,
         isE2EE: Boolean? = null
     ): ChatEntity {
-        val existing = if (isE2EE != null) chatDao.getChat(userId, isE2EE) else chatDao.getChat(userId)
+        val existing = chatDao.getChat(userId)
         if (existing != null) return existing
-        val targetE2EE = isE2EE ?: false
         val chat = ChatEntity(
             userId = userId,
             nickname = nickname,
             name = name,
             avatarUrl = avatarUrl,
-            isE2EE = targetE2EE,
+            isE2EE = false,
             isArchived = false
         )
         chatDao.insertChat(chat)
@@ -48,8 +51,7 @@ class ChatRepository @Inject constructor(
     }
 
     suspend fun updateLastMessage(userId: Long, text: String, timestamp: Long, name: String = "", nickname: String = "", isE2EE: Boolean? = null) {
-        val existing = if (isE2EE != null) chatDao.getChat(userId, isE2EE) else chatDao.getChat(userId)
-        val targetE2EE = isE2EE ?: existing?.isE2EE ?: false
+        val existing = chatDao.getChat(userId)
         var newName = name.takeIf { it.isNotBlank() } ?: existing?.name.orEmpty()
         var newNickname = nickname.takeIf { it.isNotBlank() } ?: existing?.nickname.orEmpty()
         if (newName.isBlank() && newNickname.isBlank()) {
@@ -73,10 +75,10 @@ class ChatRepository @Inject constructor(
             lastMessage = finalText,
             lastMessageTimestamp = finalTs,
             unreadCount = existing?.unreadCount ?: 0,
-            isE2EE = targetE2EE,
+            isE2EE = false,
             isArchived = existing?.isArchived ?: false
         )
-        android.util.Log.d("PenikChatRepo", "updateLastMessage -> saving chat: userId=$userId, isE2EE=$targetE2EE, name=$newName, lastMsg='$finalText', ts=$finalTs, unread=${entity.unreadCount}")
+        android.util.Log.d("PenikChatRepo", "updateLastMessage -> saving chat: userId=$userId, name=$newName, lastMsg='$finalText', ts=$finalTs, unread=${entity.unreadCount}")
         chatDao.insertChat(entity)
     }
 
@@ -105,11 +107,10 @@ class ChatRepository @Inject constructor(
     }
 
     suspend fun getChat(userId: Long): ChatEntity? = chatDao.getChat(userId)
-    suspend fun getChat(userId: Long, isE2EE: Boolean): ChatEntity? = chatDao.getChat(userId, isE2EE)
+    suspend fun getChat(userId: Long, isE2EE: Boolean): ChatEntity? = chatDao.getChat(userId)
 
     suspend fun upsertContact(userId: Long, nickname: String, name: String, avatarUrl: String?, isE2EE: Boolean? = null) {
-        val existing = if (isE2EE != null) chatDao.getChat(userId, isE2EE) else chatDao.getChat(userId)
-        val targetE2EE = isE2EE ?: existing?.isE2EE ?: false
+        val existing = chatDao.getChat(userId)
         val lastMsg = messageDao.getLastMessageForChat(userId)
         val finalLastMessage = existing?.lastMessage?.takeIf { it.isNotBlank() } ?: lastMsg?.text
         val finalTimestamp = existing?.lastMessageTimestamp?.takeIf { it > 0 } ?: lastMsg?.timestamp
@@ -121,7 +122,7 @@ class ChatRepository @Inject constructor(
             lastMessage = finalLastMessage,
             lastMessageTimestamp = finalTimestamp,
             unreadCount = existing?.unreadCount ?: 0,
-            isE2EE = targetE2EE,
+            isE2EE = false,
             isArchived = existing?.isArchived ?: false
         )
         android.util.Log.d("PenikChatRepo", "upsertContact -> saving chat: userId=$userId, name=${entity.name}, lastMsg='${entity.lastMessage}', ts=${entity.lastMessageTimestamp}")
@@ -129,22 +130,7 @@ class ChatRepository @Inject constructor(
     }
 
     suspend fun deduplicateChats() {
-        val allChats = chatDao.getChatsSnapshot()
-        val byUser = allChats.groupBy { it.userId }
-        for ((userId, chats) in byUser) {
-            if (chats.size > 1) {
-                val e2eeChat = chats.find { it.isE2EE }
-                val plainChat = chats.find { !it.isE2EE }
-                if (e2eeChat != null && plainChat != null) {
-                    val msgs = messageDao.getAllMessages().filter { it.chatUserId == userId }
-                    val hasRealPlainMessages = msgs.any { !it.isE2EE && it.text != "[DELETED]" }
-                    if (!hasRealPlainMessages) {
-                        android.util.Log.i("PenikChatRepo", "Removing duplicate ghost cloud chat for userId=$userId")
-                        chatDao.deleteChat(userId, isE2EE = false)
-                    }
-                }
-            }
-        }
+        // No-op with single PK on userId
     }
 
     suspend fun deleteChat(userId: Long) {

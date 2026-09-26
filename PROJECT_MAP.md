@@ -15,8 +15,8 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `server/internal/handlers/devices.go` — REST handler `GET /api/v1/devices` listing the authenticated user's devices, flagging the current device and whether each has an active session.
 - `server/internal/handlers/deviceinfo.go` — Helpers deriving a device's platform label, originating IP, and IP-based geolocation resolution (MaxMind GeoLite2/DB-IP Lite .mmdb reader with cached fallback).
 - `server/internal/handlers/users.go` — Handlers for user profiles, searching users, changing name/nickname, avatar operations, and password updates (optionally revoking other active sessions).
-- `server/internal/handlers/messages.go` — REST access to direct message history (cloud plaintext or E2EE), single-message resolution by id, delivery/read receipts, and chat deletion operations.
-- `server/internal/handlers/groups.go` — REST lifecycle of groups: creation of cloud or E2EE groups (`is_e2ee`), retrieval, renaming, deletion, and membership management.
+- `server/internal/handlers/messages.go` — REST access to direct message history (cloud plaintext), single-message resolution by id, delivery/read receipts, and chat deletion operations.
+- `server/internal/handlers/groups.go` — REST lifecycle of groups: creation of cloud groups, retrieval, renaming, deletion, and membership management.
 - `server/internal/handlers/group_keys.go` — REST operations for group key versions and encrypted key envelopes for devices.
 - `server/internal/handlers/group_history.go` — Handles upload and one-time distribution of encrypted group history to new devices.
 - `server/internal/handlers/pairing.go` — Creates, presents, and manages pairing sessions for linking new devices and transferring history.

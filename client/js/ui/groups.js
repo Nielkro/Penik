@@ -183,11 +183,6 @@ export async function renderGroupList(container) {
 
 export function showCreateGroupModal(onDone) {
   const nameInput = el("input", { type: "text", class: "chatlist-search", placeholder: "Название группы" });
-  const e2eeCheckbox = el("input", { type: "checkbox", id: "create-group-e2ee", style: "cursor:pointer;" });
-  const e2eeLabel = el("label", {
-    for: "create-group-e2ee",
-    style: "display:flex;align-items:center;gap:8px;font-size:13px;color:#bbb;margin-top:10px;cursor:pointer;user-select:none;"
-  }, e2eeCheckbox, el("span", {}, "🔒 Защищённая E2EE группа (сквозное шифрование)"));
   const status = el("div", { style: "min-height:18px;color:#ff5252;font-size:13px;margin-top:6px;" });
   const createBtn = el("button", { class: "btn-primary", style: "padding:8px 16px;font-size:14px;" }, "Создать");
   const cancelBtn = el("button", { class: "btn-secondary", style: "font-size:14px;" }, "Отмена");
@@ -195,7 +190,7 @@ export function showCreateGroupModal(onDone) {
   const overlay = el("div", { style: OVERLAY_STYLE },
     el("div", { style: BOX_STYLE },
       el("h3", { style: "font-size:18px;margin-bottom:12px;color:#fff;text-align:center;" }, "Новая группа"),
-      nameInput, e2eeLabel, status,
+      nameInput, status,
       el("div", { style: "display:flex;gap:8px;justify-content:flex-end;margin-top:12px;" }, cancelBtn, createBtn),
     ),
   );
@@ -209,10 +204,9 @@ export function showCreateGroupModal(onDone) {
     if (!name) { status.textContent = "Введите название"; return; }
     createBtn.disabled = true;
     try {
-      const isE2EE = Boolean(e2eeCheckbox.checked);
-      const group = await createGroup(name, [], isE2EE);
+      const group = await createGroup(name, [], false);
       close();
-      showToast(isE2EE ? "E2EE группа создана" : "Облачная группа создана");
+      showToast("Группа создана");
       if (typeof onDone === "function") await onDone(group);
       navigate(`#group/${group.id}`);
     } catch (e) {

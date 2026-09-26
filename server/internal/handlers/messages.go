@@ -91,27 +91,11 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 			 JOIN chats c ON c.id = m.chat_id
 			 WHERE m.purge_pending = 0
 			   AND m.id NOT IN (SELECT message_id FROM device_history_exclusions WHERE device_id = ?)
-			   AND (
-			      (c.is_e2ee = 0 AND (m.sender_user_id = ? OR m.recipient_user_id = ?) AND ((m.sender_user_id = ? AND m.deleted_by_sender = 0) OR (m.recipient_user_id = ? AND m.deleted_by_recipient = 0)))
-			      OR
-			      (c.is_e2ee = 1 AND (
-					(m.sender_user_id = ? AND m.sender_user_id != m.recipient_user_id AND m.deleted_by_sender = 0)
-					OR
-					(m.recipient_user_id = ? AND (
-						m.recipient_device_id = ?
-						OR m.recipient_device_id IN (
-							SELECT dpk.device_id FROM device_public_keys dpk
-							JOIN devices d ON d.id = dpk.device_id
-							WHERE d.user_id = ? AND dpk.x25519_pub = (SELECT x25519_pub FROM device_public_keys WHERE device_id = ?)
-						)
-					) AND m.deleted_by_recipient = 0)
-			      ))
-			   )`
+			   AND (m.sender_user_id = ? OR m.recipient_user_id = ?)
+			   AND ((m.sender_user_id = ? AND m.deleted_by_sender = 0) OR (m.recipient_user_id = ? AND m.deleted_by_recipient = 0))`
 		args := []any{
 			userID, deviceID,
-			userID, userID, userID, userID,
-			userID,
-			userID, deviceID, userID, deviceID,
+			userID, userID, userID,
 		}
 
 		if beforeID > 0 {
@@ -129,13 +113,6 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 			} else {
 				query += " AND ((c.user1_id = ? AND c.user2_id = ?) OR (c.user1_id = ? AND c.user2_id = ?))"
 				args = append(args, userID, chatUserID, chatUserID, userID)
-			}
-		}
-
-		if e2eeStr := r.URL.Query().Get("is_e2ee"); e2eeStr != "" {
-			if e2eeVal, err := strconv.Atoi(e2eeStr); err == nil {
-				query += " AND c.is_e2ee = ?"
-				args = append(args, e2eeVal)
 			}
 		}
 

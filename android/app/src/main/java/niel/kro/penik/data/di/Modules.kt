@@ -66,6 +66,7 @@ object DatabaseModule {
                 PenikDatabase.MIGRATION_8_9,
                 PenikDatabase.MIGRATION_9_10,
                 PenikDatabase.MIGRATION_10_11,
+                PenikDatabase.MIGRATION_11_12,
             )
             .addCallback(object : androidx.room.RoomDatabase.Callback() {
                 override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {

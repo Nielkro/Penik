@@ -65,7 +65,6 @@ fun GroupsListScreen(
     val groupAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.groupAvatarKeys.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
     var newGroupName by remember { mutableStateOf("") }
-    var isE2EESelected by remember { mutableStateOf(false) }
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(error) {
@@ -183,7 +182,6 @@ fun GroupsListScreen(
             onDismissRequest = {
                 showCreateDialog = false
                 newGroupName = ""
-                isE2EESelected = false
             },
             containerColor = LocalAppColors.current.panel,
             titleContentColor = LocalAppColors.current.textPrimary,
@@ -207,28 +205,6 @@ fun GroupsListScreen(
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { isE2EESelected = !isE2EESelected }
-                    ) {
-                        Checkbox(
-                            checked = isE2EESelected,
-                            onCheckedChange = { isE2EESelected = it },
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = LocalAppColors.current.accent,
-                                uncheckedColor = LocalAppColors.current.border
-                            )
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "🔒 Сквозное шифрование (E2EE)",
-                            color = LocalAppColors.current.textPrimary,
-                            fontSize = 14.sp
-                        )
-                    }
                 }
             },
             confirmButton = {
@@ -236,10 +212,9 @@ fun GroupsListScreen(
                     onClick = {
                         val nameToCreate = newGroupName.trim()
                         if (nameToCreate.isNotBlank()) {
-                            viewModel.createGroup(nameToCreate, isE2EE = isE2EESelected) { id, name ->
+                            viewModel.createGroup(nameToCreate, isE2EE = false) { id, name ->
                                 showCreateDialog = false
                                 newGroupName = ""
-                                isE2EESelected = false
                                 onGroupClick(id, name)
                             }
                         }
@@ -253,7 +228,6 @@ fun GroupsListScreen(
                 TextButton(onClick = {
                     showCreateDialog = false
                     newGroupName = ""
-                    isE2EESelected = false
                 }) {
                     Text("Отмена", color = LocalAppColors.current.textMuted)
                 }

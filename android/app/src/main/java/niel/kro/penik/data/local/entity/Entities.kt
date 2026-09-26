@@ -20,9 +20,9 @@ data class MessageEntity(
     val isE2EE: Boolean = false
 )
 
-@Entity(tableName = "chats", primaryKeys = ["userId", "isE2EE"])
+@Entity(tableName = "chats")
 data class ChatEntity(
-    val userId: Long,
+    @PrimaryKey val userId: Long,
     val nickname: String,
     val name: String,
     val avatarUrl: String? = null,

@@ -230,11 +230,6 @@ fun ChatsListContent(
                         userId = user.id,
                         nickname = user.nickname,
                         avatarKey = userAvatarKeys[user.id],
-                        onSecretChatClick = {
-                            viewModel.startDirectChat(user.id, peerName, user.nickname, isE2EE = true) {
-                                onChatClick(user.id, peerName, true)
-                            }
-                        },
                         onClick = {
                             viewModel.startDirectChat(user.id, peerName, user.nickname, isE2EE = false) {
                                 onChatClick(user.id, peerName, false)

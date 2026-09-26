@@ -20,7 +20,7 @@ import niel.kro.penik.data.local.entity.MessageEntity
         GroupEntity::class, GroupMemberEntity::class,
         GroupKeyEntity::class, GroupMessageEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class PenikDatabase : RoomDatabase() {
@@ -131,6 +131,33 @@ abstract class PenikDatabase : RoomDatabase() {
                 """.trimIndent())
                 db.execSQL("DROP TABLE chats")
                 db.execSQL("ALTER TABLE chats_new RENAME TO chats")
+            }
+        }
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS chats_unified (
+                        userId INTEGER NOT NULL PRIMARY KEY,
+                        nickname TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        avatarUrl TEXT,
+                        lastMessage TEXT,
+                        lastMessageTimestamp INTEGER,
+                        unreadCount INTEGER NOT NULL,
+                        isE2EE INTEGER NOT NULL DEFAULT 0,
+                        is_archived INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO chats_unified(userId, nickname, name, avatarUrl, lastMessage, lastMessageTimestamp, unreadCount, isE2EE, is_archived)
+                    SELECT userId, nickname, name, avatarUrl, lastMessage, MAX(COALESCE(lastMessageTimestamp, 0)), SUM(unreadCount), 0, 0
+                    FROM chats
+                    GROUP BY userId
+                """.trimIndent())
+                db.execSQL("DROP TABLE chats")
+                db.execSQL("ALTER TABLE chats_unified RENAME TO chats")
+                db.execSQL("UPDATE groups SET isE2EE = 0, is_archived = 0")
+                db.execSQL("UPDATE messages SET isE2EE = 0")
             }
         }
     }

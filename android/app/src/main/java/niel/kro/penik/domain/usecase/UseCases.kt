@@ -48,17 +48,15 @@ class SendMessageUseCase @Inject constructor(
     private val chatRepository: ChatRepository
 ) {
     suspend operator fun invoke(toUserId: Long, text: String, chatName: String = "", replyToMsgId: String? = null, isE2EE: Boolean? = null) {
-        val existing = if (isE2EE != null) chatRepository.getChat(toUserId, isE2EE) else chatRepository.getChat(toUserId)
-        val targetE2EE = isE2EE ?: existing?.isE2EE ?: false
-        messageRepository.sendMessage(toUserId, text, replyToMsgId, isE2EE = targetE2EE)
-        chatRepository.updateLastMessage(toUserId, text, System.currentTimeMillis(), name = chatName, isE2EE = targetE2EE)
+        messageRepository.sendMessage(toUserId, text, replyToMsgId)
+        chatRepository.updateLastMessage(toUserId, text, System.currentTimeMillis(), name = chatName)
     }
 }
 
 class LoadMessagesUseCase @Inject constructor(
     private val messageRepository: MessageRepository
 ) {
-    operator fun invoke(chatUserId: Long, isE2EE: Boolean? = null) = messageRepository.getMessagesForChat(chatUserId, isE2EE)
+    operator fun invoke(chatUserId: Long, isE2EE: Boolean? = null) = messageRepository.getMessagesForChat(chatUserId)
 }
 
 class DeleteMessageUseCase @Inject constructor(

@@ -104,7 +104,6 @@ fun MainScreen(
 
     var showCreateGroupDialog by remember { mutableStateOf(false) }
     var newGroupName by remember { mutableStateOf("") }
-    var isE2EESelected by remember { mutableStateOf(false) }
     val isGroupBusy by groupsViewModel.busy.collectAsState()
 
     BackHandler(enabled = isDrawerMode && (drawerState.isOpen || selectedTab != 0)) {
@@ -341,7 +340,6 @@ fun MainScreen(
             onDismissRequest = {
                 showCreateGroupDialog = false
                 newGroupName = ""
-                isE2EESelected = false
             },
             containerColor = colors.panel,
             titleContentColor = colors.textPrimary,
@@ -365,28 +363,6 @@ fun MainScreen(
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { isE2EESelected = !isE2EESelected }
-                    ) {
-                        Checkbox(
-                            checked = isE2EESelected,
-                            onCheckedChange = { isE2EESelected = it },
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = colors.accent,
-                                uncheckedColor = colors.border
-                            )
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "🔒 Сквозное шифрование (E2EE)",
-                            color = colors.textPrimary,
-                            fontSize = 14.sp
-                        )
-                    }
                 }
             },
             confirmButton = {
@@ -394,10 +370,9 @@ fun MainScreen(
                     onClick = {
                         val nameToCreate = newGroupName.trim()
                         if (nameToCreate.isNotBlank()) {
-                            groupsViewModel.createGroup(nameToCreate, isE2EE = isE2EESelected) { id, name ->
+                            groupsViewModel.createGroup(nameToCreate, isE2EE = false) { id, name ->
                                 showCreateGroupDialog = false
                                 newGroupName = ""
-                                isE2EESelected = false
                                 onGroupClick(id, name)
                             }
                         }
@@ -411,7 +386,6 @@ fun MainScreen(
                 TextButton(onClick = {
                     showCreateGroupDialog = false
                     newGroupName = ""
-                    isE2EESelected = false
                 }) {
                     Text("Отмена", color = colors.textMuted)
                 }

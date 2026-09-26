@@ -122,9 +122,6 @@ func CreateGroup(database *db.DB) http.HandlerFunc {
 		defer tx.Rollback()
 
 		isE2EEInt := 0
-		if req.IsE2EE {
-			isE2EEInt = 1
-		}
 
 		res, err := tx.ExecContext(r.Context(),
 			`INSERT INTO groups(name,owner_user_id,is_e2ee,created_at,updated_at,membership_version,current_key_version)

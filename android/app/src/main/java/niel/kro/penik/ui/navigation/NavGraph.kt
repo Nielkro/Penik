@@ -197,11 +197,7 @@ fun NavGraph(
             route = Screen.ChatRoom.route,
             arguments = listOf(
                 navArgument("chatUserId") { type = NavType.LongType },
-                navArgument("chatName") { type = NavType.StringType },
-                navArgument("isE2EE") {
-                    type = NavType.BoolType
-                    defaultValue = false
-                }
+                navArgument("chatName") { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val chatUserId = backStackEntry.arguments?.getLong("chatUserId") ?: return@composable

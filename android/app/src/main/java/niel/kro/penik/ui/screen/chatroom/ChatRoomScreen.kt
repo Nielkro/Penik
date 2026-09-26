@@ -1121,20 +1121,6 @@ fun ChatRoomScreen(
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f, fill = false)
                                 )
-                                if (!isSelfChat && isE2EE) {
-                                    Icon(
-                                        imageVector = Icons.Default.Lock,
-                                        contentDescription = "Код безопасности E2EE",
-                                        tint = LocalAppColors.current.success,
-                                        modifier = Modifier
-                                            .padding(start = 6.dp)
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(LocalAppColors.current.success.copy(alpha = 0.15f))
-                                            .clickable { viewModel.onSafetyClick() }
-                                            .padding(3.dp)
-                                            .size(18.dp)
-                                    )
-                                }
                             }
                             if (!isSelfChat) {
                                 val isPeerTyping by viewModel.isPeerTyping.collectAsState()
@@ -1221,16 +1207,6 @@ fun ChatRoomScreen(
                                     showProfileDialog = true
                                 }
                             )
-                            if (isE2EE) {
-                                DropdownMenuItem(
-                                    text = { Text("Код безопасности E2EE", color = LocalAppColors.current.textPrimary) },
-                                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = LocalAppColors.current.success) },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        viewModel.onSafetyClick()
-                                    }
-                                )
-                            }
                         }
                         DropdownMenuItem(
                             text = { Text("Удалить чат", color = Color(0xFFEF5350)) },

@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS chats (
   user2_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   is_e2ee INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
-  UNIQUE(user1_id, user2_id, is_e2ee)
+  UNIQUE(user1_id, user2_id)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
