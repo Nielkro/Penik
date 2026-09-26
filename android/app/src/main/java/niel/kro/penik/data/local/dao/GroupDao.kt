@@ -35,6 +35,9 @@ interface GroupDao {
     @Query("UPDATE groups SET is_archived = :isArchived WHERE id = :groupId")
     suspend fun setArchived(groupId: Long, isArchived: Boolean)
 
+    @Query("UPDATE groups SET is_archived = 1 WHERE isE2EE = 1")
+    suspend fun archiveLegacyE2EEGroups()
+
     @Query("SELECT * FROM groups ORDER BY id")
     suspend fun getAllGroups(): List<GroupEntity>
 

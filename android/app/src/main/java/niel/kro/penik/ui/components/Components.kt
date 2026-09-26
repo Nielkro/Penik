@@ -471,6 +471,7 @@ fun messagePreview(text: String): String {
     return trimmed.replace(WHITESPACE_RUN, " ").trim()
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ChatListItem(
     name: String,
@@ -482,6 +483,7 @@ fun ChatListItem(
     avatarKey: Any? = null,
     isE2EE: Boolean = false,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     onAvatarClick: ((String) -> Unit)? = null
 ) {
     var hasCustomAvatar by remember(userId, avatarKey) { mutableStateOf(false) }
@@ -525,7 +527,10 @@ fun ChatListItem(
         Row(
             modifier = Modifier
                 .weight(1f)
-                .clickable(onClick = onClick),
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = onLongClick
+                ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {

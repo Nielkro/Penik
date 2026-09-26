@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -29,6 +30,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -79,6 +81,7 @@ fun ChatsListContent(
     val userAvatarKeys by niel.kro.penik.data.repository.AvatarCacheBus.userAvatarKeys.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
+    var selectedItemForMenu by remember { mutableStateOf<FeedItem?>(null) }
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
     val focusRequester = remember { FocusRequester() }
 
@@ -404,12 +407,60 @@ fun ChatsListContent(
                                     onChatClick(item.id, item.name)
                                 }
                             },
+                            onLongClick = {
+                                selectedItemForMenu = item
+                            },
                             onAvatarClick = { url -> fullscreenAvatarUrl = url }
                         )
                     }
                 }
             }
         }
+    }
+
+    val itemToArchive = selectedItemForMenu
+    if (itemToArchive != null) {
+        val isArchived = itemToArchive.isArchived
+        AlertDialog(
+            onDismissRequest = { selectedItemForMenu = null },
+            title = {
+                Text(
+                    text = itemToArchive.name,
+                    color = LocalAppColors.current.textPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = if (isArchived) "Вернуть из архива на главный экран?" else "Переместить в архив?",
+                    color = LocalAppColors.current.textMuted
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (itemToArchive is FeedItem.ChatItem) {
+                            viewModel.toggleChatArchived(itemToArchive.id, itemToArchive.isE2EE, isArchived)
+                        } else {
+                            viewModel.toggleGroupArchived(itemToArchive.id, isArchived)
+                        }
+                        selectedItemForMenu = null
+                    }
+                ) {
+                    Text(
+                        text = if (isArchived) "Извлечь" else "В архив",
+                        color = LocalAppColors.current.accent
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedItemForMenu = null }) {
+                    Text("Отмена", color = LocalAppColors.current.textMuted)
+                }
+            },
+            containerColor = LocalAppColors.current.panel,
+            shape = RoundedCornerShape(16.dp)
+        )
     }
 
     FullscreenImageViewer(url = fullscreenAvatarUrl, onDismiss = { fullscreenAvatarUrl = null })

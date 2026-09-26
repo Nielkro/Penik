@@ -57,6 +57,7 @@ class GroupRepository @Inject constructor(
     fun observeArchivedGroups() = dao.observeArchivedGroups()
     fun getArchivedCount() = dao.getArchivedCount()
     suspend fun setArchived(groupId: Long, isArchived: Boolean) = dao.setArchived(groupId, isArchived)
+    suspend fun archiveLegacyE2EEGroups() = dao.archiveLegacyE2EEGroups()
     fun observeGroup(groupId: Long) = dao.observeGroup(groupId)
     fun observeMessages(groupId: Long) = dao.observeMessages(groupId)
     fun observeLastMessageForGroup(groupId: Long) = dao.observeLastMessageForGroup(groupId)
@@ -299,8 +300,22 @@ class GroupRepository @Inject constructor(
         val response = api.listGroups()
         if (!response.isSuccessful) return emptyList()
         val resp = response.body() ?: return emptyList()
+        val existingGroups = dao.getAllGroups().associateBy { it.id }
         val entities = resp.groups.map {
-            GroupEntity(it.id, it.name, it.ownerUserId, it.role, it.status, it.membershipVersion, it.currentKeyVersion, it.createdAt, it.isE2EE)
+            val existing = existingGroups[it.id]
+            val isArchived = existing?.isArchived ?: it.isE2EE
+            GroupEntity(
+                id = it.id,
+                name = it.name,
+                ownerUserId = it.ownerUserId,
+                role = it.role,
+                status = it.status,
+                membershipVersion = it.membershipVersion,
+                currentKeyVersion = it.currentKeyVersion,
+                createdAt = it.createdAt,
+                isE2EE = it.isE2EE,
+                isArchived = isArchived
+            )
         }
         entities.forEach { dao.upsertGroup(it) }
 

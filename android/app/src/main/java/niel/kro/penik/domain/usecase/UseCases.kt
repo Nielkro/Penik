@@ -81,10 +81,12 @@ class LoadChatsUseCase @Inject constructor(
 
 class SyncHistoryUseCase @Inject constructor(
     private val messageRepository: MessageRepository,
-    private val chatRepository: ChatRepository
+    private val chatRepository: ChatRepository,
+    private val groupRepository: GroupRepository
 ) {
     suspend operator fun invoke() {
         chatRepository.deduplicateChats()
+        groupRepository.archiveLegacyE2EEGroups()
         messageRepository.syncHistory()
     }
 }
