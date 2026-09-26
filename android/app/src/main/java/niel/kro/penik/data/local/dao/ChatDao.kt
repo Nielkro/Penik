@@ -58,13 +58,16 @@ interface ChatDao {
     @Query("SELECT * FROM chats WHERE userId = :userId AND isE2EE = :isE2EE LIMIT 1")
     suspend fun getChat(userId: Long, isE2EE: Boolean): ChatEntity?
 
-    @Query("SELECT * FROM chats WHERE userId = :userId ORDER BY isE2EE ASC LIMIT 1")
+    @Query("SELECT * FROM chats WHERE userId = :userId ORDER BY isE2EE DESC LIMIT 1")
     suspend fun getChat(userId: Long): ChatEntity?
+
+    @Query("SELECT * FROM chats WHERE userId = :userId")
+    suspend fun getChatsForUser(userId: Long): List<ChatEntity>
 
     @Query("SELECT * FROM chats WHERE userId = :userId AND isE2EE = :isE2EE LIMIT 1")
     fun observeChat(userId: Long, isE2EE: Boolean): Flow<ChatEntity?>
 
-    @Query("SELECT * FROM chats WHERE userId = :userId ORDER BY isE2EE ASC LIMIT 1")
+    @Query("SELECT * FROM chats WHERE userId = :userId ORDER BY isE2EE DESC LIMIT 1")
     fun observeChat(userId: Long): Flow<ChatEntity?>
 
     @Query("DELETE FROM chats WHERE userId = :userId AND isE2EE = :isE2EE")

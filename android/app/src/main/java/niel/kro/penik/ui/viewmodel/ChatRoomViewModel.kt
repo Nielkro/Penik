@@ -251,14 +251,14 @@ class ChatRoomViewModel @Inject constructor(
         if (newText.isBlank()) return
         viewModelScope.launch {
             messageRepository.editMessage(chatUserId, clientMsgId, newText.trim())
-            chatRepository.updateLastMessage(chatUserId, newText.trim(), System.currentTimeMillis(), name = chatName)
+            chatRepository.updateLastMessage(chatUserId, newText.trim(), System.currentTimeMillis(), name = chatName, isE2EE = isE2EE.value)
         }
     }
 
     fun sendMessage(text: String, replyToMsgId: String? = null) {
         if (text.isBlank()) return
         viewModelScope.launch {
-            sendMessageUseCase(chatUserId, text, chatName, replyToMsgId)
+            sendMessageUseCase(chatUserId, text, chatName, replyToMsgId, isE2EE = isE2EE.value)
         }
     }
 
@@ -284,7 +284,7 @@ class ChatRoomViewModel @Inject constructor(
             put("url", "/api/v1/stickers/file/${sticker.packId}/$fileName")
         }.toString()
         viewModelScope.launch {
-            sendMessageUseCase(chatUserId, payload, chatName, replyToMsgId)
+            sendMessageUseCase(chatUserId, payload, chatName, replyToMsgId, isE2EE = isE2EE.value)
         }
     }
 
@@ -300,7 +300,7 @@ class ChatRoomViewModel @Inject constructor(
 
             // 1. Immediately insert optimistic message into chat
             messageRepository.insertOptimisticMessage(chatUserId, clientMsgId, mediaInfo.optimisticPayload, null)
-            chatRepository.updateLastMessage(chatUserId, mediaInfo.optimisticPayload, System.currentTimeMillis(), name = chatName)
+            chatRepository.updateLastMessage(chatUserId, mediaInfo.optimisticPayload, System.currentTimeMillis(), name = chatName, isE2EE = isE2EE.value)
 
             // 2. Determine chunked encryption support based on recipient and own device crypto versions
             val useChunked = messageRepository.isChunkedEncryptionSupported(chatUserId)
@@ -308,8 +308,8 @@ class ChatRoomViewModel @Inject constructor(
             // 3. Upload and send with progress
             attachmentManager.uploadAndEncryptAttachment(context, mediaInfo, clientMsgId, caption, useChunked = useChunked, isE2EE = isE2EE.value)
                 .onSuccess { finalJsonPayload ->
-                    messageRepository.sendMessage(chatUserId, finalJsonPayload, null, existingClientMsgId = clientMsgId)
-                    chatRepository.updateLastMessage(chatUserId, finalJsonPayload, System.currentTimeMillis(), name = chatName)
+                    messageRepository.sendMessage(chatUserId, finalJsonPayload, null, existingClientMsgId = clientMsgId, isE2EE = isE2EE.value)
+                    chatRepository.updateLastMessage(chatUserId, finalJsonPayload, System.currentTimeMillis(), name = chatName, isE2EE = isE2EE.value)
                 }
                 .onFailure { err ->
                     viewModelScope.launch {

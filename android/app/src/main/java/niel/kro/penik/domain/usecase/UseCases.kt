@@ -47,9 +47,11 @@ class SendMessageUseCase @Inject constructor(
     private val messageRepository: MessageRepository,
     private val chatRepository: ChatRepository
 ) {
-    suspend operator fun invoke(toUserId: Long, text: String, chatName: String = "", replyToMsgId: String? = null) {
-        messageRepository.sendMessage(toUserId, text, replyToMsgId)
-        chatRepository.updateLastMessage(toUserId, text, System.currentTimeMillis(), name = chatName)
+    suspend operator fun invoke(toUserId: Long, text: String, chatName: String = "", replyToMsgId: String? = null, isE2EE: Boolean? = null) {
+        val existing = if (isE2EE != null) chatRepository.getChat(toUserId, isE2EE) else chatRepository.getChat(toUserId)
+        val targetE2EE = isE2EE ?: existing?.isE2EE ?: false
+        messageRepository.sendMessage(toUserId, text, replyToMsgId, isE2EE = targetE2EE)
+        chatRepository.updateLastMessage(toUserId, text, System.currentTimeMillis(), name = chatName, isE2EE = targetE2EE)
     }
 }
 
@@ -78,9 +80,13 @@ class LoadChatsUseCase @Inject constructor(
 }
 
 class SyncHistoryUseCase @Inject constructor(
-    private val messageRepository: MessageRepository
+    private val messageRepository: MessageRepository,
+    private val chatRepository: ChatRepository
 ) {
-    suspend operator fun invoke() = messageRepository.syncHistory()
+    suspend operator fun invoke() {
+        chatRepository.deduplicateChats()
+        messageRepository.syncHistory()
+    }
 }
 
 class HandleWebSocketEventUseCase @Inject constructor(
@@ -114,7 +120,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 // (self-chat copy encrypted for another device returns empty text).
                 if (text.isNotEmpty()) {
                     val myId = tokenStorage.getUserId()
-                    chatRepository.updateLastMessage(event.chatUserId, text, niel.kro.penik.data.repository.toMs(event.ts))
+                    chatRepository.updateLastMessage(event.chatUserId, text, niel.kro.penik.data.repository.toMs(event.ts), isE2EE = true)
                     if (isIncoming && event.chatUserId != myId) {
                         chatRepository.incrementUnread(event.chatUserId)
                         if (niel.kro.penik.ui.notification.AppNotificationManager.activeChatKey != "direct_${event.chatUserId}") {
@@ -155,7 +161,7 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 val decrypted = messageRepository.handleOfflineBatchEncrypted(event)
                 val myId = tokenStorage.getUserId()
                 decrypted.forEach { msg ->
-                    chatRepository.updateLastMessage(msg.chatUserId, msg.text, niel.kro.penik.data.repository.toMs(msg.ts))
+                    chatRepository.updateLastMessage(msg.chatUserId, msg.text, niel.kro.penik.data.repository.toMs(msg.ts), isE2EE = true)
                     if (msg.isIncoming && msg.chatUserId != myId) {
                         chatRepository.incrementUnread(msg.chatUserId)
                         if (!niel.kro.penik.ui.notification.AppNotificationManager.isAppInForeground &&

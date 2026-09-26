@@ -203,8 +203,11 @@ export async function renderChatList(container) {
           }
         }
 
-        const isE2EE = !!c.is_e2ee;
+        const isE2EE = c.is_e2ee !== undefined ? !!c.is_e2ee : true;
         const isArchived = c.is_archived !== undefined ? !!c.is_archived : isE2EE;
+        if (c.is_e2ee === undefined || c.is_archived === undefined) {
+          saveContact({ ...c, is_e2ee: isE2EE, is_archived: isArchived }).catch(() => {});
+        }
         return { ...c, _kind: "chat", last_message, last_ts, is_e2ee: isE2EE, is_archived: isArchived };
       }));
       return enriched;
@@ -391,7 +394,7 @@ async function loadGroupEntries() {
         last_ts = normalizeTs(g.created_at || g.created || 0);
       }
     } catch { /* preview falls back to role/empty */ }
-    const isE2EE = !!g.is_e2ee;
+    const isE2EE = g.is_e2ee !== undefined ? !!g.is_e2ee : true;
     const isArchived = g.is_archived !== undefined ? !!g.is_archived : isE2EE;
     return { ...g, _kind: "group", last_ts, last_message, is_e2ee: isE2EE, is_archived: isArchived };
   }));
@@ -440,7 +443,17 @@ function showCreateMenu(anchor, onGroupCreated) {
 
 // ── Chat view ────────────────────────────────────────────────────────────────
 
-export async function renderChat(container, userId, isE2EE = false) {
+export async function renderChat(container, userId, isE2EEOpt = false) {
+  let isE2EE = Boolean(isE2EEOpt);
+  if (!isE2EE && userId) {
+    try {
+      const stored = await getContact(Number(userId));
+      if (stored && (stored.is_e2ee === true || stored.is_e2ee === undefined)) {
+        isE2EE = true;
+      }
+    } catch {}
+  }
+
   container.innerHTML = "";
 
   const me = getCurrentUser();
@@ -690,6 +703,9 @@ export async function renderChat(container, userId, isE2EE = false) {
   if (!isSelfChat) {
     (async () => {
       let resolved = await getContact(Number(userId));
+      if (resolved && resolved.is_e2ee !== undefined) {
+        isE2EE = !!resolved.is_e2ee;
+      }
       if (!resolved || resolved.name === "Неизвестный") {
         try {
           const res = await apiGet(`/users/${userId}`);
