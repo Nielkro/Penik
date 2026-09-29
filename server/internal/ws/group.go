@@ -141,16 +141,24 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 		groupName = "Группа"
 	}
 
+	sentFCMTokens := make(map[string]bool)
 	for _, did := range recipients {
 		if c.hub.IsOnline(did) {
 			continue
 		}
 
-		var fcmToken string
-		_ = c.db.QueryRowContext(ctx, "SELECT fcm_token FROM devices WHERE id=?", did).Scan(&fcmToken)
-		if fcmToken == "" {
+		var devOwnerID int64
+		_ = c.db.QueryRowContext(ctx, "SELECT user_id FROM devices WHERE id=?", did).Scan(&devOwnerID)
+		if c.hub.IsUserOnline(devOwnerID) {
 			continue
 		}
+
+		var fcmToken string
+		_ = c.db.QueryRowContext(ctx, "SELECT fcm_token FROM devices WHERE id=?", did).Scan(&fcmToken)
+		if fcmToken == "" || sentFCMTokens[fcmToken] {
+			continue
+		}
+		sentFCMTokens[fcmToken] = true
 
 		push.SendDevicePush(fcmToken, map[string]string{
 			"type":           "group",

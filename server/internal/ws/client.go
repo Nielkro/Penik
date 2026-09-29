@@ -596,34 +596,38 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 		senderName = "Собеседник"
 	}
 
-	// Push notifications for offline recipient devices
-	for _, d := range deliveries {
-		if c.hub.IsOnline(d.deviceID) {
-			continue
+	// Push notifications for offline recipient devices (only if user is not currently active on any socket)
+	if !c.hub.IsUserOnline(recipientUserID) {
+		sentFCMTokens := make(map[string]bool)
+		for _, d := range deliveries {
+			if c.hub.IsOnline(d.deviceID) {
+				continue
+			}
+			var devOwnerID int64
+			_ = c.db.QueryRowContext(ctx, "SELECT user_id FROM devices WHERE id = ?", d.deviceID).Scan(&devOwnerID)
+			if devOwnerID != recipientUserID {
+				continue
+			}
+			var fcmToken string
+			_ = c.db.QueryRowContext(ctx, "SELECT fcm_token FROM devices WHERE id = ?", d.deviceID).Scan(&fcmToken)
+			if fcmToken == "" || sentFCMTokens[fcmToken] {
+				continue
+			}
+			sentFCMTokens[fcmToken] = true
+			push.SendDevicePush(fcmToken, map[string]string{
+				"type":           "direct",
+				"chat_user_id":   fmt.Sprintf("%d", senderUserID),
+				"sender_user_id": fmt.Sprintf("%d", senderUserID),
+				"sender_name":    senderName,
+				"text":           msg.Plaintext,
+				"row_id":         fmt.Sprintf("%d", messageID),
+				"msg_id":         fmt.Sprintf("%d", messageID),
+				"message_id":     msg.MsgID,
+				"timestamp":      fmt.Sprintf("%d", msgTS*1000),
+			}, func(deadToken string) {
+				_, _ = c.db.Exec("UPDATE devices SET fcm_token = '' WHERE fcm_token = ?", deadToken)
+			})
 		}
-		var devOwnerID int64
-		_ = c.db.QueryRowContext(ctx, "SELECT user_id FROM devices WHERE id = ?", d.deviceID).Scan(&devOwnerID)
-		if devOwnerID != recipientUserID {
-			continue
-		}
-		var fcmToken string
-		_ = c.db.QueryRowContext(ctx, "SELECT fcm_token FROM devices WHERE id = ?", d.deviceID).Scan(&fcmToken)
-		if fcmToken == "" {
-			continue
-		}
-		push.SendDevicePush(fcmToken, map[string]string{
-			"type":           "direct",
-			"chat_user_id":   fmt.Sprintf("%d", senderUserID),
-			"sender_user_id": fmt.Sprintf("%d", senderUserID),
-			"sender_name":    senderName,
-			"text":           msg.Plaintext,
-			"row_id":         fmt.Sprintf("%d", messageID),
-			"msg_id":         fmt.Sprintf("%d", messageID),
-			"message_id":     msg.MsgID,
-			"timestamp":      fmt.Sprintf("%d", msgTS*1000),
-		}, func(deadToken string) {
-			_, _ = c.db.Exec("UPDATE devices SET fcm_token = '' WHERE fcm_token = ?", deadToken)
-		})
 	}
 
 	for _, d := range deliveries {
