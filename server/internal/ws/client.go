@@ -682,59 +682,10 @@ func (c *Client) handleMsgDelivered(ctx context.Context, msg *MsgDelivered) erro
 	if clientMsgID.Valid && clientMsgID.String != "" {
 		_, _ = c.db.ExecContext(ctx, `UPDATE messages SET delivered=1, delivered_at=COALESCE(delivered_at, ?) WHERE client_msg_id=? AND sender_user_id=?`, now, clientMsgID.String, senderUserID)
 	}
-	// Fan-out creates a separate row per device. Notify each sender device using its own row ID.
-	if clientMsgID.Valid {
-		rows, err := c.db.QueryContext(ctx, `
-			SELECT m.recipient_device_id, m.id, m.sender_device_id, d.user_id 
-			FROM messages m
-			LEFT JOIN devices d ON m.recipient_device_id = d.id
-			WHERE m.sender_user_id=? AND m.client_msg_id=?
-			ORDER BY m.id ASC
-		`, senderUserID, clientMsgID.String)
-		if err == nil {
-			defer rows.Close()
-			var firstMsgID int64
-			var senderDeviceID int64
-			type targetDevice struct {
-				devID int64
-				msgID int64
-			}
-			var targets []targetDevice
-			isFirst := true
-			for rows.Next() {
-				var recDevID, mID, sendDevID int64
-				var ownerID sql.NullInt64
-				if err := rows.Scan(&recDevID, &mID, &sendDevID, &ownerID); err == nil {
-					if isFirst {
-						firstMsgID = mID
-						senderDeviceID = sendDevID
-						isFirst = false
-					}
-					if ownerID.Valid && ownerID.Int64 == senderUserID {
-						targets = append(targets, targetDevice{recDevID, mID})
-					}
-				}
-			}
-			if senderDeviceID != 0 {
-				targets = append(targets, targetDevice{senderDeviceID, firstMsgID})
-			}
-			sentDevices := make(map[int64]bool)
-			for _, t := range targets {
-				if !sentDevices[t.devID] {
-					sentDevices[t.devID] = true
-					payload, err := msgpack.Marshal(MsgDelivered{MsgID: t.msgID, ClientMsgID: clientMsgID.String})
-					if err == nil {
-						c.hub.SendToDeviceFrame(t.devID, OpMsgDelivered, payload)
-					}
-				}
-			}
-		}
-	} else {
-		senderMsgID := msg.MsgID
-		frame, err := encodeFrame(OpMsgDelivered, MsgDelivered{MsgID: senderMsgID, ClientMsgID: clientMsgID.String})
-		if err == nil {
-			c.sendToUserDevices(ctx, senderUserID, 0, frame)
-		}
+
+	frame, err := encodeFrame(OpMsgDelivered, MsgDelivered{MsgID: msg.MsgID, ClientMsgID: clientMsgID.String})
+	if err == nil {
+		c.sendToUserDevices(ctx, senderUserID, 0, frame)
 	}
 	return nil
 }
@@ -755,59 +706,13 @@ func (c *Client) handleMsgRead(ctx context.Context, msg *MsgRead) error {
 	if clientMsgID.Valid && clientMsgID.String != "" {
 		_, _ = c.db.ExecContext(ctx, `UPDATE messages SET read=1, delivered=1 WHERE client_msg_id=? AND sender_user_id=?`, clientMsgID.String, senderUserID)
 	}
-	// Fan-out creates a separate row per device. Notify each sender device using its own row ID.
-	if clientMsgID.Valid {
-		rows, err := c.db.QueryContext(ctx, `
-			SELECT m.recipient_device_id, m.id, m.sender_device_id, d.user_id 
-			FROM messages m
-			LEFT JOIN devices d ON m.recipient_device_id = d.id
-			WHERE m.sender_user_id=? AND m.client_msg_id=?
-			ORDER BY m.id ASC
-		`, senderUserID, clientMsgID.String)
-		if err == nil {
-			defer rows.Close()
-			var firstMsgID int64
-			var senderDeviceID int64
-			type targetDevice struct {
-				devID int64
-				msgID int64
-			}
-			var targets []targetDevice
-			isFirst := true
-			for rows.Next() {
-				var recDevID, mID, sendDevID int64
-				var ownerID sql.NullInt64
-				if err := rows.Scan(&recDevID, &mID, &sendDevID, &ownerID); err == nil {
-					if isFirst {
-						firstMsgID = mID
-						senderDeviceID = sendDevID
-						isFirst = false
-					}
-					if ownerID.Valid && ownerID.Int64 == senderUserID {
-						targets = append(targets, targetDevice{recDevID, mID})
-					}
-				}
-			}
-			if senderDeviceID != 0 {
-				targets = append(targets, targetDevice{senderDeviceID, firstMsgID})
-			}
-			sentDevices := make(map[int64]bool)
-			for _, t := range targets {
-				if !sentDevices[t.devID] {
-					sentDevices[t.devID] = true
-					payload, err := msgpack.Marshal(MsgRead{MsgID: t.msgID, ClientMsgID: clientMsgID.String})
-					if err == nil {
-						c.hub.SendToDeviceFrame(t.devID, OpMsgRead, payload)
-					}
-				}
-			}
-		}
-	} else {
-		senderMsgID := msg.MsgID
-		frame, err := encodeFrame(OpMsgRead, MsgRead{MsgID: senderMsgID, ClientMsgID: clientMsgID.String})
-		if err == nil {
-			c.sendToUserDevices(ctx, senderUserID, 0, frame)
-		}
+
+	frame, err := encodeFrame(OpMsgRead, MsgRead{MsgID: msg.MsgID, ClientMsgID: clientMsgID.String})
+	if err == nil {
+		// Broadcast read receipt to all sender devices so ticks turn double
+		c.sendToUserDevices(ctx, senderUserID, 0, frame)
+		// Sync with other devices of the reading user
+		c.sendToUserDevices(ctx, c.userID, c.deviceID, frame)
 	}
 	return nil
 }

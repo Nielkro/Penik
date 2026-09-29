@@ -5,7 +5,6 @@ import {
   renameGroup, uploadGroupAvatar
 } from "../groups.js";
 import { apiGet, getUserById, uploadAttachment } from "../api.js";
-import { encryptFileChaCha20, encryptBlobChunked, encryptBlob, encodeKey } from "../crypto.js";
 import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessage, saveCachedMedia } from "../storage.js";
 import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
 import {
@@ -853,18 +852,15 @@ export async function renderGroup(container, groupId) {
     scrollDown.scrollToBottom();
 
     try {
-      const useChunked = true;
       const localBlob = file;
-      const { encryptedBlob, key } = await encryptBlob(file, null, useChunked);
-
-      // 2. Upload to server with progress events
-      const cdnUrl = await uploadAttachment(encryptedBlob, file.name, (loaded, total) => {
+      // Upload directly to server
+      const cdnUrl = await uploadAttachment(file, file.name, (loaded, total) => {
         window.dispatchEvent(new CustomEvent("penik:upload-progress", {
           detail: { msgId: tempMsgId, loaded, total }
         }));
       });
 
-      // Cache original unencrypted BlobUrl locally for sender
+      // Cache original BlobUrl locally for sender
       decryptedBlobCache.set(cdnUrl, localBlobUrl);
       saveCachedMedia(cdnUrl, localBlob, file.type).catch(() => {});
 
@@ -961,7 +957,7 @@ export async function renderGroup(container, groupId) {
           name: file.name,
           size: file.size,
           mime: file.type || "application/octet-stream",
-          key: encodeKey(key),
+          key: "",
           thumb: thumbBase64
         }
       };
