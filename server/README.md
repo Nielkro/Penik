@@ -1,6 +1,6 @@
 # Penik Messenger — сервер
 
-Go backend для Penik Messenger. Мульти-девайс, бинарный WebSocket (MessagePack).
+Go backend для Penik Messenger. Мульти-девайс, облачные чаты, E2EE-звонки, бинарный WebSocket (MessagePack).
 
 ## Стек
 
@@ -9,6 +9,7 @@ Go backend для Penik Messenger. Мульти-девайс, бинарный W
 - **WebSocket** — `nhooyr.io/websocket`, бинарные фреймы
 - **MessagePack** — `github.com/shamaton/msgpack/v2`
 - **Пароли** — Argon2id
+- **LiveKit Server SDK** — 1:1 аудио- и видеозвонки
 
 ## Запуск
 
@@ -45,12 +46,7 @@ POST /api/v1/register
   "password": "...",
   "device_name": "Pixel 8",
   "platform": "Android 14",
-  "location": "Moscow",
-  "crypto_version": 2,
-  "ik_pub": "<base64>",
-  "signing_key": "<base64>"
-  // опционально: spk_pub, spk_sig (легаси, обратная совместимость).
-  // opk_list / OTK не принимаются — OTK deprecated (см. AGENTS.md).
+  "location": "Moscow"
 }
 
 POST /api/v1/login
@@ -59,16 +55,9 @@ POST /api/v1/login
   "password": "...",
   "device_name": "Pixel 8",
   "platform": "Android 14",
-  "location": "Moscow",
-  "crypto_version": 2,
-  "ik_pub": "<base64>",
-  "signing_key": "<base64>"
+  "location": "Moscow"
 }
-→ { "token": "...", "user_id": 1, "device_id": 1,
-    // опционально при временном устройстве:
-    // "rebind_required": true, "target_device_id": 2
-    // далее POST /api/v1/auth/device-challenge → /api/v1/auth/device-rebind
-  }
+→ { "token": "...", "user_id": 1, "device_id": 1 }
 ```
 
 ### Профиль
@@ -95,7 +84,7 @@ WS /api/v1/ws
 
 SQLite с WAL режимом. Миграции применяются при старте автоматически.
 
-Таблицы: `users`, `devices`, `identity_keys`, `device_public_keys`, `chats`, `messages`, `sessions`, `key_backups`, `pairing_sessions`, `pairing_tokens`, `device_history_exclusions`, `groups`, `group_members`, `group_key_versions`, `group_key_envelopes`, `group_messages`, `group_message_devices`, `group_history_packets`, `sticker_packs`, `stickers`, `user_sticker_packs`, `calls`, `attachments`, `bots`. Канонический DDL — `server/internal/db/schema.sql`.
+Таблицы: `users`, `devices`, `chats`, `messages`, `sessions`, `groups`, `group_members`, `group_messages`, `group_message_devices`, `sticker_packs`, `stickers`, `user_sticker_packs`, `calls`, `attachments`, `bots`. Канонический DDL — `server/internal/db/schema.sql`.
 
 ## Rate limits
 
@@ -106,10 +95,7 @@ SQLite с WAL режимом. Миграции применяются при с�
 | Регистрация / вход | 10 / мин на IP |
 | Проверка никнейма и публичный профиль | 20 / 10 мин на IP |
 | Смена никнейма | не чаще 1 раза в 7 дней |
-| Запрос key bundle | 60 / мин на пользователя |
 | Групповые изменения | 30 / мин на пользователя |
-| Ротация группового ключа | 10 / мин на пользователя |
 | Загрузка вложений | 60 / мин на пользователя |
-| Device challenge (rebind устройства) | 5 / мин на пользователя |
 | Исходящие звонки (`OpCallOffer`, WS) | 5 / мин на аккаунт |
 | Кадры WebSocket | 10 кадров / 2 с на опкод (drop, затем close 1008) |
