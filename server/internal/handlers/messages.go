@@ -170,7 +170,6 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 func GetMessageByID(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := middleware.UserIDFromCtx(r.Context())
-		deviceID := middleware.DeviceIDFromCtx(r.Context())
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil || id <= 0 {
 			http.Error(w, "invalid message id", http.StatusBadRequest)
@@ -192,11 +191,11 @@ func GetMessageByID(database *db.DB) http.HandlerFunc {
 			 WHERE m.id = ?
 			   AND m.purge_pending = 0
 			   AND (
-			     (m.sender_user_id = ? AND m.sender_device_id = ? AND m.deleted_by_sender = 0)
+			     (m.sender_user_id = ? AND m.deleted_by_sender = 0)
 			     OR
-			     (m.recipient_user_id = ? AND m.recipient_device_id = ? AND m.deleted_by_recipient = 0)
+			     (m.recipient_user_id = ? AND m.deleted_by_recipient = 0)
 			   )`,
-			userID, id, userID, deviceID, userID, deviceID).
+			userID, id, userID, userID).
 			Scan(&m.ID, &m.ChatID, &m.SenderID, &m.RecipientID, &m.ChatUserID,
 				&m.ClientMsgID, &m.ReplyToMsgID, &m.Plaintext, &m.Timestamp,
 				&m.Delivered, &m.DeliveredAt, &m.Read,

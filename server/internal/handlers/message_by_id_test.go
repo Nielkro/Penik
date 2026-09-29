@@ -90,11 +90,11 @@ func TestGetMessageByIDIsDeviceScoped(t *testing.T) {
 		t.Fatalf("sender: got %d, want 200", rec.Code)
 	}
 
-	// Same user, wrong device — the copy is not theirs to read.
+	// Same user, other device — in cloud architecture, user's other devices can resolve the message.
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, authedRequest("/api/v1/messages/"+itoa(msgID)+"/envelope", bobID, bobOtherDev))
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("other device of same user: got %d, want 404", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("other device of same user: got %d, want 200", rec.Code)
 	}
 
 	// Unrelated user.
