@@ -585,57 +585,6 @@ export async function encryptBlobChunked(blob, onProgress) {
   return { encryptedBlob, key };
 }
 
-/**
- * Batch pairwise fan-out encryption across all recipient & sender devices in a single call.
- */
-export async function encryptPairwiseBatch(
-  senderPrivKey,
-  senderUserId,
-  recipientUserId,
-  clientMsgId,
-  timestamp,
-  plaintext,
-  devices
-) {
-  const wasm = await getWasm();
-  const priv = requireBytes(senderPrivKey, 32, "senderPrivKey");
-  const ptBytes = typeof plaintext === "string" ? new TextEncoder().encode(plaintext) : plaintext;
-
-  if (typeof wasm.encryptPairwiseBatch === "function") {
-    const results = wasm.encryptPairwiseBatch(
-      priv,
-      BigInt(senderUserId),
-      BigInt(recipientUserId),
-      clientMsgId || "",
-      BigInt(timestamp || 0),
-      ptBytes,
-      devices
-    );
-    return results;
-  }
-
-  // Fallback for legacy WASM: loop over devices
-  const payloads = [];
-  for (const device of devices) {
-    const rawPk = device.identity_key || device.publicKey;
-    const recipientIKPub = typeof rawPk === "string" ? decodeKey(rawPk) : rawPk;
-    const isV2 = Number(device.crypto_version || 1) >= 2;
-    const deviceAad = isV2
-      ? buildPairwiseAADV2(senderUserId, recipientUserId, clientMsgId)
-      : buildPairwiseAAD(senderUserId, recipientUserId, clientMsgId, timestamp);
-    const secret = await deriveSharedSecret(priv, recipientIKPub);
-    const { ciphertext, salt, nonce } = await e2eeEncrypt(ptBytes, secret, "penik-pairwise-message-v1", deviceAad);
-    payloads.push({
-      device_id: Number(device.device_id),
-      ciphertext,
-      salt,
-      nonce,
-      v: isV2 ? 2 : 1
-    });
-  }
-  return payloads;
-}
-
 export async function generateKeyPair() {
   const wasm = await getWasm();
   const kp = wasm.generateKeyPair();
@@ -1072,14 +1021,4 @@ export async function unwrapGroupKey(encryptedKey, sharedSecret, salt, nonce, gr
   );
 }
 
-export async function computeDeviceRebindProof(ikPriv, ephPub, nonce, userId, deviceId) {
-  const wasm = await getWasm();
-  return wasm.computeDeviceRebindProof(
-    requireBytes(ikPriv, 32, "ikPriv"),
-    requireBytes(ephPub, 32, "ephPub"),
-    requireBytes(nonce, 32, "nonce"),
-    BigInt(userId),
-    BigInt(deviceId)
-  );
-}
 

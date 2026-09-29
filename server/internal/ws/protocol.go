@@ -65,18 +65,28 @@ const (
 // All messages are sent as binary WebSocket frames.
 
 type MsgSend struct {
-	ToUserID  int64  `msgpack:"to_user_id"`
-	Plaintext string `msgpack:"plaintext"`
-	MsgID     string `msgpack:"msg_id"` // client-generated idempotency key
+	ToUserID     int64   `msgpack:"to_user_id"`
+	MsgID        string  `msgpack:"msg_id"`
+	ReplyToMsgID *string `msgpack:"reply_to_msg_id"`
+	CreatedAt    int64   `msgpack:"created_at,omitempty"`
+	Plaintext    string  `msgpack:"plaintext,omitempty"`
 }
 
 // MsgRecv is pushed to recipient clients.
 type MsgRecv struct {
-	FromUserID int64  `msgpack:"from_user_id"`
-	ChatUserID int64  `msgpack:"chat_user_id"` // User ID of the other party in this chat
-	Plaintext  string `msgpack:"plaintext"`
-	MsgID      int64  `msgpack:"msg_id"` // server-assigned DB id
-	TS         int64  `msgpack:"ts"`
+	FromUserID        int64   `msgpack:"from_user_id"`
+	FromDeviceID      int64   `msgpack:"from_device_id"`
+	RecipientDeviceID int64   `msgpack:"recipient_device_id"`
+	ChatUserID        int64   `msgpack:"chat_user_id"`
+	MsgID             int64   `msgpack:"msg_id"`
+	ClientMsgID       string  `msgpack:"client_msg_id"`
+	ReplyToMsgID      *string `msgpack:"reply_to_msg_id"`
+	Plaintext         string  `msgpack:"plaintext,omitempty"`
+	Ciphertext        []byte  `msgpack:"ciphertext,omitempty"`
+	Salt              []byte  `msgpack:"salt,omitempty"`
+	Nonce             []byte  `msgpack:"nonce,omitempty"`
+	TS                int64   `msgpack:"ts"`
+	V                 int     `msgpack:"v,omitempty"`
 }
 
 // MsgAck is sent server→client to confirm receipt/storage of a MsgSend.
@@ -136,45 +146,11 @@ type KeyFetchResp struct {
 	Devices []DeviceKeyBundle `msgpack:"devices"`
 }
 
-type E2EPayload struct {
-	DeviceID   int64  `msgpack:"device_id"`
-	Ciphertext []byte `msgpack:"ciphertext"`
-	Salt       []byte `msgpack:"salt"`
-	Nonce      []byte `msgpack:"nonce"`
-	V          int    `msgpack:"v,omitempty"`
-}
-
-type MsgSendEncrypted struct {
-	ToUserID     int64        `msgpack:"to_user_id"`
-	MsgID        string       `msgpack:"msg_id"`
-	ReplyToMsgID *string      `msgpack:"reply_to_msg_id"`
-	CreatedAt    int64        `msgpack:"created_at,omitempty"`
-	Plaintext    string       `msgpack:"plaintext,omitempty"`
-	Devices      []E2EPayload `msgpack:"devices"`
-}
-
-type MsgRecvEncrypted struct {
-	FromUserID        int64   `msgpack:"from_user_id"`
-	FromDeviceID      int64   `msgpack:"from_device_id"`
-	RecipientDeviceID int64   `msgpack:"recipient_device_id"`
-	ChatUserID        int64   `msgpack:"chat_user_id"`
-	MsgID             int64   `msgpack:"msg_id"`
-	ClientMsgID       string  `msgpack:"client_msg_id"`
-	ReplyToMsgID      *string `msgpack:"reply_to_msg_id"`
-	Plaintext         string  `msgpack:"plaintext,omitempty"`
-	Ciphertext        []byte  `msgpack:"ciphertext,omitempty"`
-	Salt              []byte  `msgpack:"salt,omitempty"`
-	Nonce             []byte  `msgpack:"nonce,omitempty"`
-	TS                int64   `msgpack:"ts"`
-	V                 int     `msgpack:"v,omitempty"`
-}
-
-type MsgEditEncrypted struct {
-	ToUserID  int64        `msgpack:"to_user_id"`
-	MsgID     string       `msgpack:"msg_id"` // client_msg_id
-	EditedAt  int64        `msgpack:"edited_at,omitempty"`
-	Plaintext string       `msgpack:"plaintext,omitempty"`
-	Devices   []E2EPayload `msgpack:"devices"`
+type MsgEdit struct {
+	ToUserID  int64  `msgpack:"to_user_id"`
+	MsgID     string `msgpack:"msg_id"` // client_msg_id
+	EditedAt  int64  `msgpack:"edited_at,omitempty"`
+	Plaintext string `msgpack:"plaintext,omitempty"`
 }
 
 type MsgEditNotify struct {
@@ -189,10 +165,6 @@ type MsgEditNotify struct {
 	Salt              []byte `msgpack:"salt,omitempty"`
 	Nonce             []byte `msgpack:"nonce,omitempty"`
 	EditedAt          int64  `msgpack:"edited_at"`
-}
-
-type OfflineBatchEncrypted struct {
-	Msgs []MsgRecvEncrypted `msgpack:"msgs"`
 }
 
 type KeyPublishReq struct {

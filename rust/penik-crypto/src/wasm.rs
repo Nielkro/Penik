@@ -304,93 +304,6 @@ pub fn wasm_encrypt_file_chunked(file_bytes: &[u8]) -> Result<JsEncryptedFile, J
     })
 }
 
-#[wasm_bindgen(js_name = encryptPairwiseBatch)]
-pub fn wasm_encrypt_pairwise_batch(
-    sender_priv_key: &[u8],
-    sender_user_id: u64,
-    recipient_user_id: u64,
-    client_msg_id: &str,
-    timestamp: i64,
-    plaintext: &[u8],
-    devices: &JsValue,
-) -> Result<js_sys::Array, JsValue> {
-    if !js_sys::Array::is_array(devices) {
-        return Err(JsValue::from_str("devices must be an Array"));
-    }
-
-    let devices_arr = js_sys::Array::from(devices);
-    let len = devices_arr.length();
-
-    let mut parsed_pub_keys = Vec::with_capacity(len as usize);
-
-    for i in 0..len {
-        let item = devices_arr.get(i);
-        if !item.is_object() {
-            return Err(JsValue::from_str("device item must be an Object"));
-        }
-
-        let dev_id_val = js_sys::Reflect::get(&item, &JsValue::from_str("device_id"))
-            .unwrap_or(JsValue::UNDEFINED);
-        let dev_id = if let Some(n) = dev_id_val.as_f64() {
-            n as i64
-        } else if let Some(s) = dev_id_val.as_string() {
-            s.parse::<i64>().unwrap_or(0)
-        } else {
-            0
-        };
-
-        let key_val = js_sys::Reflect::get(&item, &JsValue::from_str("identity_key"))
-            .or_else(|_| js_sys::Reflect::get(&item, &JsValue::from_str("publicKey")))
-            .unwrap_or(JsValue::UNDEFINED);
-
-        let pub_key_bytes = if let Some(bytes) = extract_single_key(&key_val) {
-            bytes
-        } else {
-            return Err(JsValue::from_str("device missing valid identity_key/publicKey"));
-        };
-
-        let ver_val = js_sys::Reflect::get(&item, &JsValue::from_str("crypto_version"))
-            .or_else(|_| js_sys::Reflect::get(&item, &JsValue::from_str("cryptoVersion")))
-            .unwrap_or(JsValue::UNDEFINED);
-        let crypto_version = ver_val.as_f64().unwrap_or(1.0) as u32;
-
-        parsed_pub_keys.push((dev_id, pub_key_bytes, crypto_version));
-    }
-
-    let mut recipients = Vec::with_capacity(parsed_pub_keys.len());
-    for (dev_id, pub_key_bytes, crypto_version) in &parsed_pub_keys {
-        recipients.push(cipher::DeviceRecipient {
-            device_id: *dev_id,
-            public_key: pub_key_bytes.as_slice(),
-            crypto_version: *crypto_version,
-        });
-    }
-
-    let envelopes = cipher::encrypt_pairwise_fanout(
-        sender_priv_key,
-        sender_user_id,
-        recipient_user_id,
-        client_msg_id,
-        timestamp,
-        plaintext,
-        &recipients,
-    )?;
-
-    let out_arr = js_sys::Array::new_with_length(envelopes.len() as u32);
-    for (i, env) in envelopes.into_iter().enumerate() {
-        let obj = js_sys::Object::new();
-        js_sys::Reflect::set(&obj, &JsValue::from_str("device_id"), &JsValue::from_f64(env.device_id as f64))?;
-        js_sys::Reflect::set(&obj, &JsValue::from_str("ciphertext"), &js_sys::Uint8Array::from(&env.ciphertext[..]))?;
-        js_sys::Reflect::set(&obj, &JsValue::from_str("salt"), &js_sys::Uint8Array::from(&env.salt[..]))?;
-        js_sys::Reflect::set(&obj, &JsValue::from_str("nonce"), &js_sys::Uint8Array::from(&env.nonce[..]))?;
-        js_sys::Reflect::set(&obj, &JsValue::from_str("v"), &JsValue::from_f64(env.version as f64))?;
-        out_arr.set(i as u32, JsValue::from(obj));
-    }
-
-    Ok(out_arr)
-}
-
-
 #[wasm_bindgen(js_name = buildPairwiseAAD)]
 pub fn wasm_build_pairwise_aad(
     sender_user_id: u64,
@@ -801,16 +714,4 @@ pub fn wasm_group_decrypt_verified(
     Ok(js_sys::Uint8Array::from(&pt[..]))
 }
 
-#[wasm_bindgen(js_name = computeDeviceRebindProof)]
-pub fn wasm_compute_device_rebind_proof(
-    ik_priv: &[u8],
-    eph_pub: &[u8],
-    nonce: &[u8],
-    user_id: u64,
-    device_id: u64,
-) -> Result<js_sys::Uint8Array, JsValue> {
-    let proof = keys::compute_device_rebind_proof(ik_priv, eph_pub, nonce, user_id, device_id)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    Ok(js_sys::Uint8Array::from(&proof[..]))
-}
 

@@ -8,7 +8,7 @@ use zeroize::Zeroize;
 use crate::aad::build_group_aad;
 use crate::errors::CryptoError;
 use crate::kdf::hkdf_derive;
-use crate::{aad, keys};
+
 
 pub const NONCE_SIZE: usize = 12;
 pub const TAG_SIZE: usize = 16;
@@ -27,22 +27,6 @@ pub struct E2EEEncrypted {
     pub ciphertext: Vec<u8>,
     pub salt: [u8; 32],
     pub nonce: [u8; 12],
-}
-
-#[derive(Clone, Debug)]
-pub struct DeviceRecipient<'a> {
-    pub device_id: i64,
-    pub public_key: &'a [u8],
-    pub crypto_version: u32,
-}
-
-#[derive(Clone, Debug)]
-pub struct DeviceCiphertextEnvelope {
-    pub device_id: i64,
-    pub ciphertext: Vec<u8>,
-    pub salt: [u8; 32],
-    pub nonce: [u8; 12],
-    pub version: u32,
 }
 
 pub fn chacha20poly1305_encrypt(
@@ -400,54 +384,4 @@ pub fn unwrap_group_key(
     e2ee_decrypt(encrypted_key, shared_secret, salt, nonce, GROUP_WRAP_INFO, &aad)
 }
 
-pub fn encrypt_pairwise_fanout(
-    sender_priv_key: &[u8],
-    sender_user_id: u64,
-    recipient_user_id: u64,
-    client_msg_id: &str,
-    timestamp: i64,
-    plaintext: &[u8],
-    devices: &[DeviceRecipient],
-) -> Result<Vec<DeviceCiphertextEnvelope>, CryptoError> {
-    if sender_priv_key.len() != KEY_SIZE {
-        return Err(CryptoError::InvalidKeyLength {
-            expected: KEY_SIZE,
-            actual: sender_priv_key.len(),
-        });
-    }
-
-    let mut envelopes = Vec::with_capacity(devices.len());
-
-    for device in devices {
-        if device.public_key.len() != KEY_SIZE {
-            return Err(CryptoError::InvalidKeyLength {
-                expected: KEY_SIZE,
-                actual: device.public_key.len(),
-            });
-        }
-
-        let mut shared_secret = keys::diffie_hellman(sender_priv_key, device.public_key)?;
-
-        let is_v2 = device.crypto_version >= 2;
-        let aad = if is_v2 {
-            aad::build_pairwise_aad_v2(sender_user_id, recipient_user_id, client_msg_id)
-        } else {
-            aad::build_pairwise_aad(sender_user_id, recipient_user_id, client_msg_id, timestamp)
-        };
-
-        let enc = e2ee_encrypt(plaintext, &shared_secret, DEFAULT_PAIRWISE_INFO, &aad);
-        shared_secret.zeroize();
-        let enc = enc?;
-
-        envelopes.push(DeviceCiphertextEnvelope {
-            device_id: device.device_id,
-            ciphertext: enc.ciphertext,
-            salt: enc.salt,
-            nonce: enc.nonce,
-            version: if is_v2 { 2 } else { 1 },
-        });
-    }
-
-    Ok(envelopes)
-}
 

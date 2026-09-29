@@ -107,19 +107,6 @@ object RustCryptoCore {
     external fun decryptFileChaCha20(encryptedBytes: ByteArray, key: ByteArray): ByteArray?
 
     @JvmStatic
-    external fun encryptPairwiseBatch(
-        senderPrivateKey: ByteArray,
-        senderUserId: Long,
-        recipientUserId: Long,
-        clientMsgId: String,
-        timestamp: Long,
-        plaintext: ByteArray,
-        deviceIds: LongArray,
-        devicePublicKeys: ByteArray,
-        deviceCryptoVersions: IntArray
-    ): ByteArray?
-
-    @JvmStatic
     external fun computeSafetyNumber(ikA: ByteArray, ikB: ByteArray): String?
 
     @JvmStatic
@@ -174,15 +161,6 @@ object RustCryptoCore {
         senderUserId: Long,
         messageId: String,
         createdAt: Long
-    ): ByteArray?
-
-    @JvmStatic
-    external fun computeDeviceRebindProof(
-        ikPriv: ByteArray,
-        ephPub: ByteArray,
-        nonce: ByteArray,
-        userId: Long,
-        deviceId: Long
     ): ByteArray?
 
     @JvmStatic

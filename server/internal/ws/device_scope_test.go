@@ -24,7 +24,7 @@ func TestMsgSendRejectsForeignDevice(t *testing.T) {
 	_, _ = mkUserDevice(t, database, "sfeve")
 
 	sender := newClient(NewHub(), nil, aliceID, aliceDev, database)
-	msg := &MsgSendEncrypted{
+	msg := &MsgSend{
 		ToUserID:  bobID,
 		MsgID:     "m-foreign",
 		Plaintext: "for-bob",

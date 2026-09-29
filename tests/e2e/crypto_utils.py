@@ -156,17 +156,6 @@ def _load_rust_crypto_lib() -> ctypes.CDLL:
     ]
     lib.penik_compute_safety_fingerprint.restype = ctypes.c_int32
 
-    lib.penik_compute_device_rebind_proof.argtypes = [
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        ctypes.c_size_t,
-        ctypes.c_uint64,
-        ctypes.c_uint64,
-        ctypes.c_void_p,
-    ]
-    lib.penik_compute_device_rebind_proof.restype = ctypes.c_int32
-
     return lib
 
 
@@ -492,24 +481,4 @@ def compute_safety_fingerprint(
         "qr_payload": out_qr.value.decode("utf-8"),
     }
 
-
-def compute_device_rebind_proof(
-    ik_priv: bytes, eph_pub: bytes, nonce: bytes, user_id: int, device_id: int
-) -> bytes:
-    assert len(ik_priv) == 32
-    assert len(eph_pub) == 32
-    assert len(nonce) == 32
-    out = ctypes.create_string_buffer(32)
-    res = _lib.penik_compute_device_rebind_proof(
-        ik_priv,
-        eph_pub,
-        nonce,
-        len(nonce),
-        ctypes.c_uint64(user_id),
-        ctypes.c_uint64(device_id),
-        out,
-    )
-    if res != 0:
-        raise ValueError(f"penik_compute_device_rebind_proof failed in Rust core with code {res}")
-    return bytes(out.raw)
 

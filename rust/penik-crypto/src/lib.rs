@@ -31,17 +31,16 @@ pub use cipher::{
     build_chunk_aad, chacha20poly1305_decrypt, chacha20poly1305_encrypt,
     create_chunked_file_header, decrypt_file, decrypt_file_chunk, derive_chunk_nonce,
     e2ee_decrypt, e2ee_encrypt, encrypt_file, encrypt_file_chunk, encrypt_file_chunked,
-    encrypt_pairwise_fanout, generate_file_key_and_nonce, group_decrypt, group_encrypt,
-    is_chunked_file, parse_chunked_file_header, unwrap_group_key, wrap_group_key_for_device,
-    DeviceCiphertextEnvelope, DeviceRecipient, E2EEEncrypted, CHUNK_HEADER_SIZE, CHUNK_MAGIC,
-    DEFAULT_CHUNK_SIZE, DEFAULT_GROUP_INFO, DEFAULT_PAIRWISE_INFO, GROUP_WRAP_INFO, KEY_SIZE,
-    NONCE_SIZE, TAG_SIZE,
+    generate_file_key_and_nonce, group_decrypt, group_encrypt, is_chunked_file,
+    parse_chunked_file_header, unwrap_group_key, wrap_group_key_for_device, E2EEEncrypted,
+    CHUNK_HEADER_SIZE, CHUNK_MAGIC, DEFAULT_CHUNK_SIZE, DEFAULT_GROUP_INFO, DEFAULT_PAIRWISE_INFO,
+    GROUP_WRAP_INFO, KEY_SIZE, NONCE_SIZE, TAG_SIZE,
 };
 pub use errors::CryptoError;
 pub use kdf::{hkdf_derive, pbkdf2_derive};
 pub use keys::{
-    compute_device_rebind_proof, decode_key, derive_public_key, diffie_hellman, encode_key,
-    generate_key_pair, normalize_public_key, KeyPair,
+    decode_key, derive_public_key, diffie_hellman, encode_key, generate_key_pair,
+    normalize_public_key, KeyPair,
 };
 pub use safety::{
     compute_safety_fingerprint, compute_safety_hash, compute_safety_number, SafetyFingerprint,

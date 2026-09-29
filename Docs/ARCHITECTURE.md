@@ -108,7 +108,6 @@ Penik Messenger — это кроссплатформенный мессендж
   - `groups`, `group_members`, `group_key_versions`, `group_key_envelopes`, `group_messages`, `group_message_devices`, `group_history_packets`.
   - `sticker_packs`, `stickers`, `user_sticker_packs` (установленные паки).
   - `calls` (история звонков), `attachments` (ACL зашифрованных вложений), `bots`.
-  - Отдельно: `challenge_store` — **in-memory** TTL-хранилище challenge'ей device-rebind (`server/internal/handlers/challenge_store.go`), таблицей не является.
 - **Защита аватаров:** Чтение заголовков через `image.DecodeConfig` с проверкой габаритов (защита от бомб декомпрессии).
 
 ### 6.2. Android клиент

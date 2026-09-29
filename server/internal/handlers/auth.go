@@ -39,11 +39,9 @@ type loginRequest struct {
 }
 
 type loginResponse struct {
-	Token          string `json:"token"`
-	UserID         int64  `json:"user_id"`
-	DeviceID       int64  `json:"device_id"`
-	RebindRequired bool   `json:"rebind_required,omitempty"`
-	TargetDeviceID int64  `json:"target_device_id,omitempty"`
+	Token    string `json:"token"`
+	UserID   int64  `json:"user_id"`
+	DeviceID int64  `json:"device_id"`
 }
 
 const (

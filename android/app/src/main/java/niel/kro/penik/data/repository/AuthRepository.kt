@@ -167,57 +167,12 @@ class AuthRepository @Inject constructor(
             )
             if (response.isSuccessful) {
                 val body = response.body()!!
-                var finalDeviceId = body.deviceId
-
-                if (body.rebindRequired && body.targetDeviceId > 0L) {
-                    try {
-                        tokenStorage.saveAuth(body.token, body.userId, body.deviceId)
-
-                        val challengeResp = apiService.deviceChallenge(
-                            niel.kro.penik.data.network.api.DeviceChallengeRequest(
-                                targetDeviceId = body.targetDeviceId,
-                                ikPub = ikPubBase64
-                            )
-                        )
-                        if (challengeResp.isSuccessful) {
-                            val challenge = challengeResp.body()!!
-                            val ephPubBytes = Base64.getDecoder().decode(challenge.ephPub)
-                            val nonceBytes = Base64.getDecoder().decode(challenge.nonce)
-
-                            val proofBytes = if (niel.kro.penik.data.crypto.RustCryptoCore.isAvailable()) {
-                                niel.kro.penik.data.crypto.RustCryptoCore.computeDeviceRebindProof(
-                                    privateKey,
-                                    ephPubBytes,
-                                    nonceBytes,
-                                    body.userId,
-                                    body.targetDeviceId
-                                )
-                            } else null
-
-                            if (proofBytes != null && proofBytes.size == 32) {
-                                val proofB64 = Base64.getEncoder().encodeToString(proofBytes)
-                                val rebindResp = apiService.deviceRebind(
-                                    niel.kro.penik.data.network.api.DeviceRebindRequest(
-                                        deviceId = body.targetDeviceId,
-                                        nonce = challenge.nonce,
-                                        proof = proofB64
-                                    )
-                                )
-                                if (rebindResp.isSuccessful && rebindResp.body()?.success == true) {
-                                    finalDeviceId = rebindResp.body()!!.deviceId
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.w("AuthRepository", "Device rebind failed: ${e.message}")
-                    }
-                }
 
                 val prevUserId = tokenStorage.getUserId()
                 if (prevUserId > 0L && prevUserId != body.userId) {
                     try { database.clearAllTables() } catch (_: Exception) {}
                 }
-                tokenStorage.saveAuth(body.token, body.userId, finalDeviceId)
+                tokenStorage.saveAuth(body.token, body.userId, body.deviceId)
                 fetchAndSaveUserProfile(body.userId)
                 
                 // Upload FCM token if exists
@@ -232,7 +187,7 @@ class AuthRepository @Inject constructor(
                     }
                 }
 
-                Result.success(AuthResponse(body.token, body.userId, finalDeviceId))
+                Result.success(AuthResponse(body.token, body.userId, body.deviceId))
             } else {
                 val msg = parseServerError(response.code(), response.errorBody()?.string())
                 Result.failure(Exception(msg))

@@ -267,9 +267,9 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 
 	switch op {
 	case OpMsgSend:
-		var msg MsgSendEncrypted
+		var msg MsgSend
 		if err := msgpack.Unmarshal(payload, &msg); err != nil {
-			return fmt.Errorf("unmarshal MsgSendEncrypted: %w", err)
+			return fmt.Errorf("unmarshal MsgSend: %w", err)
 		}
 		return c.handleMsgSend(ctx, &msg)
 
@@ -294,9 +294,9 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 		return c.handleMsgDelete(ctx, &msg)
 
 	case OpMsgEdit:
-		var msg MsgEditEncrypted
+		var msg MsgEdit
 		if err := msgpack.Unmarshal(payload, &msg); err != nil {
-			return fmt.Errorf("unmarshal MsgEditEncrypted: %w", err)
+			return fmt.Errorf("unmarshal MsgEdit: %w", err)
 		}
 		return c.handleMsgEdit(ctx, &msg)
 
@@ -449,7 +449,7 @@ func minFloat(a, b float64) float64 {
 	return b
 }
 
-func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error {
+func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 	if msg.Plaintext == "" || len(msg.Plaintext) > 64*1024 {
 		return fmt.Errorf("invalid plaintext message size (max 64KB)")
 	}
@@ -517,7 +517,7 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 
 	type pendingDelivery struct {
 		deviceID int64
-		msgRecv  MsgRecvEncrypted
+		msgRecv  MsgRecv
 	}
 	var deliveries []pendingDelivery
 
@@ -563,7 +563,7 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 				}
 				deliveries = append(deliveries, pendingDelivery{
 					deviceID: dID,
-					msgRecv: MsgRecvEncrypted{
+					msgRecv: MsgRecv{
 						FromUserID:        senderUserID,
 						FromDeviceID:      c.deviceID,
 						RecipientDeviceID: dID,
@@ -828,14 +828,14 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 	}
 	defer rows.Close()
 
-	var currentBatch []MsgRecvEncrypted
+	var currentBatch []MsgRecv
 	var currentBatchBytes int
 
-	sendBatch := func(msgs []MsgRecvEncrypted) error {
+	sendBatch := func(msgs []MsgRecv) error {
 		if len(msgs) == 0 {
 			return nil
 		}
-		batch := OfflineBatchEncrypted{Msgs: msgs}
+		batch := OfflineBatch{Msgs: msgs}
 		frame, err := encodeFrame(OpOfflineBatch, batch)
 		if err != nil {
 			return err
@@ -846,7 +846,7 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 	}
 
 	for rows.Next() {
-		var m MsgRecvEncrypted
+		var m MsgRecv
 		var plaintext sql.NullString
 		if err := rows.Scan(
 			&m.MsgID, &m.FromUserID, &m.FromDeviceID, &m.RecipientDeviceID,
@@ -1217,7 +1217,7 @@ func (c *Client) handleMsgRetryResp(ctx context.Context, req *MsgRetryResp) erro
 	}
 
 	// 6. Deliver the newly encrypted message to the recipient's device
-	inMsg := MsgRecvEncrypted{
+	inMsg := MsgRecv{
 		FromUserID:        senderUserID,
 		FromDeviceID:      senderDeviceID,
 		RecipientDeviceID: recipientDeviceID,
@@ -1324,7 +1324,7 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 	return nil
 }
 
-func (c *Client) handleMsgEdit(ctx context.Context, msg *MsgEditEncrypted) error {
+func (c *Client) handleMsgEdit(ctx context.Context, msg *MsgEdit) error {
 	if msg.MsgID == "" || msg.Plaintext == "" || len(msg.Plaintext) > 64*1024 {
 		return fmt.Errorf("invalid edit request parameters")
 	}
