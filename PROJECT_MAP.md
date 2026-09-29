@@ -8,40 +8,34 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 - `server/cmd/server/main.go` — Server entry point: loads config, opens DB, registers REST/WebSocket routes, attaches middleware, and serves the embedded web client.
 - `server/internal/config/config.go` — Loads runtime configuration from environment variables: port, SQLite path, session TTL, size limits, CORS, upload directory, MaxMind GeoIP database path, and primary/fallback LiveKit URLs.
-- `server/internal/handlers/auth.go` — REST handlers for registration and login; validates credentials and key material, hashes passwords, and creates devices/sessions with provisional device handling for rebinds.
-- `server/internal/handlers/challenge_store.go` — In-memory TTL challenge store with background ticker eviction for device identity key rebind verification.
-- `server/internal/handlers/device_rebind.go` — REST handlers for issuing Diffie-Hellman challenges (`/auth/device-challenge`) and atomic proof-of-possession verification with session elevation (`/auth/device-rebind`).
+- `server/internal/handlers/auth.go` — REST handlers for registration and login; validates credentials, hashes passwords, and creates devices/sessions.
 - `server/internal/handlers/logout.go` — REST handlers revoking the current session token (`/logout`) or the user's other sessions (`/logout/all`), terminating associated active WebSockets via the hub; `/logout/all` is rejected with 403 unless the requesting session is older than a day.
 - `server/internal/handlers/devices.go` — REST handler `GET /api/v1/devices` listing the authenticated user's devices, flagging the current device and whether each has an active session.
 - `server/internal/handlers/deviceinfo.go` — Helpers deriving a device's platform label, originating IP, and IP-based geolocation resolution (MaxMind GeoLite2/DB-IP Lite .mmdb reader with cached fallback).
 - `server/internal/handlers/users.go` — Handlers for user profiles, searching users, changing name/nickname, avatar operations, and password updates (optionally revoking other active sessions).
 - `server/internal/handlers/messages.go` — REST access to direct message history (cloud plaintext), single-message resolution by id, delivery/read receipts, and chat deletion operations.
 - `server/internal/handlers/groups.go` — REST lifecycle of groups: creation of cloud groups, retrieval, renaming, deletion, and membership management.
-- `server/internal/handlers/group_keys.go` — REST operations for group key versions and encrypted key envelopes for devices.
-- `server/internal/handlers/group_history.go` — Handles upload and one-time distribution of encrypted group history to new devices.
-- `server/internal/handlers/pairing.go` — Creates, presents, and manages pairing sessions for linking new devices and transferring history.
-- `server/internal/handlers/keys.go` — REST handlers for publishing identity/key material, retrieving key bundles, and key backups.
 - `server/internal/handlers/presence.go` — Serves and broadcasts user presence states and active device information.
 - `server/internal/handlers/time.go` — REST handler `GET /api/v1/time` serving current server timestamp and millisecond precision for client clock calibration.
 - `server/internal/handlers/health.go` — REST handler `GET /api/v1/health` and `/healthz` performing readiness checks on core local subsystems (SQLite SELECT 1, upload directory stat and writeability) without external dependencies.
-- `server/internal/handlers/version.go` — REST handler `GET /api/v1/version` serving client update policy and minimum crypto version requirements, supporting thread-safe caching and background refresh from remote GitHub Gist or raw repository URLs with local fallback.
+- `server/internal/handlers/version.go` — REST handler `GET /api/v1/version` serving client update policy, supporting thread-safe caching and background refresh from remote GitHub Gist or raw repository URLs with local fallback.
 - `server/internal/handlers/calls.go` — REST handlers for listing user call history (`GET /api/v1/calls`) and peer-to-peer call logs (`GET /api/v1/calls/peer/:user_id`).
 - `server/internal/handlers/bots.go` — REST handlers for creating bots, issuing/regenerating permanent bot API tokens, and bot account lifecycle.
 - `server/internal/handlers/stickers.go` — REST handlers for sticker packs: listing installed packs, pack metadata, install/uninstall, Telegram sticker pack import, and static file serving.
 - `server/internal/stickers/models.go` — Data models for sticker packs and individual stickers.
-- `server/internal/handlers/attachments.go` — Self-hosted encrypted attachment handlers: streaming multipart upload (`POST /api/v1/attachments/upload`), relation-based ACL checks, and streaming file download (`GET /api/v1/attachments/file/:id`) with HTTP Range requests support.
+- `server/internal/handlers/attachments.go` — Self-hosted attachment handlers: streaming multipart upload (`POST /api/v1/attachments/upload`), relation-based ACL checks, and streaming file download (`GET /api/v1/attachments/file/:id`) with HTTP Range requests support.
 - `server/internal/handlers/ws.go` — Authorizes WebSocket upgrades and creates server-side client sessions for real-time event exchange.
-- `server/internal/ws/client.go` — Implements the WebSocket client read/write pump, handling direct messages, key requests, receipt events, offline batching, session TTL enforcement, and presence.
-- `server/internal/ws/group.go` — Receives and routes encrypted group messages, receipts, and offline delivery across group members.
+- `server/internal/ws/client.go` — Implements the WebSocket client read/write pump, handling direct messages, receipt events, offline batching, session TTL enforcement, and presence.
+- `server/internal/ws/group.go` — Receives and routes group messages, receipts, and offline delivery across group members.
 - `server/internal/ws/hub.go` — Manages the registry of connected devices, broadcasting pre-encoded frames, presence, and shutdown events; terminates connections for revoked or expired sessions; also answers which devices a user has connected and whether a device was taken over by a newer connection.
 - `server/internal/ws/call.go` — Manages LiveKit 1:1 call signaling, per-device ring state (an incoming call rings every device of the callee and only the device that answered owns the call), a reconnect grace period that keeps an accepted call alive across a network switch and replays its state to the returning device, and JWT access token generation.
-- `server/internal/ws/protocol.go` — Defines binary opcodes and MsgPack structures for direct/group messages, keys, pairing, presence, statuses, and call signaling (0x30-0x39, including call state replay and peer link state).
+- `server/internal/ws/protocol.go` — Defines binary opcodes and MsgPack structures for direct/group messages, presence, statuses, and call signaling (0x30-0x39, including call state replay and peer link state).
 - `server/internal/push/fcm.go` — Handles JWT credentials signing and FCM HTTP v1 background push notifications delivery.
 - `server/internal/middleware/auth.go` — Extracts bearer/WebSocket tokens, validates sessions in the DB, and injects user/device IDs into the request context.
 - `server/internal/middleware/cors.go` — Configures CORS, origin checks, and CSRF protection for HTTP requests.
 - `server/internal/middleware/rate_limit.go` — Provides IP- and user-based rate limiting for public and sensitive operations.
 - `server/internal/middleware/limit.go` — Limits the maximum HTTP request body size.
-- `server/internal/middleware/security_headers.go` — Sets Content-Security-Policy (`connect-src` includes same-document `blob:` for decrypted media fetch) and defensive response headers (nosniff, frame-deny, referrer policy) on every response.
+- `server/internal/middleware/security_headers.go` — Sets Content-Security-Policy and defensive response headers (nosniff, frame-deny, referrer policy) on every response.
 - `Dockerfile` — Multi-stage Docker build packaging Node.js client build and Go server into a single lightweight Alpine runtime image with built-in HTTP healthcheck; prefers in-tree `client/pkg/penik-crypto-wasm` and only fetches the WASM package when missing.
 - `docker-compose.yml` — Docker Compose configuration running standalone `penik-server` container on port 8143 with volume persistence and automated healthcheck.
 - `.github/workflows/docker.yml` — GitHub Actions workflow building and publishing `penik-server` container image to GitHub Container Registry (`ghcr.io`), coordinated with crypto releases via `workflow_run`, running parallel E2E integration test verification before deployment, with post-deployment health verification and automatic rollback.
@@ -50,19 +44,16 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `.github/workflows/desktop.yml` — GitHub Actions workflow building Linux (WebKitGTK) and Windows (WebView2) desktop binaries, computing SHA256 checksums, and publishing rolling `desktop-latest` prereleases.
 - `penik.caddy` — Caddy site config for `/etc/caddy/sites-enabled/penik.caddy` routing `penik.ru` (landing), `web.penik.ru` (SPA web client), and `api.penik.ru` (reverse proxy to 127.0.0.1:8143).
 - `landing/index.html` — Standalone landing page (moved from the repo root `index.html`) promoting the messenger, providing web client entry and Android APK download links.
-- `version.json` — Canonical version policy JSON template specifying minimum/latest Android version codes, crypto version requirement, APK download URL, and release notes.
+- `version.json` — Canonical version policy JSON template specifying minimum/latest Android version codes, APK download URL, and release notes.
 
 ### Browser client transport
 
-- `client/js/api.js` — Unified browser REST client: attaches tokens, serializes JSON, parses errors, in-memory TTL caching for call history, and exports APIs for users, messages, pairing, and groups.
+- `client/js/api.js` — Unified browser REST client: attaches tokens, serializes JSON, parses errors, in-memory TTL caching for call history, and exports APIs for users, messages, and groups.
 - `client/js/desktop.js` — Wails v2 desktop bridge helpers: runtime detection, server URL sync, native notifications, file dialogs, and file read/write.
 - `client/scripts/sync-desktop.js` — Build helper copying built Vite client artifacts into `desktop/frontend/dist` for Go embedding.
-- `client/js/call.js` — LiveKit Web SDK integration and call state manager supporting primary and fallback endpoints, signed ephemeral Diffie-Hellman E2EE encryption via WebRTC Insertable Streams worker, identity key authentication tags, safety words verification, multi-device ring handling (call_id matching and `CALL_TAKEN`), and reconnect recovery: full track resync after `RoomEvent.Reconnected`, camera restore retry, and media flags derived from actual publications.
+- `client/js/call.js` — LiveKit Web SDK integration and call state manager supporting primary and fallback endpoints, signed ephemeral Diffie-Hellman E2EE encryption via WebRTC Insertable Streams worker, safety words verification, multi-device ring handling (call_id matching and `CALL_TAKEN`), and reconnect recovery: full track resync after `RoomEvent.Reconnected`, camera restore retry, and media flags derived from actual publications.
 - `client/js/sounds.js` — Web Audio API synthesizer for call sounds: melodious incoming ringtone, outgoing dial tone, connect/disconnect chimes, and busy signal.
-- `client/js/pairing.js` — Decrypts and imports history transferred from Android into the browser IndexedDB stores.
-- `client/js/backup.js` — Exports and imports encrypted full history envelopes (.penikbackup) and key backups using AES-256-GCM / PBKDF2 with mnemonic seed phrase support.
 - `client/js/ws.js` — Manages the browser WebSocket connection: encodes/decodes MsgPack frames, supports opcodes, ping/pong, request queuing, and exponential backoff reconnection; `connect()` is idempotent and each socket generation is fenced so a stale socket cannot open a second parallel session.
-- `client/js/keybundle.js` — Shared `/keys/bundle` cache with in-flight dedup, force-refresh cooldown, and stale-on-error fallback so history sync cannot stampede the rate limiter.
 - `client/js/presence.js` — Publishes user presence events and provides handlers for online status updates.
 
 ### Desktop client (Wails v2)
@@ -85,14 +76,14 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 ### Android client transport
 
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiConfig.kt` — Central network configuration object holding server host, port, scheme, base URL, and avatar URL generators.
-- `android/app/src/main/java/niel/kro/penik/data/network/api/ApiService.kt` — Retrofit contract for the Android client's REST API covering auth, profiles, messages, pairing, groups, keys, and avatars.
+- `android/app/src/main/java/niel/kro/penik/data/network/api/ApiService.kt` — Retrofit contract for the Android client's REST API covering auth, profiles, messages, groups, and avatars.
 - `android/app/src/main/java/niel/kro/penik/data/network/api/ApiModels.kt` — Kotlin data models for Retrofit API requests and responses.
 - `android/app/src/main/java/niel/kro/penik/data/network/websocket/WebSocketManager.kt` — Maintains the OkHttp WebSocket connection, binary MsgPack protocol, reconnects, ping/pong, and flow of typed events, including call signaling frames (0x30-0x39).
 - `android/app/src/main/java/niel/kro/penik/data/network/NetworkMonitor.kt` — Monitors device network connectivity state via ConnectivityManager callbacks to control offline behavior and trigger instant reconnection.
 - `android/app/src/main/java/niel/kro/penik/data/network/TimeSyncManager.kt` — Calibrates client-server clock offset via `/api/v1/time` to eliminate future message timestamps and skew.
 - `android/app/src/main/java/niel/kro/penik/data/update/AppUpdateManager.kt` — Evaluates client version against `/api/v1/version` policy, determines update necessity (soft vs force update), manages in-app streaming APK download with progress tracking, and launches Android PackageInstaller via FileProvider.
-- `android/app/src/main/java/niel/kro/penik/domain/call/CallManager.kt` — Singleton 1:1 call state machine (idle/dialing/incoming/connecting/active): LiveKit room connect with primary/fallback failover, signed ephemeral Diffie-Hellman E2EE encryption via WebRTC FrameCryptor, identity key authentication tags, safety words derivation, mic/camera toggles, ringtone and vibration, ring timeout, call timer resumed from the server answer time, call_id matching with `CALL_TAKEN` handling for calls answered on another device, track resync and camera restore after a LiveKit reconnect, and cleanup on all exit paths.
-- `android/app/src/main/java/niel/kro/penik/data/repository/SecureTokenStorage.kt` — Stores tokens, user/device IDs, and cryptographic keys in secure local storage.
+- `android/app/src/main/java/niel/kro/penik/domain/call/CallManager.kt` — Singleton 1:1 call state machine (idle/dialing/incoming/connecting/active): LiveKit room connect with primary/fallback failover, signed ephemeral Diffie-Hellman E2EE encryption via WebRTC FrameCryptor, safety words derivation, mic/camera toggles, ringtone and vibration, ring timeout, call timer resumed from the server answer time, call_id matching with `CALL_TAKEN` handling for calls answered on another device, track resync and camera restore after a LiveKit reconnect, and cleanup on all exit paths.
+- `android/app/src/main/java/niel/kro/penik/data/repository/SecureTokenStorage.kt` — Stores tokens and user/device IDs in secure local storage.
 
 ## UI
 
@@ -100,9 +91,9 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 - `client/index.html` — Source HTML entry point for the Vite client.
 - `client/css/main.css` — Core browser UI styles: layout, navigation, chats, groups, forms, responsive behavior, and the `.msg-time-tooltip` hover popup.
-- `client/js/app.js` — Main application controller: user state, hash navigation, screen layout, storage initialization, REST/WebSocket/crypto coordination, pairwise history decrypt (recipient-device peer key for own outgoing, fan-out collapse by client_msg_id), key-bundle re-exports, per-chat history watermarks for `before_id` scroll pagination, sync decrypt counters, and `window.__penikDebug()` / `__penikSyncStats()` / `__penikTryDecrypt(id)` console diagnostics.
-- `client/js/ui/auth.js` — Renders login/registration screens, multi-device backup selection on restore, and binds forms to the auth API.
-- `client/js/ui/chat.js` — Displays the chat list with live message and call previews, direct messaging room, messages, delivery/read receipts, and input controls; older pages load from the server watermark first so local-only rows cannot hide an unfetched server gap.
+- `client/js/app.js` — Main application controller: user state, hash navigation, screen layout, storage initialization, REST/WebSocket coordination, per-chat history watermarks for `before_id` scroll pagination, and `window.__penikDebug()` console diagnostics.
+- `client/js/ui/auth.js` — Renders login/registration screens and binds forms to the auth API.
+- `client/js/ui/chat.js` — Displays the chat list with live message and call previews, direct messaging room, messages, delivery/read receipts, and input controls; older pages load from the server watermark first.
 - `client/js/ui/calls.js` — Dedicated call history tab in the web client, displaying call records with duration, timestamps, status, and quick redial buttons.
 - `client/js/ui/groups.js` — Displays the group list and group chat room, including messages, invitations, and member actions.
 - `client/js/ui/profile.js` — Profile screen for editing user data and uploading avatars.
@@ -130,17 +121,17 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 ### Android client
 
-- `android/app/src/main/AndroidManifest.xml` — Android app declaration, components, permissions, application class, and FileProvider for decrypted attachments.
+- `android/app/src/main/AndroidManifest.xml` — Android app declaration, components, permissions, application class, and FileProvider for attachments.
 - `android/app/src/main/res/xml/network_security_config.xml` — Network security configuration enforcing strict cleartext prohibition (`cleartextTrafficPermitted="false"`).
-- `android/app/src/main/res/xml/attachment_paths.xml` — FileProvider path configuration granting read-only content URIs for decrypted files in `cacheDir/attachments`.
+- `android/app/src/main/res/xml/attachment_paths.xml` — FileProvider path configuration granting read-only content URIs for cached files in `cacheDir/attachments`.
 - `android/app/src/main/res/drawable/ic_launcher_monochrome.xml` — Vector monochrome silhouette layer for themed launcher icons.
 - `android/app/src/main/res/drawable/ic_logo_repik_monochrome.png` — Monochrome silhouette layer for Repik activity-alias themed icon.
 - `android/app/src/main/res/layout/view_sticker_player.xml` — XML layout hosting Media3 PlayerView configured with TextureView for video stickers to support alpha transitions.
 - `android/app/src/main/java/niel/kro/penik/MainActivity.kt` — Main Activity; enables edge-to-edge mode and launches Compose navigation within the app theme, with a global call overlay drawn above the nav graph and answer handling for call notification intents.
 - `android/app/src/main/java/niel/kro/penik/PenikApplication.kt` — Hilt Application class and entry point for the global WebSocket event coordinator.
-- `android/app/src/main/java/niel/kro/penik/ui/navigation/NavGraph.kt` — Compose Navigation graph for auth, main screen, direct/group chats, group settings, and pairing scanner.
+- `android/app/src/main/java/niel/kro/penik/ui/navigation/NavGraph.kt` — Compose Navigation graph for auth, main screen, direct/group chats, and group settings.
 - `android/app/src/main/java/niel/kro/penik/ui/navigation/NavRoutes.kt` — Declares typed routes and screen parameters for the Android client.
-- `android/app/src/main/java/niel/kro/penik/ui/navigation/MainScreen.kt` — Main app layout supporting both Telegram-style navigation drawer with burger menu and traditional bottom navigation bar, user profile/calls tabs, group creation dialog, and logout/pairing actions.
+- `android/app/src/main/java/niel/kro/penik/ui/navigation/MainScreen.kt` — Main app layout supporting both Telegram-style navigation drawer with burger menu and traditional bottom navigation bar, user profile/calls tabs, group creation dialog, and logout actions.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/auth/AuthScreen.kt` — User login and registration UI.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/chatslist/ChatsListScreen.kt` — Direct chat list UI and navigation to chat rooms.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/calls/CallsListScreen.kt` — Call history screen listing all incoming, outgoing, missed, and declined calls with redial buttons.
@@ -148,29 +139,26 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `android/app/src/main/java/niel/kro/penik/ui/call/CallOverlayScreen.kt` — Global call overlay: incoming call accept/decline, dialing, active call screens with remote/local video renderers, PiP swap, media controls, a reconnect/peer-link status line, and a VPN warning dialog with an inline "Why" video explainer from raw resources (`vpn_why.mp4`).
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupsListScreen.kt` — Group list UI and pending invitations.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupChatScreen.kt` — Group chat room UI with messages and group actions; scroll-down FAB shown only when last message is not visible.
-- `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupSettingsScreen.kt` — Group settings screen: member list, roles, invitations, and key rotation.
-- `android/app/src/main/java/niel/kro/penik/ui/screen/profile/ProfileScreen.kt` — Profile UI, name/password changes, avatar management, and key backup.
-- `android/app/src/main/java/niel/kro/penik/ui/screen/pairing/PairingScannerScreen.kt` — Screen for scanning and processing QR pairing sessions for new devices.
-- `android/app/src/main/java/niel/kro/penik/ui/screen/settings/SettingsScreen.kt` — Settings screen with light/dark theme switch, navigation style picker (Bottom bar vs Telegram drawer), app icon/variant chooser, backup & device list navigation, app version display, and manual update checks.
-- `android/app/src/main/java/niel/kro/penik/ui/screen/settings/BackupScreen.kt` — Dedicated backup and keys management screen: cloud key backup, export/import full history (.penikbackup) with step-by-step password or 12-word seed-phrase verification wizard.
+- `android/app/src/main/java/niel/kro/penik/ui/screen/groups/GroupSettingsScreen.kt` — Group settings screen: member list, roles, invitations, and actions.
+- `android/app/src/main/java/niel/kro/penik/ui/screen/profile/ProfileScreen.kt` — Profile UI, name/password changes, and avatar management.
+- `android/app/src/main/java/niel/kro/penik/ui/screen/settings/SettingsScreen.kt` — Settings screen with light/dark theme switch, navigation style picker (Bottom bar vs Telegram drawer), app icon/variant chooser, device list navigation, app version display, and manual update checks.
 - `android/app/src/main/java/niel/kro/penik/ui/screen/settings/DevicesScreen.kt` — Separate screen listing the user's own devices.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/AuthViewModel.kt` — Manages login/registration state and actions.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ChatRoomViewModel.kt` — Subscribes the chat room to messages, handles sending, and processes statuses.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ChatsListViewModel.kt` — Loads and observes the direct chat list.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/CallsViewModel.kt` — Loads and observes user call history for the calls screen.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/GroupsViewModel.kt` — Manages the group list, synchronization, and group-level actions.
-- `android/app/src/main/java/niel/kro/penik/ui/viewmodel/GroupSettingsViewModel.kt` — Manages changes to group composition, roles, names, and keys.
-- `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ProfileViewModel.kt` — Manages profile data, avatars, passwords, key backups, and the user's device list.
+- `android/app/src/main/java/niel/kro/penik/ui/viewmodel/GroupSettingsViewModel.kt` — Manages changes to group composition, roles, and names.
+- `android/app/src/main/java/niel/kro/penik/ui/viewmodel/ProfileViewModel.kt` — Manages profile data, avatars, passwords, and the user's device list.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/SettingsViewModel.kt` — Manages manual update checks, version status, and download links for the settings screen.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/StartupViewModel.kt` — Determines the initial navigation route based on authorization state and triggers automatic startup update checks.
 - `android/app/src/main/java/niel/kro/penik/ui/viewmodel/DevicesViewModel.kt` — Loads the user's own device list for the devices screen.
 - `android/app/src/main/java/niel/kro/penik/ui/components/UpdateDialog.kt` — Reusable update prompt dialog supporting dismissible soft updates and non-dismissible force updates with release notes display.
-- `android/app/src/main/java/niel/kro/penik/ui/components/Components.kt` — Reusable Compose UI components, including Markdown parsing and rendering into AnnotatedString (code blocks, inline code, bold, italic, strikethrough, links), parsing and rendering encrypted file-message payloads as local images with a zoomable full-screen viewer, aspect-ratio-aware inline Media3 video players without attachment labels, downloadable file attachments, Telegram-style large emoji-only messages (1-3 emojis scaled up without a background bubble and with an overlaid timestamp pill), plus a custom measuring layout that hangs the message meta block (edit mark, time, ticks) off the last text line without ever letting it collapse or wrap.
+- `android/app/src/main/java/niel/kro/penik/ui/components/Components.kt` — Reusable Compose UI components, including Markdown parsing and rendering into AnnotatedString (code blocks, inline code, bold, italic, strikethrough, links), parsing and rendering file and media attachments with a zoomable full-screen viewer, aspect-ratio-aware inline Media3 video players without attachment labels, downloadable file attachments, Telegram-style large emoji-only messages (1-3 emojis scaled up without a background bubble and with an overlaid timestamp pill), plus a custom measuring layout that hangs the message meta block (edit mark, time, ticks) off the last text line without ever letting it collapse or wrap.
 - `android/app/src/main/java/niel/kro/penik/ui/components/AvatarCropDialog.kt` — Dialog for interactive cropping, scaling, panning, rotating, and preparing profile avatars before upload.
 - `android/app/src/main/java/niel/kro/penik/ui/components/AttachmentPickerBottomSheet.kt` — Modern Material 3 bottom sheet for chat attachments with emojis, descriptive metadata hints, and photo/file/camera/audio options.
 - `android/app/src/main/java/niel/kro/penik/ui/components/Stickers.kt` — Sticker picker bottom sheet with tabs and recents, Telegram sticker pack import dialog, sticker pack detail modal, and seamless sticker message rendering.
 - `android/app/src/main/java/niel/kro/penik/ui/util/DeviceUtils.kt` — Device metadata helper formatting marketing device names from manufacturer and model strings without brand duplication.
-- `android/app/src/main/java/niel/kro/penik/ui/util/QrCodeGenerator.kt` — Encodes string payloads (such as E2EE safety fingerprint URLs) into QR code Bitmaps using ZXing.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/DirectReplyReceiver.kt` — BroadcastReceiver handling inline direct replies from the notification shade without opening the app.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/MarkAsReadReceiver.kt` — BroadcastReceiver for the notification "Mark as read" action clearing unread counters and dismissing notifications.
 - `android/app/src/main/java/niel/kro/penik/ui/notification/CallActionReceiver.kt` — BroadcastReceiver handling answer/decline actions from the incoming call notification.
@@ -189,63 +177,49 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 - `rust/penik-crypto/src/lib.rs` — Root module of `penik-crypto`, exposing unified crypto API and type re-exports.
 - `rust/penik-crypto/src/errors.rs` — Typed `CryptoError` definitions for cryptographic operations.
 - `rust/penik-crypto/src/keys.rs` — X25519 key pair generation, zeroization, public key normalization, and Diffie-Hellman scalar multiplication.
-- `rust/penik-crypto/src/signing.rs` — Ed25519 digital signatures for group messages (`SIG1` envelope format), message signing, verification, and domain separation.
+- `rust/penik-crypto/src/signing.rs` — Ed25519 digital signatures, message signing, verification, and domain separation.
 - `rust/penik-crypto/src/kdf.rs` — HKDF-SHA256 key derivation.
-- `rust/penik-crypto/src/aad.rs` — Big-endian binary AAD constructors for pairwise and group message framing.
-- `rust/penik-crypto/src/cipher.rs` — ***REDACTED-BY-FILTER-REPO*** encryption, decryption, streaming chunked file encryption/decryption (`PCK1` format), and batch pairwise fan-out message encryption.
-- `rust/penik-crypto/src/safety.rs` — Safety number calculation, SHA-256 fingerprinting, and Russian mnemonic word coder.
-- `rust/penik-crypto/src/wasm.rs` — WebAssembly (`wasm-bindgen`) exports connecting `penik-crypto` to JavaScript runtimes, including chunked file streaming and batch pairwise fan-out.
+- `rust/penik-crypto/src/aad.rs` — Big-endian binary AAD constructors for framing.
+- `rust/penik-crypto/src/cipher.rs` — Encryption, decryption, and streaming chunked file crypto (`PCK1` format).
+- `rust/penik-crypto/src/safety.rs` — Safety number calculation, SHA-256 fingerprinting, and Russian mnemonic word coder for E2EE call verification.
+- `rust/penik-crypto/src/wasm.rs` — WebAssembly (`wasm-bindgen`) exports connecting `penik-crypto` to JavaScript runtimes.
 - `rust/penik-crypto/src/c_abi.rs` — C-ABI FFI exports connecting `penik-crypto` to Python ctypes and native callers.
-- `rust/penik-crypto/src/jni.rs` — JNI FFI exports connecting `penik-crypto` directly to Android Java/Kotlin runtime (`RustCryptoCore`), including chunked files and batch pairwise fan-out.
+- `rust/penik-crypto/src/jni.rs` — JNI FFI exports connecting `penik-crypto` directly to Android Java/Kotlin runtime (`RustCryptoCore`).
 - `scripts/build_rust.sh` — Unified compilation script building `penik-crypto` for all 4 Android architectures via NDK and optionally WebAssembly via `wasm-pack`.
 - `scripts/fetch_crypto.sh` — Fetches prebuilt `penik-crypto` WASM and Android `.so` binaries from GitHub Actions artifacts or releases.
 - `.github/workflows/crypto.yml` — GitHub Actions workflow building and releasing `penik-crypto` WASM and Android `.so` libraries.
 - `android/app/src/main/jniLibs/` — Android native release shared libraries (`libpenik_crypto.so`) for `arm64-v8a`, `armeabi-v7a`, `x86_64`, and `x86` (untracked in git, fetched or built locally).
-- `android/app/src/main/java/niel/kro/penik/data/crypto/RustCryptoCore.kt` — Kotlin JNI wrapper object providing low-overhead access to native Rust crypto functions on Android, including chunked file operations and batch pairwise fan-out.
-- `client/js/vault.js` — Seals local secrets (private identity key, group keys, session token) with a non-extractable AES-GCM key so an IndexedDB dump is not a usable copy.
-- `client/js/wordcoder.js` — Base256 mnemonic word coder using a 256-word Russian dictionary (<= 10 chars) for encoding byte sequences into memorable word lists.
-- `client/js/crypto.js` — Browser cryptography module powered by the `penik-crypto` WebAssembly micro-core (`encryptBlobChunked`, `encryptPairwiseBatch`, `encryptBlob`). JS crypto implementation is strictly frozen; all new crypto features belong in Rust WASM.
-- `client/js/pinning.js` — TOFU pinning of peer devices' public identity keys: pins on first sight, displays a warning notification and updates the pin on key change without blocking communication.
-- `client/js/groups.js` — Coordinates client-side group E2EE: epoch key generation, wrapping envelopes for devices, rotation, message encryption, and history synchronization.
-- `android/app/src/main/java/niel/kro/penik/data/crypto/E2EECrypto.kt` — Android E2EE implementation delegating all operations to native Rust (`RustCryptoCore`). Kotlin crypto code is strictly frozen as a legacy v1 fallback.
-- `android/app/src/main/java/niel/kro/penik/data/crypto/SafetyNumber.kt` — Single Android definition of conversation safety numbers and Russian word list, using native `RustCryptoCore` with byte-identical Kotlin fallback.
-- `android/app/src/main/java/niel/kro/penik/data/crypto/IdentityPinStore.kt` — TOFU pinning of peer devices' identity keys on Android (Keystore-backed), the counterpart of `client/js/pinning.js`: pins on first sight, reports a change once per pair without blocking delivery.
-- `android/app/src/main/java/niel/kro/penik/data/crypto/GroupCrypto.kt` — Group E2EE implementation delegating to `RustCryptoCore`/`E2EECrypto`. Kotlin crypto routines are strictly frozen.
-- `android/app/src/main/java/niel/kro/penik/data/local/database/DatabaseEncryption.kt` — Prepares the Android local database encryption key and handles migration for previously unencrypted DBs.
-- `android/app/src/main/java/niel/kro/penik/data/repository/AuthRepository.kt` — Generates and persists stable identity key pairs during register/login, handles upload/restore of encrypted key backups, and executes automatic device challenge-rebind on key restore.
-- `server/internal/models/keys.go` — Defines server models for identity keys, one-time keys, key backups, and device key bundles.
-- `server/internal/handlers/keys.go` — Receives and serves public keys and opaque backup blobs without decrypting client secrets.
+- `android/app/src/main/java/niel/kro/penik/data/crypto/RustCryptoCore.kt` — Kotlin JNI wrapper object providing low-overhead access to native Rust crypto functions on Android.
+- `android/app/src/main/java/niel/kro/penik/data/crypto/SafetyNumber.kt` — Android definition of call safety numbers and Russian word list, using native `RustCryptoCore`.
 
 ## Data
 
 ### Server persistence and domain data
 
-- `server/internal/db/schema.sql` — Canonical SQLite schema for users, devices, chats, messages, sessions, pairing, groups, key envelopes, and group history.
+- `server/internal/db/schema.sql` — Canonical SQLite schema for users, devices, chats, messages, sessions, groups, attachments, stickers, and calls.
 - `server/internal/db/db.go` — Opens SQLite with WAL/foreign keys, applies the schema, manages pool prewarming, debounced device last_seen updates, and runs legacy structure migrations.
 - `server/internal/db/relations.go` — Answers whether two users share a 1:1 chat or a group; the ACL behind presence, typing disclosure, and attachment downloads.
 - `server/internal/models/user.go` — Models for users and public server profiles.
 - `server/internal/models/device.go` — Models for user devices and runtime metadata.
 - `server/internal/models/message.go` — Models for direct messages and delivery/read/deletion statuses.
-- `server/internal/handlers/group_keys.go` — Stores and serves server records of group key versions and encrypted envelopes.
 
 ### Android local data
 
-- `android/app/src/main/java/niel/kro/penik/data/local/database/PenikDatabase.kt` — Room database for the Android client, unifying chats, groups, keys, and messages entities, including schema migrations.
-- `android/app/src/main/java/niel/kro/penik/data/local/entity/Entities.kt` — Room entities for local messages, chats, groups, members, keys, and group messages.
+- `android/app/src/main/java/niel/kro/penik/data/local/database/PenikDatabase.kt` — Room database for the Android client, unifying chats, groups, and messages entities, including schema migrations.
+- `android/app/src/main/java/niel/kro/penik/data/local/entity/Entities.kt` — Room entities for local messages, chats, groups, members, and group messages.
 - `android/app/src/main/java/niel/kro/penik/data/local/dao/MessageDao.kt` — DAO for reading/writing direct messages, history, and statuses.
 - `android/app/src/main/java/niel/kro/penik/data/local/dao/ChatDao.kt` — DAO for the chat list, contacts, unread counters, and last messages.
-- `android/app/src/main/java/niel/kro/penik/data/local/dao/GroupDao.kt` — DAO for groups, members, group keys, and group messages.
-- `android/app/src/main/java/niel/kro/penik/data/repository/MessageRepository.kt` — Synchronizes history, handles direct messages/WebSocket events, encrypts/decrypts payloads, and persists to Room.
+- `android/app/src/main/java/niel/kro/penik/data/local/dao/GroupDao.kt` — DAO for groups, members, and group messages.
+- `android/app/src/main/java/niel/kro/penik/data/repository/MessageRepository.kt` — Synchronizes history, handles direct messages/WebSocket events, and persists to Room.
 - `android/app/src/main/java/niel/kro/penik/data/repository/ChatRepository.kt` — Repository for the direct chat list and aggregated contact/last message data.
-- `android/app/src/main/java/niel/kro/penik/data/repository/GroupRepository.kt` — Synchronizes groups/members, stores group keys/messages, manages envelopes, rotation, and group history.
-- `android/app/src/main/java/niel/kro/penik/data/repository/BackupManager.kt` — Manages encrypted full history export and import (.penikbackup) and mnemonic seed phrase generation.
+- `android/app/src/main/java/niel/kro/penik/data/repository/GroupRepository.kt` — Synchronizes groups/members, stores group messages, and manages group actions.
 - `android/app/src/main/java/niel/kro/penik/data/repository/StickerRepository.kt` — Manages sticker packs and individual stickers, Telegram sticker pack import, pack install/uninstall, and local caching of recent stickers.
-- `android/app/src/main/java/niel/kro/penik/data/repository/AttachmentManager.kt` — Handles file/media upload flow: prepares optimistic local media, reads URI bytes via ContentResolver, adaptively encrypts payload with ***REDACTED-BY-FILTER-REPO*** (streaming PCK1 chunks for crypto_version >= 2 or legacy monolithic format for crypto_version == 1) via E2EECrypto, uploads the ciphertext directly to the Penik server (`POST /api/v1/attachments/upload`) with real-time progress, generates a WebP thumbnail, caches the plaintext locally, and returns a JSON payload string matching the wire format.
+- `android/app/src/main/java/niel/kro/penik/data/repository/AttachmentManager.kt` — Handles file/media upload flow: prepares optimistic local media, reads URI bytes via ContentResolver, uploads to the Penik server (`POST /api/v1/attachments/upload`) with real-time progress, generates a WebP thumbnail, caches the file locally, and returns a JSON payload string matching the wire format.
 - `android/app/src/main/java/niel/kro/penik/data/repository/UploadProgressBus.kt` — App-wide live upload progress bus mapping message IDs to loaded/total bytes for optimistic media UI.
 - `android/app/src/main/java/niel/kro/penik/data/network/ProgressRequestBody.kt` — OkHttp RequestBody decorator that reports stream upload progress.
 - `android/app/src/main/java/niel/kro/penik/data/repository/PresenceBus.kt` — Shared flow of presence updates for UI observers and repositories.
 - `android/app/src/main/java/niel/kro/penik/data/repository/AvatarCacheBus.kt` — Invalidates locally cached avatars after server updates.
-- `android/app/src/main/java/niel/kro/penik/data/di/Modules.kt` — Hilt providers for the local DB, SQLCipher, Retrofit/OkHttp, API, WebSocket, crypto dependencies, and AttachmentManager.
+- `android/app/src/main/java/niel/kro/penik/data/di/Modules.kt` — Hilt providers for the local DB, Retrofit/OkHttp, API, WebSocket, and AttachmentManager.
 
 ### Shared application/domain coordination
 
@@ -267,35 +241,29 @@ Map of core source files for the Penik Messenger project. Paths are relative to 
 
 ### Testing & Automation
 
-- `tests/e2e/crypto_utils.py` — Python cryptographic helper powered by the Rust `penik-crypto` micro-core via C-ABI / ctypes for X25519, ***REDACTED-BY-FILTER-REPO***, pairwise AAD v1/v2, PBKDF2, HKDF, memory zeroize, file crypto, and safety fingerprinting.
-- `tests/e2e/test_crypto_core.py` — Direct Python verification suite validating Rust C-ABI crypto primitives (PBKDF2, HKDF, AAD v2, zeroize, DH, ***REDACTED-BY-FILTER-REPO***, file crypto, safety numbers) against Python standard reference implementations.
+- `tests/e2e/crypto_utils.py` — Python cryptographic helper powered by the Rust `penik-crypto` micro-core via C-ABI / ctypes for X25519, PBKDF2, HKDF, memory zeroize, file crypto, and safety fingerprinting.
+- `tests/e2e/test_crypto_core.py` — Direct Python verification suite validating Rust C-ABI crypto primitives against Python standard reference implementations.
 - `tests/e2e/client.py` — Multi-platform Penik test client simulating complete REST and WebSocket workflows with binary MsgPack frame serialization.
-- `tests/e2e/test_runner.py` — Automated E2E test suite running 12 scenarios across live auth, key bundles, dual-client live E2EE messaging, edit and delete for everyone, pairwise decryption retry flows, offline queuing, encrypted attachments, safety numbers, group member kick and epoch rotation (R5), payload limits and third-party device spoofing prevention (R4), and session revocation WebSocket termination (R1); supports auto-starting ephemeral test servers with isolated databases.
+- `tests/e2e/test_runner.py` — Automated E2E test suite running scenarios across live auth, messaging, edit and delete for everyone, offline queuing, attachments, call signaling, and session revocation WebSocket termination.
 - `tests/e2e/requirements.txt` — Python dependency requirements for running the E2E verification test suite.
 - `scripts/run_e2e.py` — Entry point script managing ephemeral test server lifecycle and executing the full Python E2E verification suite.
 
 ### Bots
 
-- `bot/bot.py` — Standalone Python E2EE bot prototype running over WebSocket with direct X25519 / ***REDACTED-BY-FILTER-REPO*** pairwise encryption and command handling.
-- `bot/ai_bot.py` — Standalone E2EE AI bot integrating DeepSeek models via OpenAI-compatible API with per-user conversation memory.
-- `bot/README.md` — Usage documentation and guide for the Python E2EE bot prototype.
-
+- `bot/bot.py` — Standalone Python bot prototype running over WebSocket with direct messaging and command handling.
+- `bot/ai_bot.py` — Standalone AI bot integrating DeepSeek models via OpenAI-compatible API with per-user conversation memory.
+- `bot/README.md` — Usage documentation and guide for the Python bot prototype.
 
 ### Documentation
 
-- `README.md` — Root project overview: stack, repository layout, build and run instructions for server/web/Android, configuration reference, architecture summary (E2EE, pairing, WebSocket transport, storage, attachments), rate limits, test commands, and known security limitations.
+- `README.md` — Root project overview: stack, repository layout, build and run instructions for server/web/Android, configuration reference, architecture summary (calls E2EE, WebSocket transport, storage, attachments), rate limits, and test commands.
 - `server/README.md` — Server-side details: Go backend stack, environment configuration, REST endpoints, and WebSocket opcode table.
 - `PROJECT_MAP.md` — This index of core source files and their purpose.
 - `SECURITY_AUDIT.md` — Security audit report with a registry of findings and their remediation status.
 - `Docs/README.md` — Documentation sitemap and navigation index.
-- `Docs/REST_API.md` — Full REST API reference: auth, profiles, keys, pairing, groups, attachments, and rate limits.
-- `Docs/WEBSOCKET.md` — Complete WebSocket protocol reference: connection upgrade, binary framing, opcodes (0x01-0x28), and MsgPack payloads.
-- `Docs/ARCHITECTURE.md` — Deep dive into E2EE (X3DH/***REDACTED-BY-FILTER-REPO***), epoch-based group encryption, device pairing, self-hosted attachment storage, and multi-tier persistence.
+- `Docs/REST_API.md` — Full REST API reference: auth, profiles, groups, attachments, and rate limits.
+- `Docs/WEBSOCKET.md` — Complete WebSocket protocol reference: connection upgrade, binary framing, opcodes, and MsgPack payloads.
+- `Docs/ARCHITECTURE.md` — Architecture guide: cloud messaging, calls E2EE, self-hosted attachment storage, and multi-tier persistence.
 - `Docs/CALLS.md` — LiveKit 1:1 calls architecture, signaling opcodes (0x24-0x29), environment variables, fail-closed validation, and client failover algorithm.
 - `plan/micro_rust_core_plan.md` — Architecture plan for unifying cryptography in a Rust micro-core (`penik-crypto`) with WebAssembly and UniFFI bindings.
-- `plan/new_device_key_invalidation_plan.md` — Architecture plan for handling key bundle invalidation and retry flows when users add new devices.
 - `plan/wails_desktop_plan.md` — Plan for a Windows + Linux desktop client on Wails (Go + WebView2/WebKitGTK) reusing the web `client/` frontend.
-- `plan/device-rebind-ik-proof.md` — Plan for session rebind via X25519 DH-challenge proof-of-possession of a device identity key (Idea A).
-- `plan/cloud-backup-group-messages.md` — Plan for including group messages in E2EE cloud backup payload v3 to preserve pre-join backlog across device restore.
-- `plan/e2ee-removal-tradeoffs.md` — Tradeoff note: what is lost and gained if E2EE is removed; recommendation to keep E2EE in prod.
-
