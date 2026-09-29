@@ -22,7 +22,7 @@ const (
 	maxGroupTimestampAge = 30 * 24 * 60 * 60 // 30 days into the past
 )
 
-// handleGroupMessageSend persists an encrypted group message and fans it out to
+// handleGroupMessageSend persists a group message and fans it out to
 // every active member device except the sender's own. Sender identity is taken
 // from the authenticated connection, never from the payload.
 func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSend) error {
@@ -40,12 +40,11 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 
 	// Look up group and active membership
 	var role, status string
-	var isGroupE2EE int
 	err := c.db.QueryRowContext(ctx,
-		`SELECT gm.role, gm.status, g.is_e2ee FROM group_members gm
+		`SELECT gm.role, gm.status FROM group_members gm
 		 JOIN groups g ON g.id = gm.group_id
 		 WHERE gm.group_id=? AND gm.user_id=? AND g.deleted_at IS NULL`,
-		msg.GroupID, c.userID).Scan(&role, &status, &isGroupE2EE)
+		msg.GroupID, c.userID).Scan(&role, &status)
 	if err == sql.ErrNoRows || (err == nil && status != "active") {
 		return fmt.Errorf("group message: sender not an active member")
 	}
@@ -53,19 +52,8 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 		return fmt.Errorf("group message: membership lookup: %w", err)
 	}
 
-	isE2EE := isGroupE2EE == 1 || msg.IsE2EE || (len(msg.Ciphertext) > 0 && msg.Plaintext == "")
-	if isE2EE {
-		if len(msg.Ciphertext) == 0 || len(msg.Ciphertext) > maxGroupCiphertext ||
-			len(msg.Salt) > maxGroupSalt || len(msg.Nonce) > maxGroupNonce {
-			return fmt.Errorf("group message: invalid field sizes")
-		}
-		if len(msg.Ciphertext) > 128*1024 {
-			return fmt.Errorf("group message: invalid ciphertext size (max 128KB)")
-		}
-	} else {
-		if msg.Plaintext == "" || len(msg.Plaintext) > 64*1024 {
-			return fmt.Errorf("group message: invalid plaintext size (max 64KB)")
-		}
+	if msg.Plaintext == "" || len(msg.Plaintext) > 64*1024 {
+		return fmt.Errorf("group message: invalid plaintext size (max 64KB)")
 	}
 
 	now := msg.CreatedAt
@@ -91,19 +79,10 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 		return fmt.Errorf("group message: idempotency check: %w", err)
 	}
 
-	var res sql.Result
-	if isE2EE {
-		res, err = tx.ExecContext(ctx,
-			`INSERT INTO group_messages(group_id,message_id,reply_to_msg_id,sender_user_id,sender_device_id,key_version,plaintext,ciphertext,encryption_salt,encryption_nonce,created_at)
-			 VALUES(?,?,?,?,?,?,NULL,?,?,?,?)`,
-			msg.GroupID, msg.MessageID, msg.ReplyToMsgID, c.userID, c.deviceID, msg.KeyVersion,
-			msg.Ciphertext, msg.Salt, msg.Nonce, now)
-	} else {
-		res, err = tx.ExecContext(ctx,
-			`INSERT INTO group_messages(group_id,message_id,reply_to_msg_id,sender_user_id,sender_device_id,key_version,plaintext,ciphertext,encryption_salt,encryption_nonce,created_at)
-			 VALUES(?,?,?,?,?,0,?,NULL,NULL,NULL,?)`,
-			msg.GroupID, msg.MessageID, msg.ReplyToMsgID, c.userID, c.deviceID, msg.Plaintext, now)
-	}
+	res, err := tx.ExecContext(ctx,
+		`INSERT INTO group_messages(group_id,message_id,reply_to_msg_id,sender_user_id,sender_device_id,key_version,plaintext,ciphertext,encryption_salt,encryption_nonce,created_at)
+		 VALUES(?,?,?,?,?,0,?,NULL,NULL,NULL,?)`,
+		msg.GroupID, msg.MessageID, msg.ReplyToMsgID, c.userID, c.deviceID, msg.Plaintext, now)
 	if err != nil {
 		return fmt.Errorf("group message: insert: %w", err)
 	}
@@ -173,15 +152,13 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 			continue
 		}
 
-		// Pointer only — see the direct-message push: the ciphertext does not fit
-		// in FCM's ~4 KB data budget, so the device pulls the row by row_id.
 		push.SendDevicePush(fcmToken, map[string]string{
 			"type":           "group",
 			"group_id":       fmt.Sprintf("%d", msg.GroupID),
 			"group_name":     groupName,
 			"sender_user_id": fmt.Sprintf("%d", c.userID),
 			"sender_name":    senderName,
-			"text":           "Новое сообщение в группе",
+			"text":           msg.Plaintext,
 			"row_id":         fmt.Sprintf("%d", rowID),
 			"message_id":     msg.MessageID,
 			"timestamp":      fmt.Sprintf("%d", now*1000),
@@ -197,12 +174,7 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 		ReplyToMsgID:   msg.ReplyToMsgID,
 		SenderUserID:   c.userID,
 		SenderDeviceID: c.deviceID,
-		KeyVersion:     msg.KeyVersion,
 		Plaintext:      msg.Plaintext,
-		IsE2EE:         isE2EE,
-		Ciphertext:     msg.Ciphertext,
-		Salt:           msg.Salt,
-		Nonce:          msg.Nonce,
 		CreatedAt:      now,
 	}
 	if frame, err := encodeFrame(OpGroupMessageRecv, recv); err == nil {
@@ -235,7 +207,7 @@ func (c *Client) handleGroupMessageReceipt(ctx context.Context, messageID int64,
 func (c *Client) sendGroupOfflineBatch(ctx context.Context) error {
 	rows, err := c.db.QueryContext(ctx,
 		`SELECT gm.id, gm.group_id, gm.message_id, gm.reply_to_msg_id, gm.sender_user_id, gm.sender_device_id,
-		        gm.key_version, gm.ciphertext, gm.encryption_salt, gm.encryption_nonce, gm.created_at
+		        gm.plaintext, gm.created_at
 		 FROM group_message_devices gmd
 		 JOIN group_messages gm ON gm.id = gmd.message_id
 		 WHERE gmd.device_id=? AND gmd.delivered_at IS NULL
@@ -247,9 +219,13 @@ func (c *Client) sendGroupOfflineBatch(ctx context.Context) error {
 
 	for rows.Next() {
 		var m GroupMessageRecv
+		var plaintext sql.NullString
 		if err := rows.Scan(&m.ID, &m.GroupID, &m.MessageID, &m.ReplyToMsgID, &m.SenderUserID, &m.SenderDeviceID,
-			&m.KeyVersion, &m.Ciphertext, &m.Salt, &m.Nonce, &m.CreatedAt); err != nil {
+			&plaintext, &m.CreatedAt); err != nil {
 			continue
+		}
+		if plaintext.Valid {
+			m.Plaintext = plaintext.String
 		}
 		c.pushFrame(OpGroupMessageRecv, m)
 	}
@@ -260,7 +236,7 @@ func (c *Client) sendGroupOfflineEditBatch(ctx context.Context) error {
 	threshold := time.Now().Add(-14 * 24 * time.Hour).Unix()
 	rows, err := c.db.QueryContext(ctx,
 		`SELECT gm.group_id, gm.message_id, gm.sender_user_id, gm.sender_device_id,
-		        gm.key_version, gm.ciphertext, gm.encryption_salt, gm.encryption_nonce, gm.edited_at
+		        gm.plaintext, gm.edited_at
 		 FROM group_messages gm
 		 JOIN group_members mem ON gm.group_id = mem.group_id AND mem.user_id = ? AND mem.status = 'active'
 		 WHERE gm.edited_at IS NOT NULL AND gm.edited_at > ?
@@ -272,11 +248,15 @@ func (c *Client) sendGroupOfflineEditBatch(ctx context.Context) error {
 
 	for rows.Next() {
 		var notify GroupMessageEditNotify
+		var plaintext sql.NullString
 		if err := rows.Scan(
 			&notify.GroupID, &notify.MessageID, &notify.SenderUserID, &notify.SenderDeviceID,
-			&notify.KeyVersion, &notify.Ciphertext, &notify.Salt, &notify.Nonce, &notify.EditedAt,
+			&plaintext, &notify.EditedAt,
 		); err != nil {
 			continue
+		}
+		if plaintext.Valid {
+			notify.Plaintext = plaintext.String
 		}
 		c.pushFrame(OpGroupMessageEditNotify, notify)
 	}
@@ -284,23 +264,8 @@ func (c *Client) sendGroupOfflineEditBatch(ctx context.Context) error {
 }
 
 func (c *Client) handleGroupMessageEdit(ctx context.Context, msg *GroupMessageEdit) error {
-	if msg.MessageID == "" {
-		return fmt.Errorf("group message edit: missing message_id")
-	}
-
-	var isGroupE2EE int
-	_ = c.db.QueryRowContext(ctx, `SELECT is_e2ee FROM groups WHERE id=?`, msg.GroupID).Scan(&isGroupE2EE)
-	isE2EE := isGroupE2EE == 1 || msg.IsE2EE || (len(msg.Ciphertext) > 0 && msg.Plaintext == "")
-
-	if isE2EE {
-		if len(msg.Ciphertext) == 0 || len(msg.Ciphertext) > maxGroupCiphertext ||
-			len(msg.Salt) > maxGroupSalt || len(msg.Nonce) > maxGroupNonce {
-			return fmt.Errorf("group message edit: invalid field sizes")
-		}
-	} else {
-		if msg.Plaintext == "" || len(msg.Plaintext) > 64*1024 {
-			return fmt.Errorf("group message edit: invalid plaintext size")
-		}
+	if msg.MessageID == "" || msg.Plaintext == "" || len(msg.Plaintext) > 64*1024 {
+		return fmt.Errorf("group message edit: invalid parameters")
 	}
 
 	nowUnix := time.Now().Unix()
@@ -314,30 +279,21 @@ func (c *Client) handleGroupMessageEdit(ctx context.Context, msg *GroupMessageEd
 
 	// Verify caller is the author of the group message AND is an active member
 	var msgID int64
-	var keyVersion int64
 	err := c.db.QueryRowContext(ctx,
-		`SELECT gm.id, gm.key_version 
+		`SELECT gm.id 
 		 FROM group_messages gm
 		 JOIN group_members mem ON mem.group_id = gm.group_id AND mem.user_id = gm.sender_user_id
 		 WHERE gm.group_id=? AND gm.message_id=? AND gm.sender_user_id=? AND mem.status='active'`,
-		msg.GroupID, msg.MessageID, c.userID).Scan(&msgID, &keyVersion)
+		msg.GroupID, msg.MessageID, c.userID).Scan(&msgID)
 	if err != nil {
 		return fmt.Errorf("group message not found or unauthorized to edit")
 	}
 
-	if isE2EE {
-		_, err = c.db.ExecContext(ctx,
-			`UPDATE group_messages 
-			 SET ciphertext=?, encryption_salt=?, encryption_nonce=?, edited_at=? 
-			 WHERE id=?`,
-			msg.Ciphertext, msg.Salt, msg.Nonce, editedAt, msgID)
-	} else {
-		_, err = c.db.ExecContext(ctx,
-			`UPDATE group_messages 
-			 SET plaintext=?, edited_at=? 
-			 WHERE id=?`,
-			msg.Plaintext, editedAt, msgID)
-	}
+	_, err = c.db.ExecContext(ctx,
+		`UPDATE group_messages 
+		 SET plaintext=?, edited_at=? 
+		 WHERE id=?`,
+		msg.Plaintext, editedAt, msgID)
 	if err != nil {
 		return fmt.Errorf("update group message: %w", err)
 	}
@@ -347,12 +303,7 @@ func (c *Client) handleGroupMessageEdit(ctx context.Context, msg *GroupMessageEd
 		MessageID:      msg.MessageID,
 		SenderUserID:   c.userID,
 		SenderDeviceID: c.deviceID,
-		KeyVersion:     msg.KeyVersion,
 		Plaintext:      msg.Plaintext,
-		IsE2EE:         isE2EE,
-		Ciphertext:     msg.Ciphertext,
-		Salt:           msg.Salt,
-		Nonce:          msg.Nonce,
 		EditedAt:       editedAt,
 	}
 

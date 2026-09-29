@@ -450,20 +450,8 @@ func minFloat(a, b float64) float64 {
 }
 
 func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error {
-	isE2EE := msg.IsE2EE || (len(msg.Devices) > 0 && msg.Plaintext == "")
-	if isE2EE {
-		if len(msg.Devices) == 0 || len(msg.Devices) > 50 {
-			return fmt.Errorf("invalid devices count (1..50)")
-		}
-		for _, dev := range msg.Devices {
-			if len(dev.Ciphertext) > 128*1024 {
-				return fmt.Errorf("ciphertext payload too large (max 128KB)")
-			}
-		}
-	} else {
-		if msg.Plaintext == "" || len(msg.Plaintext) > 64*1024 {
-			return fmt.Errorf("invalid plaintext message size (max 64KB)")
-		}
+	if msg.Plaintext == "" || len(msg.Plaintext) > 64*1024 {
+		return fmt.Errorf("invalid plaintext message size (max 64KB)")
 	}
 
 	now := time.Now().Unix()
@@ -527,8 +515,6 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 	// Any past purge tombstone is superseded by new chat activity
 	_, _ = tx.ExecContext(ctx, `DELETE FROM messages WHERE chat_id = ? AND purge_pending = 1`, chatID)
 
-	var senderIKPub []byte
-
 	type pendingDelivery struct {
 		deviceID int64
 		msgRecv  MsgRecvEncrypted
@@ -547,111 +533,49 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 		msgTS = ts
 	}
 
-	if !isE2EE {
-		// Plaintext cloud message
-		res, err := tx.ExecContext(ctx,
-			`INSERT INTO messages(
-				chat_id, sender_user_id, recipient_user_id, client_msg_id, reply_to_msg_id,
-				plaintext, ciphertext, encryption_salt, encryption_nonce,
-				sender_device_id, recipient_device_id, prekey_id, timestamp, delivered
-			 ) VALUES(?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?, 0)`,
-			chatID, senderUserID, recipientUserID, msg.MsgID, msg.ReplyToMsgID,
-			msg.Plaintext, c.deviceID, msgTS)
-		if err != nil {
-			return fmt.Errorf("insert cloud message: %w", err)
-		}
-		messageID, err := res.LastInsertId()
-		if err != nil {
-			return fmt.Errorf("get message id: %w", err)
-		}
+	// Plaintext cloud message
+	res, err := tx.ExecContext(ctx,
+		`INSERT INTO messages(
+			chat_id, sender_user_id, recipient_user_id, client_msg_id, reply_to_msg_id,
+			plaintext, ciphertext, encryption_salt, encryption_nonce,
+			sender_device_id, recipient_device_id, timestamp, delivered
+		 ) VALUES(?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, NULL, ?, 0)`,
+		chatID, senderUserID, recipientUserID, msg.MsgID, msg.ReplyToMsgID,
+		msg.Plaintext, c.deviceID, msgTS)
+	if err != nil {
+		return fmt.Errorf("insert cloud message: %w", err)
+	}
+	messageID, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("get message id: %w", err)
+	}
 
-		// Deliver to all active devices of sender and recipient
-		rows, err := tx.QueryContext(ctx, `SELECT id, user_id FROM devices WHERE user_id IN (?, ?)`, senderUserID, recipientUserID)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var dID, devUserID int64
-				if err := rows.Scan(&dID, &devUserID); err == nil {
-					var chatUserID int64 = recipientUserID
-					if devUserID == recipientUserID {
-						chatUserID = senderUserID
-					}
-					deliveries = append(deliveries, pendingDelivery{
-						deviceID: dID,
-						msgRecv: MsgRecvEncrypted{
-							FromUserID:        senderUserID,
-							FromDeviceID:      c.deviceID,
-							RecipientDeviceID: dID,
-							ChatUserID:        chatUserID,
-							MsgID:             messageID,
-							ClientMsgID:       msg.MsgID,
-							ReplyToMsgID:      msg.ReplyToMsgID,
-							Plaintext:         msg.Plaintext,
-							IsE2EE:            false,
-							TS:                msgTS,
-						},
-					})
+	// Deliver to all active devices of sender and recipient
+	rows, err := tx.QueryContext(ctx, `SELECT id, user_id FROM devices WHERE user_id IN (?, ?)`, senderUserID, recipientUserID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var dID, devUserID int64
+			if err := rows.Scan(&dID, &devUserID); err == nil {
+				var chatUserID int64 = recipientUserID
+				if devUserID == recipientUserID {
+					chatUserID = senderUserID
 				}
+				deliveries = append(deliveries, pendingDelivery{
+					deviceID: dID,
+					msgRecv: MsgRecvEncrypted{
+						FromUserID:        senderUserID,
+						FromDeviceID:      c.deviceID,
+						RecipientDeviceID: dID,
+						ChatUserID:        chatUserID,
+						MsgID:             messageID,
+						ClientMsgID:       msg.MsgID,
+						ReplyToMsgID:      msg.ReplyToMsgID,
+						Plaintext:         msg.Plaintext,
+						TS:                msgTS,
+					},
+				})
 			}
-		}
-	} else {
-		for _, dev := range msg.Devices {
-			var ownerID int64
-			err := tx.QueryRowContext(ctx, `SELECT user_id FROM devices WHERE id=?`, dev.DeviceID).Scan(&ownerID)
-			if err == sql.ErrNoRows {
-				continue
-			} else if err != nil {
-				return fmt.Errorf("lookup device owner: %w", err)
-			}
-
-			var recipientID, chatUserID int64
-			switch ownerID {
-			case senderUserID:
-				recipientID = senderUserID
-				chatUserID = recipientUserID
-			case recipientUserID:
-				recipientID = recipientUserID
-				chatUserID = senderUserID
-			default:
-				continue
-			}
-
-			res, err := tx.ExecContext(ctx,
-				`INSERT INTO messages(
-					chat_id, sender_user_id, recipient_user_id, client_msg_id, reply_to_msg_id,
-					plaintext, ciphertext, encryption_salt, encryption_nonce,
-					sender_device_id, recipient_device_id, prekey_id, timestamp, delivered
-				 ) VALUES(?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, 0)`,
-				chatID, senderUserID, recipientID, msg.MsgID, msg.ReplyToMsgID,
-				dev.Ciphertext, dev.Salt, dev.Nonce,
-				c.deviceID, dev.DeviceID, msgTS)
-			if err != nil {
-				return fmt.Errorf("insert message: %w", err)
-			}
-			messageID, err := res.LastInsertId()
-			if err != nil {
-				return fmt.Errorf("get message id: %w", err)
-			}
-
-			deliveries = append(deliveries, pendingDelivery{
-				deviceID: dev.DeviceID,
-				msgRecv: MsgRecvEncrypted{
-					FromUserID:        senderUserID,
-					FromDeviceID:      c.deviceID,
-					RecipientDeviceID: dev.DeviceID,
-					FromIdentityKey:   senderIKPub,
-					ChatUserID:        chatUserID,
-					MsgID:             messageID,
-					ClientMsgID:       msg.MsgID,
-					ReplyToMsgID:      msg.ReplyToMsgID,
-					IsE2EE:            true,
-					Ciphertext:        dev.Ciphertext,
-					Salt:              dev.Salt,
-					Nonce:             dev.Nonce,
-					TS:                msgTS,
-					V:                 dev.V,
-				},
-			})
 		}
 	}
 
@@ -669,89 +593,48 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 	var senderName string
 	_ = c.db.QueryRowContext(ctx, "SELECT name FROM users WHERE id = ?", senderUserID).Scan(&senderName)
 	if senderName == "" {
-		senderName = "Пользователь"
+		senderName = "Собеседник"
 	}
 
+	// Push notifications for offline recipient devices
 	for _, d := range deliveries {
-		if recipientUserID == senderUserID {
-			continue
-		}
-
-		var devOwnerID int64
-		_ = c.db.QueryRowContext(ctx, "SELECT user_id FROM devices WHERE id=?", d.deviceID).Scan(&devOwnerID)
-		if devOwnerID != recipientUserID {
-			continue
-		}
-
 		if c.hub.IsOnline(d.deviceID) {
 			continue
 		}
-
+		var devOwnerID int64
+		_ = c.db.QueryRowContext(ctx, "SELECT user_id FROM devices WHERE id = ?", d.deviceID).Scan(&devOwnerID)
+		if devOwnerID != recipientUserID {
+			continue
+		}
 		var fcmToken string
-		_ = c.db.QueryRowContext(ctx, "SELECT fcm_token FROM devices WHERE id=?", d.deviceID).Scan(&fcmToken)
+		_ = c.db.QueryRowContext(ctx, "SELECT fcm_token FROM devices WHERE id = ?", d.deviceID).Scan(&fcmToken)
 		if fcmToken == "" {
 			continue
 		}
-
 		push.SendDevicePush(fcmToken, map[string]string{
 			"type":           "direct",
-			"chat_user_id":   fmt.Sprintf("%d", senderUserID),
-			"sender_name":    senderName,
-			"text":           "Новое сообщение",
-			"timestamp":      fmt.Sprintf("%d", now*1000),
 			"sender_user_id": fmt.Sprintf("%d", senderUserID),
-			"msg_id":         fmt.Sprintf("%d", d.msgRecv.MsgID),
+			"sender_name":    senderName,
+			"text":           msg.Plaintext,
+			"row_id":         fmt.Sprintf("%d", messageID),
+			"message_id":     msg.MsgID,
+			"timestamp":      fmt.Sprintf("%d", msgTS*1000),
 		}, func(deadToken string) {
 			_, _ = c.db.Exec("UPDATE devices SET fcm_token = '' WHERE fcm_token = ?", deadToken)
 		})
 	}
 
-	deliveredDevices := make(map[int64]bool)
-	for _, deliv := range deliveries {
-		frame, err := encodeFrame(OpMsgRecv, deliv.msgRecv)
-		if err == nil {
-			c.hub.SendToDevice(deliv.deviceID, frame)
-			deliveredDevices[deliv.deviceID] = true
+	for _, d := range deliveries {
+		if frame, err := encodeFrame(OpMsgRecv, d.msgRecv); err == nil {
+			c.hub.SendToDevice(d.deviceID, frame)
 		}
-	}
-
-	// Deliver to any other active online device of recipient
-	if len(deliveries) > 0 {
-		var recipientDelivery *pendingDelivery
-		for i := range deliveries {
-			if deliveries[i].msgRecv.RecipientDeviceID != c.deviceID && deliveries[i].msgRecv.FromUserID != recipientUserID {
-				recipientDelivery = &deliveries[i]
-				break
-			}
-		}
-		if recipientDelivery != nil {
-			frame, err := encodeFrame(OpMsgRecv, recipientDelivery.msgRecv)
-			if err == nil {
-				c.hub.mu.RLock()
-				for devID, client := range c.hub.clients {
-					if client.userID == recipientUserID && !deliveredDevices[devID] {
-						select {
-						case client.send <- frame:
-						default:
-						}
-					}
-				}
-				c.hub.mu.RUnlock()
-			}
-		}
-	}
-
-	var firstMsgID int64
-	if len(deliveries) > 0 {
-		firstMsgID = deliveries[0].msgRecv.MsgID
 	}
 
 	ack := MsgAck{
-		MsgID:       firstMsgID,
+		MsgID:       messageID,
 		ClientMsgID: msg.MsgID,
 	}
 	c.pushFrame(OpMsgAck, ack)
-
 	return nil
 }
 
@@ -931,16 +814,15 @@ func (c *Client) handleMsgRead(ctx context.Context, msg *MsgRead) error {
 
 func (c *Client) sendOfflineBatch(ctx context.Context) error {
 	rows, err := c.db.QueryContext(ctx,
-		`SELECT m.id, m.sender_user_id, m.sender_device_id, m.recipient_device_id,
-		        '' as sender_ik,
+		`SELECT m.id, m.sender_user_id, m.sender_device_id, COALESCE(m.recipient_device_id, ?),
 		        CASE WHEN ch.user1_id = ? THEN ch.user2_id ELSE ch.user1_id END as chat_user_id,
-		        m.ciphertext, m.encryption_salt, m.encryption_nonce, m.timestamp, m.reply_to_msg_id,
+		        m.plaintext, m.timestamp, m.reply_to_msg_id,
 		        COALESCE(m.client_msg_id, '')
 		 FROM messages m
 		 JOIN chats ch ON m.chat_id = ch.id
-		 WHERE m.recipient_user_id=? AND m.recipient_device_id=? AND m.delivered=0 AND m.deleted_by_recipient=0 AND m.purge_pending=0
+		 WHERE m.recipient_user_id=? AND (m.recipient_device_id=? OR m.recipient_device_id IS NULL) AND m.delivered=0 AND m.deleted_by_recipient=0 AND m.purge_pending=0
 		 ORDER BY m.timestamp ASC`,
-		c.userID, c.userID, c.deviceID)
+		c.deviceID, c.userID, c.userID, c.deviceID)
 	if err != nil {
 		return err
 	}
@@ -965,17 +847,19 @@ func (c *Client) sendOfflineBatch(ctx context.Context) error {
 
 	for rows.Next() {
 		var m MsgRecvEncrypted
-		var senderIK []byte
+		var plaintext sql.NullString
 		if err := rows.Scan(
-			&m.MsgID, &m.FromUserID, &m.FromDeviceID, &m.RecipientDeviceID, &senderIK,
-			&m.ChatUserID, &m.Ciphertext, &m.Salt, &m.Nonce, &m.TS, &m.ReplyToMsgID,
+			&m.MsgID, &m.FromUserID, &m.FromDeviceID, &m.RecipientDeviceID,
+			&m.ChatUserID, &plaintext, &m.TS, &m.ReplyToMsgID,
 			&m.ClientMsgID,
 		); err != nil {
 			continue
 		}
-		m.FromIdentityKey = senderIK
+		if plaintext.Valid {
+			m.Plaintext = plaintext.String
+		}
 		currentBatch = append(currentBatch, m)
-		currentBatchBytes += len(m.Ciphertext)
+		currentBatchBytes += len(m.Plaintext)
 
 		if len(currentBatch) >= 100 || currentBatchBytes >= 1*1024*1024 {
 			if err := sendBatch(currentBatch); err != nil {
@@ -1043,15 +927,15 @@ func (c *Client) sendOfflineStatusBatch(ctx context.Context) error {
 func (c *Client) sendOfflineEditBatch(ctx context.Context) error {
 	threshold := time.Now().Add(-14 * 24 * time.Hour).Unix()
 	rows, err := c.db.QueryContext(ctx,
-		`SELECT m.id, m.sender_user_id, m.sender_device_id, m.recipient_device_id, '',
+		`SELECT m.id, m.sender_user_id, m.sender_device_id, COALESCE(m.recipient_device_id, ?),
 		        CASE WHEN ch.user1_id = ? THEN ch.user2_id ELSE ch.user1_id END,
-		        m.ciphertext, m.encryption_salt, m.encryption_nonce, m.edited_at, COALESCE(m.client_msg_id, '')
+		        m.plaintext, m.edited_at, COALESCE(m.client_msg_id, '')
 		 FROM messages m
 		 JOIN chats ch ON m.chat_id = ch.id
-		 WHERE (m.recipient_device_id = ? OR (m.sender_device_id = ? AND m.sender_user_id = ?))
+		 WHERE (m.recipient_user_id = ? OR m.sender_user_id = ?)
 		   AND m.edited_at IS NOT NULL AND m.edited_at > ? AND m.purge_pending = 0
 		 ORDER BY m.edited_at ASC`,
-		c.userID, c.deviceID, c.deviceID, c.userID, threshold)
+		c.deviceID, c.userID, c.userID, c.userID, threshold)
 	if err != nil {
 		return err
 	}
@@ -1059,14 +943,16 @@ func (c *Client) sendOfflineEditBatch(ctx context.Context) error {
 
 	for rows.Next() {
 		var notify MsgEditNotify
-		var senderIK []byte
+		var plaintext sql.NullString
 		if err := rows.Scan(
-			&notify.MsgID, &notify.FromUserID, &notify.FromDeviceID, &notify.RecipientDeviceID, &senderIK,
-			&notify.ChatUserID, &notify.Ciphertext, &notify.Salt, &notify.Nonce, &notify.EditedAt, &notify.ClientMsgID,
+			&notify.MsgID, &notify.FromUserID, &notify.FromDeviceID, &notify.RecipientDeviceID,
+			&notify.ChatUserID, &plaintext, &notify.EditedAt, &notify.ClientMsgID,
 		); err != nil {
 			continue
 		}
-		notify.FromIdentityKey = senderIK
+		if plaintext.Valid {
+			notify.Plaintext = plaintext.String
+		}
 		if frame, err := encodeFrame(OpMsgEditNotify, notify); err == nil {
 			wCtx, cancel := context.WithTimeout(ctx, writeTimeout)
 			_ = c.conn.Write(wCtx, websocket.MessageBinary, frame)
@@ -1326,8 +1212,6 @@ func (c *Client) handleMsgRetryResp(ctx context.Context, req *MsgRetryResp) erro
 	}
 
 	// 4. Retrieve sender public identity key
-	var senderIKPub []byte
-
 	if err := tx.Commit(); err != nil {
 		return err
 	}
@@ -1337,7 +1221,6 @@ func (c *Client) handleMsgRetryResp(ctx context.Context, req *MsgRetryResp) erro
 		FromUserID:        senderUserID,
 		FromDeviceID:      senderDeviceID,
 		RecipientDeviceID: recipientDeviceID,
-		FromIdentityKey:   senderIKPub,
 		ChatUserID:        senderUserID,
 		MsgID:             req.MsgID,
 		ClientMsgID:       clientMsgID,
@@ -1442,23 +1325,8 @@ func (c *Client) handleMsgDelete(ctx context.Context, req *MsgDelete) error {
 }
 
 func (c *Client) handleMsgEdit(ctx context.Context, msg *MsgEditEncrypted) error {
-	if msg.MsgID == "" {
+	if msg.MsgID == "" || msg.Plaintext == "" || len(msg.Plaintext) > 64*1024 {
 		return fmt.Errorf("invalid edit request parameters")
-	}
-	isE2EE := msg.IsE2EE || (len(msg.Devices) > 0 && msg.Plaintext == "")
-	if isE2EE {
-		if len(msg.Devices) == 0 || len(msg.Devices) > 50 {
-			return fmt.Errorf("invalid devices count (1..50)")
-		}
-		for _, dev := range msg.Devices {
-			if len(dev.Ciphertext) > 128*1024 {
-				return fmt.Errorf("ciphertext payload too large (max 128KB)")
-			}
-		}
-	} else {
-		if msg.Plaintext == "" || len(msg.Plaintext) > 64*1024 {
-			return fmt.Errorf("invalid plaintext message size (max 64KB)")
-		}
 	}
 
 	now := time.Now().Unix()
@@ -1495,8 +1363,6 @@ func (c *Client) handleMsgEdit(ctx context.Context, msg *MsgEditEncrypted) error
 		effectiveClientMsgID = origClientMsgID.String
 	}
 
-	var senderIKPub []byte
-
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -1508,79 +1374,33 @@ func (c *Client) handleMsgEdit(ctx context.Context, msg *MsgEditEncrypted) error
 		chatUserID int64
 		msgID      int64
 		plaintext  string
-		isE2EE     bool
-		payload    E2EPayload
 	}
 	var targets []notifyTarget
 
-	if !isE2EE {
-		_, err := tx.ExecContext(ctx,
-			`UPDATE messages SET plaintext=?, edited_at=? WHERE id=?`,
-			msg.Plaintext, editedAt, origRowID)
-		if err != nil {
-			return fmt.Errorf("update cloud message: %w", err)
-		}
+	_, err = tx.ExecContext(ctx,
+		`UPDATE messages SET plaintext=?, edited_at=? WHERE id=?`,
+		msg.Plaintext, editedAt, origRowID)
+	if err != nil {
+		return fmt.Errorf("update cloud message: %w", err)
+	}
 
-		rows, err := tx.QueryContext(ctx, `SELECT id, user_id FROM devices WHERE user_id IN (?, ?)`, senderUserID, recipientUserID)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var dID, devUserID int64
-				if err := rows.Scan(&dID, &devUserID); err == nil {
-					var chatUserID int64 = recipientUserID
-					if devUserID == recipientUserID {
-						chatUserID = senderUserID
-					}
-					targets = append(targets, notifyTarget{
-						deviceID:   dID,
-						chatUserID: chatUserID,
-						msgID:      origRowID,
-						plaintext:  msg.Plaintext,
-						isE2EE:     false,
-					})
+	rows, err := tx.QueryContext(ctx, `SELECT id, user_id FROM devices WHERE user_id IN (?, ?)`, senderUserID, recipientUserID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var dID, devUserID int64
+			if err := rows.Scan(&dID, &devUserID); err == nil {
+				var chatUserID int64 = recipientUserID
+				if devUserID == recipientUserID {
+					chatUserID = senderUserID
 				}
+				targets = append(targets, notifyTarget{
+					deviceID:   dID,
+					chatUserID: chatUserID,
+					msgID:      origRowID,
+					plaintext:  msg.Plaintext,
+				})
 			}
-		}
-	} else {
-		for _, dev := range msg.Devices {
-			var ownerID int64
-			err := tx.QueryRowContext(ctx, `SELECT user_id FROM devices WHERE id=?`, dev.DeviceID).Scan(&ownerID)
-			if err != nil {
-				continue
-			}
-
-			var chatUserID int64
-			switch ownerID {
-			case senderUserID:
-				chatUserID = recipientUserID
-			case recipientUserID:
-				chatUserID = senderUserID
-			default:
-				continue
-			}
-
-			var rowID int64
-			err = tx.QueryRowContext(ctx,
-				`SELECT id FROM messages 
-				 WHERE sender_user_id=? AND recipient_device_id=? AND (client_msg_id=? OR client_msg_id=? OR client_msg_id=? OR id=?) LIMIT 1`,
-				senderUserID, dev.DeviceID, effectiveClientMsgID, msg.MsgID, cleanMsgID, parsedID).Scan(&rowID)
-			if err == nil {
-				_, _ = tx.ExecContext(ctx,
-					`UPDATE messages 
-					 SET ciphertext=?, encryption_salt=?, encryption_nonce=?, edited_at=? 
-					 WHERE id=?`,
-					dev.Ciphertext, dev.Salt, dev.Nonce, editedAt, rowID)
-			} else {
-				rowID = origRowID
-			}
-
-			targets = append(targets, notifyTarget{
-				deviceID:   dev.DeviceID,
-				chatUserID: chatUserID,
-				msgID:      rowID,
-				isE2EE:     true,
-				payload:    dev,
-			})
 		}
 	}
 
@@ -1594,15 +1414,10 @@ func (c *Client) handleMsgEdit(ctx context.Context, msg *MsgEditEncrypted) error
 			FromUserID:        senderUserID,
 			FromDeviceID:      c.deviceID,
 			RecipientDeviceID: t.deviceID,
-			FromIdentityKey:   senderIKPub,
 			ChatUserID:        t.chatUserID,
 			MsgID:             t.msgID,
 			ClientMsgID:       effectiveClientMsgID,
 			Plaintext:         t.plaintext,
-			IsE2EE:            t.isE2EE,
-			Ciphertext:        t.payload.Ciphertext,
-			Salt:              t.payload.Salt,
-			Nonce:             t.payload.Nonce,
 			EditedAt:          editedAt,
 		}
 		if frame, err := encodeFrame(OpMsgEditNotify, notify); err == nil {

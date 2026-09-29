@@ -1,13 +1,13 @@
 import {
   createGroup, syncGroups, refreshMembers, acceptInvitation, declineInvitation,
   inviteMember, removeMember, changeMemberRole, sendGroupMessage, editGroupMessage, deleteGroupMsg,
-  getAllGroups, getGroupMessages, onGroupUpdate, backfillCurrentKey,
-  renameGroup, uploadGroupAvatar, rotateAndDistribute
+  getAllGroups, getGroupMessages, onGroupUpdate,
+  renameGroup, uploadGroupAvatar
 } from "../groups.js";
 import { apiGet, getUserById, uploadAttachment } from "../api.js";
 import { encryptFileChaCha20, encryptBlobChunked, encryptBlob, encodeKey } from "../crypto.js";
 import { getGroupMembers, getAllContacts, getContact, saveContact, getGroupMessage, saveCachedMedia } from "../storage.js";
-import { navigate, getCurrentUser, triggerChatListUpdate, getCachedKeyBundle } from "../app.js";
+import { navigate, getCurrentUser, triggerChatListUpdate } from "../app.js";
 import {
   el, avatar, groupAvatar, groupAvatarUpdateTimestamps, formatTime, formatDate, formatPresence,
   showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon, showConfirmModal, showPromptModal, showFullscreenImage, enableAvatarFullscreen, showForwardModal, showAvatarCropModal,
@@ -36,9 +36,8 @@ export function buildGroupListItem(g, onChange) {
   const isPending = g.status === "pending";
   const previewSpan = el("span", { class: "chatlist-item-preview" }, isPending ? "Приглашение в группу" : "...");
 
-  const lockIcon = g.is_e2ee ? " 🔒" : "";
   const info = el("div", { class: "chatlist-item-info" },
-    el("span", { class: "chatlist-item-name" }, g.name + lockIcon),
+    el("span", { class: "chatlist-item-name" }, g.name),
     previewSpan,
   );
 
@@ -204,7 +203,7 @@ export function showCreateGroupModal(onDone) {
     if (!name) { status.textContent = "Введите название"; return; }
     createBtn.disabled = true;
     try {
-      const group = await createGroup(name, [], false);
+      const group = await createGroup(name, []);
       close();
       showToast("Группа создана");
       if (typeof onDone === "function") await onDone(group);
@@ -258,20 +257,10 @@ export async function renderGroup(container, groupId) {
       nameEl,
       el("span", { class: "chat-header-nick" }, ""),
     ),
-    el("button", { class: "icon-btn group-rotate-btn", title: "Смена ключа (временная)", style: "margin-left:auto;font-size:18px;margin-right:8px;" }, "🔑"),
-    el("button", { class: "icon-btn group-members-btn", title: "Участники", style: "font-size:18px;" }, "👥"),
+    el("button", { class: "icon-btn group-members-btn", title: "Участники", style: "margin-left:auto;font-size:18px;" }, "👥"),
   );
   header.querySelector(".chat-back").addEventListener("click", () => navigate("#chats"));
   header.querySelector(".group-members-btn").addEventListener("click", () => showMembersModal(groupId, myId));
-  header.querySelector(".group-rotate-btn").addEventListener("click", async () => {
-    try {
-      showToast("Инициализация смены ключа...", "info");
-      const newVer = await rotateAndDistribute(groupId);
-      showToast(`Ключ успешно изменен! Новая версия: ${newVer}`, "success");
-    } catch (e) {
-      showToast(`Ошибка смены ключа: ${e.message}`, "error");
-    }
-  });
 
   // Cache sender_user_id → display name so bubbles show names, not "#3".
   const nameById = new Map();
@@ -409,14 +398,6 @@ export async function renderGroup(container, groupId) {
         refreshMembers(groupId).catch(() => {});
       }
       for (const m of members) nameById.set(Number(m.user_id), memberName(m));
-      // If we own/admin this group, stage the current key for any active member
-      // device that is missing it (e.g. someone who joined or re-logged in after
-      // the last rotation). Without this those devices 404 on every key fetch and
-      // never see messages. Idempotent and cheap when nothing is missing.
-      const meRow = members.find(m => Number(m.user_id) === Number(myId));
-      if (meRow && isPrivileged(meRow.role)) {
-        backfillCurrentKey(groupId).catch(e => console.warn('[groups] backfill failed', e.message));
-      }
     } catch { /* names fall back to #id */ }
   })();
 
@@ -872,31 +853,7 @@ export async function renderGroup(container, groupId) {
     scrollDown.scrollToBottom();
 
     try {
-      // Adaptively select chunked vs monolithic encryption based on group members' crypto_versions
-      let useChunked = true;
-      try {
-        let members = await getGroupMembers(groupId).catch(() => []);
-        if (!members.length) {
-          members = await refreshMembers(groupId).catch(() => []);
-        }
-        if (!members.length) {
-          useChunked = false;
-        } else {
-          for (const m of members) {
-            const uid = m.user_id || m.id;
-            const bundle = await getCachedKeyBundle(uid);
-            const devices = bundle?.devices || [];
-            if (!devices.length || devices.some(d => Number(d.crypto_version || 1) < 2)) {
-              useChunked = false;
-              break;
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("Failed to check group member crypto versions, falling back to monolithic", e);
-        useChunked = false;
-      }
-
+      const useChunked = true;
       const localBlob = file;
       const { encryptedBlob, key } = await encryptBlob(file, null, useChunked);
 
@@ -1569,7 +1526,7 @@ async function showAddMemberModal(groupId, currentMembers, onDone) {
       addBtn.addEventListener("click", async () => {
         addBtn.disabled = true;
         try {
-          await inviteMember(groupId, Number(c.user_id), { shareHistory: shareChk.checked });
+          await inviteMember(groupId, Number(c.user_id));
           changed = true;
           showToast("Приглашение отправлено");
           // Drop from the local list so it can't be added twice.

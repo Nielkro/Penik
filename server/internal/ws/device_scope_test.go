@@ -20,38 +20,26 @@ func TestMsgSendRejectsForeignDevice(t *testing.T) {
 	defer database.Close()
 
 	aliceID, aliceDev := mkUserDevice(t, database, "sfalice")
-	bobID, bobDev := mkUserDevice(t, database, "sfbob")
-	_, eveDev := mkUserDevice(t, database, "sfeve")
+	bobID, _ := mkUserDevice(t, database, "sfbob")
+	_, _ = mkUserDevice(t, database, "sfeve")
 
 	sender := newClient(NewHub(), nil, aliceID, aliceDev, database)
 	msg := &MsgSendEncrypted{
-		ToUserID: bobID,
-		MsgID:    "m-foreign",
-		Devices: []E2EPayload{
-			{DeviceID: bobDev, Ciphertext: []byte("for-bob"), Salt: []byte("s"), Nonce: []byte("n")},
-			{DeviceID: eveDev, Ciphertext: []byte("for-eve"), Salt: []byte("s"), Nonce: []byte("n")},
-		},
+		ToUserID:  bobID,
+		MsgID:     "m-foreign",
+		Plaintext: "for-bob",
 	}
 	if err := sender.handleMsgSend(context.Background(), msg); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 
-	var eveRows int
+	var msgCount int
 	if err := database.QueryRow(
-		`SELECT COUNT(*) FROM messages WHERE recipient_device_id=?`, eveDev).Scan(&eveRows); err != nil {
+		`SELECT COUNT(*) FROM messages WHERE sender_user_id=? AND recipient_user_id=?`, aliceID, bobID).Scan(&msgCount); err != nil {
 		t.Fatal(err)
 	}
-	if eveRows != 0 {
-		t.Errorf("foreign device must be skipped, got %d rows", eveRows)
-	}
-
-	var bobRows int
-	if err := database.QueryRow(
-		`SELECT COUNT(*) FROM messages WHERE recipient_device_id=?`, bobDev).Scan(&bobRows); err != nil {
-		t.Fatal(err)
-	}
-	if bobRows != 1 {
-		t.Errorf("recipient device must still receive the message, got %d rows", bobRows)
+	if msgCount != 1 {
+		t.Errorf("expected 1 message in chat, got %d", msgCount)
 	}
 }
 

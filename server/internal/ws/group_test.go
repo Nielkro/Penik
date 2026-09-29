@@ -52,7 +52,7 @@ func TestGroupMessageSendFanoutAndIdempotency(t *testing.T) {
 
 	msg := &GroupMessageSend{
 		GroupID: groupID, MessageID: "m-1", KeyVersion: 1,
-		Ciphertext: []byte("hello"), Salt: []byte("s"), Nonce: []byte("n"),
+		Plaintext: "hello",
 		CreatedAt: time.Now().Unix(),
 	}
 	if err := sender.handleGroupMessageSend(context.Background(), msg); err != nil {
@@ -105,7 +105,7 @@ func TestGroupMessageNonMemberRejected(t *testing.T) {
 	hub := NewHub()
 	eve := newClient(hub, nil, eveID, eveDev, database)
 	err = eve.handleGroupMessageSend(context.Background(), &GroupMessageSend{
-		GroupID: groupID, MessageID: "x", KeyVersion: 1, Ciphertext: []byte("hi"),
+		GroupID: groupID, MessageID: "x", KeyVersion: 1, Plaintext: "hi",
 		CreatedAt: time.Now().Unix(),
 	})
 	if err == nil {
@@ -136,7 +136,7 @@ func TestGroupMessageIdempotencyIsGroupScoped(t *testing.T) {
 	send := func(gid int64) error {
 		return sender.handleGroupMessageSend(context.Background(), &GroupMessageSend{
 			GroupID: gid, MessageID: "shared-id", KeyVersion: 1,
-			Ciphertext: []byte("hi"), Salt: []byte("s"), Nonce: []byte("n"),
+			Plaintext: "hi",
 			CreatedAt: time.Now().Unix(),
 		})
 	}
@@ -188,7 +188,7 @@ func TestGroupMessagePreservesClientTimestamp(t *testing.T) {
 	clientTS := time.Now().Unix() - 120 // deliberately not "now"
 	msg := &GroupMessageSend{
 		GroupID: groupID, MessageID: "ts-1", KeyVersion: 1,
-		Ciphertext: []byte("ct"), Salt: []byte("s"), Nonce: []byte("n"),
+		Plaintext: "ct",
 		CreatedAt: clientTS,
 	}
 	if err := sender.handleGroupMessageSend(context.Background(), msg); err != nil {
@@ -233,7 +233,7 @@ func TestGroupMessageRejectsMissingOrSkewedTimestamp(t *testing.T) {
 
 	base := &GroupMessageSend{
 		GroupID: groupID, KeyVersion: 1,
-		Ciphertext: []byte("ct"), Salt: []byte("s"), Nonce: []byte("n"),
+		Plaintext: "ct",
 	}
 	cases := []struct {
 		name string
@@ -268,7 +268,7 @@ func TestGroupSendDBErrorBranches(t *testing.T) {
 	valid := func(gid int64) *GroupMessageSend {
 		return &GroupMessageSend{
 			GroupID: gid, MessageID: "m", KeyVersion: 1,
-			Ciphertext: []byte("hi"), Salt: []byte("s"), Nonce: []byte("n"),
+			Plaintext: "hi",
 			CreatedAt: time.Now().Unix(),
 		}
 	}
@@ -344,7 +344,7 @@ func TestGroupOfflineBatchDeliversUndelivered(t *testing.T) {
 	// Bob is offline: message is persisted and tracked, not delivered.
 	if err := sender.handleGroupMessageSend(context.Background(), &GroupMessageSend{
 		GroupID: groupID, MessageID: "off-1", KeyVersion: 1,
-		Ciphertext: []byte("hi"), Salt: []byte("s"), Nonce: []byte("n"),
+		Plaintext: "hi",
 		CreatedAt: time.Now().Unix(),
 	}); err != nil {
 		t.Fatalf("send: %v", err)

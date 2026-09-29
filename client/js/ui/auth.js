@@ -1,90 +1,15 @@
-import { apiPost, apiGet, apiDelete, setToken, getUserById, getToken, BASE, deviceChallenge, deviceRebind } from "../api.js";
+import { apiPost, apiGet, apiDelete, setToken, getUserById, getToken, BASE } from "../api.js";
 import {
-  getPersistentDeviceName, getClientPlatform, getClientLocation,
-  saveIdentityKey, saveIKPrivate, saveIKPublic, getIKPrivate, getIKPublic,
-  saveSigningPrivate, saveSigningPublic, getSigningPrivate, getSigningPublic
+  getPersistentDeviceName, getClientPlatform, getClientLocation
 } from "../storage.js";
 import { navigate, setCurrentUser } from "../app.js";
 import { el, showToast, spinner, avatar, showConfirmModal, formatDate, formatTime } from "./components.js";
-import { generateKeyPair, generateSigningKeyPair, encryptIdentityEnvelope, computeDeviceRebindProof, decodeKey } from "../crypto.js";
 import { ws, OP } from "../ws.js";
 
 function authErr(errEl, msg) {
   errEl.textContent = msg;
   errEl.classList.remove("hidden");
   showToast(msg, "error");
-}
-
-/**
- * Publish the current local identity + signing keys for this session device.
- * Skipping the backup (or resetting it) replaces local keys; without this
- * call the server keeps advertising the stale key and every peer seals
- * messages to a key this device does not hold — total bilateral blackout.
- * Throws ConflictError when the device row is pinned to a different key; the
- * only fix then is logout + fresh login (allocates a new device row).
- */
-async function publishDeviceKeys() {
-  const pub = await getIKPublic();
-  if (!pub || pub.length !== 32) throw new Error("Нет локального ключа устройства");
-  const spub = await getSigningPublic();
-  try {
-    await apiPost("/keys/init", {
-      ik_pub: btoa(String.fromCharCode(...new Uint8Array(pub))),
-      ...(spub && spub.length === 32
-        ? { signing_key: btoa(String.fromCharCode(...new Uint8Array(spub))) }
-        : {}),
-      crypto_version: 2,
-    });
-  } catch (e) {
-    if (e && e.status === 409) {
-      const err = Object.assign(
-        new Error("Ключ устройства конфликтует с сервером. Выйдите из аккаунта и войдите заново"),
-        { code: "KEY_CONFLICT" }
-      );
-      throw err;
-    }
-    throw e;
-  }
-}
-
-async function resolveIdentityKeyPair() {
-  const priv = await getIKPrivate();
-  const pub = await getIKPublic();
-  if (priv && pub) {
-    return { publicKey: new Uint8Array(pub), privateKey: new Uint8Array(priv), existing: true };
-  }
-  const ik = await generateKeyPair();
-  return { publicKey: ik.publicKey, privateKey: ik.privateKey, existing: false };
-}
-
-async function resolveSigningKeyPair() {
-  const priv = await getSigningPrivate();
-  const pub = await getSigningPublic();
-  if (priv && pub) {
-    return { publicKey: new Uint8Array(pub), privateKey: new Uint8Array(priv), existing: true };
-  }
-  const kp = await generateSigningKeyPair();
-  return { publicKey: kp.publicKey, privateKey: kp.privateKey, existing: false };
-}
-
-async function generateAndUploadKeys(e2eePassword) {
-  const ik = await resolveIdentityKeyPair();
-  const sk = await resolveSigningKeyPair();
-  const envelope = await encryptIdentityEnvelope({ privateKey: ik.privateKey }, e2eePassword);
-  const ikPubB64 = btoa(String.fromCharCode(...ik.publicKey));
-  const signingKeyB64 = btoa(String.fromCharCode(...sk.publicKey));
-
-  return {
-    ikPub: ikPubB64,
-    signingKey: signingKeyB64,
-    saveKeys: async () => {
-      await saveIdentityKey(envelope);
-      await saveIKPrivate(ik.privateKey);
-      await saveIKPublic(ik.publicKey);
-      await saveSigningPrivate(sk.privateKey);
-      await saveSigningPublic(sk.publicKey);
-    }
-  };
 }
 
 function convertFileToWebP(file) {
@@ -161,14 +86,11 @@ export function renderAuth(container, initialMode = "welcome") {
   const state = {
     nickname: "",
     password: "",
-    e2eePassword: "",
     name: "",
     avatarFile: null,
     avatarUrl: null,
     tempUserId: null,
-    tempName: null,
-    availableBackups: [],
-    selectedBackupId: null
+    tempName: null
   };
 
   const card = el("div", { class: "auth-card", style: "position:relative; overflow:hidden; min-height: 380px; display:flex; flex-direction:column; justify-content:center;" });
@@ -215,7 +137,7 @@ export function renderAuth(container, initialMode = "welcome") {
 
     // Page indicator
     if (mode !== "welcome") {
-      const maxSteps = mode === "register" ? 5 : 4;
+      const maxSteps = mode === "register" ? 3 : 3;
       const progressWrap = el("div", { style: "display:flex; gap:4px; margin-top:8px; margin-bottom:24px; width:100%; height:4px; background:rgba(255,255,255,0.05); border-radius:2px;" });
       for (let i = 0; i < maxSteps; i++) {
         const active = i <= step;
@@ -240,7 +162,7 @@ export function renderAuth(container, initialMode = "welcome") {
       style: "width: 80px; height: 80px; border-radius: 20px; margin: 0 auto 20px; display: block; object-fit: cover; box-shadow: 0 8px 24px rgba(0,0,0,0.2);"
     });
     const title = el("h1", { class: "auth-title", style: "margin-top: 0;" }, "Penik");
-    const subtitle = el("p", { style: "text-align:center; color:#aaa; font-size:14px; margin-bottom:32px; font-weight: 500;" }, "Защищенный мессенджер с E2EE");
+    const subtitle = el("p", { style: "text-align:center; color:#aaa; font-size:14px; margin-bottom:32px; font-weight: 500;" }, "Мессенджер нового поколения");
     
     const regBtn = el("button", { class: "btn-primary", style: "margin-bottom:12px; cursor:pointer;" }, "Регистрация");
     const loginBtn = el("button", { class: "btn-secondary", style: "width:100%; padding:13px; font-size:15px; border-radius:var(--r-sm); cursor:pointer;" }, "Войти");
@@ -269,7 +191,7 @@ export function renderAuth(container, initialMode = "welcome") {
     if (step === 0) {
       // Step 1: Nickname Input
       const title = el("h1", { class: "auth-title" }, "Выберите никнейм");
-      const subtitle = el("p", { style: "text-align:center; color:#aaa; font-size:13px; margin-bottom:20px; line-height:1.4;" }, "Укажнее никнейм для поиска в мессенджере");
+      const subtitle = el("p", { style: "text-align:center; color:#aaa; font-size:13px; margin-bottom:20px; line-height:1.4;" }, "Укажите никнейм для поиска в мессенджере");
       
       const input = el("input", { type: "text", placeholder: "@username", class: "profile-input", value: state.nickname, style: "width:100%; margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#fff;" });
       const nextBtn = el("button", { class: "btn-primary", style: "cursor:pointer;" }, "Продолжить");
@@ -337,45 +259,7 @@ export function renderAuth(container, initialMode = "welcome") {
       input.focus();
     } 
     else if (step === 2) {
-      // Step 3: E2EE Password
-      const title = el("h1", { class: "auth-title" }, "Создайте e2ee-пароль");
-      const subtitle = el("p", { style: "text-align:center; color:#aaa; font-size:13px; margin-bottom:20px; line-height:1.4;" }, "Этот ключ используется для шифрования ваших переписок. Знаете его только вы.");
-
-      const input = el("input", { type: "password", placeholder: "Надежный e2ee-пароль", class: "profile-input", value: state.e2eePassword, style: "width:100%; padding:12px; padding-right:36px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#fff;" });
-      
-      const toggleBtn = el("button", { type: "button", style: "position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; border:none; color:#aaa; cursor:pointer; font-size:16px; padding:4px;" }, "👁️");
-      toggleBtn.addEventListener("click", () => {
-        if (input.type === "password") {
-          input.type = "text";
-          toggleBtn.textContent = "🙈";
-        } else {
-          input.type = "password";
-          toggleBtn.textContent = "👁️";
-        }
-      });
-
-      const wrapper = el("div", { style: "position:relative; width:100%; margin-bottom:16px;" }, input, toggleBtn);
-      const nextBtn = el("button", { class: "btn-primary", style: "cursor:pointer;" }, "Сохранить и продолжить");
-
-      const handleNext = () => {
-        const val = input.value;
-        if (!val || val.length < 6) return showErr("Пароль должен быть не менее 6 символов.");
-        state.e2eePassword = val;
-        step = 3;
-        renderStep();
-      };
-
-      nextBtn.addEventListener("click", handleNext);
-      input.addEventListener("keydown", e => { if (e.key === "Enter") handleNext(); });
-
-      card.appendChild(title);
-      card.appendChild(subtitle);
-      card.appendChild(wrapper);
-      card.appendChild(nextBtn);
-      input.focus();
-    } 
-    else if (step === 3) {
-      // Step 4: Name and Avatar Setup
+      // Step 3: Name and Avatar Setup
       const title = el("h1", { class: "auth-title" }, "Ваша аватарка и имя");
       const subtitle = el("p", { style: "text-align:center; color:#aaa; font-size:13px; margin-bottom:20px; line-height:1.4;" }, "Загрузите фото и укажите, как вас будут видеть друзья");
 
@@ -414,10 +298,6 @@ export function renderAuth(container, initialMode = "welcome") {
         clearErr();
 
         try {
-          // 1. Generate keys encrypted with E2EE password
-          const keysData = await generateAndUploadKeys(state.e2eePassword);
-
-          // 2. Register on server
           const res = await apiPost("/register", {
             name: state.name,
             nickname: state.nickname,
@@ -425,19 +305,12 @@ export function renderAuth(container, initialMode = "welcome") {
             device_name: getPersistentDeviceName(),
             platform: getClientPlatform(),
             location: getClientLocation(),
-            crypto_version: 2,
-            ik_pub: keysData.ikPub,
-            signing_key: keysData.signingKey,
           });
 
           setToken(res.token);
           localStorage.setItem("user_id", String(res.user_id));
           localStorage.setItem("device_id", String(res.device_id));
 
-          // 3. Save key pair locally
-          await keysData.saveKeys();
-
-          // 4. Upload avatar if selected
           if (state.avatarFile) {
             try {
               await uploadAvatarFile(state.avatarFile);
@@ -572,67 +445,16 @@ export function renderAuth(container, initialMode = "welcome") {
             device_name: getPersistentDeviceName(),
             platform: getClientPlatform(),
             location: getClientLocation(),
-            crypto_version: 2,
           };
-
-          // If device already has local key pair, include it
-          const existingPub = await getIKPublic();
-          if (existingPub && existingPub.length === 32) {
-            loginPayload.ik_pub = btoa(String.fromCharCode(...existingPub));
-          }
-          const existingSigningPub = await getSigningPublic();
-          if (existingSigningPub && existingSigningPub.length === 32) {
-            loginPayload.signing_key = btoa(String.fromCharCode(...existingSigningPub));
-          }
 
           const res = await apiPost("/login", loginPayload);
 
           setToken(res.token);
-
-          if (res.rebind_required && res.target_device_id) {
-            try {
-              const priv = await getIKPrivate();
-              if (priv && priv.length === 32) {
-                const challenge = await deviceChallenge(res.target_device_id);
-                const ephPubBytes = decodeKey(challenge.eph_pub);
-                const nonceBytes = decodeKey(challenge.nonce);
-                const proofBytes = await computeDeviceRebindProof(
-                  new Uint8Array(priv),
-                  ephPubBytes,
-                  nonceBytes,
-                  res.user_id,
-                  res.target_device_id
-                );
-                const proofB64 = btoa(String.fromCharCode(...proofBytes));
-                const rebindRes = await deviceRebind(res.target_device_id, challenge.nonce, proofB64);
-                if (rebindRes && rebindRes.device_id) {
-                  res.device_id = rebindRes.device_id;
-                }
-              }
-            } catch (rebindErr) {
-              console.warn("[auth] Device rebind failed:", rebindErr);
-            }
-          }
-
           localStorage.setItem("user_id", String(res.user_id));
           localStorage.setItem("device_id", String(res.device_id));
 
           state.tempUserId = res.user_id;
           state.password = password;
-
-          // Generate device keypair if missing
-          try {
-            let ikPub = await getIKPublic();
-            if (!ikPub) {
-              const ik = await generateKeyPair();
-              await saveIKPrivate(ik.privateKey);
-              await saveIKPublic(ik.publicKey);
-              const sk = await generateSigningKeyPair();
-              await saveSigningPrivate(sk.privateKey);
-              await saveSigningPublic(sk.publicKey);
-              await publishDeviceKeys().catch(() => {});
-            }
-          } catch (_) {}
 
           navigate("#chats");
         } catch (err) {

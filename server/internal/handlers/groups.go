@@ -43,7 +43,6 @@ const (
 type groupCreateRequest struct {
 	Name          string  `json:"name"`
 	MemberUserIDs []int64 `json:"member_user_ids"`
-	IsE2EE        bool    `json:"is_e2ee"`
 }
 
 type groupPatchRequest struct {
@@ -121,11 +120,9 @@ func CreateGroup(database *db.DB) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		isE2EEInt := 0
-
 		res, err := tx.ExecContext(r.Context(),
 			`INSERT INTO groups(name,owner_user_id,is_e2ee,created_at,updated_at,membership_version,current_key_version)
-			 VALUES(?,?,?,?,?,1,1)`, req.Name, owner, isE2EEInt, now, now)
+			 VALUES(?,?,0,?,?,1,1)`, req.Name, owner, now, now)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -160,7 +157,6 @@ func CreateGroup(database *db.DB) http.HandlerFunc {
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{
 			"id": groupID, "name": req.Name, "owner_user_id": owner,
-			"is_e2ee": req.IsE2EE,
 			"membership_version": 1, "current_key_version": 1, "created_at": now,
 		})
 	}
@@ -173,7 +169,7 @@ func ListGroups(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		rows, err := database.QueryContext(r.Context(),
-			`SELECT g.id,g.name,g.owner_user_id,g.is_e2ee,g.membership_version,g.current_key_version,g.created_at,gm.role,gm.status
+			`SELECT g.id,g.name,g.owner_user_id,g.membership_version,g.current_key_version,g.created_at,gm.role,gm.status
 			 FROM groups g JOIN group_members gm ON gm.group_id=g.id
 			 WHERE gm.user_id=? AND gm.status IN (?,?) AND g.deleted_at IS NULL
 			 ORDER BY g.id`, middleware.UserIDFromCtx(r.Context()), statusActive, "pending")
@@ -185,15 +181,13 @@ func ListGroups(database *db.DB) http.HandlerFunc {
 		out := []map[string]any{}
 		for rows.Next() {
 			var id, owner, mv, kv, created int64
-			var isE2EEInt int
 			var name, role, status string
-			if err := rows.Scan(&id, &name, &owner, &isE2EEInt, &mv, &kv, &created, &role, &status); err != nil {
+			if err := rows.Scan(&id, &name, &owner, &mv, &kv, &created, &role, &status); err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}
 			out = append(out, map[string]any{
 				"id": id, "name": name, "owner_user_id": owner, "role": role, "status": status,
-				"is_e2ee": isE2EEInt == 1,
 				"membership_version": mv, "current_key_version": kv, "created_at": created,
 			})
 		}
@@ -213,12 +207,11 @@ func GetGroup(database *db.DB) http.HandlerFunc {
 			return
 		}
 		var id, owner, mv, kv, created, updated int64
-		var isE2EEInt int
 		var name string
 		err := database.QueryRowContext(r.Context(),
-			`SELECT id,name,owner_user_id,is_e2ee,membership_version,current_key_version,created_at,updated_at
+			`SELECT id,name,owner_user_id,membership_version,current_key_version,created_at,updated_at
 			 FROM groups WHERE id=? AND deleted_at IS NULL`, groupID).
-			Scan(&id, &name, &owner, &isE2EEInt, &mv, &kv, &created, &updated)
+			Scan(&id, &name, &owner, &mv, &kv, &created, &updated)
 		if err == sql.ErrNoRows {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
@@ -229,7 +222,6 @@ func GetGroup(database *db.DB) http.HandlerFunc {
 		}
 		json.NewEncoder(w).Encode(map[string]any{
 			"id": id, "name": name, "owner_user_id": owner,
-			"is_e2ee": isE2EEInt == 1,
 			"membership_version": mv, "current_key_version": kv,
 			"created_at": created, "updated_at": updated,
 		})

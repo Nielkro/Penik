@@ -1,12 +1,10 @@
 import { apiGet, apiDelete, uploadAttachment, listCalls, listPeerCalls } from "../api.js";
-import { encryptFileChaCha20, encryptBlobChunked, encryptBlob, encodeKey, computeSafetyNumber, computeSafetyFingerprint } from "../crypto.js";
-import QRCode from "qrcode";
 import {
   saveMessage, getMessages, getMessage,
   updateMessageDelivered, updateMessageText, getContact, saveContact, getAllContacts,
   deleteChatData, deleteMessage, saveCachedMedia
 } from "../storage.js";
-import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, encryptMessagePayload, syncMessageHistory, prefetchKeyBundle, getCachedKeyBundle, getHistoryWatermark } from "../app.js";
+import { navigate, getWS, getCurrentUser, setActiveChatCallback, setChatListUpdateCallback, triggerChatListUpdate, pendingAcks, addPendingAck, syncMessageHistory, getHistoryWatermark } from "../app.js";
 import { OP } from "../ws.js";
 import {
   avatar, formatTime, formatDate, formatPresence, el, showToast, spinner, svgIcon, stickerIcon, clockIcon, paperclipIcon, sendIcon, closeIcon, checkIcon, doubleCheckIcon,
@@ -1030,18 +1028,9 @@ export async function renderChat(container, userId) {
 
     const isSystem = msg.sender_id === 0;
     if (isSystem) {
-      const isKeyChange = (msg.plaintext === "⚠️ Код безопасности изменился!");
       const textEl = el("span", { class: "msg-text" });
       setMsgTextContent(textEl, msg.plaintext || "");
-      const bubble = el("div", {
-        class: "msg-bubble msg-system",
-        style: isKeyChange ? "cursor: pointer; text-decoration: underline;" : ""
-      }, textEl);
-      if (isKeyChange) {
-        bubble.addEventListener("click", () => {
-          showSafetyExplanationModal(msg.chat_id);
-        });
-      }
+      const bubble = el("div", { class: "msg-bubble msg-system" }, textEl);
       const ts = normalizeTs(msg.created_at || msg.timestamp);
       bubble.dataset.ts = String(ts);
       bubble.dataset.msgId = msg.msg_id;
@@ -1856,7 +1845,6 @@ export async function renderChat(container, userId) {
     inputEl.style.overflowY = inputEl.scrollHeight > 120 ? "auto" : "hidden";
     sendBtn.disabled = !inputEl.value.trim();
     updateInputButtons();
-    if (userId) prefetchKeyBundle(userId);
 
     if (!isTypingActive && userId) {
       isTypingActive = true;
@@ -1966,199 +1954,6 @@ export async function renderChat(container, userId) {
   obs.observe(document.body, { childList: true, subtree: true });
 }
 
-// calculateSafetyNumber fetches both identity keys and delegates the derivation to
-// the one shared implementation in crypto.js. It used to carry its own copy of the
-// hashing and formatting, which is how the codebase ended up with three variants
-// that could disagree.
-export async function calculateSafetyFingerprint(userId1, userId2) {
-  const bundle1 = await getCachedKeyBundle(userId1);
-  const bundle2 = await getCachedKeyBundle(userId2);
-
-  if (!bundle1 || !bundle1.devices || bundle1.devices.length === 0) {
-    throw new Error("Не удалось получить ключи пользователя 1");
-  }
-  if (!bundle2 || !bundle2.devices || bundle2.devices.length === 0) {
-    throw new Error("Не удалось получить ключи пользователя 2");
-  }
-
-  const decode = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  const keys1 = bundle1.devices.map(d => decode(d.identity_key));
-  const keys2 = bundle2.devices.map(d => decode(d.identity_key));
-  return computeSafetyFingerprint(keys1, keys2, userId1);
-}
-
-export async function calculateSafetyNumber(userId1, userId2) {
-  const res = await calculateSafetyFingerprint(userId1, userId2);
-  return res.number;
-}
-
-export async function showSafetyExplanationModal(peerId) {
-  const me = getCurrentUser();
-  const myId = me.id || me.user_id;
-
-  const modal = el("div", {
-    style: "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;box-sizing:border-box;overflow-y:auto;"
-  });
-
-  const content = el("div", {
-    style: "background:#1e1e1e;border:1px solid rgba(255,255,255,0.12);padding:24px;border-radius:16px;max-width:420px;width:100%;color:#fff;text-align:center;box-shadow: 0 12px 40px rgba(0,0,0,0.6);"
-  },
-    el("h3", { style: "margin-top:0;font-size:18px;font-weight:600;margin-bottom:8px;color:#fff;" }, "Код безопасности E2EE"),
-    el("p", { style: "font-size:13px;color:#aaa;line-height:1.4;margin-bottom:16px;" },
-      "Сравните кодовые слова или отсканируйте QR-код для подтверждения подлинности сквозного шифрования."
-    )
-  );
-
-  // Segmented Tabs: [ QR-код ] [ Кодовые слова ] [ По-старому ]
-  let activeTab = 0; // 0: QR, 1: Words, 2: Numbers
-
-  const tabsRow = el("div", {
-    style: "display:flex;background:rgba(255,255,255,0.06);border-radius:10px;padding:3px;margin-bottom:16px;"
-  });
-
-  const tabBtns = ["QR-код", "Кодовые слова", "По-старому"].map((label, idx) => {
-    const btn = el("button", {
-      style: `flex:1;padding:6px 8px;font-size:12px;font-weight:500;border:none;border-radius:8px;cursor:pointer;transition:all 0.2s;background:${idx === 0 ? "rgba(91,110,245,0.2)" : "transparent"};color:${idx === 0 ? "#5B6EF5" : "#aaa"};`
-    }, label);
-    btn.onclick = () => switchTab(idx);
-    tabsRow.appendChild(btn);
-    return btn;
-  });
-
-  content.appendChild(tabsRow);
-
-  // Tab 0: QR Container
-  const qrContainer = el("div", {
-    style: "display:flex;flex-direction:column;align-items:center;justify-content:center;margin-bottom:16px;"
-  });
-  const qrCanvas = el("canvas", {
-    style: "display:none;border-radius:10px;background:#fff;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.3);"
-  });
-  const qrLoading = el("div", {
-    style: "width:180px;height:180px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.04);border-radius:10px;border:1px dashed rgba(255,255,255,0.15);color:#888;font-size:13px;"
-  }, "Генерация QR-кода...");
-
-  qrContainer.appendChild(qrCanvas);
-  qrContainer.appendChild(qrLoading);
-  content.appendChild(qrContainer);
-
-  // Tab 1: Words Section
-  const wordsSection = el("div", {
-    style: "display:none;margin-bottom:16px;background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;text-align:left;"
-  });
-
-  const wordsTitle = el("div", {
-    style: "font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#888;margin-bottom:8px;font-weight:700;"
-  }, "Кодовые слова");
-
-  const wordsGrid = el("div", {
-    style: "display:grid;grid-template-columns:repeat(2, 1fr);gap:6px 12px;margin-bottom:12px;"
-  });
-
-  let currentWordsStr = "";
-  const copyWordsBtn = el("button", {
-    style: "width:100%;padding:8px;font-size:12px;cursor:pointer;background:rgba(255,255,255,0.06);border:none;color:#eee;border-radius:8px;transition:all 0.2s;"
-  }, "📋 Скопировать кодовые слова");
-
-  copyWordsBtn.onclick = () => {
-    if (currentWordsStr) {
-      navigator.clipboard.writeText(currentWordsStr);
-      showToast("Кодовые слова скопированы");
-    }
-  };
-
-  wordsSection.appendChild(wordsTitle);
-  wordsSection.appendChild(wordsGrid);
-  wordsSection.appendChild(copyWordsBtn);
-  content.appendChild(wordsSection);
-
-  // Tab 2: Classic Numbers Section
-  const numbersSection = el("div", {
-    style: "display:none;margin-bottom:16px;background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;text-align:left;"
-  });
-  const numbersTitle = el("div", {
-    style: "font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#888;margin-bottom:8px;font-weight:700;"
-  }, "Числовой отпечаток (старый формат)");
-  const numbersText = el("div", {
-    style: "font-size:16px;font-weight:bold;letter-spacing:1px;color:#4EC97A;font-family:monospace;margin-bottom:12px;line-height:1.4;text-align:center;"
-  }, "...");
-  const copyNumbersBtn = el("button", {
-    style: "width:100%;padding:8px;font-size:12px;cursor:pointer;background:rgba(255,255,255,0.06);border:none;color:#eee;border-radius:8px;transition:all 0.2s;"
-  }, "📋 Скопировать числовой код");
-
-  copyNumbersBtn.onclick = () => {
-    if (numbersText.textContent && numbersText.textContent !== "...") {
-      navigator.clipboard.writeText(numbersText.textContent);
-      showToast("Числовой код скопирован");
-    }
-  };
-
-  numbersSection.appendChild(numbersTitle);
-  numbersSection.appendChild(numbersText);
-  numbersSection.appendChild(copyNumbersBtn);
-  content.appendChild(numbersSection);
-
-  function switchTab(idx) {
-    activeTab = idx;
-    tabBtns.forEach((btn, i) => {
-      const active = i === idx;
-      btn.style.background = active ? "rgba(91,110,245,0.2)" : "transparent";
-      btn.style.color = active ? "#5B6EF5" : "#aaa";
-      btn.style.fontWeight = active ? "600" : "500";
-    });
-    qrContainer.style.display = idx === 0 ? "flex" : "none";
-    wordsSection.style.display = idx === 1 ? "block" : "none";
-    numbersSection.style.display = idx === 2 ? "block" : "none";
-  }
-
-  // Action buttons
-  const buttonsRow = el("div", {
-    style: "display:flex;flex-direction:column;gap:8px;"
-  });
-
-  const closeBtn = el("button", {
-    class: "btn-primary",
-    style: "width:100%;padding:10px;font-weight:600;margin-top:4px;cursor:pointer;border-radius:8px;",
-    onclick: () => modal.remove()
-  }, "Закрыть");
-
-  buttonsRow.appendChild(closeBtn);
-  content.appendChild(buttonsRow);
-
-  modal.appendChild(content);
-  document.body.appendChild(modal);
-
-  try {
-    const { number, words, qrPayload } = await calculateSafetyFingerprint(myId, peerId);
-    numbersText.textContent = number;
-    currentWordsStr = words.map((w, idx) => `${idx + 1}. ${w}`).join("\n");
-
-    // Populate words (clean text list with Android success color)
-    wordsGrid.innerHTML = "";
-    words.forEach((w, idx) => {
-      const item = el("div", {
-        style: "font-size:14px;font-weight:600;color:#4EC97A;"
-      }, `${idx + 1}. ${w}`);
-      wordsGrid.appendChild(item);
-    });
-
-    // Render QR
-    await QRCode.toCanvas(qrCanvas, qrPayload, {
-      width: 170,
-      margin: 1,
-      color: { dark: "#000000", light: "#ffffff" }
-    });
-    qrLoading.style.display = "none";
-    qrCanvas.style.display = "block";
-
-  } catch (err) {
-    qrLoading.textContent = "Ошибка загрузки";
-    numbersText.textContent = "Ошибка загрузки";
-    wordsGrid.innerHTML = "<div style='color:#ff5252;grid-column:span 2;'>Не удалось рассчитать код безопасности</div>";
-    console.error("Error calculating safety fingerprint:", err);
-  }
-}
-
 async function createThumbnailBase64(file, maxSide = 180) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -2200,8 +1995,6 @@ export async function sendDirectMessageToUser(targetUserId, text) {
   const msgId = crypto.randomUUID();
   const now = Date.now();
 
-  const ciphertexts = await encryptMessagePayload(text, targetUserId);
-
   const storedMsg = {
     msg_id: msgId,
     client_msg_id: msgId,
@@ -2211,7 +2004,6 @@ export async function sendDirectMessageToUser(targetUserId, text) {
     created_at: now,
     delivered: 0,
     pending: 1,
-    ciphertexts: ciphertexts
   };
   await saveMessage(storedMsg);
   window.dispatchEvent(new CustomEvent("local-msg-sent", { detail: { targetUserId: String(targetUserId), storedMsg } }));
@@ -2222,12 +2014,15 @@ export async function sendDirectMessageToUser(targetUserId, text) {
     triggerChatListUpdate();
   }
 
+  const tsSec = Math.floor(now / 1000);
   const sent = ws.send(0x01, {
     to_user_id: Number(targetUserId),
-    devices: ciphertexts,
-    msg_id: msgId
+    plaintext: text,
+    msg_id: msgId,
+    created_at: tsSec
   });
 
   if (!sent) throw new Error("Не удалось отправить сообщение");
   return msgId;
 }
+

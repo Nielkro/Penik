@@ -241,18 +241,12 @@ export const apiDelete = del;
 
 /* ── Auth ── */
 
-export async function register({ username, password, name, ik_pub, spk_pub, spk_sig, opk_pubs, crypto_version = 2 }) {
-  return post('/register', { username, password, name, ik_pub, spk_pub, spk_sig, opk_pubs, crypto_version });
+export async function register({ username, password, name }) {
+  return post('/register', { username, password, name });
 }
 
-export async function login({ username, password, crypto_version = 2 }) {
-  return post('/login', { username, password, crypto_version });
-}
-
-/* ── Keys ── */
-
-export async function uploadOTKs(opk_pubs) {
-  return post('/keys/otk', { opk_pubs });
+export async function login({ username, password }) {
+  return post('/login', { username, password });
 }
 
 /* ── Users ── */
@@ -428,7 +422,7 @@ export function uploadPairingHistory(id, body) { return request('PUT', `/pairing
 
 /* ── Groups ── */
 
-export function createGroup({ name, member_user_ids, is_e2ee }) { return post('/groups', { name, member_user_ids, is_e2ee: Boolean(is_e2ee) }); }
+export function createGroup({ name, member_user_ids, is_e2ee = false }) { return post('/groups', { name, member_user_ids, is_e2ee: Boolean(is_e2ee) }); }
 export function listGroups() { return get('/groups'); }
 export function getGroup(groupId) { return get(`/groups/${groupId}`); }
 export function renameGroup(groupId, name) { return patch(`/groups/${groupId}`, { name }); }

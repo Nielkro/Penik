@@ -30,9 +30,7 @@ type historyMessageResponse struct {
 	EncryptionNonce   []byte  `json:"encryption_nonce,omitempty"`
 	SenderDeviceID    *int64  `json:"sender_device_id,omitempty"`
 	RecipientDeviceID *int64  `json:"recipient_device_id,omitempty"`
-	PrekeyID          *int64  `json:"prekey_id,omitempty"`
 	EditedAt          *int64  `json:"edited_at,omitempty"`
-	IsE2EE            bool    `json:"is_e2ee"`
 }
 
 // GetMessageHistory handles GET /api/v1/messages/history.
@@ -84,9 +82,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				m.encryption_nonce,
 				m.sender_device_id,
 				m.recipient_device_id,
-				m.prekey_id,
-				m.edited_at,
-				c.is_e2ee
+				m.edited_at
 			 FROM messages m
 			 JOIN chats c ON c.id = m.chat_id
 			 WHERE m.purge_pending = 0
@@ -129,7 +125,6 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 		list := make([]historyMessageResponse, 0)
 		for rows.Next() {
 			var m historyMessageResponse
-			var isE2EEInt int
 			if err := rows.Scan(
 				&m.ID,
 				&m.ChatID,
@@ -148,13 +143,10 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 				&m.EncryptionNonce,
 				&m.SenderDeviceID,
 				&m.RecipientDeviceID,
-				&m.PrekeyID,
 				&m.EditedAt,
-				&isE2EEInt,
 			); err != nil {
 				continue
 			}
-			m.IsE2EE = isE2EEInt == 1
 			list = append(list, m)
 		}
 
@@ -193,7 +185,7 @@ func GetMessageByID(database *db.DB) http.HandlerFunc {
 				m.client_msg_id, m.reply_to_msg_id, m.plaintext, m.timestamp,
 				m.delivered, m.delivered_at, m.read,
 				m.ciphertext, m.encryption_salt, m.encryption_nonce,
-				m.sender_device_id, m.recipient_device_id, m.prekey_id,
+				m.sender_device_id, m.recipient_device_id,
 				m.edited_at
 			 FROM messages m
 			 JOIN chats c ON c.id = m.chat_id
@@ -209,7 +201,7 @@ func GetMessageByID(database *db.DB) http.HandlerFunc {
 				&m.ClientMsgID, &m.ReplyToMsgID, &m.Plaintext, &m.Timestamp,
 				&m.Delivered, &m.DeliveredAt, &m.Read,
 				&m.Ciphertext, &m.EncryptionSalt, &m.EncryptionNonce,
-				&m.SenderDeviceID, &m.RecipientDeviceID, &m.PrekeyID,
+				&m.SenderDeviceID, &m.RecipientDeviceID,
 				&m.EditedAt)
 		if err == sql.ErrNoRows {
 			http.Error(w, "not found", http.StatusNotFound)

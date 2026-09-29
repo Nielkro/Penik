@@ -5,9 +5,7 @@ import {
   updateMsgId, updateMsgIdAndDelivered, getMessage, getAllContacts, getAllMessages,
   findAndResolvePendingSentMessage, deleteChatData, deleteMessage,
   getMessageByClientId, isMessageDeletedLocally,
-  getIKPrivate, saveIKPrivate, getIKPublic, saveIKPublic, getSigningPublic,
   getPersistentDeviceName, getClientPlatform,
-  getAllGroupKeysPlain, saveGroupKey, getAllPinnedIKs,
   getAllGroupMessages, saveGroupMessage
 } from './storage.js';
 import { ws, OP } from './ws.js';
@@ -22,37 +20,12 @@ import { renderSettings, renderDevices } from './ui/settings.js';
 import { initTheme } from './theme.js';
 import { appSounds } from './sounds.js';
 import { getMessagePreview } from './ui/chat.js';
-import {
-  deriveSharedSecret, e2eeEncrypt, e2eeDecrypt, buildPairwiseAAD, buildPairwiseAADV2,
-  derivePublicKey, generateKeyPair, encryptPairwiseBatch,
-  encodeKey
-} from './crypto.js';
 import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
 import { emitPresenceUpdate, emitTypingUpdate } from './presence.js';
 import { getCachedMedia } from './storage.js';
 import { callManager } from './call.js';
 import { initCallUI } from './ui/call_modal.js';
 import { initDesktop, isDesktop, sendDesktopNotification } from './desktop.js';
-
-const _bundleCache = new Map();
-export async function getCachedKeyBundle(userId, forceRefresh = false) {
-  const uid = Number(userId);
-  if (!forceRefresh && _bundleCache.has(uid)) {
-    return _bundleCache.get(uid);
-  }
-  const bundle = await apiGet('/keys/bundle/' + uid);
-  _bundleCache.set(uid, bundle);
-  return bundle;
-}
-export function invalidateKeyBundle(userId) {
-  _bundleCache.delete(Number(userId));
-}
-export function prefetchKeyBundle(userId) {
-  getCachedKeyBundle(userId).catch(() => {});
-}
-export async function verifyPeerIdentityKey(_userId, _deviceId, _identityKey) {
-  return true;
-}
 
 // Service Worker registration for HTTP 206 Partial Content Range streaming
 if ('serviceWorker' in navigator) {
@@ -156,38 +129,12 @@ export function clearPendingAcks() {
 /* ── App state ── */
 export const state = {
   currentUser: null,
-  privateIK: null,
   retryCounters: new Map(), // msg_id -> retry attempt count
 };
 
 export function getCurrentUser() { return state.currentUser; }
 export function setCurrentUser(u) { state.currentUser = u; }
 export function getWS() { return ws; }
-
-// loadPrivateIK returns the raw private Identity Key, caching it in memory. It
-// reads from IndexedDB, transparently migrating any key left in localStorage by
-// an older build (then removing the plaintext localStorage copy). Returns null
-// if no key exists anywhere.
-export async function loadPrivateIK() {
-  if (state.privateIK) return state.privateIK;
-
-  const stored = await getIKPrivate();
-  if (stored) {
-    state.privateIK = stored instanceof Uint8Array ? stored : new Uint8Array(stored);
-    return state.privateIK;
-  }
-
-  // One-time migration from the legacy localStorage location.
-  const legacy = localStorage.getItem("penik_ik_priv");
-  if (legacy) {
-    state.privateIK = new Uint8Array(atob(legacy).split("").map(c => c.charCodeAt(0)));
-    await saveIKPrivate(state.privateIK);
-    localStorage.removeItem("penik_ik_priv");
-    return state.privateIK;
-  }
-
-  return null;
-}
 
 /* ── Navigation ── */
 const routes = {
@@ -580,10 +527,6 @@ export async function logout() {
   localStorage.removeItem("device_id");
   localStorage.removeItem("penik_sign_jwk");
   state.currentUser = null;
-  if (state.privateIK) {
-    state.privateIK.fill(0);
-    state.privateIK = null;
-  }
   state.retryCounters.clear();
   pendingAcks.clear();
   _mainLayout = null;
@@ -696,25 +639,12 @@ export function triggerChatListUpdate() {
 
 async function onMsgRecvGlobal(payload) {
   const fromUserId = Number(payload.from_user_id);
-
   const myId = localStorage.getItem("user_id");
   const isMine = String(fromUserId) === String(myId);
 
   // Prevent duplicate rendering of messages sent by this device
   const existingByServer = payload.msg_id ? await getMessage(payload.msg_id) : null;
   if (existingByServer) {
-    // Local optimistic copy may still hold upload_msg_id while the replayed
-    // ciphertext carries the final file payload — replace it.
-    if (isBrokenFilePlaintext(existingByServer.plaintext) && payload.ciphertext) {
-      try {
-        const result = await decryptMessagePayload(payload);
-        if (result && result.text) {
-          await tryUpgradeStaleFilePlaintext(existingByServer, result.text);
-        }
-      } catch (e) {
-        console.warn("[ws] stale file upgrade failed:", e);
-      }
-    }
     return;
   }
 
@@ -735,19 +665,6 @@ async function onMsgRecvGlobal(payload) {
           }
         }
       }
-      if (isBrokenFilePlaintext(existingByClient.plaintext) && payload.ciphertext) {
-        try {
-          const result = await decryptMessagePayload(payload);
-          if (result && result.text) {
-            const refreshed = payload.msg_id
-              ? (await getMessage(payload.msg_id)) || existingByClient
-              : existingByClient;
-            await tryUpgradeStaleFilePlaintext(refreshed, result.text);
-          }
-        } catch (e) {
-          console.warn("[ws] stale file upgrade (client id) failed:", e);
-        }
-      }
       return;
     }
   }
@@ -756,7 +673,6 @@ async function onMsgRecvGlobal(payload) {
     const chatPartnerId = payload.chat_user_id || fromUserId;
     const resolvedOldId = await findAndResolvePendingSentMessage(chatPartnerId, payload.ts * 1000, payload.msg_id, payload.client_msg_id);
     if (resolvedOldId) {
-      // Find DOM temporary ID mapping if it exists in pendingAcks
       let domId = resolvedOldId;
       const pending = pendingAcks.get(String(resolvedOldId));
       if (pending?.tempId) {
@@ -764,7 +680,6 @@ async function onMsgRecvGlobal(payload) {
       }
       pendingAcks.delete(String(resolvedOldId));
 
-      // Update DOM dataset ID of the message bubble
       if (_activeChatCallback) {
         const bubble = /** @type {HTMLElement} */ (document.querySelector(`[data-msg-id="${domId}"]`) || document.querySelector(`[data-msg-id="${resolvedOldId}"]`));
         if (bubble) {
@@ -775,69 +690,14 @@ async function onMsgRecvGlobal(payload) {
           }
         }
       }
-      if (payload.ciphertext) {
-        try {
-          const resolvedMsg = await getMessage(payload.msg_id) || await getMessage(resolvedOldId);
-          if (resolvedMsg && isBrokenFilePlaintext(resolvedMsg.plaintext)) {
-            const result = await decryptMessagePayload(payload);
-            if (result && result.text) {
-              await tryUpgradeStaleFilePlaintext(resolvedMsg, result.text);
-            }
-          }
-        } catch (e) {
-          console.warn("[ws] stale file upgrade (resolve) failed:", e);
-        }
-      }
       triggerChatListUpdate();
       return;
     }
   }
-  
-  let decryptSuccess = true;
-  let plaintext = "";
-  if (payload.plaintext) {
-    plaintext = payload.plaintext;
-  } else if (payload.ciphertext) {
-    try {
-      // The server may replay a message after reconnect/reload. OTPKs are
-      // one-time keys, so never decrypt the same message twice: the plaintext
-      // saved during the first delivery is the authoritative copy.
-      const existing = payload.msg_id ? await getMessage(payload.msg_id) : null;
-      if (existing?.plaintext &&
-          !existing.plaintext.startsWith('[Ошибка расшифрования') &&
-          !isBrokenFilePlaintext(existing.plaintext)) {
-        plaintext = existing.plaintext;
-      } else {
-        const result = await decryptMessagePayload(payload);
-        plaintext = result.text;
-      }
-    } catch (e) {
-      plaintext = `[Сообщение не расшифровано]`;
-      decryptSuccess = false;
-      if (ws && ws.isConnected() && payload.msg_id && payload.from_device_id) {
-        console.warn(`[ws] Decryption failed for msg ${payload.msg_id}, requesting retry from device ${payload.from_device_id}`);
-        ws.send(OP.MSG_RETRY_REQ, {
-          msg_id: Number(payload.msg_id),
-          sender_device_id: Number(payload.from_device_id)
-        });
-      }
-    }
-  }
 
+  const plaintext = payload.plaintext || "";
   const chatPartnerId = payload.chat_user_id || fromUserId;
 
-  if (plaintext.startsWith('[Сообщение не расшифровано')) {
-    const clientMsgId = payload.client_msg_id;
-    if (clientMsgId) {
-        const existing = await getMessageByClientId(clientMsgId);
-        if (existing?.plaintext && !existing.plaintext.startsWith('[Сообщение не расшифровано') &&
-            !isBrokenFilePlaintext(existing.plaintext)) {
-          return;
-        }
-    }
-  }
-
-  const isE2EE = Boolean(payload.is_e2ee || payload.ciphertext);
   const inMsg = {
     msg_id: payload.msg_id,
     chat_id: String(chatPartnerId),
@@ -847,7 +707,6 @@ async function onMsgRecvGlobal(payload) {
     delivered: 1,
     client_msg_id: payload.client_msg_id,
     reply_to_msg_id: payload.reply_to_msg_id || null,
-    is_e2ee: isE2EE
   };
 
   await saveMessage(inMsg);
@@ -870,30 +729,13 @@ async function onMsgRecvGlobal(payload) {
     user_id: chatPartnerId,
     last_message: plaintext,
     last_ts: inMsg.created_at,
-    is_e2ee: isE2EE
   });
 
   if (ws) {
-    if (decryptSuccess) {
-      ws.send(0x04, { msg_id: payload.msg_id });
-      state.retryCounters.delete(payload.msg_id);
-    } else if (payload.from_device_id && payload.msg_id) {
-      const msgKey = String(payload.msg_id);
-      const attempts = state.retryCounters.get(msgKey) || 0;
-      if (attempts < 2) {
-        state.retryCounters.set(msgKey, attempts + 1);
-        ws.send(0x16, {
-          sender_device_id: Number(payload.from_device_id),
-          requester_device_id: Number(localStorage.getItem("device_id")),
-          msg_id: Number(payload.msg_id)
-        });
-      } else {
-        console.warn(`onMsgRecvGlobal: giving up on msg ${payload.msg_id} after 2 retry attempts`);
-      }
-    }
+    ws.send(0x04, { msg_id: payload.msg_id });
   }
 
-  if (!isMine && decryptSuccess) {
+  if (!isMine) {
     appSounds.playMessageReceived();
     const isCurrentChatOpen = _activeChatCallback && String(_activeChatCallback.userId) === String(chatPartnerId) && !document.hidden;
     if (!isCurrentChatOpen) {
@@ -907,7 +749,7 @@ async function onMsgRecvGlobal(payload) {
 
   if (_activeChatCallback && String(_activeChatCallback.userId) === String(chatPartnerId)) {
     _activeChatCallback.fn(inMsg);
-    if (ws && payload.msg_id && !isMine && decryptSuccess) {
+    if (ws && payload.msg_id && !isMine) {
       ws.send(0x18, { msg_id: Number(payload.msg_id) });
     }
   }
@@ -1007,41 +849,7 @@ async function onChatPurgeGlobal(payload) {
   }
 }
 
-async function onMsgRetryReq(payload) {
-  const msgId = payload.msg_id;
-  const msg = await getMessage(msgId);
-  if (!msg) {
-    console.error(`onMsgRetryReq: message ${msgId} not found locally`);
-    return;
-  }
 
-  const recipientUserId = Number(msg.chat_id);
-  const text = msg.plaintext;
-  
-  if (!text) {
-    console.error(`onMsgRetryReq: message ${msgId} has no plaintext locally`);
-    return;
-  }
-
-  console.log(`onMsgRetryReq: re-encrypting message ${msgId} for user ${recipientUserId}`);
-  invalidateKeyBundle(recipientUserId);
-  const payloads = await encryptMessagePayload(text, recipientUserId);
-  
-  const targetPayload = payloads.find(p => Number(p.device_id) === Number(payload.requester_device_id));
-  if (!targetPayload) {
-    console.error(`onMsgRetryReq: target device ${payload.requester_device_id} not found in re-encrypted payloads`);
-    return;
-  }
-
-  if (ws) {
-    ws.send(0x17, {
-      msg_id: Number(msgId),
-      ciphertext: targetPayload.ciphertext,
-      salt: targetPayload.salt,
-      nonce: targetPayload.nonce
-    });
-  }
-}
 
 async function onMsgAckReceivedGlobal(payload) {
   const serverMsgId = payload.msg_id;
@@ -1184,9 +992,6 @@ export async function syncMessageHistory(options = {}) {
     if (options.chat_user_id) {
       url += `&chat_user_id=${options.chat_user_id}`;
     }
-    if (options.is_e2ee != null) {
-      url += `&is_e2ee=${options.is_e2ee ? 1 : 0}`;
-    }
     const history = await apiGet(url);
     if (!history || !Array.isArray(history) || history.length === 0) {
       lastHistorySyncStats = {
@@ -1209,244 +1014,15 @@ export async function syncMessageHistory(options = {}) {
 
     history.sort((a, b) => a.timestamp - b.timestamp);
 
-    // Use global getCachedKeyBundle so concurrent prefetch or chat open
-    // deduplicates the in-flight network request.
-    const getSenderBundle = async (senderId) => {
-      return getCachedKeyBundle(senderId);
-    };
-
-    const currentDeviceId = Number(localStorage.getItem("device_id"));
-    // One force-refresh per sender per sync pass — never per message row.
-    const forceRefreshedSenders = new Set();
-    // Own outgoing is fanned out as one row per target device; keep a single
-    // UI copy per client_msg_id to avoid rendering every envelope separately.
-    const seenOwnClientMsgIds = new Set();
-
-    const stats = {
-      url,
-      total: history.length,
-      deviceSkipped: 0,
-      alreadyGood: 0,
-      fanoutSkipped: 0,
-      ownDecryptOk: 0,
-      ownDecryptFail: 0,
-      peerDecryptOk: 0,
-      peerDecryptFail: 0,
-      undecryptableSkipped: 0,
-      filledPlaceholder: 0,
-      filledResolved: 0,
-      upgradedFile: 0,
-      savedNew: 0,
-      deletedSkipped: 0,
-      before_id: options.before_id || null,
-      chat_user_id: options.chat_user_id || null,
-    };
-
     for (const item of history) {
-      const isPlaintext = item.plaintext != null && item.plaintext !== "";
-      const isE2EE = item.is_e2ee !== false && !isPlaintext && item.ciphertext != null;
-      if (isE2EE) {
-        // History is device-scoped for E2EE messages. Never try to decrypt a fan-out
-        // copy that belongs to another device of the same account.
-        const hasDeviceScope = item.recipient_device_id != null || item.sender_device_id != null;
-        const belongsToThisDevice = !hasDeviceScope ||
-          Number(item.recipient_device_id) === currentDeviceId ||
-          Number(item.sender_device_id) === currentDeviceId;
-        if (!belongsToThisDevice) {
-          stats.deviceSkipped++;
-          continue;
-        }
-      }
       const existing = await getMessage(item.id);
       const isEdited = item.edited_at && (!existing || !existing.edited_at || (item.edited_at * 1000 > existing.edited_at));
-      if (existing && existing.plaintext &&
-          !existing.plaintext.startsWith('[Сообщение не расшифровано') && !isEdited &&
-          !isBrokenFilePlaintext(existing.plaintext)) {
-        stats.alreadyGood++;
-        if (Number(item.sender_id) === myId && item.client_msg_id) {
-          seenOwnClientMsgIds.add(item.client_msg_id);
-        }
-        continue;
-      }
-
-      // Collapse multi-device fan-out envelopes of our own messages.
-      // Only mark seen after a successful decrypt/save so a failed envelope
-      // does not block another target-device copy of the same message.
-      const isOwnRow = Number(item.sender_id) === myId && !!item.client_msg_id;
-      if (isOwnRow && seenOwnClientMsgIds.has(item.client_msg_id)) {
-        stats.fanoutSkipped++;
+      if (existing && !isEdited) {
         continue;
       }
 
       const peerId = Number(item.chat_user_id || (Number(item.sender_id) === myId ? item.recipient_id : item.sender_id));
-
-      let text = "";
-      if (item.plaintext) {
-        text = item.plaintext;
-      } else if (item.ciphertext) {
-        try {
-      // History can contain a message that was already received live and
-      // decrypted. In that case the OTPK may have been consumed already;
-      // use the locally persisted plaintext unless it was edited.
-      // A stale optimistic file copy (upload_msg_id / local: / no key) must
-      // still be re-decrypted so the final server payload can replace it.
-      const locallyStored = await getMessage(item.id);
-      if (locallyStored && locallyStored.plaintext &&
-          !locallyStored.plaintext.startsWith('[Сообщение не расшифровано') && !isEdited &&
-          !isBrokenFilePlaintext(locallyStored.plaintext)) {
-        text = locallyStored.plaintext;
-        throw { __alreadyDecrypted: true };
-      }
-          // Own outgoing rows: DH was sealed to the recipient device's IK,
-          // not to the sender device. Resolve the peer key accordingly.
-          const isOwnOutgoing = Number(item.sender_id) === myId;
-          let fromIdentityKey;
-          let peerUserIdForPin = Number(item.sender_id);
-          let peerDeviceIdForPin = Number(item.sender_device_id);
-
-          if (isOwnOutgoing) {
-            const keyOwnerUserId = Number(item.recipient_id) || peerId;
-            const keyDeviceId = Number(item.recipient_device_id) || 0;
-            let recipBundle = await getCachedKeyBundle(keyOwnerUserId);
-            let recipDevice = keyDeviceId
-              ? recipBundle?.devices?.find(d => Number(d.device_id) === keyDeviceId)
-              : null;
-            if (!recipDevice) {
-              recipBundle = await getCachedKeyBundle(keyOwnerUserId, true);
-              recipDevice = keyDeviceId
-                ? recipBundle?.devices?.find(d => Number(d.device_id) === keyDeviceId)
-                : null;
-            }
-            fromIdentityKey = recipDevice?.identity_key;
-            peerUserIdForPin = keyOwnerUserId;
-            peerDeviceIdForPin = keyDeviceId;
-          } else {
-            let senderBundle = await getSenderBundle(item.sender_id);
-            let senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
-            if (!senderDevice && !forceRefreshedSenders.has(String(item.sender_id))) {
-              forceRefreshedSenders.add(String(item.sender_id));
-              senderBundle = await getCachedKeyBundle(item.sender_id, true);
-              senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === Number(item.sender_device_id));
-            }
-            fromIdentityKey = senderDevice?.identity_key;
-          }
-
-          const decrypted = await decryptMessagePayload({
-            ciphertext: item.ciphertext,
-            salt: item.encryption_salt,
-            nonce: item.encryption_nonce,
-            from_identity_key: fromIdentityKey,
-            sender_user_id: item.sender_id,
-            sender_device_id: item.sender_device_id,
-            peer_user_id: peerUserIdForPin,
-            peer_device_id: peerDeviceIdForPin,
-            recipient_id: item.recipient_id,
-            recipient_device_id: item.recipient_device_id,
-            chat_user_id: peerId,
-            chat_id: String(peerId),
-            to_user_id: Number(item.sender_id) === myId ? peerId : myId,
-            recipient_user_id: Number(item.sender_id) === myId ? peerId : myId,
-            client_msg_id: item.client_msg_id,
-            timestamp: item.timestamp,
-            edited_at: item.edited_at
-          });
-          text = decrypted.text;
-          if (isOwnOutgoing) stats.ownDecryptOk++;
-          else stats.peerDecryptOk++;
-        } catch (e) {
-          if (e?.__alreadyDecrypted) continue;
-          text = existing?.plaintext || "";
-          if (isOwnRow) stats.ownDecryptFail++;
-          else stats.peerDecryptFail++;
-        }
-      }
-
-      let contact = await getContact(peerId);
-      if (!contact || contact.name === "Неизвестный") {
-        try {
-          const res = await getUserById(String(peerId));
-          contact = res.user || res;
-        } catch (e) {
-          console.error("Failed to fetch contact details for syncing:", e);
-          if (!contact) {
-            contact = { user_id: peerId, name: "Неизвестный", nickname: "" };
-          }
-        }
-      }
-
-      if (!text || text.startsWith('[Сообщение не расшифровано') || text.startsWith('[Ошибка')) {
-        // Ensure chat exists in contacts list, but do NOT save broken undecryptable messages
-        stats.undecryptableSkipped++;
-        const currentContact = await getContact(peerId);
-        await saveContact({
-          ...contact,
-          user_id: peerId,
-          name: contact.name,
-          nickname: contact.nickname,
-          last_message: currentContact?.last_message || "",
-          last_ts: Math.max(currentContact?.last_ts || 0, item.timestamp * 1000)
-        });
-        continue;
-      }
-
-      // Successful decrypt: collapse further fan-out envelopes of this message.
-      if (isOwnRow) {
-        seenOwnClientMsgIds.add(item.client_msg_id);
-      }
-
-      await saveContact({
-        ...contact,
-        user_id: peerId,
-        last_message: text,
-        last_ts: item.timestamp * 1000
-      });
-
-      const existingMsg = await getMessage(item.id);
-      if (existingMsg) {
-        if (item.edited_at) {
-          await updateMessageText(item.id, text, item.edited_at * 1000);
-          if (_activeChatCallback && typeof _activeChatCallback.onMessageEdited === "function") {
-            _activeChatCallback.onMessageEdited(item.id, text, item.edited_at * 1000);
-          }
-        } else if (isBrokenFilePlaintext(existingMsg.plaintext)) {
-          if (await tryUpgradeStaleFilePlaintext(existingMsg, text)) {
-            stats.upgradedFile++;
-          }
-        } else if (await fillMissingPlaintext(item.id, text)) {
-          stats.filledPlaceholder++;
-        }
-        continue;
-      }
-
-      if (await isMessageDeletedLocally(item.id) || (item.client_msg_id && await isMessageDeletedLocally(item.client_msg_id))) {
-        console.log("[sync] Skipping locally deleted message:", item.id);
-        stats.deletedSkipped++;
-        continue;
-      }
-
-      if (Number(item.sender_id) === myId) {
-        const resolved = item.client_msg_id
-          ? await updateMsgIdAndDelivered(item.client_msg_id, item.id, item.delivered, item.read)
-          : await findAndResolvePendingSentMessage(peerId, item.timestamp, item.id);
-        if (resolved) {
-          if (item.read) {
-            await updateMessageRead(item.id, item.client_msg_id);
-          }
-          if (item.edited_at) {
-            await updateMessageText(item.id, text, item.edited_at * 1000);
-          } else {
-            const resolvedMsg = await getMessage(item.id);
-            if (resolvedMsg && isBrokenFilePlaintext(resolvedMsg.plaintext)) {
-              if (await tryUpgradeStaleFilePlaintext(resolvedMsg, text)) {
-                stats.upgradedFile++;
-              }
-            } else if (await fillMissingPlaintext(item.id, text)) {
-              stats.filledResolved++;
-            }
-          }
-          continue;
-        }
-      }
+      const text = item.plaintext || "";
 
       const storedMsg = {
         msg_id: item.id,
@@ -1459,20 +1035,13 @@ export async function syncMessageHistory(options = {}) {
         client_msg_id: item.client_msg_id,
         reply_to_msg_id: item.reply_to_msg_id || null,
         edited_at: item.edited_at ? item.edited_at * 1000 : null,
-        is_e2ee: isE2EE,
       };
       await saveMessage(storedMsg);
-      stats.savedNew++;
 
       if (_activeChatCallback && String(_activeChatCallback.userId) === String(peerId)) {
         _activeChatCallback.fn(storedMsg);
       }
     }
-
-    stats.at = Date.now();
-    stats.watermark = getHistoryWatermark(options.chat_user_id);
-    lastHistorySyncStats = stats;
-    console.log("[sync] history", stats);
 
     triggerChatListUpdate();
     return history;
@@ -1480,309 +1049,6 @@ export async function syncMessageHistory(options = {}) {
     console.error("Failed to sync message history:", err);
     return [];
   }
-}
-
-/**
- * Messages that failed decrypt even with force-refreshed bundles (the private
- * key is gone — reinstall without backup, or a desynced device). Retrying them
- * on every sync burns 1000+ AEAD attempts and hammers /keys/bundle into 429s.
- * Cleared when the peer's devices change.
- */
-const hopelessDecrypt = new Set();
-export function clearHopelessFor(userId) {
-  const prefix = `${userId}:`;
-  for (const k of hopelessDecrypt) {
-    if (k.startsWith(prefix)) hopelessDecrypt.delete(k);
-  }
-}
-
-export async function decryptMessagePayload(payload) {
-  const toUint8Array = (val) => {
-    if (!val) return new Uint8Array(0);
-    if (val instanceof Uint8Array) return val;
-    if (val instanceof ArrayBuffer) return new Uint8Array(val);
-    if (Array.isArray(val)) return new Uint8Array(val);
-    if (typeof val === "string") {
-      const bin = atob(val);
-      const out = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-      return out;
-    }
-    throw new Error(`decryptMessagePayload: unsupported binary field type ${typeof val}`);
-  };
-
-  const ciphertext = toUint8Array(payload.ciphertext);
-  const salt = toUint8Array(payload.salt);
-  const nonce = toUint8Array(payload.nonce);
-  let fromIdentityKey = toUint8Array(payload.from_identity_key);
-
-  const myIdEarly = Number(localStorage.getItem("user_id"));
-  const senderEarly = Number(payload.from_user_id ?? payload.sender_user_id ?? payload.sender_id ?? 0);
-  const isOwnOutgoing = senderEarly > 0 && senderEarly === myIdEarly;
-
-  // TOFU pin the actual DH peer device (recipient for own outgoing, sender otherwise).
-  const pinUserId = Number(payload.peer_user_id ?? payload.from_user_id ?? payload.sender_user_id);
-  const pinDeviceId = Number(payload.peer_device_id ?? payload.from_device_id ?? payload.sender_device_id);
-  if (pinUserId && pinDeviceId && fromIdentityKey.length) {
-    await verifyPeerIdentityKey(pinUserId, pinDeviceId, fromIdentityKey);
-  }
-
-  const myPrivateIK = await loadPrivateIK();
-  if (!myPrivateIK) {
-    throw new Error("Приватный ключ не найден");
-  }
-
-  const myId = Number(localStorage.getItem("user_id"));
-  const senderUserId = Number(payload.from_user_id ?? payload.sender_user_id ?? payload.sender_id ?? pinUserId ?? 0);
-  let chatPartnerId = Number(payload.chat_user_id ?? payload.chat_id ?? (senderUserId === myId ? 0 : senderUserId));
-  let recipientUserId = Number(payload.to_user_id ?? payload.recipient_user_id ?? (senderUserId === myId ? chatPartnerId : myId));
-  let clientMsgId = payload.client_msg_id || (typeof payload.msg_id === "string" && isNaN(Number(payload.msg_id)) ? payload.msg_id : "");
-
-  let localMsg = null;
-  const lookupId = payload.client_msg_id || payload.msg_id || payload.id;
-  if (lookupId) {
-    localMsg = await getMessage(lookupId);
-  }
-  if (localMsg) {
-    if (!chatPartnerId && localMsg.chat_id) {
-      chatPartnerId = Number(localMsg.chat_id);
-    }
-    if (!clientMsgId && (localMsg.client_msg_id || localMsg.localId)) {
-      clientMsgId = localMsg.client_msg_id || localMsg.localId;
-    }
-  }
-  if (senderUserId === myId && !recipientUserId) {
-    recipientUserId = chatPartnerId;
-  }
-
-  const rawTs = Number(payload.timestamp ?? payload.created_at ?? payload.ts ?? payload.edited_at ?? 0);
-  const tsSec = rawTs > 1e11 ? Math.floor(rawTs / 1000) : rawTs;
-
-  if (!fromIdentityKey.length && senderUserId && !isOwnOutgoing) {
-    try {
-      const bundle = await getCachedKeyBundle(senderUserId);
-      const targetDev = bundle?.devices?.find(d => Number(d.device_id) === pinDeviceId) || bundle?.devices?.[0];
-      if (targetDev?.identity_key) {
-        fromIdentityKey = toUint8Array(targetDev.identity_key);
-      }
-    } catch (e) {
-      console.warn("Failed to fetch fallback identity key on Web:", e);
-    }
-  }
-
-  // Candidate AADs in order of priority (including clock drift / network transit delta ±1s to ±5s):
-  const candidateUsers = [
-    { s: senderUserId, r: recipientUserId },
-    { s: senderUserId, r: chatPartnerId },
-    { s: myId, r: chatPartnerId },
-    { s: senderUserId, r: myId },
-    { s: recipientUserId, r: senderUserId },
-    { s: chatPartnerId, r: senderUserId }
-  ].filter(u => u.s > 0 && u.r > 0);
-
-  const candidateClientIds = [clientMsgId, localMsg?.client_msg_id, localMsg?.msg_id, ""].filter((v, i, a) => a.indexOf(v) === i);
-  const candidateTimestamps = [tsSec];
-  if (rawTs > 1e11) candidateTimestamps.push(rawTs);
-  if (localMsg?.created_at) {
-    const localTs = localMsg.created_at > 1e11 ? Math.floor(localMsg.created_at / 1000) : localMsg.created_at;
-    candidateTimestamps.push(localTs);
-  }
-
-  // 1. Fast-path: modern V2 AAD (client_msg_id binding, no timestamp)
-  const v2Aads = [];
-  for (const { s, r } of candidateUsers) {
-    for (const cId of candidateClientIds) {
-      v2Aads.push(buildPairwiseAADV2(s, r, cId));
-    }
-  }
-
-  // 2. Legacy fallback for old messages stored with timestamps or empty AAD
-  const timeOffsets = [0];
-  for (let i = 1; i <= 60; i++) {
-    timeOffsets.push(-i, i);
-  }
-  const legacyAads = [];
-  const addedSet = new Set();
-
-  for (const { s, r } of candidateUsers) {
-    for (const cId of candidateClientIds) {
-      for (const baseTs of candidateTimestamps) {
-        for (const offset of timeOffsets) {
-          const t = baseTs + offset;
-          const key = `${s}:${r}:${cId}:${t}`;
-          if (!addedSet.has(key)) {
-            addedSet.add(key);
-            legacyAads.push(buildPairwiseAAD(s, r, cId, t));
-          }
-        }
-      }
-    }
-  }
-  legacyAads.push(new Uint8Array(0));
-
-  let textBytes = null;
-  let lastErr = null;
-
-  const tryDecryptWithIK = async (ikBytes) => {
-    if (!ikBytes || !ikBytes.length) return null;
-    try {
-      const sec = await deriveSharedSecret(myPrivateIK, ikBytes);
-      // Fast path: modern V2 AAD (instant O(1) decryption)
-      for (const aad of v2Aads) {
-        try {
-          const res = await e2eeDecrypt(ciphertext, sec, salt, nonce, "penik-pairwise-message-v1", aad);
-          if (res) return res;
-        } catch (e) {
-          lastErr = e;
-        }
-      }
-      // Fallback: legacy V1 AAD with timestamp offsets or empty AAD
-      for (const aad of legacyAads) {
-        try {
-          const res = await e2eeDecrypt(ciphertext, sec, salt, nonce, "penik-pairwise-message-v1", aad);
-          if (res) return res;
-        } catch (e) {
-          lastErr = e;
-        }
-      }
-    } catch (e) {
-      lastErr = e;
-    }
-    return null;
-  };
-
-  if (fromIdentityKey.length) {
-    textBytes = await tryDecryptWithIK(fromIdentityKey);
-  }
-
-  // If initial decryption failed or key was missing, try the peer's key bundle
-  // (recipient devices for own outgoing; sender devices for incoming).
-  // Soft refresh: getCachedKeyBundle dedups + rate-limits forceRefresh.
-  const fallbackUserId = isOwnOutgoing
-    ? Number(payload.recipient_id ?? payload.recipient_user_id ?? recipientUserId ?? chatPartnerId)
-    : senderUserId;
-  const fallbackDeviceId = isOwnOutgoing
-    ? Number(payload.recipient_device_id ?? 0)
-    : pinDeviceId;
-  if (!textBytes && fallbackUserId) {
-    const tryBundleDevices = async (devices) => {
-      const ordered = fallbackDeviceId
-        ? [...devices].sort((a, b) =>
-            (Number(b.device_id) === fallbackDeviceId ? 1 : 0) -
-            (Number(a.device_id) === fallbackDeviceId ? 1 : 0))
-        : devices;
-      for (const dev of ordered) {
-        if (!dev.identity_key) continue;
-        if (isOwnOutgoing && fallbackDeviceId && Number(dev.device_id) !== fallbackDeviceId) {
-          // Prefer the exact sealed-to device; allow others only as last resort below.
-          continue;
-        }
-        const candidateIK = toUint8Array(dev.identity_key);
-        const res = await tryDecryptWithIK(candidateIK);
-        if (res) {
-          fromIdentityKey = candidateIK;
-          return res;
-        }
-      }
-      if (isOwnOutgoing && fallbackDeviceId) {
-        for (const dev of devices) {
-          if (!dev.identity_key || Number(dev.device_id) === fallbackDeviceId) continue;
-          const candidateIK = toUint8Array(dev.identity_key);
-          const res = await tryDecryptWithIK(candidateIK);
-          if (res) {
-            fromIdentityKey = candidateIK;
-            return res;
-          }
-        }
-      }
-      return null;
-    };
-    const hopelessKey = `${fallbackUserId}:${clientMsgId || ""}`;
-    try {
-      const bundle = await getCachedKeyBundle(fallbackUserId);
-      textBytes = await tryBundleDevices(bundle?.devices || []);
-      if (!textBytes && !hopelessDecrypt.has(hopelessKey)) {
-        // The peer may have reinstalled after our bundle snapshot: the cached
-        // keys are dead, but the fresh bundle has the live one. Retry once.
-        // A message that fails even with fresh bundles is marked hopeless so
-        // opening a chat doesn't DDoS /keys/bundle on every sync.
-        const fresh = await getCachedKeyBundle(fallbackUserId, true);
-        textBytes = await tryBundleDevices(fresh?.devices || []);
-        if (!textBytes) hopelessDecrypt.add(hopelessKey);
-      }
-    } catch (e) {
-      console.warn("Key bundle fallback decryption attempt failed:", e);
-    }
-  }
-
-  if (!textBytes) {
-    console.error("[PenikE2EE] Pairwise decryption failed:", {
-      senderUserId,
-      recipientUserId,
-      chatPartnerId,
-      clientMsgId,
-      tsSec,
-      rawTs,
-      fromIdentityKeyLen: fromIdentityKey?.length,
-      ctLen: ciphertext?.length,
-      saltLen: salt?.length,
-      nonceLen: nonce?.length,
-      candidatesCount: v2Aads.length + legacyAads.length
-    }, lastErr);
-    throw lastErr || new Error("Failed to decrypt pairwise message");
-  }
-
-  return { text: new TextDecoder().decode(textBytes) };
-}
-
-export async function encryptMessagePayload(text, recipientUserId, clientMsgId = "", timestamp = 0) {
-  const myId = Number(localStorage.getItem("user_id"));
-  const myDeviceId = Number(localStorage.getItem("device_id"));
-  const isSelfChat = Number(recipientUserId) === myId;
-  const tsSec = Number(timestamp) > 1e11 ? Math.floor(Number(timestamp) / 1000) : (Number(timestamp) || getServerTimeSec());
-
-  let recipientBundle = await getCachedKeyBundle(recipientUserId);
-  let senderBundle = await getCachedKeyBundle(myId);
-
-  let recipientDevices = recipientBundle?.devices || [];
-  let senderDevices = senderBundle?.devices || [];
-
-  if (recipientDevices.length === 0) {
-    recipientBundle = await getCachedKeyBundle(recipientUserId, true);
-    recipientDevices = recipientBundle?.devices || [];
-  }
-  if (!isSelfChat && senderDevices.length <= 1) {
-    senderBundle = await getCachedKeyBundle(myId, true);
-    senderDevices = senderBundle?.devices || [];
-  }
-
-  const filteredSenderDevices = isSelfChat ? [] : senderDevices.filter(d => Number(d.device_id) !== myDeviceId);
-  const allDevices = [
-    ...recipientDevices.map(d => ({ ...d, owner_user_id: recipientUserId })),
-    ...filteredSenderDevices.map(d => ({ ...d, owner_user_id: myId })),
-  ];
-
-  const myPrivateIK = await loadPrivateIK();
-  if (!myPrivateIK) {
-    throw new Error("Private Identity Key not found");
-  }
-
-  // TOFU pinning: verify and pin identity keys for all target devices
-  for (const device of allDevices) {
-    const recipientIKPub = new Uint8Array(atob(device.identity_key).split("").map(c => c.charCodeAt(0)));
-    await verifyPeerIdentityKey(device.owner_user_id, device.device_id, recipientIKPub);
-  }
-
-  // Fast native batch fan-out encryption across all recipient & sender devices
-  return encryptPairwiseBatch(
-    myPrivateIK,
-    myId,
-    recipientUserId,
-    clientMsgId,
-    tsSec,
-    text,
-    allDevices
-  );
 }
 
 export async function flushOutbox() {
@@ -1799,53 +1065,12 @@ export async function flushOutbox() {
     });
     for (const msg of unsent) {
       const clientMsgId = msg.client_msg_id || String(msg.msg_id);
-      const isE2EE = msg.is_e2ee !== false && (msg.ciphertexts?.length > 0 || msg.is_e2ee === true);
-
-      if (!isE2EE) {
-        addPendingAck(clientMsgId, { tempId: msg.msg_id, userId: msg.chat_id });
-        const msgCreatedAt = Number(msg.created_at || getServerTimeMs());
-        const tsSec = msgCreatedAt > 1e11 ? Math.floor(msgCreatedAt / 1000) : msgCreatedAt;
-        const sent = ws.send(0x01, {
-          to_user_id: Number(msg.chat_id),
-          plaintext: msg.plaintext || "",
-          is_e2ee: false,
-          msg_id: clientMsgId,
-          created_at: tsSec,
-          reply_to_msg_id: msg.reply_to_msg_id ? String(msg.reply_to_msg_id) : undefined
-        });
-        if (!sent) {
-          pendingAcks.delete(clientMsgId);
-          break;
-        }
-        await new Promise(resolve => setTimeout(resolve, 100));
-        continue;
-      }
-
-      let ciphertexts = msg.ciphertexts;
-      if (!ciphertexts || !ciphertexts.length) {
-        try {
-          ciphertexts = await encryptMessagePayload(msg.plaintext || "", msg.chat_id, clientMsgId, msg.created_at || Date.now());
-          msg.ciphertexts = ciphertexts;
-          await saveMessage(msg);
-        } catch (encErr) {
-          console.warn("flushOutbox: failed to encrypt msg", msg.msg_id, encErr);
-          continue;
-        }
-      }
       addPendingAck(clientMsgId, { tempId: msg.msg_id, userId: msg.chat_id });
-      const seen = new Set();
-      const uniqueDevices = (ciphertexts || []).filter(d => {
-        const id = Number(d.device_id);
-        if (seen.has(id)) return false;
-        seen.add(id);
-        return true;
-      });
       const msgCreatedAt = Number(msg.created_at || getServerTimeMs());
       const tsSec = msgCreatedAt > 1e11 ? Math.floor(msgCreatedAt / 1000) : msgCreatedAt;
       const sent = ws.send(0x01, {
         to_user_id: Number(msg.chat_id),
-        devices: uniqueDevices,
-        is_e2ee: true,
+        plaintext: msg.plaintext || "",
         msg_id: clientMsgId,
         created_at: tsSec,
         reply_to_msg_id: msg.reply_to_msg_id ? String(msg.reply_to_msg_id) : undefined
@@ -1854,7 +1079,6 @@ export async function flushOutbox() {
         pendingAcks.delete(clientMsgId);
         break;
       }
-      // Introduce a small delay to avoid triggering WebSocket rate limiting on the server
       await new Promise(resolve => setTimeout(resolve, 100));
     }
   } catch (e) {
@@ -1862,22 +1086,13 @@ export async function flushOutbox() {
   }
 }
 
-
-
 async function onMsgEditNotifyGlobal(payload) {
   if (!payload) return;
   try {
-    let text = "";
-    if (payload.plaintext != null) {
-      text = payload.plaintext;
-    } else {
-      const res = await decryptMessagePayload(payload);
-      text = (typeof res === "object" && res !== null && "text" in res) ? res.text : String(res || "");
-    }
+    const text = payload.plaintext != null ? payload.plaintext : "";
     const msgId = payload.client_msg_id || payload.msg_id;
     const editedAt = payload.edited_at ? payload.edited_at * 1000 : Date.now();
     await updateMessageText(msgId, text, editedAt);
-
     if (_activeChatCallback && typeof _activeChatCallback.onMessageEdited === "function") {
       _activeChatCallback.onMessageEdited(msgId, text, editedAt);
     }
@@ -1894,7 +1109,6 @@ function setupGlobalWSListeners() {
     });
   }
   ws.on(0x02, onMsgRecvGlobal);
-  ws.on(0x16, onMsgRetryReq);
   ws.on(0x03, onMsgAckReceivedGlobal);
   ws.on(0x04, onMsgDeliveredGlobal);
   ws.on(0x18, onMsgReadGlobal);
@@ -1903,12 +1117,6 @@ function setupGlobalWSListeners() {
   ws.on(0x08, onChatPurgeGlobal);
   ws.on(OP.MSG_DELETE_NOTIFY, onMsgDeleteNotifyGlobal);
   ws.on(OP.MSG_EDIT_NOTIFY, onMsgEditNotifyGlobal);
-  ws.on(OP.USER_DEVICES_CHANGED, (payload) => {
-    if (payload && payload.user_id) {
-      invalidateKeyBundle(payload.user_id);
-      clearHopelessFor(payload.user_id);
-    }
-  });
   ws.on(OP.USER_AVATAR_UPDATE, (payload) => {
     if (payload && payload.user_id) {
       const ts = payload.ts ? payload.ts * 1000 : Date.now();
@@ -1922,9 +1130,6 @@ function setupGlobalWSListeners() {
       }
     }
   });
-  // A peer's display name is cached with the local contact row and was previously
-  // only refreshed for brand-new chats, so a rename stayed invisible to everyone
-  // already talking to them. The server now pushes it.
   ws.on(OP.USER_PROFILE_UPDATE, async (payload) => {
     if (!payload || !payload.user_id || !payload.name) return;
     const userId = Number(payload.user_id);
@@ -1963,8 +1168,6 @@ function setupGlobalWSListeners() {
   initCallUI();
   callManager.init();
 
-  // Periodically drop pending ACKs that never resolved, and clear them on
-  // disconnect (the outbox re-flush on reconnect re-registers live ones).
   if (!_pendingAckSweepTimer) {
     _pendingAckSweepTimer = setInterval(() => sweepPendingAcks(), PENDING_ACK_TTL_MS);
     if (_pendingAckSweepTimer.unref) _pendingAckSweepTimer.unref();
@@ -1974,8 +1177,6 @@ function setupGlobalWSListeners() {
     console.warn('[ws] Session revoked or expired by server');
     logout();
   });
-  // Any REST 401 (revoked/expired token) ends the session once, instead of
-  // letting background sync loops hammer the server with a dead token.
   if (!unauthorizedHookInstalled) {
     unauthorizedHookInstalled = true;
     let loggingOut = false;
@@ -1988,32 +1189,12 @@ function setupGlobalWSListeners() {
   }
 
   ws.onConnect(async () => {
-    // Publish current local public identity key
-    let pubKey = await getIKPublic();
-    if (!pubKey) {
-      try {
-        const ik = await generateKeyPair();
-        await saveIKPrivate(ik.privateKey);
-        await saveIKPublic(ik.publicKey);
-        state.privateIK = ik.privateKey;
-        pubKey = ik.publicKey;
-        console.log('[E2EE] Generated new identity key pair for this device');
-      } catch (e) {
-        console.error('[E2EE] Failed to generate identity key pair', e);
-      }
-    }
-    if (pubKey) {
-      ws.send(0x12, { x25519_pub: new Uint8Array(pubKey) });
-    }
-    verifyOwnKeyPublishedOnce();
     await flushOutbox();
     await syncMessageHistory();
     await refreshContactProfiles();
     try {
       const groups = await syncGroups();
       for (const g of groups) {
-        // Skip pending invites: we're not a member yet, so history/key
-        // requests 403. Isolate per-group so one failure doesn't abort the rest.
         if (g.status === 'pending') continue;
         try {
           await syncHistory(g.id);
@@ -2027,43 +1208,6 @@ function setupGlobalWSListeners() {
   });
 }
 
-let _ownKeyVerified = false;
-// Once per page load, check that the server advertises our local public key
-// for this device. A mismatch (local keys replaced without publish, or a
-// foreign backup restored onto a pinned row) breaks crypto in both directions
-// and no rotation or re-invite can fix it — only logout + fresh login.
-async function verifyOwnKeyPublishedOnce() {
-  if (_ownKeyVerified) return;
-  _ownKeyVerified = true;
-  try {
-    const myId = Number(localStorage.getItem("user_id"));
-    const myDeviceId = Number(localStorage.getItem("device_id"));
-    const localPub = await getIKPublic().catch(() => null);
-    if (!myId || !myDeviceId || !localPub) return;
-    const bundle = await getCachedKeyBundle(myId);
-    const dev = (bundle?.devices || []).find(d => Number(d.device_id) === myDeviceId);
-    if (!dev?.identity_key) return;
-    const bin = atob(dev.identity_key);
-    const serverPub = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) serverPub[i] = bin.charCodeAt(i);
-    const local = new Uint8Array(localPub);
-    const equal = serverPub.length === local.length && serverPub.every((b, i) => b === local[i]);
-    if (!equal) {
-      console.error("[E2EE] local identity key does NOT match server record for this device — re-login required");
-      showToast("Ключи устройства расходятся с сервером. Выйдите из аккаунта и войдите заново", "error");
-    }
-  } catch (e) {
-    console.warn("[E2EE] own-key verify failed:", e?.message || e);
-  }
-}
-
-// refreshContactProfiles re-reads the display name of every known contact.
-//
-// A rename is pushed live over opcode 0x0c, which by definition misses anyone who
-// was offline at the time: the web client kept the name it first stored forever,
-// while Android happened to be right because its history sync re-fetches the
-// profile per chat. This closes that gap on every reconnect. Failures are
-// per-contact and silent — a stale name is not worth an error toast.
 async function refreshContactProfiles() {
   let contacts;
   try {
@@ -2098,278 +1242,6 @@ async function refreshContactProfiles() {
   if (changed) triggerChatListUpdate();
 }
 
-
-
-function debugToHex(bytes) {
-  if (!bytes || !bytes.length) return null;
-  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  return Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
-}
-
-function debugToB64(bytes) {
-  if (!bytes || !bytes.length) return null;
-  try {
-    return encodeKey(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
-  } catch {
-    return null;
-  }
-}
-
-async function penikDebugDump() {
-  const myId = Number(localStorage.getItem("user_id"));
-  const myDeviceId = Number(localStorage.getItem("device_id"));
-  const priv = await loadPrivateIK();
-  const storedPub = await getIKPublic();
-  let derivedPub = null;
-  if (priv) {
-    try {
-      derivedPub = await derivePublicKey(priv);
-    } catch (e) {
-      console.warn("[penikDebug] derivePublicKey failed", e);
-    }
-  }
-
-  const storedPubB64 = storedPub ? debugToB64(storedPub) : null;
-  const derivedPubB64 = derivedPub ? debugToB64(derivedPub) : null;
-  const privMatchesStored = Boolean(
-    derivedPubB64 && storedPubB64 && derivedPubB64 === storedPubB64
-  );
-
-  let selfBundle = null;
-  let selfBundleErr = null;
-  if (myId) {
-    try {
-      selfBundle = await getCachedKeyBundle(myId, true);
-    } catch (e) {
-      selfBundleErr = String(e?.message || e);
-    }
-  }
-
-  const selfDevices = (selfBundle?.devices || []).map((d) => {
-    const ikB64 = d.identity_key || null;
-    let ikBytes = null;
-    if (ikB64) {
-      try {
-        ikBytes = toUint8ArrayDebug(ikB64);
-      } catch {
-        ikBytes = null;
-      }
-    }
-    return {
-      device_id: Number(d.device_id),
-      crypto_version: Number(d.crypto_version || 0),
-      identity_key_b64: ikB64,
-      identity_key_hex: ikBytes ? debugToHex(ikBytes) : null,
-      is_current_device: Number(d.device_id) === myDeviceId,
-      matches_derived_pub: Boolean(derivedPubB64 && ikB64 && ikB64 === derivedPubB64),
-      matches_stored_pub: Boolean(storedPubB64 && ikB64 && ikB64 === storedPubB64),
-    };
-  });
-
-  const currentDeviceOnServer = selfDevices.find((d) => d.device_id === myDeviceId)
-    || selfDevices.find((d) => d.matches_derived_pub)
-    || null;
-
-  const pins = await getAllPinnedIKs();
-  const pinEntries = Object.entries(pins).map(([key, ikB64]) => {
-    const [userId, deviceId] = key.split(":").map(Number);
-    return { key, userId, deviceId, ik_b64: ikB64, ik_hex: ikB64 ? (() => {
-      try { return debugToHex(toUint8ArrayDebug(ikB64)); } catch { return null; }
-    })() : null };
-  });
-
-  // Compare each pin against the peer's current server bundle (if reachable).
-  const peerUserIds = [...new Set(pinEntries.map((p) => p.userId).filter(Boolean))];
-  const peerComparisons = [];
-  for (const uid of peerUserIds) {
-    let bundle = null;
-    let err = null;
-    try {
-      bundle = await getCachedKeyBundle(uid, true);
-    } catch (e) {
-      err = String(e?.message || e);
-    }
-    const devices = (bundle?.devices || []).map((d) => {
-      const ikB64 = d.identity_key || null;
-      const pinKey = `${uid}:${Number(d.device_id)}`;
-      const pinned = pins[pinKey] || null;
-      return {
-        device_id: Number(d.device_id),
-        server_ik_b64: ikB64,
-        server_ik_hex: ikB64 ? (() => { try { return debugToHex(toUint8ArrayDebug(ikB64)); } catch { return null; } })() : null,
-        pinned_ik_b64: pinned,
-        pinned_ik_hex: pinned ? (() => { try { return debugToHex(toUint8ArrayDebug(pinned)); } catch { return null; } })() : null,
-        pin_matches_server: Boolean(pinned && ikB64 && pinned === ikB64),
-        pin_missing: !pinned,
-      };
-    });
-    peerComparisons.push({ user_id: uid, error: err, devices });
-  }
-
-  const report = {
-    myId,
-    myDeviceId,
-    hasPrivateIK: Boolean(priv),
-    privateIK_len: priv ? priv.length : 0,
-    storedPub_b64: storedPubB64,
-    storedPub_hex: storedPub ? debugToHex(storedPub) : null,
-    derivedPub_b64: derivedPubB64,
-    derivedPub_hex: derivedPub ? debugToHex(derivedPub) : null,
-    priv_matches_stored_pub: privMatchesStored,
-    serverSelfBundleError: selfBundleErr,
-    serverSelfDevices: selfDevices,
-    currentDeviceOnServer,
-    priv_matches_current_device_on_server: Boolean(
-      currentDeviceOnServer && derivedPubB64 && currentDeviceOnServer.identity_key_b64 === derivedPubB64
-    ),
-    pins: pinEntries,
-    peerComparisons,
-    expectedFromForkDb: {
-      device1_hex: "ABD34799FA7E06AB53FA85345D4FE6DF4ED168F313FFEDA9F54718B3D6991C0A",
-      device17_hex: "ABD34799FA7E06AB53FA85345D4FE6DF4ED168F313FFEDA9F54718B3D6991C0A",
-      device7_user6_hex: "21501EBFB7A629B2CFCD8787A2B7CBF79BE66BF3DFD1E1E1685379436481740B",
-      device11_user9_hex: "DE40D88927AE1E2C70C5DD5E1CB2782D7136A38097157FA0FDFC371C5579841A",
-    },
-  };
-
-  console.log("[penikDebug] E2EE key report", report);
-  return report;
-}
-
-// Fetch one server row by id and attempt a full decrypt with the same IK/AAD
-// resolution path used by syncMessageHistory. For console diagnosis only.
-async function penikTryDecryptById(msgId) {
-  const id = Number(msgId);
-  if (!Number.isFinite(id)) throw new Error("__penikTryDecrypt: numeric msgId required");
-
-  let item = null;
-  try {
-    const afterRows = await apiGet(`/messages/history?after_id=${id - 1}&limit=20`);
-    item = (afterRows || []).find(r => Number(r.id) === id) || null;
-  } catch {
-    item = null;
-  }
-  if (!item) {
-    try {
-      const beforeRows = await apiGet(`/messages/history?before_id=${id + 1}&limit=20`);
-      item = (beforeRows || []).find(r => Number(r.id) === id) || null;
-    } catch {
-      item = null;
-    }
-  }
-  if (!item) return { found: false, id };
-
-  const me = state.currentUser;
-  const myId = Number(me?.id || me?.user_id || localStorage.getItem("user_id"));
-  const currentDeviceId = Number(localStorage.getItem("device_id"));
-  const peerId = Number(item.chat_user_id || (Number(item.sender_id) === myId ? item.recipient_id : item.sender_id));
-  const isOwnOutgoing = Number(item.sender_id) === myId;
-  const keyOwnerUserId = Number(item.recipient_id) || peerId;
-  const keyDeviceId = Number(item.recipient_device_id) || 0;
-  const senderDeviceId = Number(item.sender_device_id);
-
-  const base = {
-    id: item.id,
-    found: true,
-    isOwnOutgoing,
-    sender_id: item.sender_id,
-    recipient_id: item.recipient_id,
-    sender_device_id: item.sender_device_id,
-    recipient_device_id: item.recipient_device_id,
-    currentDeviceId,
-    timestamp: item.timestamp,
-    client_msg_id: item.client_msg_id,
-    hasCiphertext: Boolean(item.ciphertext),
-    hasSalt: Boolean(item.encryption_salt),
-    hasNonce: Boolean(item.encryption_nonce),
-    ctLen: item.ciphertext ? item.ciphertext.length : 0,
-  };
-
-  if (!item.ciphertext) {
-    return { ...base, ok: false, error: "no_ciphertext" };
-  }
-
-  let fromIdentityKey;
-  let peerUserIdForPin;
-  let peerDeviceIdForPin;
-  let ikSource;
-  try {
-    if (isOwnOutgoing) {
-      const recipBundle = await getCachedKeyBundle(keyOwnerUserId, true);
-      const recipDevice = keyDeviceId
-        ? recipBundle?.devices?.find(d => Number(d.device_id) === keyDeviceId)
-        : null;
-      fromIdentityKey = recipDevice?.identity_key;
-      peerUserIdForPin = keyOwnerUserId;
-      peerDeviceIdForPin = keyDeviceId;
-      ikSource = `recipient:${keyOwnerUserId}:dev${keyDeviceId}:${recipDevice ? "found" : "missing"}`;
-    } else {
-      const senderBundle = await getCachedKeyBundle(item.sender_id, true);
-      const senderDevice = senderBundle?.devices?.find(d => Number(d.device_id) === senderDeviceId);
-      fromIdentityKey = senderDevice?.identity_key;
-      peerUserIdForPin = Number(item.sender_id);
-      peerDeviceIdForPin = senderDeviceId;
-      ikSource = `sender:${item.sender_id}:dev${senderDeviceId}:${senderDevice ? "found" : "missing"}`;
-    }
-  } catch (e) {
-    return { ...base, ok: false, error: String(e?.message || e), stage: "resolve_ik" };
-  }
-
-  try {
-    const decrypted = await decryptMessagePayload({
-      ciphertext: item.ciphertext,
-      salt: item.encryption_salt,
-      nonce: item.encryption_nonce,
-      from_identity_key: fromIdentityKey,
-      sender_user_id: item.sender_id,
-      sender_device_id: item.sender_device_id,
-      peer_user_id: peerUserIdForPin,
-      peer_device_id: peerDeviceIdForPin,
-      recipient_id: item.recipient_id,
-      recipient_device_id: item.recipient_device_id,
-      chat_user_id: peerId,
-      chat_id: String(peerId),
-      to_user_id: isOwnOutgoing ? peerId : myId,
-      recipient_user_id: isOwnOutgoing ? peerId : myId,
-      client_msg_id: item.client_msg_id,
-      timestamp: item.timestamp,
-      edited_at: item.edited_at
-    });
-    return {
-      ...base,
-      ok: true,
-      ikSource,
-      hasIk: Boolean(fromIdentityKey),
-      textPreview: String(decrypted.text || "").slice(0, 120),
-    };
-  } catch (e) {
-    return {
-      ...base,
-      ok: false,
-      ikSource,
-      hasIk: Boolean(fromIdentityKey),
-      error: String(e?.message || e),
-      stage: "decrypt",
-    };
-  }
-}
-
-function toUint8ArrayDebug(val) {
-  if (!val) return new Uint8Array(0);
-  if (val instanceof Uint8Array) return val;
-  if (val instanceof ArrayBuffer) return new Uint8Array(val);
-  if (Array.isArray(val)) return new Uint8Array(val);
-  if (typeof val === "string") {
-    const bin = atob(val);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  }
-  throw new Error(`unsupported binary type ${typeof val}`);
-}
-
 if (typeof window !== "undefined") {
-  window.__penikDebug = penikDebugDump;
   window.__penikSyncStats = getLastHistorySyncStats;
-  window.__penikTryDecrypt = penikTryDecryptById;
 }

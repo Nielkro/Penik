@@ -20,32 +20,22 @@ import (
 var nicknameRe = regexp.MustCompile(`^[a-zA-Z0-9_]{3,32}$`)
 
 type registerRequest struct {
-	Name           string   `json:"name"`
-	Nickname       string   `json:"nickname"`
-	Password       string   `json:"password"`
-	DeviceName     string   `json:"device_name"`
-	Platform       string   `json:"platform"`
-	Location       string   `json:"location"`
-	RegistrationID int64    `json:"registration_id"`
-	CryptoVersion  int      `json:"crypto_version"`
-	IKPub          []byte   `json:"ik_pub"`
-	SigningKey     []byte   `json:"signing_key"`
-	SPKPub         []byte   `json:"spk_pub"`
-	SPKSig         []byte   `json:"spk_sig"`
+	Name           string `json:"name"`
+	Nickname       string `json:"nickname"`
+	Password       string `json:"password"`
+	DeviceName     string `json:"device_name"`
+	Platform       string `json:"platform"`
+	Location       string `json:"location"`
+	RegistrationID int64  `json:"registration_id"`
 }
 
 type loginRequest struct {
-	Nickname       string   `json:"nickname"`
-	Password       string   `json:"password"`
-	DeviceName     string   `json:"device_name"`
-	Platform       string   `json:"platform"`
-	Location       string   `json:"location"`
-	RegistrationID int64    `json:"registration_id"`
-	CryptoVersion  int      `json:"crypto_version"`
-	IKPub          []byte   `json:"ik_pub"`
-	SigningKey     []byte   `json:"signing_key"`
-	SPKPub         []byte   `json:"spk_pub"`
-	SPKSig         []byte   `json:"spk_sig"`
+	Nickname       string `json:"nickname"`
+	Password       string `json:"password"`
+	DeviceName     string `json:"device_name"`
+	Platform       string `json:"platform"`
+	Location       string `json:"location"`
+	RegistrationID int64  `json:"registration_id"`
 }
 
 type loginResponse struct {
@@ -62,14 +52,7 @@ const (
 	argon2Threads = 4
 	argon2KeyLen  = 32
 	saltLen       = 16
-	maxOPKUpload  = 1000
 )
-
-// validCurveKey reports whether b is a well-formed curve25519 public key:
-// 32 raw bytes, or 33 bytes with a 0x05 version prefix.
-func validCurveKey(b []byte) bool {
-	return len(b) == 32 || (len(b) == 33 && b[0] == 0x05)
-}
 
 // Register handles POST /api/v1/register.
 func Register(database *db.DB, cfg *config.Config, hubs ...*ws.Hub) http.HandlerFunc {
@@ -92,24 +75,6 @@ func Register(database *db.DB, cfg *config.Config, hubs ...*ws.Hub) http.Handler
 		req.DeviceName = sanitizeDeviceField(req.DeviceName, maxDeviceFieldRunes)
 		if req.DeviceName == "" {
 			http.Error(w, "device_name is invalid", http.StatusBadRequest)
-			return
-		}
-		if req.IKPub != nil {
-			if !validCurveKey(req.IKPub) {
-				http.Error(w, "malformed identity key material", http.StatusBadRequest)
-				return
-			}
-			if req.SPKPub != nil {
-				if !validCurveKey(req.SPKPub) || len(req.SPKSig) != 64 {
-					http.Error(w, "malformed identity key material", http.StatusBadRequest)
-					return
-				}
-			}
-		}
-
-
-		if len(req.SigningKey) > 0 && len(req.SigningKey) != 32 {
-			http.Error(w, "malformed signing key material", http.StatusBadRequest)
 			return
 		}
 
@@ -139,13 +104,9 @@ func Register(database *db.DB, cfg *config.Config, hubs ...*ws.Hub) http.Handler
 		userID, _ := res.LastInsertId()
 
 		loc := resolveLocation(req.Location, r)
-		cryptoVer := req.CryptoVersion
-		if cryptoVer <= 0 {
-			cryptoVer = 1
-		}
 		devRes, err := tx.ExecContext(r.Context(),
-			`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen,crypto_version) VALUES(?,?,?,?,?,?,?,?)`,
-			userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now, cryptoVer)
+			`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen,crypto_version) VALUES(?,?,?,?,?,?,?,1)`,
+			userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -237,14 +198,9 @@ func Login(database *db.DB, cfg *config.Config, hubs ...*ws.Hub) http.HandlerFun
 
 		// A device ID is part of message ownership. Deleting and recreating the
 		loc := resolveLocation(req.Location, r)
-		cryptoVer := req.CryptoVersion
-		if cryptoVer <= 0 {
-			cryptoVer = 1
-		}
-
 		devRes, insertErr := tx.ExecContext(r.Context(),
-			`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen,crypto_version) VALUES(?,?,?,?,?,?,?,?)`,
-			userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now, cryptoVer)
+			`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen,crypto_version) VALUES(?,?,?,?,?,?,?,1)`,
+			userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now)
 		if insertErr != nil {
 			loginInternalError(w, "insert device", insertErr)
 			return

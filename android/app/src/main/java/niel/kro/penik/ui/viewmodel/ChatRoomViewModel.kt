@@ -60,8 +60,6 @@ class ChatRoomViewModel @Inject constructor(
 
     val isSelfChat: Boolean = chatUserId == tokenStorage.getUserId()
 
-    val isE2EE: StateFlow<Boolean> = MutableStateFlow(false)
-
     val callState = callManager.state
 
     fun startCall(isVideo: Boolean) {
@@ -72,30 +70,6 @@ class ChatRoomViewModel @Inject constructor(
 
     val messages = loadMessagesUseCase(chatUserId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val _safetyNumber = MutableStateFlow<String?>(null)
-    val safetyNumber: StateFlow<String?> = _safetyNumber
-
-    private val _safetyWords = MutableStateFlow<List<String>?>(null)
-    val safetyWords: StateFlow<List<String>?> = _safetyWords
-
-    private val _safetyQrPayload = MutableStateFlow<String?>(null)
-    val safetyQrPayload: StateFlow<String?> = _safetyQrPayload
-
-    private val _safetyFingerprintHex = MutableStateFlow<String?>(null)
-    val safetyFingerprintHex: StateFlow<String?> = _safetyFingerprintHex
-
-    private val _safetyVerifyResult = MutableStateFlow<Boolean?>(null)
-    val safetyVerifyResult: StateFlow<Boolean?> = _safetyVerifyResult
-
-    private val _safetyVerifyMismatchInfo = MutableStateFlow<String?>(null)
-    val safetyVerifyMismatchInfo: StateFlow<String?> = _safetyVerifyMismatchInfo
-
-    private val _showSafetyDialog = MutableStateFlow(false)
-    val showSafetyDialog: StateFlow<Boolean> = _showSafetyDialog
-
-    private val _showE2eeDialog = MutableStateFlow(false)
-    val showE2eeDialog: StateFlow<Boolean> = _showE2eeDialog
 
     private val _online = MutableStateFlow(false)
     val online: StateFlow<Boolean> = _online
@@ -337,123 +311,9 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    fun onSafetyClick() {
-        _showSafetyDialog.value = true
-    }
 
-    fun dismissSafetyDialog() {
-        _showSafetyDialog.value = false
-        _safetyVerifyResult.value = null
-    }
 
-    fun onE2eeClick() {
-        _showE2eeDialog.value = true
-    }
 
-    fun dismissE2eeDialog() {
-        _showE2eeDialog.value = false
-    }
-
-    private data class SafetyBundle(
-        val number: String,
-        val words: List<String>,
-        val qrPayload: String,
-        val hex: String
-    )
-
-    private fun loadSafetyNumber() {
-        viewModelScope.launch {
-            try {
-                val data = withContext(Dispatchers.IO) { calculateSafetyData() }
-                _safetyNumber.value = data.number
-                _safetyWords.value = data.words
-                _safetyQrPayload.value = data.qrPayload
-                _safetyFingerprintHex.value = data.hex
-            } catch (e: Exception) {
-                _safetyNumber.value = "Ошибка загрузки"
-            }
-        }
-    }
-
-    fun verifyScannedQr(raw: String): Boolean? {
-        val trimmed = raw.trim()
-        val expectedHex = _safetyFingerprintHex.value ?: return null
-        val expectedNum = _safetyNumber.value?.replace(" ", "").orEmpty()
-
-        val fp = when {
-            trimmed.startsWith("penik://safety?fp=") -> trimmed.substringAfter("penik://safety?fp=").substringBefore("&")
-            trimmed.contains("fp=") -> trimmed.substringAfter("fp=").substringBefore("&")
-            trimmed.startsWith("penik-safety-v1:") -> trimmed.substringAfter("penik-safety-v1:").trim()
-            trimmed.matches(Regex("^[0-9a-fA-F]{64}$")) -> trimmed
-            else -> null
-        }
-
-        // Check if QR contains a user ID parameter
-        val scannedUid = if (trimmed.contains("uid=")) {
-            trimmed.substringAfter("uid=").substringBefore("&").trim()
-        } else null
-
-        if (scannedUid != null && scannedUid.isNotEmpty()) {
-            val scannedLong = scannedUid.toLongOrNull()
-            if (scannedLong != null && scannedLong != chatUserId) {
-                viewModelScope.launch {
-                    val contact = chatRepository.getChat(scannedLong)
-                    val scannedName = contact?.name
-                        ?: (if (!contact?.nickname.isNullOrBlank()) "@${contact?.nickname}" else "@$scannedUid")
-                    val targetName = if (chatName.isNotBlank()) chatName else "@$chatUserId"
-                    _safetyVerifyMismatchInfo.value = "Это код $scannedName, а вы в чате с $targetName"
-                }
-                _safetyVerifyResult.value = false
-                return false
-            }
-        }
-
-        if (fp != null) {
-            if (fp.matches(Regex("^[0-9a-fA-F]{64}$"))) {
-                val matches = fp.equals(expectedHex, ignoreCase = true)
-                _safetyVerifyResult.value = matches
-                if (matches) _safetyVerifyMismatchInfo.value = null
-                return matches
-            }
-            val cleanDigits = fp.replace(" ", "").replace("-", "")
-            if (cleanDigits.matches(Regex("^[0-9]{25}$")) && expectedNum.isNotEmpty()) {
-                val matches = cleanDigits == expectedNum
-                _safetyVerifyResult.value = matches
-                if (matches) _safetyVerifyMismatchInfo.value = null
-                return matches
-            }
-        }
-
-        return null
-    }
-
-    fun resetVerifyResult() {
-        _safetyVerifyResult.value = null
-        _safetyVerifyMismatchInfo.value = null
-    }
-
-    private suspend fun calculateSafetyData(): SafetyBundle {
-        val myId = tokenStorage.getUserId()
-        val devices1 = messageRepository.getKeyBundleCached(myId, isSelf = true)
-        val devices2 = messageRepository.getKeyBundleCached(chatUserId, isSelf = (chatUserId == myId))
-
-        val keys1 = devices1.mapNotNull { dev ->
-            dev.identityKey.takeIf { it.isNotBlank() }?.let { android.util.Base64.decode(it, android.util.Base64.DEFAULT) }
-        }
-        val keys2 = devices2.mapNotNull { dev ->
-            dev.identityKey.takeIf { it.isNotBlank() }?.let { android.util.Base64.decode(it, android.util.Base64.DEFAULT) }
-        }
-
-        if (keys1.isEmpty() || keys2.isEmpty()) {
-            throw Exception("Ключи устройств не найдены")
-        }
-
-        val number = SafetyNumber.compute(keys1, keys2)
-        val words = SafetyNumber.computeWords(keys1, keys2)
-        val qrPayload = SafetyNumber.computeQrPayload(keys1, keys2, myId)
-        val hex = SafetyNumber.computeFingerprintHex(keys1, keys2)
-        return SafetyBundle(number, words, qrPayload, hex)
-    }
 
     fun forwardMessage(rawText: String, senderName: String, target: niel.kro.penik.ui.components.ForwardTargetItem, onDone: () -> Unit) {
         viewModelScope.launch {
