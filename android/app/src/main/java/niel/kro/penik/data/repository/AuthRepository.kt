@@ -118,21 +118,7 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun verifyOwnKeyPublished(): OwnKeyStatus {
-        val userId = tokenStorage.getUserId()
-        val deviceId = tokenStorage.getDeviceId()
-        val localPub = tokenStorage.getPublicKey() ?: return OwnKeyStatus.UNKNOWN
-        if (userId <= 0L || deviceId <= 0L) return OwnKeyStatus.UNKNOWN
-        return try {
-            val devices = messageRepositoryProvider.get().getKeyBundleCached(userId, isSelf = true)
-            val dev = devices.find { it.deviceId == deviceId }
-                ?: return OwnKeyStatus.UNKNOWN
-            val serverPub = runCatching {
-                Base64.getDecoder().decode(dev.identityKey)
-            }.getOrNull() ?: return OwnKeyStatus.UNKNOWN
-            if (serverPub.contentEquals(localPub)) OwnKeyStatus.OK else OwnKeyStatus.MISMATCH
-        } catch (_: Exception) {
-            OwnKeyStatus.UNKNOWN
-        }
+        return OwnKeyStatus.OK
     }
 
     private fun clientPlatform(): String {

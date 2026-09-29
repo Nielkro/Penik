@@ -178,6 +178,35 @@ func SendDevicePush(token string, data map[string]string, onUnregistered ...Unre
 	go client.sendPushPayload(token, data, cb)
 }
 
+func sanitizePushData(data map[string]string) map[string]string {
+	out := make(map[string]string, len(data))
+	for k, v := range data {
+		if len(v) > 500 {
+			var fileObj struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+				File struct {
+					Name string `json:"name"`
+				} `json:"file"`
+			}
+			if err := json.Unmarshal([]byte(v), &fileObj); err == nil && fileObj.Type == "file" {
+				if fileObj.Text != "" {
+					out[k] = fileObj.Text
+				} else if fileObj.File.Name != "" {
+					out[k] = fileObj.File.Name
+				} else {
+					out[k] = "[Вложение]"
+				}
+			} else {
+				out[k] = v[:500] + "…"
+			}
+		} else {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 func (c *FCMClient) sendPushPayload(token string, data map[string]string, onUnregistered UnregisteredCallback) {
 	accessToken, err := c.getAccessToken()
 	if err != nil {
@@ -188,7 +217,7 @@ func (c *FCMClient) sendPushPayload(token string, data map[string]string, onUnre
 	payload := map[string]interface{}{
 		"message": map[string]interface{}{
 			"token": token,
-			"data":  data,
+			"data":  sanitizePushData(data),
 			"android": map[string]interface{}{
 				"priority": "high",
 			},

@@ -613,10 +613,12 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 		}
 		push.SendDevicePush(fcmToken, map[string]string{
 			"type":           "direct",
+			"chat_user_id":   fmt.Sprintf("%d", senderUserID),
 			"sender_user_id": fmt.Sprintf("%d", senderUserID),
 			"sender_name":    senderName,
 			"text":           msg.Plaintext,
 			"row_id":         fmt.Sprintf("%d", messageID),
+			"msg_id":         fmt.Sprintf("%d", messageID),
 			"message_id":     msg.MsgID,
 			"timestamp":      fmt.Sprintf("%d", msgTS*1000),
 		}, func(deadToken string) {
