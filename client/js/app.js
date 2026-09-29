@@ -18,25 +18,41 @@ import { groupAvatarUpdateTimestamps, showToast, setMsgTextContent } from './ui/
 import { renderGroup } from './ui/groups.js';
 import { renderProfile } from './ui/profile.js';
 import { renderSearch } from './ui/search.js';
-import { renderSettings, renderDevices, renderBackup } from './ui/settings.js';
+import { renderSettings, renderDevices } from './ui/settings.js';
 import { initTheme } from './theme.js';
 import { appSounds } from './sounds.js';
 import { getMessagePreview } from './ui/chat.js';
 import {
   deriveSharedSecret, e2eeEncrypt, e2eeDecrypt, buildPairwiseAAD, buildPairwiseAADV2,
-  encryptKeyBackup, decryptKeyBackup, derivePublicKey, generateKeyPair, encryptPairwiseBatch,
+  derivePublicKey, generateKeyPair, encryptPairwiseBatch,
   encodeKey
 } from './crypto.js';
 import { registerGroupWSListeners, syncGroups, syncHistory } from './groups.js';
-import { verifyPeerIdentityKey } from './pinning.js';
 import { emitPresenceUpdate, emitTypingUpdate } from './presence.js';
 import { getCachedMedia } from './storage.js';
 import { callManager } from './call.js';
 import { initCallUI } from './ui/call_modal.js';
 import { initDesktop, isDesktop, sendDesktopNotification } from './desktop.js';
-import { getCachedKeyBundle, prefetchKeyBundle, invalidateKeyBundle } from './keybundle.js';
 
-export { getCachedKeyBundle, prefetchKeyBundle, invalidateKeyBundle };
+const _bundleCache = new Map();
+export async function getCachedKeyBundle(userId, forceRefresh = false) {
+  const uid = Number(userId);
+  if (!forceRefresh && _bundleCache.has(uid)) {
+    return _bundleCache.get(uid);
+  }
+  const bundle = await apiGet('/keys/bundle/' + uid);
+  _bundleCache.set(uid, bundle);
+  return bundle;
+}
+export function invalidateKeyBundle(userId) {
+  _bundleCache.delete(Number(userId));
+}
+export function prefetchKeyBundle(userId) {
+  getCachedKeyBundle(userId).catch(() => {});
+}
+export async function verifyPeerIdentityKey(_userId, _deviceId, _identityKey) {
+  return true;
+}
 
 // Service Worker registration for HTTP 206 Partial Content Range streaming
 if ('serviceWorker' in navigator) {
@@ -300,19 +316,15 @@ function buildMainLayout() {
   settingsScreen.className = 'screen settings-screen';
   settingsScreen.id = 'screen-settings';
 
-  const backupScreen = document.createElement('div');
-  backupScreen.className = 'screen settings-screen';
-  backupScreen.id = 'screen-backup';
-
   const devicesScreen = document.createElement('div');
   devicesScreen.className = 'screen devices-screen';
   devicesScreen.id = 'screen-devices';
 
-  screensWrap.append(chatListScreen, callsScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, backupScreen, devicesScreen);
+  screensWrap.append(chatListScreen, callsScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, devicesScreen);
   wrap.append(screensWrap, nav);
   app.appendChild(wrap);
 
-  _mainLayout = { chatListScreen, callsScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, backupScreen, devicesScreen, nav };
+  _mainLayout = { chatListScreen, callsScreen, chatScreen, searchScreen, profileScreen, groupScreen, settingsScreen, devicesScreen, nav };
   return _mainLayout;
 }
 
@@ -335,14 +347,14 @@ function showMain(screen, userId) {
 
   /* Update nav */
   const activeNavScreen = isChat ? 'chats'
-    : (screen === 'devices' || screen === 'backup') ? 'settings'
+    : (screen === 'devices') ? 'settings'
     : screen;
   layout.nav.querySelectorAll('.nav-item').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.screen === activeNavScreen);
   });
 
   /* Hide all screens */
-  ['chats', 'calls', 'chat', 'search', 'profile', 'group', 'settings', 'devices', 'backup'].forEach(s => {
+  ['chats', 'calls', 'chat', 'search', 'profile', 'group', 'settings', 'devices'].forEach(s => {
     const el = document.getElementById(`screen-${s}`);
     if (el) el.classList.remove('active');
   });
@@ -395,10 +407,6 @@ function showMain(screen, userId) {
     layout.settingsScreen.classList.add('active');
     layout.settingsScreen.innerHTML = '';
     renderSettings(layout.settingsScreen);
-  } else if (screen === 'backup') {
-    layout.backupScreen.classList.add('active');
-    layout.backupScreen.innerHTML = '';
-    renderBackup(layout.backupScreen);
   } else if (screen === 'devices') {
     layout.devicesScreen.classList.add('active');
     layout.devicesScreen.innerHTML = '';
@@ -2090,149 +2098,7 @@ async function refreshContactProfiles() {
   if (changed) triggerChatListUpdate();
 }
 
-export async function backupE2EEKeys(passphrase) {
-  const privBytes = await loadPrivateIK();
-  if (!privBytes) {
-    throw new Error("Локальный приватный ключ не найден. Нечего резервировать.");
-  }
 
-  const groupKeys = await getAllGroupKeysPlain();
-  const groupKeysArr = groupKeys.map(gk => ({
-    group_id: gk.group_id,
-    version: gk.key_version,
-    key: btoa(String.fromCharCode(...gk.key))
-  }));
-
-  const allGroupMsgs = await getAllGroupMessages();
-  const sortedGroupMsgs = (allGroupMsgs || [])
-    .slice()
-    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
-    .slice(0, 3000)
-    .map(m => ({
-      group_id: Number(m.group_id),
-      message_id: String(m.message_id || m.id),
-      server_id: Number(m.server_id || m.id || 0),
-      sender_user_id: Number(m.sender_user_id || m.sender_id || 0),
-      sender_device_id: Number(m.sender_device_id || 0),
-      key_version: Number(m.key_version || 1),
-      text: String(m.text || m.plaintext || ""),
-      created_at: Number(m.created_at || 0),
-      edited_at: m.edited_at ? Number(m.edited_at) : null,
-      reply_to_msg_id: m.reply_to_msg_id ? String(m.reply_to_msg_id) : null
-    }));
-
-  const payloadJson = JSON.stringify({
-    version: 3,
-    identity_key: btoa(String.fromCharCode(...privBytes)),
-    group_keys: groupKeysArr,
-    group_messages: sortedGroupMsgs
-  });
-  const payloadBytes = new TextEncoder().encode(payloadJson);
-  const backup = await encryptKeyBackup(payloadBytes, passphrase);
-
-  await apiPost("/keys/backup", {
-    encrypted_blob: btoa(String.fromCharCode(...backup.encryptedBlob)),
-    salt: btoa(String.fromCharCode(...backup.salt)),
-    iv: btoa(String.fromCharCode(...backup.iv)),
-    device_name: getPersistentDeviceName(),
-    platform: getClientPlatform()
-  });
-}
-
-export async function restoreE2EEKeys(passphrase, backupId = null) {
-  const url = backupId ? `/keys/backup?id=${encodeURIComponent(backupId)}` : "/keys/backup";
-  const backup = await apiGet(url);
-  if (!backup || !backup.encrypted_blob) {
-    throw new Error("Резервная копия ключей не найдена на сервере.");
-  }
-
-  const toUint8Array = (val) => {
-    const bin = atob(val);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  };
-
-  const encryptedBlob = toUint8Array(backup.encrypted_blob);
-  const salt = toUint8Array(backup.salt);
-  const iv = toUint8Array(backup.iv);
-
-  let decrypted;
-  try {
-    decrypted = await decryptKeyBackup(encryptedBlob, salt, iv, passphrase);
-  } catch (err) {
-    if (err.name === "OperationError" || (err.message && (err.message.includes("operation-specific") || err.message.includes("OperationError")))) {
-      throw new Error("Неверный E2EE-пароль или мнемоническая фраза");
-    }
-    throw err;
-  }
-  let privBytes = decrypted;
-  if (decrypted.length > 0 && decrypted[0] === 123 /* '{' */) {
-    try {
-      const parsed = JSON.parse(new TextDecoder().decode(decrypted));
-      if (parsed.identity_key) {
-        privBytes = toUint8Array(parsed.identity_key);
-      }
-      if (Array.isArray(parsed.group_keys)) {
-        for (const gk of parsed.group_keys) {
-          if (gk.group_id && gk.version && gk.key) {
-            const kBytes = toUint8Array(gk.key);
-            await saveGroupKey(gk.group_id, gk.version, kBytes);
-          }
-        }
-      }
-      if (Array.isArray(parsed.group_messages)) {
-        for (const gm of parsed.group_messages) {
-          if (gm.group_id && gm.message_id) {
-            await saveGroupMessage({
-              group_id: Number(gm.group_id),
-              message_id: String(gm.message_id),
-              server_id: Number(gm.server_id || 0),
-              id: Number(gm.server_id || 0),
-              sender_user_id: Number(gm.sender_user_id || 0),
-              sender_device_id: Number(gm.sender_device_id || 0),
-              key_version: Number(gm.key_version || 1),
-              text: String(gm.text || ""),
-              created_at: Number(gm.created_at || 0),
-              edited_at: gm.edited_at ? Number(gm.edited_at) : null,
-              reply_to_msg_id: gm.reply_to_msg_id ? String(gm.reply_to_msg_id) : null
-            });
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Failed to parse JSON backup v3 payload:", e);
-    }
-  }
-
-  const derivedPub = await derivePublicKey(privBytes);
-
-  await saveIKPrivate(privBytes);
-  await saveIKPublic(derivedPub);
-  state.privateIK = privBytes;
-
-  // The restored key must be the one the server advertises for this device.
-  // A fresh login without local keys creates a row with no key yet (publish
-  // inserts it); restoring a foreign backup onto a pinned row 409s — then
-  // only logout + fresh login recovers.
-  try {
-    const spub = await getSigningPublic().catch(() => null);
-    await apiPost("/keys/init", {
-      ik_pub: btoa(String.fromCharCode(...new Uint8Array(derivedPub))),
-      ...(spub && spub.length === 32
-        ? { signing_key: btoa(String.fromCharCode(...new Uint8Array(spub))) }
-        : {}),
-      crypto_version: 2,
-    });
-  } catch (e) {
-    if (e && e.status === 409) {
-      throw new Error("Бэкап не соответствует этому устройству. Выйдите из аккаунта и войдите заново");
-    }
-    console.warn("[E2EE] key publish after restore failed:", e?.message || e);
-  }
-
-  console.log("E2EE keys and group keys successfully restored from server backup!");
-}
 
 function debugToHex(bytes) {
   if (!bytes || !bytes.length) return null;

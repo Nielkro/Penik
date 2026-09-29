@@ -22,12 +22,9 @@ data class AuthUiState(
     val name: String = "",
     val nickname: String = "",
     val password: String = "",
-    val e2eePassword: String = "",
     val avatarBytes: ByteArray? = null,
     val tempUserId: Long? = null,
     val tempName: String? = null,
-    val availableBackups: List<niel.kro.penik.data.network.api.KeyBackupSummaryResponse> = emptyList(),
-    val selectedBackupId: Long? = null,
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -65,10 +62,6 @@ class AuthViewModel @Inject constructor(
 
     fun updatePassword(password: String) {
         _uiState.value = _uiState.value.copy(password = password, error = null)
-    }
-
-    fun updateE2eePassword(password: String) {
-        _uiState.value = _uiState.value.copy(e2eePassword = password, error = null)
     }
 
     fun updateAvatar(bytes: ByteArray?) {
@@ -119,15 +112,6 @@ class AuthViewModel @Inject constructor(
         _uiState.value = state.copy(step = 2, error = null)
     }
 
-    fun submitRegisterE2eePassword() {
-        val state = _uiState.value
-        if (state.e2eePassword.length < 6) {
-            _uiState.value = state.copy(error = "Пароль должен быть не менее 6 символов")
-            return
-        }
-        _uiState.value = state.copy(step = 3, error = null)
-    }
-
     fun submitRegisterProfile(onSuccess: () -> Unit) {
         val state = _uiState.value
         if (state.name.isBlank()) {
@@ -139,38 +123,21 @@ class AuthViewModel @Inject constructor(
             _uiState.value = state.copy(isLoading = true, error = null)
             val deviceName = niel.kro.penik.ui.util.DeviceUtils.getDeviceMarketingName()
             
-            // 1. Register User
             val regResult = authRepository.register(state.name, state.nickname, state.password, deviceName)
             regResult.fold(
                 onSuccess = { authResp ->
-                    // 2. Setup E2EE key backup
-                    val backupResult = authRepository.uploadKeyBackup(state.e2eePassword)
-                    backupResult.fold(
-                        onSuccess = {
-                            // 3. Upload avatar if set
-                            state.avatarBytes?.let { av ->
-                                authRepository.uploadAvatar(av)
-                            }
-                            
-                            // Connect WS
-                            webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, authResp.token)
-                            _uiState.value = _uiState.value.copy(isLoading = false)
-                            onSuccess()
-                        },
-                        onFailure = { e ->
-                            _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: "Ошибка бэкапа ключей")
-                        }
-                    )
+                    state.avatarBytes?.let { av ->
+                        authRepository.uploadAvatar(av)
+                    }
+                    webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, authResp.token)
+                    _uiState.value = _uiState.value.copy(isLoading = false)
+                    onSuccess()
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: "Ошибка регистрации")
                 }
             )
         }
-    }
-
-    fun selectBackup(id: Long) {
-        _uiState.value = _uiState.value.copy(selectedBackupId = id)
     }
 
     // --- LOGIN FLOW ACTIONS ---
@@ -228,102 +195,15 @@ class AuthViewModel @Inject constructor(
             val deviceName = niel.kro.penik.ui.util.DeviceUtils.getDeviceMarketingName()
             authRepository.login(state.nickname, state.password, deviceName).fold(
                 onSuccess = {
-                    val backupsResult = authRepository.listKeyBackups()
-                    val backups = backupsResult.getOrNull().orEmpty()
-                    if (backups.isNotEmpty()) {
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            step = 3,
-                            availableBackups = backups,
-                            selectedBackupId = backups.first().id
-                        )
-                    } else if (authRepository.hasKeyBackup()) {
-                        _uiState.value = _uiState.value.copy(isLoading = false, step = 3)
-                    } else {
-                        authRepository.getToken()?.let { tok ->
-                            webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, tok)
-                        }
-                        _uiState.value = _uiState.value.copy(isLoading = false)
-                        onSuccess()
+                    messageRepository.syncHistory()
+                    authRepository.getToken()?.let { tok ->
+                        webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, tok)
                     }
+                    _uiState.value = _uiState.value.copy(isLoading = false)
+                    onSuccess()
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: "Неверный пароль")
-                }
-            )
-        }
-    }
-
-    fun submitLoginE2eePassword(onSuccess: () -> Unit) {
-        val state = _uiState.value
-        if (state.e2eePassword.isBlank()) {
-            _uiState.value = state.copy(error = "Введите e2ee-пароль")
-            return
-        }
-
-        viewModelScope.launch {
-            _uiState.value = state.copy(isLoading = true, error = null)
-            authRepository.restoreKeyBackup(state.e2eePassword, backupId = state.selectedBackupId).fold(
-                onSuccess = {
-                    // Sync message history and connect WS
-                    messageRepository.syncHistory()
-                    authRepository.getToken()?.let { tok ->
-                        webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, tok)
-                    }
-                    _uiState.value = _uiState.value.copy(isLoading = false)
-                    onSuccess()
-                },
-                onFailure = { e ->
-                    _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: "Неверный e2ee-пароль")
-                }
-            )
-        }
-    }
-
-    fun submitLoginE2eeReset(newPass: String, onSuccess: () -> Unit) {
-        val state = _uiState.value
-        if (newPass.length < 6) {
-            _uiState.value = state.copy(error = "Новый пароль должен быть не менее 6 символов")
-            return
-        }
-
-        viewModelScope.launch {
-            _uiState.value = state.copy(isLoading = true, error = null)
-            authRepository.resetKeyBackup(newPass).fold(
-                onSuccess = {
-                    // Connect WS and synchronize
-                    messageRepository.syncHistory()
-                    authRepository.getToken()?.let { tok ->
-                        webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, tok)
-                    }
-                    _uiState.value = _uiState.value.copy(isLoading = false)
-                    onSuccess()
-                },
-                onFailure = { e ->
-                    _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: "Ошибка сброса бэкапа ключей")
-                }
-            )
-        }
-    }
-
-    fun skipE2eeBackup(onSuccess: () -> Unit) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            // Keep the login-time keys (already published at login) and make
-            // sure the server advertises them. Rotating here without a new
-            // device row would desync crypto in both directions (server pins
-            // one public key per device and rejects mutations with 409).
-            authRepository.ensureDeviceKeysPublished().fold(
-                onSuccess = {
-                    messageRepository.syncHistory()
-                    authRepository.getToken()?.let { tok ->
-                        webSocketManager.connect(niel.kro.penik.data.network.api.ApiConfig.HOST, niel.kro.penik.data.network.api.ApiConfig.PORT, tok)
-                    }
-                    _uiState.value = _uiState.value.copy(isLoading = false)
-                    onSuccess()
-                },
-                onFailure = { e ->
-                    _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: "Ошибка инициализации ключей устройства")
                 }
             )
         }

@@ -51,9 +51,7 @@ import {
 } from './storage.js';
 import { ws, OP } from './ws.js';
 import { loadPrivateIK, showDesktopNotification } from './app.js';
-import { getCachedKeyBundle } from './keybundle.js';
 import { appSounds } from './sounds.js';
-import { verifyPeerIdentityKey } from './pinning.js';
 import { groupAvatarUpdateTimestamps } from './ui/components.js';
 
 /* ── base64url helpers (server uses RawURLEncoding for group blobs) ── */
@@ -123,12 +121,12 @@ function myDeviceId() { return Number(localStorage.getItem('device_id')); }
 // Rotation/backfill paths must pass forceRefresh=true: a 5-minute stale bundle
 // would otherwise wrap the new epoch key for a dead device id and the rejoined
 // device would never receive its envelope.
-async function fetchDeviceKeys(userIds, forceRefresh = false) {
+async function fetchDeviceKeys(userIds, _forceRefresh = false) {
   const result = [];
   for (const uid of userIds) {
     let bundle;
     try {
-      bundle = await getCachedKeyBundle(uid, forceRefresh);
+      bundle = await apiGet('/keys/bundle/' + uid);
     } catch (e) {
       continue;
     }
@@ -136,8 +134,6 @@ async function fetchDeviceKeys(userIds, forceRefresh = false) {
       if (!d.identity_key) continue;
       const ikPub = stdB64Decode(d.identity_key);
       const signingKey = d.signing_key ? stdB64Decode(d.signing_key) : null;
-      // TOFU pinning: verify and pin identity key; displays warning on change.
-      await verifyPeerIdentityKey(uid, d.device_id, ikPub);
       result.push({ device_id: Number(d.device_id), ik_pub: ikPub, signing_key: signingKey });
     }
   }

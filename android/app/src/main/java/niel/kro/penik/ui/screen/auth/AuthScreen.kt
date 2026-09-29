@@ -31,9 +31,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -54,12 +52,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import niel.kro.penik.ui.components.InitialsAvatar
 import niel.kro.penik.ui.components.UserAvatar
 import niel.kro.penik.ui.viewmodel.AuthMode
 import niel.kro.penik.ui.viewmodel.AuthViewModel
@@ -72,10 +68,6 @@ fun AuthScreen(
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val currentVariant by niel.kro.penik.ui.theme.AppIconManager.currentVariant.collectAsState()
-
-    var showPassword by remember { mutableStateOf(false) }
-    var showResetDialog by remember { mutableStateOf(false) }
-    var newE2eePassword by remember { mutableStateOf("") }
 
     val imageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -117,153 +109,153 @@ fun AuthScreen(
                     .align(Alignment.TopEnd)
                     .padding(top = 4.dp)
             ) {
-            Surface(
-                onClick = { showServerMenu = true },
-                shape = RoundedCornerShape(20.dp),
-                color = LocalAppColors.current.panelSecondary,
-                border = BorderStroke(1.dp, if (isDev) LocalAppColors.current.accent else LocalAppColors.current.border),
-                modifier = Modifier.height(34.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Surface(
+                    onClick = { showServerMenu = true },
+                    shape = RoundedCornerShape(20.dp),
+                    color = LocalAppColors.current.panelSecondary,
+                    border = BorderStroke(1.dp, if (isDev) LocalAppColors.current.accent else LocalAppColors.current.border),
+                    modifier = Modifier.height(34.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(if (isDev) Color(0xFFFFA726) else Color(0xFF66BB6A))
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (isDev) Color(0xFFFFA726) else Color(0xFF66BB6A))
+                        )
+                        Text(
+                            text = serverLabel,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = LocalAppColors.current.textPrimary
+                        )
+                        Text(
+                            text = "▾",
+                            fontSize = 10.sp,
+                            color = LocalAppColors.current.textMuted
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = showServerMenu,
+                    onDismissRequest = { showServerMenu = false },
+                    modifier = Modifier.background(LocalAppColors.current.panel)
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text("Обычный сервер", fontWeight = FontWeight.SemiBold, color = LocalAppColors.current.textPrimary)
+                                Text("api.penik.ru", fontSize = 11.sp, color = LocalAppColors.current.textMuted)
+                            }
+                        },
+                        leadingIcon = {
+                            Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Color(0xFF66BB6A)))
+                        },
+                        onClick = {
+                            niel.kro.penik.data.network.api.ApiConfig.setServer(isDev = false)
+                            currentHost = niel.kro.penik.data.network.api.ApiConfig.HOST
+                            showServerMenu = false
+                        }
                     )
-                    Text(
-                        text = serverLabel,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = LocalAppColors.current.textPrimary
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text("Dev сервер", fontWeight = FontWeight.SemiBold, color = LocalAppColors.current.textPrimary)
+                                Text("web.dev.penik.ru", fontSize = 11.sp, color = LocalAppColors.current.textMuted)
+                            }
+                        },
+                        leadingIcon = {
+                            Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFFFA726)))
+                        },
+                        onClick = {
+                            niel.kro.penik.data.network.api.ApiConfig.setServer(isDev = true)
+                            currentHost = niel.kro.penik.data.network.api.ApiConfig.HOST
+                            showServerMenu = false
+                        }
                     )
-                    Text(
-                        text = "▾",
-                        fontSize = 10.sp,
-                        color = LocalAppColors.current.textMuted
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text("Свой сервер...", fontWeight = FontWeight.SemiBold, color = LocalAppColors.current.textPrimary)
+                                Text("Указать свой IP / домен", fontSize = 11.sp, color = LocalAppColors.current.textMuted)
+                            }
+                        },
+                        leadingIcon = {
+                            Text("⚙️", fontSize = 12.sp)
+                        },
+                        onClick = {
+                            showServerMenu = false
+                            customHostInput = niel.kro.penik.data.network.api.ApiConfig.HOST
+                            customPortInput = niel.kro.penik.data.network.api.ApiConfig.PORT.toString()
+                            showCustomDialog = true
+                        }
                     )
                 }
             }
 
-            DropdownMenu(
-                expanded = showServerMenu,
-                onDismissRequest = { showServerMenu = false },
-                modifier = Modifier.background(LocalAppColors.current.panel)
-            ) {
-                DropdownMenuItem(
+            if (showCustomDialog) {
+                AlertDialog(
+                    onDismissRequest = { showCustomDialog = false },
+                    title = { Text("Настройка сервера", color = LocalAppColors.current.textPrimary) },
                     text = {
-                        Column {
-                            Text("Обычный сервер", fontWeight = FontWeight.SemiBold, color = LocalAppColors.current.textPrimary)
-                            Text("api.penik.ru", fontSize = 11.sp, color = LocalAppColors.current.textMuted)
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedTextField(
+                                value = customHostInput,
+                                onValueChange = { customHostInput = it },
+                                label = { Text("Хост или IP") },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = LocalAppColors.current.accent,
+                                    unfocusedBorderColor = LocalAppColors.current.border,
+                                    focusedTextColor = LocalAppColors.current.textPrimary,
+                                    unfocusedTextColor = LocalAppColors.current.textPrimary
+                                )
+                            )
+                            OutlinedTextField(
+                                value = customPortInput,
+                                onValueChange = { customPortInput = it },
+                                label = { Text("Порт (по умолчанию 443)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = LocalAppColors.current.accent,
+                                    unfocusedBorderColor = LocalAppColors.current.border,
+                                    focusedTextColor = LocalAppColors.current.textPrimary,
+                                    unfocusedTextColor = LocalAppColors.current.textPrimary
+                                )
+                            )
                         }
                     },
-                    leadingIcon = {
-                        Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Color(0xFF66BB6A)))
-                    },
-                    onClick = {
-                        niel.kro.penik.data.network.api.ApiConfig.setServer(isDev = false)
-                        currentHost = niel.kro.penik.data.network.api.ApiConfig.HOST
-                        showServerMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text("Dev сервер", fontWeight = FontWeight.SemiBold, color = LocalAppColors.current.textPrimary)
-                            Text("web.dev.penik.ru", fontSize = 11.sp, color = LocalAppColors.current.textMuted)
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val host = customHostInput.trim()
+                                val port = customPortInput.toIntOrNull() ?: 443
+                                val scheme = if (port == 443) "https" else if (port == 80) "http" else "http"
+                                if (host.isNotBlank()) {
+                                    niel.kro.penik.data.network.api.ApiConfig.setCustom(host, port, scheme)
+                                    currentHost = niel.kro.penik.data.network.api.ApiConfig.HOST
+                                }
+                                showCustomDialog = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.accent)
+                        ) {
+                            Text("Сохранить")
                         }
                     },
-                    leadingIcon = {
-                        Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFFFA726)))
-                    },
-                    onClick = {
-                        niel.kro.penik.data.network.api.ApiConfig.setServer(isDev = true)
-                        currentHost = niel.kro.penik.data.network.api.ApiConfig.HOST
-                        showServerMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text("Свой сервер...", fontWeight = FontWeight.SemiBold, color = LocalAppColors.current.textPrimary)
-                            Text("Указать свой IP / домен", fontSize = 11.sp, color = LocalAppColors.current.textMuted)
+                    dismissButton = {
+                        TextButton(onClick = { showCustomDialog = false }) {
+                            Text("Отмена", color = LocalAppColors.current.textMuted)
                         }
                     },
-                    leadingIcon = {
-                        Text("⚙️", fontSize = 12.sp)
-                    },
-                    onClick = {
-                        showServerMenu = false
-                        customHostInput = niel.kro.penik.data.network.api.ApiConfig.HOST
-                        customPortInput = niel.kro.penik.data.network.api.ApiConfig.PORT.toString()
-                        showCustomDialog = true
-                    }
+                    containerColor = LocalAppColors.current.panel
                 )
             }
-        }
-
-        if (showCustomDialog) {
-            AlertDialog(
-                onDismissRequest = { showCustomDialog = false },
-                title = { Text("Настройка сервера", color = LocalAppColors.current.textPrimary) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
-                            value = customHostInput,
-                            onValueChange = { customHostInput = it },
-                            label = { Text("Хост или IP") },
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = LocalAppColors.current.accent,
-                                unfocusedBorderColor = LocalAppColors.current.border,
-                                focusedTextColor = LocalAppColors.current.textPrimary,
-                                unfocusedTextColor = LocalAppColors.current.textPrimary
-                            )
-                        )
-                        OutlinedTextField(
-                            value = customPortInput,
-                            onValueChange = { customPortInput = it },
-                            label = { Text("Порт (по умолчанию 443)") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = LocalAppColors.current.accent,
-                                unfocusedBorderColor = LocalAppColors.current.border,
-                                focusedTextColor = LocalAppColors.current.textPrimary,
-                                unfocusedTextColor = LocalAppColors.current.textPrimary
-                            )
-                        )
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val host = customHostInput.trim()
-                            val port = customPortInput.toIntOrNull() ?: 443
-                            val scheme = if (port == 443) "https" else if (port == 80) "http" else "http"
-                            if (host.isNotBlank()) {
-                                niel.kro.penik.data.network.api.ApiConfig.setCustom(host, port, scheme)
-                                currentHost = niel.kro.penik.data.network.api.ApiConfig.HOST
-                            }
-                            showCustomDialog = false
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.accent)
-                    ) {
-                        Text("Сохранить")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showCustomDialog = false }) {
-                        Text("Отмена", color = LocalAppColors.current.textMuted)
-                    }
-                },
-                containerColor = LocalAppColors.current.panel
-            )
-        }
         }
 
         // Back button (top left)
@@ -283,7 +275,7 @@ fun AuthScreen(
             }
 
             // Steps Progress Bar
-            val maxSteps = if (state.mode == AuthMode.REGISTER) 4 else 4
+            val maxSteps = 3
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -307,8 +299,7 @@ fun AuthScreen(
 
         // Main wizard contents
         Column(
-            modifier = Modifier
-                .fillMaxSize(),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -322,7 +313,7 @@ fun AuthScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Защищенный мессенджер с E2EE",
+                        text = "Быстрый и удобный мессенджер",
                         color = LocalAppColors.current.textMuted,
                         fontSize = 14.sp
                     )
@@ -420,52 +411,12 @@ fun AuthScreen(
                             )
                         }
 
-                        2 -> { // Registration: E2EE Password
-                            Text("Создайте e2ee-пароль", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.textPrimary)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Ключ шифрования переписок. Знаете его только вы.", fontSize = 13.sp, color = LocalAppColors.current.textMuted, textAlign = TextAlign.Center)
-                            Spacer(modifier = Modifier.height(32.dp))
-                            OutlinedTextField(
-                                value = state.e2eePassword,
-                                onValueChange = viewModel::updateE2eePassword,
-                                label = { Text("Пароль E2EE") },
-                                singleLine = true,
-                                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                trailingIcon = {
-                                    IconButton(onClick = { showPassword = !showPassword }) {
-                                        Text(if (showPassword) "🙈" else "👁️", color = LocalAppColors.current.textMuted)
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = LocalAppColors.current.inputBg,
-                                    unfocusedContainerColor = LocalAppColors.current.inputBg,
-                                    focusedBorderColor = LocalAppColors.current.accent,
-                                    unfocusedBorderColor = LocalAppColors.current.border,
-                                    focusedTextColor = LocalAppColors.current.textPrimary,
-                                    unfocusedTextColor = LocalAppColors.current.textPrimary,
-                                    focusedLabelColor = LocalAppColors.current.accent,
-                                    unfocusedLabelColor = LocalAppColors.current.textMuted
-                                )
-                            )
-                            RenderError(state.error)
-                            Spacer(modifier = Modifier.height(24.dp))
-                            PrimaryButton(
-                                text = "Сохранить и продолжить",
-                                isLoading = state.isLoading,
-                                onClick = viewModel::submitRegisterE2eePassword
-                            )
-                        }
-
-                        3 -> { // Registration: Profile Name / Avatar
+                        2 -> { // Registration: Profile Name / Avatar
                             Text("Ваша аватарка и имя", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.textPrimary)
                             Spacer(modifier = Modifier.height(8.dp))
                             Text("Загрузите фото и укажите отображаемое имя", fontSize = 13.sp, color = LocalAppColors.current.textMuted)
                             Spacer(modifier = Modifier.height(24.dp))
 
-                            // Clickable avatar placeholder
                             Box(
                                 modifier = Modifier
                                     .size(96.dp)
@@ -616,144 +567,10 @@ fun AuthScreen(
                                 onClick = { viewModel.submitLoginPassword(onLoginSuccess) }
                             )
                         }
-
-                        3 -> { // Login: E2EE Password
-                            Text("Восстановление ключей", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.textPrimary)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Введите e2ee-пароль для расшифрования сообщений", fontSize = 13.sp, color = LocalAppColors.current.textMuted, textAlign = TextAlign.Center)
-
-                            if (state.availableBackups.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(LocalAppColors.current.panel)
-                                        .padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text("Резервная копия:", fontSize = 12.sp, color = LocalAppColors.current.textMuted, fontWeight = FontWeight.Medium)
-                                    state.availableBackups.forEach { backup ->
-                                        val isSelected = backup.id == state.selectedBackupId
-                                        val title = backup.deviceName.ifBlank { backup.platform.ifBlank { "Устройство" } }
-                                        val subtitle = if (backup.deviceName.isNotBlank() && backup.platform.isNotBlank() && backup.deviceName != backup.platform) {
-                                            "${backup.platform} · "
-                                        } else ""
-                                        val timeText = if (backup.updatedAt > 0) {
-                                            java.text.SimpleDateFormat("d MMM, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(backup.updatedAt * 1000L))
-                                        } else ""
-
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(if (isSelected) LocalAppColors.current.accent.copy(alpha = 0.15f) else Color.Transparent)
-                                                .clickable { viewModel.selectBackup(backup.id) }
-                                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(if (backup.platform.contains("android", ignoreCase = true)) "📱" else "💻", fontSize = 18.sp)
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (isSelected) LocalAppColors.current.accent else LocalAppColors.current.textPrimary)
-                                                if (subtitle.isNotBlank() || timeText.isNotBlank()) {
-                                                    Text("$subtitle$timeText".trim(), fontSize = 11.sp, color = LocalAppColors.current.textMuted)
-                                                }
-                                            }
-                                            if (isSelected) {
-                                                Text("✓", color = LocalAppColors.current.accent, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(24.dp))
-                            OutlinedTextField(
-                                value = state.e2eePassword,
-                                onValueChange = viewModel::updateE2eePassword,
-                                label = { Text("Пароль E2EE") },
-                                singleLine = true,
-                                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                trailingIcon = {
-                                    IconButton(onClick = { showPassword = !showPassword }) {
-                                        Text(if (showPassword) "🙈" else "👁️", color = LocalAppColors.current.textMuted)
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = LocalAppColors.current.inputBg,
-                                    unfocusedContainerColor = LocalAppColors.current.inputBg,
-                                    focusedBorderColor = LocalAppColors.current.accent,
-                                    unfocusedBorderColor = LocalAppColors.current.border,
-                                    focusedTextColor = LocalAppColors.current.textPrimary,
-                                    unfocusedTextColor = LocalAppColors.current.textPrimary,
-                                    focusedLabelColor = LocalAppColors.current.accent,
-                                    unfocusedLabelColor = LocalAppColors.current.textMuted
-                                )
-                            )
-                            RenderError(state.error)
-                            Spacer(modifier = Modifier.height(24.dp))
-                            PrimaryButton(
-                                text = "Восстановить переписку",
-                                isLoading = state.isLoading,
-                                onClick = { viewModel.submitLoginE2eePassword(onLoginSuccess) }
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            TextButton(onClick = { viewModel.skipE2eeBackup(onLoginSuccess) }) {
-                                Text("Войти как новое устройство (создать свои ключи)", color = LocalAppColors.current.accent, fontSize = 13.sp, textAlign = TextAlign.Center)
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            TextButton(onClick = { showResetDialog = true }) {
-                                Text("Забыли e2ee-пароль? (Начать с чистого листа)", color = LocalAppColors.current.textMuted, fontSize = 12.sp, textAlign = TextAlign.Center)
-                            }
-                        }
                     }
                 }
             }
         }
-    }
-
-    if (showResetDialog) {
-        AlertDialog(
-            onDismissRequest = { showResetDialog = false },
-            title = { Text("Начать с чистого листа?") },
-            text = {
-                Column {
-                    Text("Внимание! Старые зашифрованные сообщения не смогут быть расшифрованы. Введите новый e2ee-пароль для шифрования будущих переписок:")
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = newE2eePassword,
-                        onValueChange = { newE2eePassword = it },
-                        label = { Text("Новый E2EE пароль") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showResetDialog = false
-                        viewModel.submitLoginE2eeReset(newE2eePassword, onLoginSuccess)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.danger)
-                ) {
-                    Text("Сбросить ключи", color = LocalAppColors.current.textPrimary)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showResetDialog = false }) {
-                    Text("Отмена", color = LocalAppColors.current.textPrimary)
-                }
-            },
-            containerColor = LocalAppColors.current.background,
-            titleContentColor = LocalAppColors.current.textPrimary,
-            textContentColor = LocalAppColors.current.textPrimary
-        )
     }
 }
 

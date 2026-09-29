@@ -4,7 +4,7 @@ import {
   saveIdentityKey, saveIKPrivate, saveIKPublic, getIKPrivate, getIKPublic,
   saveSigningPrivate, saveSigningPublic, getSigningPrivate, getSigningPublic
 } from "../storage.js";
-import { navigate, setCurrentUser, restoreE2EEKeys } from "../app.js";
+import { navigate, setCurrentUser } from "../app.js";
 import { el, showToast, spinner, avatar, showConfirmModal, formatDate, formatTime } from "./components.js";
 import { generateKeyPair, generateSigningKeyPair, encryptIdentityEnvelope, computeDeviceRebindProof, decodeKey } from "../crypto.js";
 import { ws, OP } from "../ws.js";
@@ -620,27 +620,21 @@ export function renderAuth(container, initialMode = "welcome") {
           state.tempUserId = res.user_id;
           state.password = password;
 
+          // Generate device keypair if missing
           try {
-            const backups = await apiGet("/keys/backups");
-            if (Array.isArray(backups) && backups.length > 0) {
-              state.availableBackups = backups;
-              state.selectedBackupId = backups[0].id;
-              step = 3;
-              renderStep();
-            } else {
-              const backup = await apiGet("/keys/backup");
-              if (backup && backup.encrypted_blob) {
-                state.availableBackups = [backup];
-                state.selectedBackupId = backup.id || null;
-                step = 3;
-                renderStep();
-              } else {
-                navigate("#chats");
-              }
+            let ikPub = await getIKPublic();
+            if (!ikPub) {
+              const ik = await generateKeyPair();
+              await saveIKPrivate(ik.privateKey);
+              await saveIKPublic(ik.publicKey);
+              const sk = await generateSigningKeyPair();
+              await saveSigningPrivate(sk.privateKey);
+              await saveSigningPublic(sk.publicKey);
+              await publishDeviceKeys().catch(() => {});
             }
-          } catch (_) {
-            navigate("#chats");
-          }
+          } catch (_) {}
+
+          navigate("#chats");
         } catch (err) {
           showErr(err.message || "Неверный пароль.");
         } finally {
@@ -656,211 +650,6 @@ export function renderAuth(container, initialMode = "welcome") {
       card.appendChild(subtitle);
       card.appendChild(input);
       card.appendChild(nextBtn);
-      input.focus();
-    } 
-    else if (step === 3) {
-      // Step 4: E2EE Password / Restore / Reset
-      const title = el("h1", { class: "auth-title" }, "Восстановление ключей");
-      const subtitle = el("p", { style: "text-align:center; color:#aaa; font-size:13px; margin-bottom:20px; line-height:1.4;" }, "Введите ваш E2EE-пароль или мнемоническую фразу (12 слов) для расшифрования сообщений");
-
-      // Backup picker (choose which device backup to restore)
-      let backupPicker = null;
-      if (Array.isArray(state.availableBackups) && state.availableBackups.length > 0) {
-        backupPicker = el("div", { style: "width:100%; margin-bottom:16px;" });
-        const pickerLabel = el("div", {
-          style: "font-size:12px; color:#aaa; margin-bottom:8px; font-weight:500;"
-        }, state.availableBackups.length > 1 ? "Выберите резервную копию устройства:" : "Резервная копия:");
-        backupPicker.appendChild(pickerLabel);
-
-        const list = el("div", { style: "display:flex; flex-direction:column; gap:8px;" });
-        state.availableBackups.forEach(b => {
-          const isSelected = b.id === state.selectedBackupId;
-          const isMobile = b.platform === "android" || b.platform === "ios" || (b.device_name && /android|iphone|phone|pixel|samsung|xiaomi/i.test(b.device_name));
-          const icon = isMobile ? "📱" : "💻";
-          const titleText = b.device_name || (b.platform ? b.platform.toUpperCase() : "Устройство");
-          const ts = b.updated_at || b.created_at;
-          const timeText = ts ? `${formatDate(ts)} в ${formatTime(ts)}` : "";
-
-          const item = el("div", {
-            style: `padding:10px 12px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:space-between; border:1px solid ${isSelected ? "var(--accent, #3b82f6)" : "rgba(255,255,255,0.1)"}; background:${isSelected ? "rgba(59,130,246,0.12)" : "rgba(255,255,255,0.03)"}; transition: all 0.15s ease;`
-          });
-
-          const left = el("div", { style: "display:flex; align-items:center; gap:10px; overflow:hidden;" });
-          const iconEl = el("span", { style: "font-size:18px; line-height:1;" }, icon);
-          const meta = el("div", { style: "display:flex; flex-direction:column; min-width:0;" });
-          const devName = el("div", { style: "font-weight:600; font-size:13px; color:#fff; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" }, titleText);
-          meta.appendChild(devName);
-          if (timeText) {
-            const timeEl = el("div", { style: "font-size:11px; color:#888;" }, timeText);
-            meta.appendChild(timeEl);
-          }
-          left.appendChild(iconEl);
-          left.appendChild(meta);
-
-          const radio = el("input", {
-            type: "radio",
-            name: "auth_backup_selection",
-            checked: isSelected,
-            style: "accent-color:var(--accent, #3b82f6); cursor:pointer; margin-left:8px;"
-          });
-
-          item.appendChild(left);
-          item.appendChild(radio);
-
-          item.addEventListener("click", () => {
-            state.selectedBackupId = b.id;
-            renderStep();
-          });
-
-          list.appendChild(item);
-        });
-        backupPicker.appendChild(list);
-      }
-
-      const input = el("input", { type: "password", placeholder: "E2EE-пароль или мнемоническая фраза", class: "profile-input", value: state.e2eePassword, style: "width:100%; padding:12px; padding-right:36px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#fff;" });
-      
-      const toggleBtn = el("button", { type: "button", style: "position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; border:none; color:#aaa; cursor:pointer; font-size:16px; padding:4px;" }, "👁️");
-      toggleBtn.addEventListener("click", () => {
-        if (input.type === "password") {
-          input.type = "text";
-          toggleBtn.textContent = "🙈";
-        } else {
-          input.type = "password";
-          toggleBtn.textContent = "👁️";
-        }
-      });
-
-      const wrapper = el("div", { style: "position:relative; width:100%; margin-bottom:16px;" }, input, toggleBtn);
-      const restoreBtn = el("button", { class: "btn-primary", style: "margin-bottom:10px; cursor:pointer;" }, "Восстановить переписку");
-      const skipBtn = el("button", { class: "btn-secondary", style: "width:100%; margin-bottom:12px; padding:10px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#ddd; font-size:13px; cursor:pointer;" }, "Пропустить (новый ключ для устройства)");
-      const resetLink = el("a", { class: "auth-switch-link", style: "display:block; text-align:center; font-size:12px; color:#888; cursor:pointer;" }, "Забыли пароль? (Сбросить бэкап на сервере)");
-
-      // Action 1: Restore backup
-      const handleRestore = async () => {
-        const passphrase = input.value ? input.value.trim().replace(/\s+/g, ' ') : '';
-        if (!passphrase) return showErr("Введите E2EE-пароль или мнемоническую фразу.");
-
-        restoreBtn.disabled = true;
-        restoreBtn.innerHTML = "";
-        restoreBtn.appendChild(spinner());
-        clearErr();
-
-        try {
-          await restoreE2EEKeys(passphrase, state.selectedBackupId);
-
-          // Get profile
-          const user = await getUserById(state.tempUserId);
-          if (user) {
-            user.user_id = user.id;
-            user.username = user.nickname;
-            setCurrentUser(user.user || user);
-          }
-
-          showToast("Связка ключей успешно восстановлена!", "success");
-          navigate("#chats");
-        } catch (err) {
-          console.error("Restore error:", err);
-          showErr(err.message || "Неверный E2EE-пароль / мнемоническая фраза или ошибка расшифрования.");
-        } finally {
-          restoreBtn.disabled = false;
-          restoreBtn.textContent = "Восстановить переписку";
-        }
-      };
-
-      // Action 2: Skip restore (Generate standalone device keypair without touching server backup)
-      const handleSkip = async () => {
-        skipBtn.disabled = true;
-        clearErr();
-        try {
-          // Generate new identity keypair for this device only, then publish
-          // it: without the publish peers keep encrypting to the stale
-          // server-side key and nothing decrypts in either direction.
-          const ik = await generateKeyPair();
-          await saveIKPrivate(ik.privateKey);
-          await saveIKPublic(ik.publicKey);
-          const sk = await generateSigningKeyPair();
-          await saveSigningPrivate(sk.privateKey);
-          await saveSigningPublic(sk.publicKey);
-          await publishDeviceKeys();
-
-          const user = await getUserById(state.tempUserId);
-          if (user) {
-            user.user_id = user.id;
-            user.username = user.nickname;
-            setCurrentUser(user.user || user);
-          }
-
-          showToast("Создан локальный ключ устройства", "info");
-          navigate("#chats");
-        } catch (err) {
-          console.error("Skip error:", err);
-          showErr(err.message || "Ошибка генерации ключей устройства.");
-        } finally {
-          skipBtn.disabled = false;
-        }
-      };
-
-      // Action 3: Reset backup (Forgotten E2EE password - no new password needed)
-      const handleReset = async () => {
-        const confirmed = await showConfirmModal(
-          "Начать с чистого листа?",
-          "Бэкап ключей на сервере будет удалён, для устройства создастся свежий ключ. Старая переписка не восстановится, на других устройствах бэкап тоже пропадёт.",
-          "Удалить бэкап и продолжить",
-          "Отмена",
-          true
-        );
-        if (!confirmed) return;
-
-        clearErr();
-        try {
-          // Delete server backups so future logins don't nag for a password.
-          const ids = (state.availableBackups || []).map(b => b.id).filter(Boolean);
-          for (const id of ids) {
-            try {
-              await apiDelete(`/keys/backups/${encodeURIComponent(id)}`);
-            } catch (e) {
-              console.warn("[auth] backup delete failed:", e?.message || e);
-            }
-          }
-
-          // Fresh device keypair, no password involved.
-          const ik = await generateKeyPair();
-          await saveIKPrivate(ik.privateKey);
-          await saveIKPublic(ik.publicKey);
-          const sk = await generateSigningKeyPair();
-          await saveSigningPrivate(sk.privateKey);
-          await saveSigningPublic(sk.publicKey);
-
-          // Publish the fresh public key for this device (a pinned row 409s —
-          // then logout + fresh login is needed).
-          await publishDeviceKeys();
-
-          const user = await getUserById(state.tempUserId);
-          if (user) {
-            user.user_id = user.id;
-            user.username = user.nickname;
-            setCurrentUser(user.user || user);
-          }
-
-          showToast("Начато с чистого листа!", "success");
-          navigate("#chats");
-        } catch (err) {
-          showErr(err.message || "Ошибка сброса ключей.");
-        }
-      };
-
-      restoreBtn.addEventListener("click", handleRestore);
-      input.addEventListener("keydown", e => { if (e.key === "Enter") handleRestore(); });
-      skipBtn.addEventListener("click", handleSkip);
-      resetLink.addEventListener("click", handleReset);
-
-      card.appendChild(title);
-      card.appendChild(subtitle);
-      if (backupPicker) card.appendChild(backupPicker);
-      card.appendChild(wrapper);
-      card.appendChild(restoreBtn);
-      card.appendChild(skipBtn);
-      card.appendChild(resetLink);
       input.focus();
     }
   }

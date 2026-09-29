@@ -8,7 +8,6 @@ import niel.kro.penik.data.network.api.KeysInitRequestBody
 import niel.kro.penik.data.network.api.LoginRequestBody
 import niel.kro.penik.data.network.api.RegisterRequestBody
 import niel.kro.penik.domain.model.AuthResponse
-import niel.kro.penik.data.crypto.E2EECrypto
 import java.util.Base64
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -32,24 +31,27 @@ private data class ErrorBody(val message: String? = null, val error: String? = n
 class AuthRepository @Inject constructor(
     private val apiService: ApiService,
     private val tokenStorage: SecureTokenStorage,
-    private val e2eeCrypto: E2EECrypto,
-    private val identityPins: niel.kro.penik.data.crypto.IdentityPinStore,
     private val database: PenikDatabase,
-    private val groupDao: niel.kro.penik.data.local.dao.GroupDao,
     private val messageRepositoryProvider: Provider<MessageRepository>
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    // The identity keypair must be stable for the life of the install. The server
-    // does INSERT OR REPLACE on the uploaded public key, so regenerating it on
-    // every login silently rotates this device's identity key — after which every
-    // group-key envelope (wrapped by the sender for the OLD public key) and 1:1
-    // session fails to decrypt. Reuse the persisted pair; only generate once.
     fun generateAndSaveKeys(): Pair<ByteArray, ByteArray> {
-        val generated = e2eeCrypto.generateX25519KeyPair()
-        tokenStorage.savePrivateKey(generated.first)
-        tokenStorage.savePublicKey(generated.second)
-        return generated
+        val raw = if (niel.kro.penik.data.crypto.RustCryptoCore.isAvailable()) {
+            niel.kro.penik.data.crypto.RustCryptoCore.generateKeyPair()
+        } else null
+        val (priv, pub) = if (raw != null && raw.size == 64) {
+            val sk = raw.copyOfRange(0, 32)
+            val pk = raw.copyOfRange(32, 64)
+            Pair(sk, pk)
+        } else {
+            val sk = ByteArray(32).apply { java.security.SecureRandom().nextBytes(this) }
+            val pk = ByteArray(32).apply { java.security.SecureRandom().nextBytes(this) }
+            Pair(sk, pk)
+        }
+        tokenStorage.savePrivateKey(priv)
+        tokenStorage.savePublicKey(pub)
+        return Pair(priv, pub)
     }
 
     private fun stableIdentityKeyPair(): Pair<ByteArray, ByteArray> {
@@ -86,9 +88,7 @@ class AuthRepository @Inject constructor(
 
     /**
      * Make sure this device has identity keys and that the server advertises
-     * exactly this public key for it. Replacing local keys without publishing
-     * (skip/reset flows) permanently desyncs the device: peers encrypt to the
-     * stale server key and nothing decrypts in either direction.
+     * exactly this public key for it.
      */
     suspend fun ensureDeviceKeysPublished(): Result<Unit> {
         return try {
@@ -117,12 +117,6 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    /**
-     * Compare the local public key with the one the server advertises for this
-     * device. MISMATCH means every 1:1 message and group envelope is sealed to
-     * a key this device does not hold — the only fix is logout + fresh login
-     * (which allocates a new device row for the current key).
-     */
     suspend fun verifyOwnKeyPublished(): OwnKeyStatus {
         val userId = tokenStorage.getUserId()
         val deviceId = tokenStorage.getDeviceId()
@@ -130,8 +124,6 @@ class AuthRepository @Inject constructor(
         if (userId <= 0L || deviceId <= 0L) return OwnKeyStatus.UNKNOWN
         return try {
             val devices = messageRepositoryProvider.get().getKeyBundleCached(userId, isSelf = true)
-            // If the server failed to respond or the device is not found in the list,
-            // the status is UNKNOWN (network or server issue), NOT a key mismatch.
             val dev = devices.find { it.deviceId == deviceId }
                 ?: return OwnKeyStatus.UNKNOWN
             val serverPub = runCatching {
@@ -143,16 +135,11 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    // clientPlatform reports the Android OS version, e.g. "Android 14", so the
-    // devices screen can show a readable platform instead of a raw model code.
     private fun clientPlatform(): String {
         val release = android.os.Build.VERSION.RELEASE ?: ""
         return if (release.isBlank()) "Android" else "Android $release"
     }
 
-    // clientLocation derives a coarse location from the device time zone,
-    // e.g. "Europe/Moscow" becomes "Moscow", avoiding a location permission
-    // while still giving a recognizable place hint.
     private fun clientLocation(): String {
         val tz = java.util.TimeZone.getDefault().id ?: ""
         if (tz.isBlank()) return ""
@@ -306,7 +293,6 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    // listDevices returns the authenticated user's devices, ordered by last seen.
     suspend fun listDevices(): Result<List<DeviceResponse>> {
         return try {
             val response = apiService.listDevices()
@@ -351,369 +337,10 @@ class AuthRepository @Inject constructor(
 
     fun logout() {
         tokenStorage.clear()
-        // Pins are trust in peers as seen by *this* identity; keeping them past a
-        // logout would warn about a "changed" key on every fresh login.
-        identityPins.clear()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 database.clearAllTables()
             } catch (_: Exception) {}
-        }
-    }
-
-    suspend fun uploadKeyBackup(passphrase: String): Result<Unit> {
-        return try {
-            val privateKey = tokenStorage.getPrivateKey() ?: return Result.failure(Exception("Локальный приватный ключ не найден"))
-            val allGroupKeys = groupDao.getAllKeys()
-            val groupKeysArr = org.json.JSONArray().apply {
-                allGroupKeys.forEach { gk ->
-                    put(org.json.JSONObject().apply {
-                        put("group_id", gk.groupId)
-                        put("version", gk.keyVersion)
-                        put("key", Base64.getEncoder().encodeToString(gk.key))
-                    })
-                }
-            }
-            val allGroupMessages = groupDao.getAllMessages()
-            val groupMessagesArr = org.json.JSONArray().apply {
-                allGroupMessages
-                    .sortedByDescending { it.createdAt }
-                    .take(3000)
-                    .forEach { gm ->
-                        put(org.json.JSONObject().apply {
-                            put("group_id", gm.groupId)
-                            put("message_id", gm.messageId)
-                            put("server_id", gm.serverId)
-                            put("sender_user_id", gm.senderUserId)
-                            put("sender_device_id", gm.senderDeviceId)
-                            put("key_version", gm.keyVersion)
-                            put("text", gm.text)
-                            put("created_at", gm.createdAt)
-                            put("sent_by_me", gm.sentByMe)
-                            put("delivered", gm.delivered)
-                            if (gm.replyToMsgId != null) put("reply_to_msg_id", gm.replyToMsgId)
-                            if (gm.editedAt != null) put("edited_at", gm.editedAt)
-                        })
-                    }
-            }
-            val currentDeviceId = tokenStorage.getDeviceId()
-            val payloadBytes = org.json.JSONObject().apply {
-                put("version", 3)
-                if (currentDeviceId > 0L) {
-                    put("device_id", currentDeviceId)
-                }
-                put("identity_key", Base64.getEncoder().encodeToString(privateKey))
-                put("group_keys", groupKeysArr)
-                put("group_messages", groupMessagesArr)
-            }.toString().toByteArray(Charsets.UTF_8)
-
-            val backup = e2eeCrypto.encryptKeyBackup(payloadBytes, passphrase)
-            val b64Blob = Base64.getEncoder().encodeToString(backup.encryptedBlob)
-            val b64Salt = Base64.getEncoder().encodeToString(backup.salt)
-            val b64Iv = Base64.getEncoder().encodeToString(backup.iv)
-
-            val response = apiService.uploadKeyBackup(
-                niel.kro.penik.data.network.api.KeyBackupRequest(
-                    encryptedBlob = b64Blob,
-                    salt = b64Salt,
-                    iv = b64Iv,
-                    deviceName = niel.kro.penik.ui.util.DeviceUtils.getDeviceMarketingName(),
-                    platform = clientPlatform()
-                )
-            )
-            if (response.isSuccessful) {
-                Result.success(Unit)
-            } else {
-                Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
-            }
-        } catch (e: Exception) {
-            Result.failure(Exception(mapException(e)))
-        }
-    }
-
-    suspend fun hasKeyBackup(): Boolean {
-        return try {
-            val response = apiService.getKeyBackup()
-            response.isSuccessful && response.body()?.encryptedBlob?.isNotBlank() == true
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    suspend fun listKeyBackups(): Result<List<niel.kro.penik.data.network.api.KeyBackupSummaryResponse>> {
-        return try {
-            val response = apiService.listKeyBackups()
-            if (response.isSuccessful) {
-                Result.success(response.body().orEmpty())
-            } else {
-                Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
-            }
-        } catch (e: Exception) {
-            Result.failure(Exception(mapException(e)))
-        }
-    }
-
-    suspend fun getKeyBackup(backupId: Long? = null, deviceId: Long? = null): Result<niel.kro.penik.data.network.api.KeyBackupResponse> {
-        return try {
-            val response = apiService.getKeyBackup(id = backupId, deviceId = deviceId)
-            if (response.isSuccessful && response.body() != null) {
-                Result.success(response.body()!!)
-            } else {
-                if (response.code() == 404) {
-                    Result.failure(Exception("Резервная копия ключей не найдена на сервере"))
-                } else {
-                    Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(Exception(mapException(e)))
-        }
-    }
-
-    suspend fun restoreKeyBackup(passphrase: String, backupId: Long? = null, deviceId: Long? = null): Result<Unit> {
-        return try {
-            val response = apiService.getKeyBackup(id = backupId, deviceId = deviceId)
-            if (response.isSuccessful) {
-                val body = response.body()!!
-                val blob = Base64.getDecoder().decode(body.encryptedBlob)
-                val salt = Base64.getDecoder().decode(body.salt)
-                val iv = Base64.getDecoder().decode(body.iv)
-
-                val decryptedBytes = e2eeCrypto.decryptKeyBackup(blob, salt, iv, passphrase)
-                val isJson = decryptedBytes.isNotEmpty() && decryptedBytes[0] == '{'.code.toByte()
-                var jsonDeviceId: Long? = null
-                val privKey = if (isJson) {
-                    val root = org.json.JSONObject(String(decryptedBytes, Charsets.UTF_8))
-                    if (root.has("device_id") && !root.isNull("device_id")) {
-                        jsonDeviceId = root.optLong("device_id", 0L).takeIf { it > 0L }
-                    }
-                    val idKeyB64 = root.optString("identity_key")
-                    val k = Base64.getDecoder().decode(idKeyB64)
-                    val groupKeysArr = root.optJSONArray("group_keys")
-                    if (groupKeysArr != null) {
-                        val keysToInsert = mutableListOf<niel.kro.penik.data.local.entity.GroupKeyEntity>()
-                        for (i in 0 until groupKeysArr.length()) {
-                            val gkObj = groupKeysArr.optJSONObject(i) ?: continue
-                            val gId = gkObj.optLong("group_id")
-                            val gVer = gkObj.optLong("version")
-                            val gKeyB64 = gkObj.optString("key")
-                            if (gId > 0 && gVer > 0 && gKeyB64.isNotBlank()) {
-                                val gKeyBytes = Base64.getDecoder().decode(gKeyB64)
-                                keysToInsert.add(niel.kro.penik.data.local.entity.GroupKeyEntity(gId, gVer, gKeyBytes))
-                            }
-                        }
-                        if (keysToInsert.isNotEmpty()) {
-                            groupDao.saveGroupKeys(keysToInsert)
-                        }
-                    }
-                    val groupMessagesArr = root.optJSONArray("group_messages")
-                    if (groupMessagesArr != null) {
-                        val msgsToInsert = mutableListOf<niel.kro.penik.data.local.entity.GroupMessageEntity>()
-                        for (i in 0 until groupMessagesArr.length()) {
-                            val gmObj = groupMessagesArr.optJSONObject(i) ?: continue
-                            val gId = gmObj.optLong("group_id")
-                            val mId = gmObj.optString("message_id")
-                            if (gId > 0 && mId.isNotBlank()) {
-                                msgsToInsert.add(
-                                    niel.kro.penik.data.local.entity.GroupMessageEntity(
-                                        groupId = gId,
-                                        messageId = mId,
-                                        serverId = gmObj.optLong("server_id", 0L),
-                                        senderUserId = gmObj.optLong("sender_user_id"),
-                                        senderDeviceId = gmObj.optLong("sender_device_id", 0L),
-                                        keyVersion = gmObj.optLong("key_version", 1L),
-                                        text = gmObj.optString("text"),
-                                        createdAt = gmObj.optLong("created_at"),
-                                        sentByMe = gmObj.optBoolean("sent_by_me", false),
-                                        delivered = gmObj.optBoolean("delivered", true),
-                                        replyToMsgId = if (gmObj.has("reply_to_msg_id") && !gmObj.isNull("reply_to_msg_id")) gmObj.optString("reply_to_msg_id") else null,
-                                        editedAt = if (gmObj.has("edited_at") && !gmObj.isNull("edited_at")) gmObj.optLong("edited_at") else null
-                                    )
-                                )
-                            }
-                        }
-                        if (msgsToInsert.isNotEmpty()) {
-                            groupDao.insertGroupMessages(msgsToInsert)
-                        }
-                    }
-                    k
-                } else {
-                    decryptedBytes
-                }
-
-                val derivedPubKey = e2eeCrypto.derivePublicKey(privKey)
-
-                tokenStorage.savePrivateKey(privKey)
-                tokenStorage.savePublicKey(derivedPubKey)
-
-                // Rebind session to original device_id if restored identity key belongs to an existing device
-                val currentDeviceId = tokenStorage.getDeviceId()
-                val userId = tokenStorage.getUserId()
-                val derivedPubKeyB64 = Base64.getEncoder().encodeToString(derivedPubKey)
-
-                if (userId > 0L) {
-                    try {
-                        val requestedTargetId = (body.deviceId?.takeIf { it > 0L }) ?: (jsonDeviceId?.takeIf { it > 0L }) ?: 0L
-                        val challengeResp = apiService.deviceChallenge(
-                            niel.kro.penik.data.network.api.DeviceChallengeRequest(
-                                targetDeviceId = requestedTargetId,
-                                ikPub = derivedPubKeyB64
-                            )
-                        )
-                        if (challengeResp.isSuccessful && challengeResp.body() != null) {
-                            val challenge = challengeResp.body()!!
-                            val resolvedTargetDeviceId = if (challenge.targetDeviceId > 0L) challenge.targetDeviceId else requestedTargetId
-
-                            if (resolvedTargetDeviceId > 0L && resolvedTargetDeviceId != currentDeviceId) {
-                                val ephPubBytes = Base64.getDecoder().decode(challenge.ephPub)
-                                val nonceBytes = Base64.getDecoder().decode(challenge.nonce)
-
-                                val proofBytes = if (niel.kro.penik.data.crypto.RustCryptoCore.isAvailable()) {
-                                    niel.kro.penik.data.crypto.RustCryptoCore.computeDeviceRebindProof(
-                                        privKey,
-                                        ephPubBytes,
-                                        nonceBytes,
-                                        userId,
-                                        resolvedTargetDeviceId
-                                    )
-                                } else null
-
-                                if (proofBytes != null && proofBytes.size == 32) {
-                                    val proofB64 = Base64.getEncoder().encodeToString(proofBytes)
-                                    val rebindResp = apiService.deviceRebind(
-                                        niel.kro.penik.data.network.api.DeviceRebindRequest(
-                                            deviceId = resolvedTargetDeviceId,
-                                            nonce = challenge.nonce,
-                                            proof = proofB64
-                                        )
-                                    )
-                                    if (rebindResp.isSuccessful && rebindResp.body()?.success == true) {
-                                        val token = tokenStorage.getToken() ?: ""
-                                        val remappedDeviceId = rebindResp.body()?.deviceId ?: resolvedTargetDeviceId
-                                        tokenStorage.saveAuth(token, userId, remappedDeviceId)
-                                        android.util.Log.i("AuthRepository", "Device successfully re-bound to $remappedDeviceId")
-                                    } else {
-                                        android.util.Log.w("AuthRepository", "Device rebind rejected by server: ${rebindResp.code()} ${rebindResp.errorBody()?.string()}")
-                                    }
-                                } else {
-                                    android.util.Log.w("AuthRepository", "Failed to compute device rebind proof")
-                                }
-                            }
-                        } else {
-                            android.util.Log.w("AuthRepository", "Device challenge request failed: ${challengeResp.code()} ${challengeResp.errorBody()?.string()}")
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.w("AuthRepository", "Device rebind after restore failed: ${e.message}", e)
-                    }
-                }
-
-                // If the session was not re-bound to the backup's original device,
-                // the current device row may advertise a different public key.
-                // Publish the restored one so peers can reach this device.
-                val publishResult = ensureDeviceKeysPublished()
-                if (publishResult.isFailure) {
-                    return Result.failure(publishResult.exceptionOrNull()!!)
-                }
-
-                // Pull message history for the re-bound device
-                try {
-                    database.messageDao().deleteAllUndecryptedMessages()
-                    messageRepositoryProvider.get().syncHistory()
-                } catch (e: Exception) {
-                    android.util.Log.w("AuthRepository", "Failed to sync message history after restore: ${e.message}")
-                }
-
-                Result.success(Unit)
-            } else {
-                if (response.code() == 404) {
-                    Result.failure(Exception("Резервная копия ключей не найдена на сервере"))
-                } else {
-                    Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(Exception(mapException(e)))
-        }
-    }
-
-    suspend fun resetKeyBackup(newPassphrase: String): Result<Unit> {
-        return try {
-            val generated = e2eeCrypto.generateX25519KeyPair()
-            val privateKey = generated.first
-            val publicKey = generated.second
-
-            val allGroupKeys = groupDao.getAllKeys()
-            val groupKeysArr = org.json.JSONArray().apply {
-                allGroupKeys.forEach { gk ->
-                    put(org.json.JSONObject().apply {
-                        put("group_id", gk.groupId)
-                        put("version", gk.keyVersion)
-                        put("key", Base64.getEncoder().encodeToString(gk.key))
-                    })
-                }
-            }
-            val allGroupMessages = groupDao.getAllMessages()
-            val groupMessagesArr = org.json.JSONArray().apply {
-                allGroupMessages
-                    .sortedByDescending { it.createdAt }
-                    .take(3000)
-                    .forEach { gm ->
-                        put(org.json.JSONObject().apply {
-                            put("group_id", gm.groupId)
-                            put("message_id", gm.messageId)
-                            put("server_id", gm.serverId)
-                            put("sender_user_id", gm.senderUserId)
-                            put("sender_device_id", gm.senderDeviceId)
-                            put("key_version", gm.keyVersion)
-                            put("text", gm.text)
-                            put("created_at", gm.createdAt)
-                            put("sent_by_me", gm.sentByMe)
-                            put("delivered", gm.delivered)
-                            if (gm.replyToMsgId != null) put("reply_to_msg_id", gm.replyToMsgId)
-                            if (gm.editedAt != null) put("edited_at", gm.editedAt)
-                        })
-                    }
-            }
-            val currentDeviceId = tokenStorage.getDeviceId()
-            val payloadBytes = org.json.JSONObject().apply {
-                put("version", 3)
-                if (currentDeviceId > 0L) {
-                    put("device_id", currentDeviceId)
-                }
-                put("identity_key", Base64.getEncoder().encodeToString(privateKey))
-                put("group_keys", groupKeysArr)
-                put("group_messages", groupMessagesArr)
-            }.toString().toByteArray(Charsets.UTF_8)
-
-            val backup = e2eeCrypto.encryptKeyBackup(payloadBytes, newPassphrase)
-            val b64Blob = Base64.getEncoder().encodeToString(backup.encryptedBlob)
-            val b64Salt = Base64.getEncoder().encodeToString(backup.salt)
-            val b64Iv = Base64.getEncoder().encodeToString(backup.iv)
-
-            val response = apiService.uploadKeyBackup(
-                niel.kro.penik.data.network.api.KeyBackupRequest(
-                    encryptedBlob = b64Blob,
-                    salt = b64Salt,
-                    iv = b64Iv,
-                    deviceName = niel.kro.penik.ui.util.DeviceUtils.getDeviceMarketingName(),
-                    platform = clientPlatform()
-                )
-            )
-            if (response.isSuccessful) {
-                tokenStorage.savePrivateKey(privateKey)
-                tokenStorage.savePublicKey(publicKey)
-                // The device row is pinned to the previous public key
-                // (server rejects mutations with 409). Publish the new one so
-                // peers and group rotations actually target this device.
-                ensureDeviceKeysPublished().fold(
-                    onSuccess = { Result.success(Unit) },
-                    onFailure = { e -> Result.failure(e) }
-                )
-            } else {
-                Result.failure(Exception(parseServerError(response.code(), response.errorBody()?.string())))
-            }
-        } catch (e: Exception) {
-            Result.failure(Exception(mapException(e)))
         }
     }
 

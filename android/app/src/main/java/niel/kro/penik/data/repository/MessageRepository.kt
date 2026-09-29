@@ -1,29 +1,13 @@
 package niel.kro.penik.data.repository
 
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.async
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.long
-import kotlinx.serialization.json.boolean
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
 import niel.kro.penik.data.local.dao.MessageDao
 import niel.kro.penik.data.local.dao.GroupDao
 import niel.kro.penik.data.local.entity.MessageEntity
-import niel.kro.penik.data.local.entity.GroupEntity
-import niel.kro.penik.data.local.entity.GroupMemberEntity
-import niel.kro.penik.data.local.entity.GroupKeyEntity
-import niel.kro.penik.data.local.entity.GroupMessageEntity
 import niel.kro.penik.data.network.api.ApiService
 import niel.kro.penik.data.network.websocket.WebSocketEvent
 import niel.kro.penik.data.network.websocket.WebSocketManager
-import niel.kro.penik.data.crypto.E2EECrypto
-import niel.kro.penik.data.crypto.IdentityPinStore
-import niel.kro.penik.data.network.websocket.E2EDevicePayload
 import android.util.Log
 import java.util.UUID
 import javax.inject.Inject
@@ -37,8 +21,6 @@ class MessageRepository @Inject constructor(
     private val webSocketManager: WebSocketManager,
     private val tokenStorage: SecureTokenStorage,
     private val chatRepository: ChatRepository,
-    private val e2eeCrypto: E2EECrypto,
-    private val identityPins: IdentityPinStore,
 ) {
     private val bundleCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, List<niel.kro.penik.data.network.api.DeviceBundle>>>()
     private val bundleForceAt = java.util.concurrent.ConcurrentHashMap<Long, Long>()
@@ -47,23 +29,13 @@ class MessageRepository @Inject constructor(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
     )
 
-    /**
-     * Server message ids that failed decrypt even with freshly fetched key
-     * bundles. Retrying them on every sync is pointless (the private key is
-     * gone, e.g. reinstall without backup) and spams 100+ AEAD failures per
-     * message into logcat. Cleared when the peer's devices change or when a
-     * message finally decrypts.
-     */
-    private val hopelessDecrypt = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val historySyncInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun clearHopelessFor(userId: Long) {
-        hopelessDecrypt.removeIf { it.startsWith("dm:$userId:") }
     }
 
     private fun isPlaceholderName(name: String): Boolean {
         if (name.isBlank() || name == "Неизвестный") return true
-        // Stubs of the form "Пользователь 25" / "Пользователь #25".
         val rest = name.removePrefix("Пользователь").trim().removePrefix("#").trim()
         return name.startsWith("Пользователь") && rest.all { it.isDigit() } && rest.isNotEmpty()
     }
@@ -104,9 +76,6 @@ class MessageRepository @Inject constructor(
     }
 
     private suspend fun fetchKeyBundle(userId: Long, isSelf: Boolean, now: Long): List<niel.kro.penik.data.network.api.DeviceBundle> {
-        // Never cache failures: a 429/5xx during a storm would pin an empty
-        // device list for the whole TTL, and every send built from it is
-        // rejected by the server as "invalid devices count (1..50)".
         try {
             val response = if (isSelf) apiService.getKeyBundleSelf(userId) else apiService.getKeyBundle(userId)
             if (response.isSuccessful) {
@@ -125,265 +94,6 @@ class MessageRepository @Inject constructor(
     fun invalidateKeyBundle(userId: Long) {
         bundleCache.remove(userId)
         bundleForceAt.remove(userId)
-    }
-
-    suspend fun isChunkedEncryptionSupported(peerUserId: Long): Boolean {
-        return try {
-            val myId = tokenStorage.getUserId()
-            val isSelfChat = peerUserId == myId
-            val recipientBundles = getKeyBundleCached(peerUserId, isSelf = isSelfChat)
-            if (recipientBundles.isEmpty()) return false
-            if (recipientBundles.any { it.cryptoVersion < 2 }) return false
-            if (!isSelfChat) {
-                val selfBundles = getKeyBundleCached(myId, isSelf = true)
-                if (selfBundles.any { it.cryptoVersion < 2 }) return false
-            }
-            true
-        } catch (e: Exception) {
-            Log.w("PenikMsg", "Failed to check crypto version support for user $peerUserId", e)
-            false
-        }
-    }
-
-    suspend fun exportPairingHistory(secret: ByteArray): String {
-        val myId = tokenStorage.getUserId()
-        val messages = messageDao.getAllMessages().map { message ->
-            buildJsonObject {
-                message.serverId?.let { put("msg_id", it) } ?: put("msg_id", message.localId)
-                put("chat_id", message.chatUserId)
-                put("chat_user_id", message.chatUserId)
-                put("sender_id", message.senderId)
-                put("recipient_id", if (message.senderId == myId) message.chatUserId else myId)
-                put("text", message.text)
-                put("created_at", message.timestamp)
-                put("delivered", message.delivered)
-                put("delivered_at", message.deliveredAt ?: 0L)
-                put("read", message.read)
-                message.serverId?.let { put("server_id", it) }
-                message.localId.takeIf { it.isNotBlank() }?.let { put("client_msg_id", it) }
-            }
-        }
-        val contacts = chatRepository.getAllChats().first().map { chat ->
-            buildJsonObject {
-                put("user_id", chat.userId)
-                put("nickname", chat.nickname)
-                put("name", chat.name)
-                chat.avatarUrl?.let { put("avatar_url", it) }
-            }
-        }
-        val groups = groupDao.getAllGroups().map { group ->
-            buildJsonObject {
-                put("id", group.id)
-                put("name", group.name)
-                put("owner_user_id", group.ownerUserId)
-                group.role?.let { put("role", it) }
-                put("status", group.status)
-                put("membership_version", group.membershipVersion)
-                put("current_key_version", group.currentKeyVersion)
-                put("created_at", group.createdAt)
-            }
-        }
-        val members = groupDao.getAllMembers().map { member ->
-            buildJsonObject {
-                put("group_id", member.groupId)
-                put("user_id", member.userId)
-                put("role", member.role)
-                put("status", member.status)
-                put("joined_at", member.joinedAt)
-                put("name", member.name)
-                put("nickname", member.nickname)
-                put("online", member.online)
-                put("last_seen", member.lastSeen)
-            }
-        }
-        val keys = groupDao.getAllKeys().map { key ->
-            buildJsonObject {
-                put("group_id", key.groupId)
-                put("key_version", key.keyVersion)
-                put("key", encodeUrlBase64(key.key))
-            }
-        }
-        val groupMessages = groupDao.getAllMessages().map { message ->
-            buildJsonObject {
-                put("group_id", message.groupId)
-                put("message_id", message.messageId)
-                put("server_id", message.serverId)
-                put("sender_user_id", message.senderUserId)
-                put("sender_device_id", message.senderDeviceId)
-                put("key_version", message.keyVersion)
-                put("text", message.text)
-                put("created_at", message.createdAt)
-                put("sent_by_me", message.sentByMe)
-                put("delivered", message.delivered)
-            }
-        }
-        val payload = buildJsonObject {
-            put("version", 2)
-            putJsonArray("messages") { messages.forEach { add(it) } }
-            putJsonArray("contacts") { contacts.forEach { add(it) } }
-            putJsonArray("groups") { groups.forEach { add(it) } }
-            putJsonArray("group_members") { members.forEach { add(it) } }
-            putJsonArray("group_keys") { keys.forEach { add(it) } }
-            putJsonArray("group_messages") { groupMessages.forEach { add(it) } }
-        }
-        val encrypted = e2eeCrypto.encrypt(
-            payload.toString().toByteArray(Charsets.UTF_8), secret, "penik-pairing-history-v1"
-        )
-        val envelope = buildJsonObject {
-            put("ciphertext", encodeUrlBase64(encrypted.ciphertext))
-            put("salt", encodeUrlBase64(encrypted.salt))
-            put("nonce", encodeUrlBase64(encrypted.nonce))
-        }
-        return encodeUrlBase64(envelope.toString().toByteArray(Charsets.UTF_8))
-    }
-
-    private fun encodeUrlBase64(bytes: ByteArray): String =
-        java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
-
-    suspend fun importPairingHistory(encoded: String, secret: ByteArray) {
-        val raw = decodeUrlBase64(encoded)
-        val envelope = kotlinx.serialization.json.Json.parseToJsonElement(String(raw)).jsonObject
-        val decoded = e2eeCrypto.decrypt(
-            decodeUrlBase64(envelope["ciphertext"]!!.jsonPrimitive.content), secret,
-            decodeUrlBase64(envelope["salt"]!!.jsonPrimitive.content),
-            decodeUrlBase64(envelope["nonce"]!!.jsonPrimitive.content),
-            "penik-pairing-history-v1"
-        )
-        val decodedJson = kotlinx.serialization.json.Json.parseToJsonElement(String(decoded)).jsonObject
-        
-        // 1. Import 1:1 messages
-        val messages = decodedJson["messages"]?.jsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
-        val imported = messages.mapNotNull {
-            val o = it.jsonObject
-            val chatId = o["chat_id"]!!.jsonPrimitive.content.toLong()
-            val senderId = o["sender_id"]!!.jsonPrimitive.content.toLong()
-            val timestamp = o["created_at"]!!.jsonPrimitive.content.toLong()
-            val text = (o["text"] ?: o["plaintext"])!!.jsonPrimitive.content
-            val serverId = (o["server_id"] ?: o["msg_id"])?.jsonPrimitive?.content?.toLongOrNull()
-            
-            // Delete any existing undecrypted message in this chat at this timestamp
-            messageDao.deleteUndecryptedMessagesAt(chatId, serverId, timestamp)
-            
-            if (messageDao.findMatchingMessage(chatId, senderId, timestamp, text) != null) return@mapNotNull null
-            
-            MessageEntity(
-                localId = o["msg_id"]!!.jsonPrimitive.content,
-                serverId = serverId,
-                chatUserId = chatId,
-                senderId = senderId,
-                text = text,
-                timestamp = timestamp,
-                sentByMe = o["sender_id"]!!.jsonPrimitive.content.toLong() == tokenStorage.getUserId(),
-                delivered = o["delivered"]?.asBoolean() ?: false,
-                read = o["read"]?.asBoolean() ?: false
-            )
-        }
-        messageDao.insertMessages(imported)
-
-        // 1.5 Import Contacts (Chats)
-        val contacts = decodedJson["contacts"]?.jsonArray
-        contacts?.forEach {
-            val o = it.jsonObject
-            val userId = o["user_id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["userId"]!!.jsonPrimitive.content.toLong()
-            val nickname = o["nickname"]?.jsonPrimitive?.content ?: ""
-            val name = o["name"]?.jsonPrimitive?.content ?: ""
-            val avatarUrl = o["avatarUrl"]?.jsonPrimitive?.content ?: o["avatar_url"]?.jsonPrimitive?.content
-            
-            chatRepository.getOrCreateChat(userId, nickname, name, avatarUrl)
-            
-            val lastMsg = o["last_message"]?.jsonPrimitive?.content ?: o["lastMessage"]?.jsonPrimitive?.content
-            val lastTs = o["last_ts"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["lastMessageTimestamp"]?.jsonPrimitive?.content?.toLongOrNull()
-            if (lastMsg != null && lastTs != null) {
-                chatRepository.updateLastMessage(userId, lastMsg, lastTs, name, nickname)
-            }
-        }
-
-        // 2. Import Groups
-        val groups = decodedJson["groups"]?.jsonArray
-        val importedGroups = groups?.map {
-            val o = it.jsonObject
-            GroupEntity(
-                id = o["id"]!!.jsonPrimitive.content.toLong(),
-                name = o["name"]!!.jsonPrimitive.content,
-                ownerUserId = o["ownerUserId"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["owner_user_id"]!!.jsonPrimitive.content.toLong(),
-                role = o["role"]?.jsonPrimitive?.content,
-                status = o["status"]?.jsonPrimitive?.content ?: "active",
-                membershipVersion = o["membershipVersion"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["membership_version"]?.jsonPrimitive?.content?.toLongOrNull() ?: 1L,
-                currentKeyVersion = o["currentKeyVersion"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["current_key_version"]?.jsonPrimitive?.content?.toLongOrNull() ?: 1L,
-                createdAt = o["createdAt"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["created_at"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
-            )
-        }.orEmpty()
-        for (g in importedGroups) {
-            groupDao.upsertGroup(g)
-        }
-
-        // 3. Import Group Members
-        val groupMembers = decodedJson["group_members"]?.jsonArray
-        val importedMembers = groupMembers?.map {
-            val o = it.jsonObject
-            GroupMemberEntity(
-                groupId = o["groupId"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["group_id"]!!.jsonPrimitive.content.toLong(),
-                userId = o["userId"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["user_id"]!!.jsonPrimitive.content.toLong(),
-                role = o["role"]!!.jsonPrimitive.content,
-                status = o["status"]!!.jsonPrimitive.content,
-                joinedAt = o["joinedAt"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["joined_at"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
-                name = o["name"]?.jsonPrimitive?.content ?: "",
-                nickname = o["nickname"]?.jsonPrimitive?.content ?: ""
-            )
-        }.orEmpty()
-        if (importedMembers.isNotEmpty()) {
-            groupDao.insertMembers(importedMembers)
-        }
-
-        // 4. Import Group Keys
-        val groupKeys = decodedJson["group_keys"]?.jsonArray
-        val importedKeys = groupKeys?.map {
-            val o = it.jsonObject
-            GroupKeyEntity(
-                groupId = o["group_id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["groupId"]!!.jsonPrimitive.content.toLong(),
-                keyVersion = o["key_version"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["keyVersion"]!!.jsonPrimitive.content.toLong(),
-                key = decodeUrlBase64(o["key"]!!.jsonPrimitive.content)
-            )
-        }.orEmpty()
-        for (k in importedKeys) {
-            groupDao.saveGroupKey(k)
-        }
-
-        // 5. Import Group Messages
-        val groupMessages = decodedJson["group_messages"]?.jsonArray
-        val importedGroupMessages = groupMessages?.map {
-            val o = it.jsonObject
-            val text = (o["text"] ?: o["plaintext"])!!.jsonPrimitive.content
-            GroupMessageEntity(
-                groupId = o["group_id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["groupId"]!!.jsonPrimitive.content.toLong(),
-                messageId = (o["message_id"] ?: o["messageId"])!!.jsonPrimitive.content,
-                serverId = o["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["serverId"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
-                senderUserId = o["sender_user_id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["senderUserId"]!!.jsonPrimitive.content.toLong(),
-                senderDeviceId = o["sender_device_id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["senderDeviceId"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
-                keyVersion = o["key_version"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["keyVersion"]!!.jsonPrimitive.content.toLong(),
-                text = text,
-                createdAt = o["created_at"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["createdAt"]!!.jsonPrimitive.content.toLong(),
-                sentByMe = (o["sender_user_id"]?.jsonPrimitive?.content?.toLongOrNull() ?: o["senderUserId"]!!.jsonPrimitive.content.toLong()) == tokenStorage.getUserId(),
-                delivered = o["delivered"]?.asBoolean() ?: false
-            )
-        }.orEmpty()
-        for (gm in importedGroupMessages) {
-            groupDao.upsertMessage(gm)
-        }
-
-        val importedChatIds = imported.map { it.chatUserId }.distinct()
-        for (chatId in importedChatIds) {
-            updateChatLastMessage(chatId)
-        }
-    }
-
-    private fun decodeUrlBase64(value: String): ByteArray = java.util.Base64.getUrlDecoder().decode(
-        value.trim().replace('+', '-').replace('/', '_').let { it + "=".repeat((4 - it.length % 4) % 4) }
-    )
-
-    private fun kotlinx.serialization.json.JsonElement.asBoolean(): Boolean = when {
-        jsonPrimitive.isString -> jsonPrimitive.content.toBooleanStrictOrNull() ?: false
-        else -> jsonPrimitive.content == "1" || jsonPrimitive.content.equals("true", ignoreCase = true)
     }
 
     fun getMessagesForChat(chatUserId: Long, isE2EE: Boolean? = null): Flow<List<MessageEntity>> {
@@ -422,11 +132,7 @@ class MessageRepository @Inject constructor(
     ): String {
         val clientMsgId = existingClientMsgId ?: UUID.randomUUID().toString()
         val myId = tokenStorage.getUserId()
-        val isSelfChat = toUserId == myId
-        val chatIsE2EE = isE2EE ?: (chatRepository.getChat(toUserId)?.isE2EE ?: false)
 
-        Log.d("PenikMsg", "sendMessage: clientMsgId=$clientMsgId, toUserId=$toUserId, isSelfChat=$isSelfChat, isE2EE=$chatIsE2EE, textLength=${text.length}")
-        // Match web client reply logic: use parent's clientMsgId (UUID) or serverId
         val resolvedReplyToMsgId = if (!replyToMsgId.isNullOrBlank()) {
             val parentObj = messageDao.findMessageByLocalId(replyToMsgId) 
                 ?: messageDao.findMessageByServerId(replyToMsgId.toLongOrNull() ?: -1L)
@@ -444,7 +150,7 @@ class MessageRepository @Inject constructor(
                 sentByMe = true,
                 delivered = false,
                 replyToMsgId = resolvedReplyToMsgId,
-                isE2EE = chatIsE2EE
+                isE2EE = false
             )
             messageDao.insertMessage(entity)
         } else {
@@ -459,7 +165,6 @@ class MessageRepository @Inject constructor(
     suspend fun retryPendingMessages() {
         val pending = messageDao.getPendingMessages()
         if (pending.isEmpty()) return
-        Log.d("PenikMsg", "retryPendingMessages: found ${pending.size} pending messages")
         for (msg in pending) {
             runCatching {
                 sendMessage(
@@ -488,7 +193,6 @@ class MessageRepository @Inject constructor(
     }
 
     suspend fun handleMsgAck(event: WebSocketEvent.MsgAck) {
-        Log.d("PenikMsg", "handleMsgAck: clientMsgId=${event.clientMsgId} -> serverMsgId=${event.serverMsgId}")
         messageDao.acknowledgeMessage(event.clientMsgId, event.serverMsgId)
     }
 
@@ -509,9 +213,7 @@ class MessageRepository @Inject constructor(
     suspend fun markMessageAsRead(serverId: Long) {
         val existing = messageDao.findMessageByServerId(serverId)
         if (existing != null) {
-            val isFailed = existing.text.startsWith("[Ошибка") ||
-                           existing.text.startsWith("[Сообщение не расшифровано") ||
-                           existing.text.startsWith("[Не удалось расшифровать")
+            val isFailed = existing.text.startsWith("[Ошибка")
             if (isFailed) return
         }
         messageDao.markRead(serverId)
@@ -554,7 +256,6 @@ class MessageRepository @Inject constructor(
     suspend fun handleMsgRecvEncrypted(event: WebSocketEvent.MsgRecvEncrypted): Pair<String, Boolean> {
         val myId = tokenStorage.getUserId()
         val sentByMe = event.fromUserId == myId
-        val isSelfChat = sentByMe && event.chatUserId == myId
 
         var existing = messageDao.findMessageByServerId(event.msgId)
         if (existing == null && !event.clientMsgId.isNullOrBlank()) {
@@ -569,72 +270,15 @@ class MessageRepository @Inject constructor(
                 messageDao.acknowledgeMessage(existing.localId, event.msgId)
             }
         }
+
+        val text = event.plaintext ?: ""
         if (existing != null) {
-            val text = existing.text
-            val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
-            if (!isFailed) {
-                if (!sentByMe) {
-                    webSocketManager.sendDelivered(event.msgId)
-                }
-                return Pair(text, !sentByMe)
+            val updated = existing.copy(text = text, isE2EE = false)
+            messageDao.insertMessage(updated)
+            if (!sentByMe) {
+                webSocketManager.sendDelivered(event.msgId)
             }
-        }
-
-        if (event.isE2EE && event.fromIdentityKey.isNotEmpty()) {
-            val pinResult = identityPins.verify(event.fromUserId, event.fromDeviceId, event.fromIdentityKey)
-            if (pinResult == niel.kro.penik.data.crypto.IdentityPinStore.Result.UPDATED) {
-                val sysEntity = niel.kro.penik.data.local.entity.MessageEntity(
-                    localId = "sys-keychange-${System.currentTimeMillis()}-${event.fromUserId}",
-                    chatUserId = event.chatUserId,
-                    senderId = 0,
-                    text = "⚠️ Код безопасности изменился!",
-                    timestamp = toMs(event.ts) - 1,
-                    sentByMe = false,
-                    delivered = true,
-                    isE2EE = true
-                )
-                messageDao.insertMessage(sysEntity)
-            }
-        }
-
-        var decryptSuccess = true
-        val decryptedText = if (!event.plaintext.isNullOrEmpty()) {
-            event.plaintext
-        } else {
-            try {
-                decryptMessagePayload(
-                    myDeviceId = tokenStorage.getDeviceId(),
-                    fromIdentityKey = event.fromIdentityKey,
-                    ciphertext = event.ciphertext,
-                    salt = event.salt,
-                    nonce = event.nonce,
-                    senderUserId = event.fromUserId,
-                    recipientUserId = if (sentByMe) event.chatUserId else myId,
-                    clientMsgId = event.clientMsgId ?: "",
-                    timestamp = event.ts,
-                    v = event.v
-                )
-            } catch (e: Exception) {
-                decryptSuccess = false
-                if (isSelfChat) {
-                    return Pair("", false)
-                }
-                if (event.msgId > 0 && event.fromDeviceId > 0) {
-                    webSocketManager.sendMsgRetryReq(event.msgId, event.fromDeviceId)
-                }
-                "[Ошибка расшифрования сообщения: ${e.message}]"
-            }
-        }
-
-        if (existing != null) {
-            if (decryptSuccess) {
-                val updated = existing.copy(text = decryptedText, isE2EE = event.isE2EE)
-                messageDao.insertMessage(updated)
-                if (!sentByMe) {
-                    webSocketManager.sendDelivered(event.msgId)
-                }
-            }
-            return Pair(decryptedText, !sentByMe)
+            return Pair(text, !sentByMe)
         }
 
         val entity = MessageEntity(
@@ -642,18 +286,18 @@ class MessageRepository @Inject constructor(
             serverId = event.msgId,
             chatUserId = event.chatUserId,
             senderId = event.fromUserId,
-            text = decryptedText,
+            text = text,
             timestamp = toMs(event.ts),
             sentByMe = sentByMe,
             delivered = true,
             replyToMsgId = event.replyToMsgId,
-            isE2EE = event.isE2EE
+            isE2EE = false
         )
         messageDao.insertMessage(entity)
-        if (!sentByMe && decryptSuccess) {
+        if (!sentByMe) {
             webSocketManager.sendDelivered(event.msgId)
         }
-        return Pair(decryptedText, !sentByMe)
+        return Pair(text, !sentByMe)
     }
 
     suspend fun handleOfflineBatch(event: WebSocketEvent.OfflineBatch) {
@@ -681,46 +325,16 @@ class MessageRepository @Inject constructor(
     suspend fun handleOfflineBatchEncrypted(event: WebSocketEvent.OfflineBatchEncrypted): List<DecryptedOfflineMsg> {
         val myId = tokenStorage.getUserId()
         val decryptedList = mutableListOf<DecryptedOfflineMsg>()
-        val successMsgIds = mutableListOf<Long>()
         val entities = buildList {
             event.msgs.forEach { msg ->
                 val isSelfChat = msg.fromUserId == myId && msg.chatUserId == myId
                 val existing = messageDao.findMessageByServerId(msg.msgId)
+                val text = ""
                 if (existing == null) {
-                    var decryptSuccess = true
-                    val decryptedText = try {
-                        decryptMessagePayload(
-                            myDeviceId = tokenStorage.getDeviceId(),
-                            fromIdentityKey = msg.fromIdentityKey,
-                            ciphertext = msg.ciphertext,
-                            salt = msg.salt,
-                            nonce = msg.nonce,
-                            senderUserId = msg.fromUserId,
-                            recipientUserId = if (msg.fromUserId == myId) msg.chatUserId else myId,
-                            clientMsgId = msg.clientMsgId ?: "",
-                            timestamp = msg.ts
-                        )
-                    } catch (e: Exception) {
-                        val fallback = tryFallbackDecrypt(msg, myId)
-                        if (fallback != null) {
-                            fallback
-                        } else {
-                            decryptSuccess = false
-                            if (isSelfChat) {
-                                // Encrypted for another device of ours — skip silently.
-                                return@forEach
-                            }
-                            "[Ошибка расшифрования сообщения: ${e.message}]"
-                        }
-                    }
-                    if (decryptSuccess) {
-                        successMsgIds.add(msg.msgId)
-                    }
-                    // Only expose self-chat messages that we successfully decrypted.
                     if (!isSelfChat) {
                         decryptedList.add(DecryptedOfflineMsg(
                             chatUserId = msg.chatUserId,
-                            text = decryptedText,
+                            text = text,
                             ts = msg.ts,
                             isIncoming = msg.fromUserId != myId,
                             msgId = msg.msgId
@@ -731,52 +345,18 @@ class MessageRepository @Inject constructor(
                         serverId = msg.msgId,
                         chatUserId = msg.chatUserId,
                         senderId = msg.fromUserId,
-                        text = decryptedText,
+                        text = text,
                         timestamp = toMs(msg.ts),
                         sentByMe = msg.fromUserId == myId,
                         delivered = true,
                         replyToMsgId = msg.replyToMsgId
                     ))
-                } else {
-                    var text = existing.text
-                    val isFailed = text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")
-                    if (isFailed) {
-                        try {
-                            val recoveredText = try {
-                                decryptMessagePayload(
-                                    myDeviceId = tokenStorage.getDeviceId(),
-                                    fromIdentityKey = msg.fromIdentityKey,
-                                    ciphertext = msg.ciphertext,
-                                    salt = msg.salt,
-                                    nonce = msg.nonce,
-                                    senderUserId = msg.fromUserId,
-                                    recipientUserId = if (msg.fromUserId == myId) msg.chatUserId else myId,
-                                    clientMsgId = msg.clientMsgId ?: "",
-                                    timestamp = msg.ts
-                                )
-                            } catch (_: Exception) {
-                                tryFallbackDecrypt(msg, myId) ?: throw Exception("Fallback decryption failed")
-                            }
-                            messageDao.insertMessage(existing.copy(text = recoveredText))
-                            text = recoveredText
-                        } catch (_: Exception) {}
-                    }
-                    if (!text.startsWith("[Ошибка") && !text.startsWith("[Сообщение не расшифровано") && !isSelfChat) {
-                        decryptedList.add(DecryptedOfflineMsg(
-                            chatUserId = msg.chatUserId,
-                            text = text,
-                            ts = msg.ts,
-                            isIncoming = msg.fromUserId != myId,
-                            msgId = msg.msgId
-                        ))
-                    }
                 }
             }
         }
         messageDao.insertMessages(entities)
-        // Send delivery receipts only for messages from other users that were successfully decrypted.
         event.msgs.forEach { msg ->
-            if (msg.fromUserId != myId && successMsgIds.contains(msg.msgId)) {
+            if (msg.fromUserId != myId) {
                 webSocketManager.sendDelivered(msg.msgId)
             }
         }
@@ -817,11 +397,7 @@ class MessageRepository @Inject constructor(
         try {
             reconcileLocalChats()
             val allLocal = messageDao.getAllMessages()
-            val hasUndecrypted = allLocal.any { msg ->
-                val hopelessKey = "dm:${msg.chatUserId}:${msg.serverId}"
-                !hopelessDecrypt.contains(hopelessKey) && (msg.text.startsWith("[Ошибка") || msg.text.startsWith("[Сообщение не расшифровано"))
-            }
-            val maxServerId = if (chatUserId == null && beforeId == null && !hasUndecrypted) {
+            val maxServerId = if (chatUserId == null && beforeId == null) {
                 allLocal.mapNotNull { it.serverId }.maxOrNull()
             } else null
 
@@ -835,7 +411,6 @@ class MessageRepository @Inject constructor(
                 val messages = response.body() ?: emptyList()
                 val myId = tokenStorage.getUserId()
                 val newMessages = mutableListOf<HistoryMsgDecrypted>()
-                Log.d("PenikMsg", "syncHistory: received ${messages.size} history items from server (afterId=$maxServerId, beforeId=$beforeId, chatUserId=$chatUserId)")
                 val entities = buildList {
                     messages.forEach { msg ->
                         if (msg.senderId == myId && !msg.clientMsgId.isNullOrBlank()) {
@@ -854,126 +429,20 @@ class MessageRepository @Inject constructor(
                                 messageDao.acknowledgeMessage(existing.localId, msg.msgId)
                             }
                         }
-                        Log.d("PenikMsg", "syncHistory item: msgId=${msg.msgId}, clientMsgId=${msg.clientMsgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, existingLocalId=${existing?.localId}")
-                        val isOwnOutgoing = msg.senderId == myId
                         val isEdited = msg.editedAt != null && (existing == null || existing.editedAt == null || (msg.editedAt * 1000 > (existing.editedAt ?: 0L)))
-                        val isFailed = existing?.text?.startsWith("[Ошибка") == true || existing?.text?.startsWith("[Сообщение не расшифровано") == true
-                        if (existing == null || isEdited || isFailed) {
-                            var isDecryptFailed = false
-                            val text = if (msg.plaintext != null) {
-                                msg.plaintext
-                            } else if (msg.ciphertext != null && msg.encryptionSalt != null && msg.encryptionNonce != null) {
-                                // Already proven undecryptable with fresh bundles: don't burn
-                                // 100+ AEAD attempts on every sync; retry only after the
-                                // peer's devices change (which clears this marker).
-                                val hopelessKey = "dm:${msg.chatUserId}:${msg.msgId}"
-                                if (hopelessDecrypt.contains(hopelessKey)) {
-                                    isDecryptFailed = true
-                                    existing?.text?.takeIf { it.isNotBlank() } ?: "[Сообщение не расшифровано]"
-                                } else try {
-                                    val ciphertextBytes = java.util.Base64.getDecoder().decode(msg.ciphertext)
-                                    val saltBytes = java.util.Base64.getDecoder().decode(msg.encryptionSalt)
-                                    val nonceBytes = java.util.Base64.getDecoder().decode(msg.encryptionNonce)
-
-                                    val isOwnSender = msg.senderId == myId
-                                    val isSelfFanout = isOwnSender && msg.recipientId == myId
-                                    val isDirectOutgoing = isOwnSender && msg.recipientId != myId
-
-                                    val primaryTargetUserId = when {
-                                        isSelfFanout -> myId
-                                        isDirectOutgoing -> msg.recipientId.takeIf { it > 0 } ?: msg.chatUserId
-                                        else -> msg.senderId
-                                    }
-
-                                    val primaryTargetDeviceId = when {
-                                        isSelfFanout -> msg.senderDeviceId
-                                        isDirectOutgoing -> msg.recipientDeviceId
-                                        else -> msg.senderDeviceId
-                                    }
-
-                                    suspend fun collectCandidates(force: Boolean): List<niel.kro.penik.data.network.api.DeviceBundle> {
-                                        val primaryDevices = getKeyBundleCached(primaryTargetUserId, isSelf = (primaryTargetUserId == myId), forceRefresh = force)
-                                        val chatUserDevices = if (msg.chatUserId != primaryTargetUserId) {
-                                            getKeyBundleCached(msg.chatUserId, isSelf = (msg.chatUserId == myId), forceRefresh = force)
-                                        } else emptyList()
-                                        val myDevices = if (myId != primaryTargetUserId && myId != msg.chatUserId) {
-                                            getKeyBundleCached(myId, isSelf = true, forceRefresh = force)
-                                        } else emptyList()
-                                        return buildList {
-                                            if (primaryTargetDeviceId != null && primaryTargetDeviceId > 0) {
-                                                primaryDevices.find { it.deviceId == primaryTargetDeviceId }?.let { add(it) }
-                                            }
-                                            primaryDevices.forEach { d ->
-                                                if (none { it.deviceId == d.deviceId }) add(d)
-                                            }
-                                            chatUserDevices.forEach { d ->
-                                                if (none { it.deviceId == d.deviceId }) add(d)
-                                            }
-                                            myDevices.forEach { d ->
-                                                if (none { it.deviceId == d.deviceId }) add(d)
-                                            }
-                                        }
-                                    }
-
-                                    suspend fun tryCandidates(devices: List<niel.kro.penik.data.network.api.DeviceBundle>): String? {
-                                        val decryptTs = msg.editedAt ?: msg.createdAt
-                                        for (device in devices) {
-                                            val ik = runCatching { java.util.Base64.getDecoder().decode(device.identityKey) }.getOrNull() ?: continue
-                                            val res = runCatching {
-                                                decryptMessagePayload(
-                                                    myDeviceId = tokenStorage.getDeviceId(),
-                                                    fromIdentityKey = ik,
-                                                    ciphertext = ciphertextBytes,
-                                                    salt = saltBytes,
-                                                    nonce = nonceBytes,
-                                                    senderUserId = msg.senderId,
-                                                    recipientUserId = if (isOwnSender) msg.chatUserId else myId,
-                                                    clientMsgId = msg.clientMsgId ?: "",
-                                                    timestamp = decryptTs
-                                                )
-                                            }.getOrNull()
-                                            if (res != null) return res
-                                        }
-                                        return null
-                                    }
-
-                                    // The peer may have reinstalled since our bundle snapshot:
-                                    // retry once with force-refreshed bundles before giving up.
-                                    var decrypted = tryCandidates(collectCandidates(false))
-                                    if (decrypted == null) {
-                                        decrypted = tryCandidates(collectCandidates(true))
-                                    }
-
-                                    if (decrypted != null) {
-                                        hopelessDecrypt.remove(hopelessKey)
-                                    } else {
-                                        hopelessDecrypt.add(hopelessKey)
-                                        throw Exception("Could not decrypt with any device key (peer may have reinstalled without backup)")
-                                    }
-                                    decrypted
-                                } catch (e: Exception) {
-                                    Log.e("PenikMsg", "FAILED TO DECRYPT HISTORY MSG msgId=${msg.msgId}, senderId=${msg.senderId}, senderDeviceId=${msg.senderDeviceId}, recipientDeviceId=${msg.recipientDeviceId}, clientMsgId=${msg.clientMsgId}", e)
-                                    isDecryptFailed = true
-                                    existing?.text?.takeIf { it.isNotBlank() && !it.startsWith("[Сообщение не расшифровано") && !it.startsWith("[Ошибка") } ?: "[Сообщение не расшифровано]"
-                                }
-                            } else {
-                                existing?.text?.takeIf { it.isNotBlank() && !it.startsWith("[Сообщение не расшифровано") && !it.startsWith("[Ошибка") } ?: "[Сообщение не расшифровано]"
-                            }
-                            
-                            val finalText = if (text.isBlank()) "[Сообщение не расшифровано]" else text
+                        if (existing == null || isEdited) {
+                            val text = msg.plaintext ?: ""
                             val editedAtMs = msg.editedAt?.let { it * 1000 }
                             if (existing != null) {
-                                if (!isDecryptFailed && finalText.isNotBlank() && !finalText.startsWith("[Сообщение не расшифровано") && !finalText.startsWith("[Ошибка")) {
-                                    messageDao.updateMessageText(existing.localId, msg.msgId, finalText, editedAtMs ?: existing.editedAt ?: 0L)
-                                }
+                                messageDao.updateMessageText(existing.localId, msg.msgId, text, editedAtMs ?: existing.editedAt ?: 0L)
                             } else {
-                                newMessages.add(HistoryMsgDecrypted(msg.chatUserId, finalText, msg.senderId, msg.createdAt * 1000))
+                                newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
                                 add(MessageEntity(
                                     localId = msg.clientMsgId ?: "server-${msg.msgId}",
                                     serverId = msg.msgId,
                                     chatUserId = msg.chatUserId,
                                     senderId = msg.senderId,
-                                    text = finalText,
+                                    text = text,
                                     timestamp = msg.createdAt * 1000,
                                     sentByMe = msg.senderId == myId,
                                     delivered = msg.delivered == 1,
@@ -981,12 +450,11 @@ class MessageRepository @Inject constructor(
                                     read = msg.read == 1,
                                     replyToMsgId = msg.replyToMsgId,
                                     editedAt = editedAtMs,
-                                    isE2EE = msg.isE2EE
+                                    isE2EE = false
                                 ))
                             }
                         }
                         if (existing != null) {
-                            // Update existing message status if changed
                             if (existing.delivered != (msg.delivered == 1) || existing.read != (msg.read == 1)) {
                                 messageDao.updateStatus(
                                     serverId = msg.msgId,
@@ -995,15 +463,12 @@ class MessageRepository @Inject constructor(
                                     deliveredAt = msg.deliveredAt ?: System.currentTimeMillis()
                                 )
                             }
-                            val text = existing.text.takeIf { it.isNotBlank() } ?: "[Сообщение не расшифровано]"
-                            newMessages.add(HistoryMsgDecrypted(msg.chatUserId, text, msg.senderId, msg.createdAt * 1000))
+                            newMessages.add(HistoryMsgDecrypted(msg.chatUserId, existing.text, msg.senderId, msg.createdAt * 1000))
                         }
                     }
                 }
                 messageDao.insertMessages(entities)
 
-                // WebSocket delivery notifications can be missed while Android is
-                // offline. Reconcile sent-message state from the REST endpoint.
                 messages.filter { it.senderId == myId }
                     .map { it.chatUserId }
                     .distinct()
@@ -1016,7 +481,6 @@ class MessageRepository @Inject constructor(
                         }
                     }
 
-                // Ensure all contacts exist in chat list
                 val allChatUserIds = messages.map { it.chatUserId }.distinct()
                 for (peerId in allChatUserIds) {
                     val existing = chatRepository.getChat(peerId)
@@ -1037,7 +501,7 @@ class MessageRepository @Inject constructor(
 
                 newMessages.groupBy { it.chatUserId }.forEach { (chatUserId, chatMessages) ->
                     val latest = chatMessages.maxByOrNull { it.createdAt }
-                    if (latest != null && !latest.text.startsWith("[Ошибка") && !latest.text.startsWith("[Сообщение не расшифровано")) {
+                    if (latest != null) {
                         val existing = chatRepository.getChat(chatUserId)
                         val profile = if (existing == null || existing.name.isBlank() || isPlaceholderName(existing.name)) {
                             try {
@@ -1056,8 +520,6 @@ class MessageRepository @Inject constructor(
                     }
                 }
 
-                // Recalculate unread counts strictly from actual unread incoming messages in DB
-                // and guarantee every chat with existing messages has a row in the chats table
                 val allEntities = messageDao.getAllMessages()
                 allEntities.groupBy { it.chatUserId }.forEach { (chatUserId, msgs) ->
                     val unreadCount = msgs.count { !it.sentByMe && !it.read && it.text != "[DELETED]" }
@@ -1066,9 +528,6 @@ class MessageRepository @Inject constructor(
                     val existingChat = chatRepository.getChat(chatUserId)
                     val latestMsg = msgs.filter { it.text != "[DELETED]" }.maxByOrNull { it.timestamp }
                     if (latestMsg != null) {
-                        // A "Пользователь N" stub saved during an outage (401/429)
-                        // counts as missing — otherwise the real name is never
-                        // refetched and every chat keeps showing the user id.
                         val profile = if (existingChat == null || existingChat.name.isBlank() || isPlaceholderName(existingChat.name)) {
                             try {
                                 apiService.getUserProfile(chatUserId).body()
@@ -1094,151 +553,6 @@ class MessageRepository @Inject constructor(
         }
     }
 
-    private fun decryptMessagePayload(
-        myDeviceId: Long,
-        fromIdentityKey: ByteArray,
-        ciphertext: ByteArray,
-        salt: ByteArray,
-        nonce: ByteArray,
-        senderUserId: Long = 0L,
-        recipientUserId: Long = 0L,
-        clientMsgId: String = "",
-        timestamp: Long = 0L,
-        v: Int = 1
-    ): String {
-        val myPrivateIK = tokenStorage.getPrivateKey()
-            ?: throw Exception("Identity Key private key not found locally")
-        val secret = e2eeCrypto.deriveSharedSecret(myPrivateIK, fromIdentityKey)
-
-        // 1. Fast-path: modern V2 AAD (client_msg_id binding, no timestamp)
-        if (senderUserId != 0L || recipientUserId != 0L) {
-            val candidatePairs = listOf(
-                Pair(senderUserId, recipientUserId),
-                Pair(recipientUserId, senderUserId)
-            ).distinct()
-
-            for (pair in candidatePairs) {
-                val v2Aad = e2eeCrypto.buildPairwiseAadV2(pair.first, pair.second, clientMsgId)
-                try {
-                    val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, aad = v2Aad)
-                    return String(plaintextBytes, Charsets.UTF_8)
-                } catch (_: Exception) {}
-
-                if (clientMsgId.isNotEmpty()) {
-                    val v2AadEmpty = e2eeCrypto.buildPairwiseAadV2(pair.first, pair.second, "")
-                    try {
-                        val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, aad = v2AadEmpty)
-                        return String(plaintextBytes, Charsets.UTF_8)
-                    } catch (_: Exception) {}
-                }
-            }
-        }
-
-        // 2. Legacy fallback for old messages stored with timestamps or empty AAD
-        val tsSec = if (timestamp > 100_000_000_000L) timestamp / 1000 else timestamp
-
-        val candidates = buildList {
-            if (senderUserId != 0L || recipientUserId != 0L) {
-                val offsets = buildList {
-                    add(0L)
-                    for (i in 1..60) {
-                        add(-i.toLong())
-                        add(i.toLong())
-                    }
-                }
-                for (offset in offsets) {
-                    add(e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, clientMsgId, tsSec + offset))
-                }
-                if (timestamp > 100_000_000_000L) {
-                    add(e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, clientMsgId, timestamp))
-                }
-                if (clientMsgId.isNotEmpty()) {
-                    for (offset in listOf(0L, -1L, 1L)) {
-                        add(e2eeCrypto.buildPairwiseAad(senderUserId, recipientUserId, "", tsSec + offset))
-                    }
-                }
-                if (recipientUserId != 0L && senderUserId != 0L && recipientUserId != senderUserId) {
-                    for (offset in listOf(0L, -1L, 1L)) {
-                        add(e2eeCrypto.buildPairwiseAad(recipientUserId, senderUserId, clientMsgId, tsSec + offset))
-                        if (clientMsgId.isNotEmpty()) {
-                            add(e2eeCrypto.buildPairwiseAad(recipientUserId, senderUserId, "", tsSec + offset))
-                        }
-                    }
-                }
-            }
-            add(null) // Fallback for legacy messages or empty AAD
-        }
-
-        var lastEx: Exception? = null
-        for (candidate in candidates) {
-            try {
-                val plaintextBytes = e2eeCrypto.decrypt(ciphertext, secret, salt, nonce, aad = candidate)
-                return String(plaintextBytes, Charsets.UTF_8)
-            } catch (e: Exception) {
-                lastEx = e
-            }
-        }
-
-        Log.e(
-            "PenikE2EE",
-            "DECRYPTION FAILED: senderUserId=$senderUserId, recipientUserId=$recipientUserId, clientMsgId=$clientMsgId, tsSec=$tsSec, " +
-            "fromIK=${android.util.Base64.encodeToString(fromIdentityKey, android.util.Base64.NO_WRAP)}, " +
-            "ctLen=${ciphertext.size}, saltLen=${salt.size}, nonceLen=${nonce.size}, candidatesTried=${candidates.size}",
-            lastEx
-        )
-
-        throw lastEx ?: Exception("Decryption failed")
-    }
-
-    private suspend fun tryFallbackDecrypt(msg: WebSocketEvent.MsgRecvEncrypted, myId: Long): String? {
-        val isOwnOutgoing = msg.fromUserId == myId
-        val targetUserId = if (isOwnOutgoing) msg.chatUserId else msg.fromUserId
-
-        // The peer may have reinstalled after our bundle snapshot: retry once
-        // with a force-refreshed bundle before declaring the message dead.
-        for (attempt in 0..1) {
-            val devices = getKeyBundleCached(targetUserId, isSelf = targetUserId == myId, forceRefresh = attempt == 1)
-            if (devices.isEmpty()) continue
-
-            val myDeviceId = tokenStorage.getDeviceId()
-            val recipientUserId = if (isOwnOutgoing) msg.chatUserId else myId
-
-            val targetDevices = if (msg.fromDeviceId > 0) {
-                devices.filter { it.deviceId == msg.fromDeviceId } + devices.filter { it.deviceId != msg.fromDeviceId }
-            } else {
-                devices
-            }
-
-            for (device in targetDevices) {
-                val ik = runCatching { android.util.Base64.decode(device.identityKey, android.util.Base64.DEFAULT) }.getOrNull() ?: continue
-                identityPins.verify(targetUserId, device.deviceId, ik)
-                val text = runCatching {
-                    decryptMessagePayload(
-                        myDeviceId = myDeviceId,
-                        fromIdentityKey = ik,
-                        ciphertext = msg.ciphertext,
-                        salt = msg.salt,
-                        nonce = msg.nonce,
-                        senderUserId = msg.fromUserId,
-                        recipientUserId = recipientUserId,
-                        clientMsgId = msg.clientMsgId ?: "",
-                        timestamp = msg.ts
-                    )
-                }.getOrNull() ?: continue
-                return text
-            }
-        }
-        return null
-    }
-
-    /**
-     * Resolves a message referenced by a push notification.
-     *
-     * The push only carries the row id, so the envelope is fetched over REST,
-     * decrypted with the sender's identity key and persisted like any incoming
-     * message. Returns the plaintext for the notification body, or null when the
-     * row is gone or cannot be decrypted on this device.
-     */
     suspend fun resolvePushMessage(msgId: Long): String? {
         if (msgId <= 0L) return null
         messageDao.findMessageByServerId(msgId)?.let { return it.text }
@@ -1246,57 +560,9 @@ class MessageRepository @Inject constructor(
         val body = runCatching { apiService.getMessageById(msgId) }.getOrNull()
             ?.takeIf { it.isSuccessful }?.body() ?: return null
 
-        body.plaintext?.takeIf { it.isNotBlank() }?.let { plain ->
-            persistPushMessage(body, plain)
-            return plain
-        }
-
-        val ciphertext = body.ciphertext ?: return null
-        val saltB64 = body.encryptionSalt ?: return null
-        val nonceB64 = body.encryptionNonce ?: return null
-        val ct = runCatching { android.util.Base64.decode(ciphertext, android.util.Base64.DEFAULT) }.getOrNull() ?: return null
-        val salt = runCatching { android.util.Base64.decode(saltB64, android.util.Base64.DEFAULT) }.getOrNull() ?: return null
-        val nonce = runCatching { android.util.Base64.decode(nonceB64, android.util.Base64.DEFAULT) }.getOrNull() ?: return null
-
-        // The row records the sender device id but not its public key, so every
-        // key in the sender's bundle is tried; only one can produce a valid tag.
-        val myId = tokenStorage.getUserId()
-        val isOwnOutgoing = body.senderId == myId
-        val targetUserId = if (isOwnOutgoing) body.chatUserId else body.senderId
-        val targetDeviceId = if (isOwnOutgoing) body.recipientDeviceId else body.senderDeviceId
-
-        val devices = getKeyBundleCached(targetUserId, isSelf = targetUserId == myId)
-        if (devices.isEmpty()) return null
-
-        val myDeviceId = tokenStorage.getDeviceId()
-        val recipientUserId = if (isOwnOutgoing) body.chatUserId else myId
-
-        val targetDevices = if (targetDeviceId != null && targetDeviceId > 0) {
-            devices.filter { it.deviceId == targetDeviceId } + devices.filter { it.deviceId != targetDeviceId }
-        } else {
-            devices
-        }
-
-        for (device in targetDevices) {
-            val ik = runCatching { android.util.Base64.decode(device.identityKey, android.util.Base64.DEFAULT) }.getOrNull() ?: continue
-            identityPins.verify(body.senderId, device.deviceId, ik)
-            val text = runCatching {
-                decryptMessagePayload(
-                    myDeviceId = myDeviceId,
-                    fromIdentityKey = ik,
-                    ciphertext = ct,
-                    salt = salt,
-                    nonce = nonce,
-                    senderUserId = body.senderId,
-                    recipientUserId = recipientUserId,
-                    clientMsgId = body.clientMsgId ?: "",
-                    timestamp = body.createdAt
-                )
-            }.getOrNull() ?: continue
-            persistPushMessage(body, text)
-            return text
-        }
-        return null
+        val plain = body.plaintext ?: ""
+        persistPushMessage(body, plain)
+        return plain
     }
 
     private suspend fun persistPushMessage(body: niel.kro.penik.data.network.api.HistoryMessageResponse, text: String) {
@@ -1322,43 +588,18 @@ class MessageRepository @Inject constructor(
     }
 
     suspend fun handleMsgEditNotify(event: WebSocketEvent.MsgEditNotify) {
-        val myId = tokenStorage.getUserId()
-        val sentByMe = event.fromUserId == myId
-        val myDeviceId = tokenStorage.getDeviceId()
-
-        val decryptedText = if (!event.plaintext.isNullOrEmpty()) {
-            event.plaintext
-        } else {
-            try {
-                decryptMessagePayload(
-                    myDeviceId = myDeviceId,
-                    fromIdentityKey = event.fromIdentityKey,
-                    ciphertext = event.ciphertext,
-                    salt = event.salt,
-                    nonce = event.nonce,
-                    senderUserId = event.fromUserId,
-                    recipientUserId = if (sentByMe) event.chatUserId else myId,
-                    clientMsgId = event.clientMsgId,
-                    timestamp = event.editedAt
-                )
-            } catch (e: Exception) {
-                Log.e("PenikMsg", "Failed to decrypt MsgEditNotify", e)
-                return
-            }
-        }
-
+        val text = event.plaintext ?: ""
         val editedAtMs = toMs(event.editedAt)
         messageDao.updateMessageText(
             clientMsgId = event.clientMsgId,
             serverId = event.msgId,
-            newText = decryptedText,
+            newText = text,
             editedAt = editedAtMs
         )
         updateChatLastMessage(event.chatUserId)
     }
 
     suspend fun editMessage(chatUserId: Long, clientMsgId: String, newText: String) {
-        val myId = tokenStorage.getUserId()
         val nowSec = niel.kro.penik.data.network.TimeSyncManager.currentTimeSec()
         val editedAtMs = nowSec * 1000
 
@@ -1380,7 +621,6 @@ class MessageRepository @Inject constructor(
 
         if (finalPayload.isBlank()) return
 
-        // 1. Update Room DB immediately
         messageDao.updateMessageText(
             clientMsgId = clientMsgId,
             serverId = clientMsgId.toLongOrNull(),
@@ -1389,61 +629,12 @@ class MessageRepository @Inject constructor(
         )
         updateChatLastMessage(chatUserId)
 
-        val isE2EE = existingMsg?.isE2EE ?: (chatRepository.getChat(chatUserId)?.isE2EE ?: false)
-        if (!isE2EE) {
-            webSocketManager.sendEdit(
-                toUserId = chatUserId,
-                clientMsgId = clientMsgId,
-                newText = finalPayload,
-                editedAt = nowSec
-            )
-            return
-        }
-
-        // 2. Fetch peer + self devices & encrypt
-        val myDeviceId = tokenStorage.getDeviceId()
-        var peerDevices = getKeyBundleCached(chatUserId)
-        if (peerDevices.isEmpty()) {
-            peerDevices = getKeyBundleCached(chatUserId, forceRefresh = true)
-        }
-        val selfDevices = getKeyBundleCached(myId, isSelf = true)
-        val allDevices = if (chatUserId == myId) {
-            peerDevices.filter { it.deviceId != myDeviceId }
-        } else {
-            (peerDevices + selfDevices).filter { it.deviceId != myDeviceId }
-        }
-
-        val myPrivateIK = tokenStorage.getPrivateKey() ?: return
-        val recipientInfos = allDevices.mapNotNull { dev ->
-            try {
-                val peerIK = java.util.Base64.getDecoder().decode(dev.identityKey)
-                val targetUserId = if (peerDevices.any { it.deviceId == dev.deviceId }) chatUserId else myId
-                identityPins.verify(targetUserId, dev.deviceId, peerIK)
-                E2EECrypto.DeviceRecipientInfo(dev.deviceId, peerIK, dev.cryptoVersion)
-            } catch (e: Exception) {
-                Log.e("PenikMsg", "Failed to prepare key for device ${dev.deviceId}", e)
-                null
-            }
-        }
-
-        val encryptedDevices = e2eeCrypto.encryptPairwiseBatch(
-            senderPrivateKey = myPrivateIK,
-            senderUserId = myId,
-            recipientUserId = chatUserId,
+        webSocketManager.sendEdit(
+            toUserId = chatUserId,
             clientMsgId = clientMsgId,
-            timestamp = nowSec,
-            plaintext = finalPayload.toByteArray(Charsets.UTF_8),
-            recipients = recipientInfos
+            newText = finalPayload,
+            editedAt = nowSec
         )
-
-        if (encryptedDevices.isNotEmpty()) {
-            webSocketManager.sendEncryptedEdit(
-                toUserId = chatUserId,
-                clientMsgId = clientMsgId,
-                devices = encryptedDevices,
-                editedAt = nowSec
-            )
-        }
     }
 
     suspend fun deleteChatMessages(chatUserId: Long) {
@@ -1500,41 +691,6 @@ class MessageRepository @Inject constructor(
     }
 
     suspend fun handleMsgRetryReq(msgId: Long, requesterDeviceId: Long) {
-        val existing = messageDao.findMessageByServerId(msgId) ?: return
-        val text = existing.text
-        if (text.isBlank() || text.startsWith("[Ошибка") || text.startsWith("[Сообщение не расшифровано")) {
-            return
-        }
-        val recipientUserId = existing.chatUserId
-        val myId = tokenStorage.getUserId()
-        val myPrivateIK = tokenStorage.getPrivateKey() ?: return
-
-        // Invalidate bundle cache for recipient to get the newly registered device
-        invalidateKeyBundle(recipientUserId)
-        val freshDevices = getKeyBundleCached(recipientUserId, isSelf = recipientUserId == myId, forceRefresh = true)
-        val targetDevice = freshDevices.find { it.deviceId == requesterDeviceId } ?: return
-        val targetIKPub = runCatching { java.util.Base64.getDecoder().decode(targetDevice.identityKey) }.getOrNull() ?: return
-
-        identityPins.verify(recipientUserId, targetDevice.deviceId, targetIKPub)
-
-        val recipientInfos = listOf(
-            E2EECrypto.DeviceRecipientInfo(
-                deviceId = targetDevice.deviceId,
-                publicKey = targetIKPub,
-                cryptoVersion = targetDevice.cryptoVersion
-            )
-        )
-        val payloads = e2eeCrypto.encryptPairwiseBatch(
-            senderPrivateKey = myPrivateIK,
-            senderUserId = myId,
-            recipientUserId = recipientUserId,
-            clientMsgId = existing.localId,
-            timestamp = toMs(existing.timestamp) / 1000,
-            plaintext = text.toByteArray(Charsets.UTF_8),
-            recipients = recipientInfos
-        )
-        val encPayload = payloads.firstOrNull() ?: return
-        webSocketManager.sendMsgRetryResp(msgId, encPayload.ciphertext, encPayload.salt, encPayload.nonce)
     }
 }
 

@@ -135,7 +135,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import niel.kro.penik.data.network.websocket.ConnectionState
-import niel.kro.penik.data.crypto.E2EECrypto
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -1100,12 +1099,7 @@ private suspend fun downloadAndDecryptAttachment(context: Context, attachment: F
             }
             inputStream.use { it.readBytes() }
         }
-        val plaintext = if (attachment.key.isNotBlank()) {
-            val key = Base64.getDecoder().decode(attachment.key)
-            E2EECrypto().decryptFileChaCha20(encrypted, key)
-        } else {
-            encrypted
-        }
+        val plaintext = encrypted
         val temporary = File(cacheDir, "${output.name}.tmp")
         temporary.outputStream().use { it.write(plaintext) }
         if (!temporary.renameTo(output)) {

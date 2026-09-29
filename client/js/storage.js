@@ -1,5 +1,4 @@
 import { ws } from "./ws.js";
-import { sealBytes, openBytes, sealString, openString, isSealed, resetWrappingKey } from "./vault.js";
 
 const DB_NAME = "penik-messenger";
 const DB_VERSION = 8;
@@ -199,11 +198,6 @@ export async function saveMessage(message) {
   if (toStore.chat_id != null) {
     toStore.chat_id = String(toStore.chat_id);
   }
-  // Seal text if present and not already sealed.
-  if (toStore.text != null && typeof toStore.text === "string") {
-    toStore.sealed_text = await sealString(vaultStore, toStore.text);
-    delete toStore.text;
-  }
   return put(tx("messages", "readwrite"), toStore);
 }
 
@@ -231,12 +225,7 @@ export async function updateMessagePlaintext(msgId, newText) {
   return existing;
 }
 
-async function unsealMessageRecord(msg) {
-  if (!msg) return msg;
-  if (msg.sealed_text && isSealed(msg.sealed_text)) {
-    const plain = await openString(vaultStore, msg.sealed_text);
-    return { ...msg, text: plain ?? "" };
-  }
+function unsealMessageRecord(msg) {
   return msg;
 }
 
@@ -695,7 +684,6 @@ export async function clearIndexedDB() {
   // The wrapping key is cleared together with the sealed records it opens, so the
   // cached handle must be dropped or the next login would seal against a key that
   // is no longer in the database.
-  resetWrappingKey();
   return new Promise((resolve, reject) => {
     const list = ["contacts", "messages", "e2ee_keys", "groups", "group_members", "group_keys", "group_messages"];
     const transaction = _db.transaction(list, "readwrite");
@@ -718,41 +706,15 @@ export async function getIdentityKey() {
   return record ? record.envelope : null;
 }
 
-// vaultStore adapts the e2ee_keys object store for vault.js, which needs a way to
-// persist its own non-extractable wrapping key without importing storage internals.
-const vaultStore = {
-  read: async (id) => {
-    await openDB();
-    return get(tx("e2ee_keys"), id);
-  },
-  write: async (record) => {
-    await openDB();
-    return put(tx("e2ee_keys", "readwrite"), record);
-  },
-};
-
-// The private Identity Key never leaves IndexedDB in the clear: it is sealed with
-// the origin's non-extractable wrapping key (see vault.js), so a database dump is
-// not a usable copy of the key.
 export async function saveIKPrivate(privateKey) {
   await openDB();
-  const sealed = await sealBytes(vaultStore, privateKey);
-  return put(tx("e2ee_keys", "readwrite"), { id: "identity_private_key", sealed });
+  return put(tx("e2ee_keys", "readwrite"), { id: "identity_private_key", privateKey });
 }
 
 export async function getIKPrivate() {
   await openDB();
   const record = await get(tx("e2ee_keys"), "identity_private_key");
-  if (!record) return null;
-  if (isSealed(record.sealed)) return openBytes(vaultStore, record.sealed);
-  // Legacy plaintext record from before the vault: seal it on first read so the
-  // cleartext copy does not survive this session.
-  if (record.privateKey) {
-    const bytes = record.privateKey;
-    await saveIKPrivate(bytes);
-    return bytes;
-  }
-  return null;
+  return record?.privateKey || null;
 }
 
 export async function saveIKPublic(publicKey) {
@@ -760,25 +722,15 @@ export async function saveIKPublic(publicKey) {
   return put(tx("e2ee_keys", "readwrite"), { id: "identity_public_key", publicKey });
 }
 
-// The private Signing Key (Ed25519) never leaves IndexedDB in the clear: it is sealed
-// with the origin's non-extractable wrapping key (vault.js).
 export async function saveSigningPrivate(privateKey) {
   await openDB();
-  const sealed = await sealBytes(vaultStore, privateKey);
-  return put(tx("e2ee_keys", "readwrite"), { id: "signing_private_key", sealed });
+  return put(tx("e2ee_keys", "readwrite"), { id: "signing_private_key", privateKey });
 }
 
 export async function getSigningPrivate() {
   await openDB();
   const record = await get(tx("e2ee_keys"), "signing_private_key");
-  if (!record) return null;
-  if (isSealed(record.sealed)) return openBytes(vaultStore, record.sealed);
-  if (record.privateKey) {
-    const bytes = record.privateKey;
-    await saveSigningPrivate(bytes);
-    return bytes;
-  }
-  return null;
+  return record?.privateKey || null;
 }
 
 export async function saveSigningPublic(publicKey) {
@@ -792,25 +744,15 @@ export async function getSigningPublic() {
   return record ? record.publicKey : null;
 }
 
-// The session bearer token is sealed for the same reason as the identity key: it
-// is a long-lived credential, and an unencrypted copy in IndexedDB is a
-// take-away credential rather than a page-bound one.
 export async function saveSessionToken(token) {
   await openDB();
-  const sealed = await sealString(vaultStore, token);
-  return put(tx("e2ee_keys", "readwrite"), { id: "session_token", sealed });
+  return put(tx("e2ee_keys", "readwrite"), { id: "session_token", token });
 }
 
 export async function getSessionToken() {
   await openDB();
   const record = await get(tx("e2ee_keys"), "session_token");
-  if (!record) return null;
-  if (isSealed(record.sealed)) return openString(vaultStore, record.sealed);
-  if (record.token) {
-    await saveSessionToken(record.token);
-    return record.token;
-  }
-  return null;
+  return record?.token || null;
 }
 
 export async function deleteSessionToken() {
@@ -948,12 +890,11 @@ function groupKeyId(groupId, version) {
 
 export async function saveGroupKey(groupId, version, keyBytes) {
   await openDB();
-  const sealed = await sealBytes(vaultStore, keyBytes);
   return put(tx("group_keys", "readwrite"), {
     id: groupKeyId(groupId, version),
     group_id: Number(groupId),
     key_version: Number(version),
-    sealed,
+    key: keyBytes,
   });
 }
 
@@ -961,13 +902,7 @@ export async function getGroupKey(groupId, version) {
   await openDB();
   const rec = await get(tx("group_keys"), groupKeyId(groupId, version));
   if (!rec) return null;
-  if (isSealed(rec.sealed)) return openBytes(vaultStore, rec.sealed);
-  // Legacy plaintext row: seal it on first read.
-  if (rec.key) {
-    await saveGroupKey(groupId, version, rec.key);
-    return rec.key;
-  }
-  return null;
+  return rec.key || null;
 }
 
 export async function saveGroupMessage(message) {
@@ -977,17 +912,12 @@ export async function saveGroupMessage(message) {
     ...message,
     group_id: Number(message.group_id),
   };
-  if (toStore.text != null && typeof toStore.text === "string") {
-    toStore.sealed_text = await sealString(vaultStore, toStore.text);
-    delete toStore.text;
-  }
   return put(tx("group_messages", "readwrite"), toStore);
 }
 
 export async function getGroupMessage(groupId, messageId) {
   await openDB();
-  const raw = await get(tx("group_messages"), [Number(groupId), String(messageId)]);
-  return unsealMessageRecord(raw);
+  return get(tx("group_messages"), [Number(groupId), String(messageId)]);
 }
 
 export async function updateGroupMessageText(groupId, messageId, newText, editedAt) {
@@ -1021,10 +951,8 @@ export async function getGroupMessages(groupId, limit = 50) {
         out.push(cursor.value);
         cursor.continue();
       } else {
-        // Sort ascending by server id (falls back to created_at for pending).
         out.sort((a, b) => (a.id || 0) - (b.id || 0) || a.created_at - b.created_at);
-        const unsealed = await Promise.all(out.map(m => unsealMessageRecord(m)));
-        resolve(unsealed);
+        resolve(out);
       }
     };
     req.onerror = (e) => reject(e.target.error);
@@ -1041,24 +969,19 @@ export async function getAllGroupKeys() {
   return getAll(tx("group_keys"));
 }
 
-// getAllGroupKeysPlain unseals every group key for pairing export. The result is
-// immediately re-encrypted to the new device's public key, so it must never be
-// written back to storage or logged.
 export async function getAllGroupKeysPlain() {
   const rows = await getAllGroupKeys();
   const out = [];
   for (const row of rows) {
-    const key = isSealed(row.sealed) ? await openBytes(vaultStore, row.sealed) : row.key;
-    if (!key) continue;
-    out.push({ id: row.id, group_id: row.group_id, key_version: row.key_version, key });
+    if (!row.key) continue;
+    out.push({ id: row.id, group_id: row.group_id, key_version: row.key_version, key: row.key });
   }
   return out;
 }
 
 export async function getAllGroupMessages() {
   await openDB();
-  const all = await getAll(tx("group_messages"));
-  return Promise.all(all.map(m => unsealMessageRecord(m)));
+  return getAll(tx("group_messages"));
 }
 
 export async function saveCachedMedia(url, blob, mime) {

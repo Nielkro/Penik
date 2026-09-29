@@ -65,7 +65,6 @@ import niel.kro.penik.ui.viewmodel.SettingsViewModel
 fun SettingsScreen(
     onBack: () -> Unit = {},
     onDevices: () -> Unit = {},
-    onBackup: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val colors = LocalAppColors.current
@@ -242,29 +241,6 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text("Мои устройства", color = colors.textPrimary, fontSize = 16.sp)
-                Text("›", color = colors.textMuted, fontSize = 20.sp)
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Backup & Keys navigation row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable { onBackup() }
-                    .padding(vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text("Резервное копирование", color = colors.textPrimary, fontSize = 16.sp)
-                    Text(
-                        text = "Облачные ключи, экспорт и импорт истории",
-                        color = colors.textMuted,
-                        fontSize = 13.sp
-                    )
-                }
                 Text("›", color = colors.textMuted, fontSize = 20.sp)
             }
 

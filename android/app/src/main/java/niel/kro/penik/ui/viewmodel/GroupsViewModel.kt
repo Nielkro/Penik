@@ -214,11 +214,8 @@ class GroupChatViewModel @Inject constructor(
             // 1. Immediately insert optimistic message into group
             groupRepository.insertOptimisticMessage(groupId, clientMsgId, mediaInfo.optimisticPayload, null)
 
-            // 2. Determine chunked encryption support across all group members
-            val useChunked = groupRepository.isChunkedEncryptionSupported(groupId)
-
-            // 3. Upload and send with progress
-            attachmentManager.uploadAndEncryptAttachment(context, mediaInfo, clientMsgId, caption, useChunked = useChunked)
+            // 2. Upload and send with progress
+            attachmentManager.uploadAndEncryptAttachment(context, mediaInfo, clientMsgId, caption, useChunked = false)
                 .onSuccess { finalJsonPayload ->
                     val id = runCatching { groupRepository.sendMessage(groupId, finalJsonPayload, null, existingMessageId = clientMsgId) }.getOrNull()
                     if (id == null) onError("Не удалось отправить файл")

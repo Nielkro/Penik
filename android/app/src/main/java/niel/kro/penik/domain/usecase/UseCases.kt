@@ -206,23 +206,12 @@ class HandleWebSocketEventUseCase @Inject constructor(
                 groupRepository.onAck(event.groupId, event.messageId, event.id)
             }
             is WebSocketEvent.GroupKeyAvailable -> {
-                // Force: a single earlier 404 must not poison this version forever
-                // (the envelope may have been uploaded after our first fetch).
-                groupRepository.ensureGroupKey(event.groupId, event.keyVersion, forceRefresh = true)
                 groupRepository.syncHistory(event.groupId)
             }
-            is WebSocketEvent.GroupHistoryReady -> {
-                runCatching { groupRepository.pullHistoryPacketForRetry(event.groupId) }
-            }
+            is WebSocketEvent.GroupHistoryReady -> {}
             is WebSocketEvent.GroupMemberChanged -> {
-                // Sync the group list first: a fresh invitation surfaces here as a
-                // pending group that doesn't exist locally yet. Member refresh is
-                // best-effort since a pending invitee can't list the roster.
                 runCatching { groupRepository.syncGroups(force = true) }
                 runCatching { groupRepository.refreshMembers(event.groupId) }
-                // An owner/admin heals missing envelopes for the current epoch so
-                // a rejoined or reinstalled device gets its key without manual steps.
-                runCatching { groupRepository.backfillCurrentKey(event.groupId) }
             }
             is WebSocketEvent.GroupAvatarUpdate -> {
                 niel.kro.penik.data.repository.AvatarCacheBus.bumpGroup(event.groupId, event.ts)

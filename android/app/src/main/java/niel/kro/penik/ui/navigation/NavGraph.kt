@@ -20,7 +20,6 @@ import niel.kro.penik.ui.screen.chatroom.ChatRoomScreen
 import niel.kro.penik.ui.screen.groups.GroupChatScreen
 import niel.kro.penik.ui.screen.groups.GroupSettingsScreen
 import niel.kro.penik.ui.screen.settings.SettingsScreen
-import niel.kro.penik.ui.screen.settings.BackupScreen
 import niel.kro.penik.ui.screen.settings.DevicesScreen
 import niel.kro.penik.ui.viewmodel.StartupViewModel
 import androidx.compose.ui.Modifier
@@ -33,7 +32,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import niel.kro.penik.ui.theme.LocalAppColors
 import niel.kro.penik.ui.components.UpdateDialog
-import niel.kro.penik.ui.screen.pairing.PairingScannerScreen
 
 @Composable
 fun NavGraph(
@@ -57,8 +55,7 @@ fun NavGraph(
             text = {
                 Text(
                     "Локальный ключ этого устройства не совпадает с ключом на сервере. " +
-                        "Сообщения не расшифровываются и не доходят до собеседников. " +
-                        "Выйдите из аккаунта и войдите заново — будет создано новое устройство с корректным ключом."
+                        "Выйдите из аккаунта и войдите заново."
                 )
             },
             confirmButton = {
@@ -163,7 +160,6 @@ fun NavGraph(
                         popUpTo(0) { inclusive = true }
                     }
                 },
-                onPairingScanner = { navController.navigate(Screen.PairingScanner.route) },
                 onSettings = { navController.navigate(Screen.Settings.route) }
             )
         }
@@ -171,26 +167,14 @@ fun NavGraph(
         composable(Screen.Settings.route) {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
-                onDevices = { navController.navigate(Screen.Devices.route) },
-                onBackup = { navController.navigate(Screen.Backup.route) }
-            )
-        }
-
-        composable(Screen.Backup.route) {
-            BackupScreen(
-                onBack = { navController.popBackStack() }
+                onDevices = { navController.navigate(Screen.Devices.route) }
             )
         }
 
         composable(Screen.Devices.route) {
             DevicesScreen(
-                onBack = { navController.popBackStack() },
-                onPairingScanner = { navController.navigate(Screen.PairingScanner.route) }
+                onBack = { navController.popBackStack() }
             )
-        }
-
-        composable(Screen.PairingScanner.route) {
-            PairingScannerScreen(onBack = { navController.popBackStack() })
         }
 
         composable(

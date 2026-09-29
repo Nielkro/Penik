@@ -84,7 +84,6 @@ fun MainScreen(
     onChatClick: (Long, String, Boolean) -> Unit,
     onGroupClick: (Long, String) -> Unit,
     onLogout: () -> Unit,
-    onPairingScanner: () -> Unit,
     onSettings: () -> Unit,
     profileViewModel: ProfileViewModel = hiltViewModel(),
     groupsViewModel: GroupsViewModel = hiltViewModel()
@@ -204,7 +203,6 @@ fun MainScreen(
                     )
                     2 -> ProfileScreen(
                         onLogout = onLogout,
-                        onPairingScanner = onPairingScanner,
                         onBack = if (isDrawerMode) {
                             { selectedTab = 0 }
                         } else null,
@@ -316,14 +314,6 @@ fun MainScreen(
                         onClick = {
                             scope.launch { drawerState.close() }
                             onSettings()
-                        }
-                    )
-                    DrawerItem(
-                        icon = Icons.Default.QrCodeScanner,
-                        label = "Связать устройство",
-                        onClick = {
-                            scope.launch { drawerState.close() }
-                            onPairingScanner()
                         }
                     )
                 }

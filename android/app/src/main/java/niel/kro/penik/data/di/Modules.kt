@@ -25,8 +25,6 @@ import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
-import niel.kro.penik.data.crypto.E2EECrypto
-import niel.kro.penik.data.crypto.GroupCrypto
 import niel.kro.penik.BuildConfig
 
 @Module
@@ -176,22 +174,9 @@ object CryptoModule {
 
     @Provides
     @Singleton
-    fun provideE2EECrypto(): E2EECrypto {
-        return E2EECrypto()
-    }
-
-    @Provides
-    @Singleton
-    fun provideGroupCrypto(e2eeCrypto: E2EECrypto): GroupCrypto {
-        return GroupCrypto(e2eeCrypto)
-    }
-
-    @Provides
-    @Singleton
     fun provideAttachmentManager(
-        apiService: ApiService,
-        e2eeCrypto: E2EECrypto
+        apiService: ApiService
     ): AttachmentManager {
-        return AttachmentManager(apiService, e2eeCrypto)
+        return AttachmentManager(apiService)
     }
 }

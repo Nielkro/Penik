@@ -64,7 +64,6 @@ import java.io.File
 @Composable
 fun ProfileScreen(
     onLogout: () -> Unit = {},
-    onPairingScanner: () -> Unit = {},
     onBack: (() -> Unit)? = null,
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
@@ -316,18 +315,6 @@ fun ProfileScreen(
             }
 
             Spacer(modifier = Modifier.weight(1f))
-
-            Button(
-                onClick = onPairingScanner,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text("Подключить устройство", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
 
             Button(
                 onClick = { viewModel.logout(onLogout) },

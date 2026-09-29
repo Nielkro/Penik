@@ -9,7 +9,6 @@ import android.provider.OpenableColumns
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import niel.kro.penik.data.crypto.E2EECrypto
 import niel.kro.penik.data.network.ProgressRequestBody
 import niel.kro.penik.data.network.api.ApiConfig
 import niel.kro.penik.data.network.api.ApiService
@@ -31,8 +30,7 @@ data class LocalMediaInfo(
 )
 
 class AttachmentManager(
-    private val apiService: ApiService,
-    private val e2eeCrypto: E2EECrypto
+    private val apiService: ApiService
 ) {
     suspend fun prepareLocalMedia(
         context: Context,
@@ -111,27 +109,17 @@ class AttachmentManager(
         clientMsgId: String,
         textCaption: String = "",
         useChunked: Boolean = true,
-        isE2EE: Boolean = true
+        isE2EE: Boolean = false
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             UploadProgressBus.update(clientMsgId, 0, info.fileSize)
 
-            val bytesToUpload: ByteArray
-            val keyString: String
+            val bytesToUpload = info.rawBytes
+            val keyString = ""
 
-            if (isE2EE) {
-                // 1. Encrypt raw file via Rust core (PCK1 chunked or monolithic legacy)
-                val encResult = e2eeCrypto.encryptFileChaCha20(info.rawBytes, useChunked = useChunked)
-                bytesToUpload = encResult.encryptedBytes
-                keyString = Base64.encodeToString(encResult.keyBytes, Base64.NO_WRAP)
-            } else {
-                bytesToUpload = info.rawBytes
-                keyString = ""
-            }
-
-            // 2. Upload with live progress tracking
+            // Upload with live progress tracking
             val progressBody = ProgressRequestBody(
-                (info.mimeType.takeIf { !isE2EE } ?: "application/octet-stream").toMediaTypeOrNull(),
+                info.mimeType.toMediaTypeOrNull(),
                 bytesToUpload
             ) { loaded, total ->
                 UploadProgressBus.update(clientMsgId, loaded, if (total > 0) total else info.fileSize)
