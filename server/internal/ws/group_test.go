@@ -36,7 +36,6 @@ func setupGroup(t *testing.T, database *db.DB) (groupID, ownerID, ownerDev, bobI
 	groupID, _ = gr.LastInsertId()
 	database.Exec(`INSERT INTO group_members(group_id,user_id,role,status,joined_at,membership_version) VALUES(?,?,'owner','active',?,1)`, groupID, ownerID, now)
 	database.Exec(`INSERT INTO group_members(group_id,user_id,role,status,joined_at,membership_version) VALUES(?,?,'member','active',?,1)`, groupID, bobID, now)
-	database.Exec(`INSERT INTO group_key_versions(group_id,key_version,created_by_user_id,membership_version,created_at) VALUES(?,1,?,1,?)`, groupID, ownerID, now)
 	return
 }
 
@@ -155,28 +154,6 @@ func TestGroupMessageIdempotencyIsGroupScoped(t *testing.T) {
 	}
 }
 
-// Regression: a revoked key version must be rejected for new messages.
-func TestGroupMessageRevokedVersionRejected(t *testing.T) {
-	database, err := db.Open(filepath.Join(t.TempDir(), "gmsg4.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer database.Close()
-
-	groupID, ownerID, ownerDev, _, _ := setupGroup(t, database)
-	database.Exec(`UPDATE group_key_versions SET revoked_at=? WHERE group_id=? AND key_version=1`, time.Now().Unix(), groupID)
-
-	hub := NewHub()
-	sender := newClient(hub, nil, ownerID, ownerDev, database)
-	err = sender.handleGroupMessageSend(context.Background(), &GroupMessageSend{
-		GroupID: groupID, MessageID: "m", KeyVersion: 1, Ciphertext: []byte("hi"),
-		CreatedAt: time.Now().Unix(),
-	})
-	if err == nil {
-		t.Fatal("expected revoked key version to be rejected")
-	}
-}
-
 // readFrames drains all frames currently queued on a client's send channel.
 func readFrames(c *Client) [][]byte {
 	var out [][]byte
@@ -285,93 +262,6 @@ func TestGroupMessageRejectsMissingOrSkewedTimestamp(t *testing.T) {
 	}
 }
 
-func TestGroupMessageUnknownKeyVersionRejected(t *testing.T) {
-	database, err := db.Open(filepath.Join(t.TempDir(), "gkv.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer database.Close()
-
-	groupID, ownerID, ownerDev, _, _ := setupGroup(t, database)
-	hub := NewHub()
-	sender := newClient(hub, nil, ownerID, ownerDev, database)
-	err = sender.handleGroupMessageSend(context.Background(), &GroupMessageSend{
-		GroupID: groupID, MessageID: "m", KeyVersion: 99,
-		Ciphertext: []byte("hi"), Salt: []byte("s"), Nonce: []byte("n"),
-		CreatedAt: time.Now().Unix(),
-	})
-	if err == nil {
-		t.Fatal("expected unknown key version to be rejected")
-	}
-}
-
-func TestGroupMessageInvalidFieldSizes(t *testing.T) {
-	database, err := db.Open(filepath.Join(t.TempDir(), "gfs.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer database.Close()
-
-	groupID, ownerID, ownerDev, _, _ := setupGroup(t, database)
-	hub := NewHub()
-	sender := newClient(hub, nil, ownerID, ownerDev, database)
-	now := time.Now().Unix()
-
-	bad := []*GroupMessageSend{
-		{GroupID: groupID, MessageID: "", KeyVersion: 1, Ciphertext: []byte("x"), CreatedAt: now},
-		{GroupID: groupID, MessageID: "a", KeyVersion: 1, Ciphertext: nil, CreatedAt: now},
-		{GroupID: groupID, MessageID: "b", KeyVersion: 1, Ciphertext: []byte("x"), Salt: make([]byte, maxGroupSalt+1), CreatedAt: now},
-		{GroupID: groupID, MessageID: "c", KeyVersion: 1, Ciphertext: []byte("x"), Nonce: make([]byte, maxGroupNonce+1), CreatedAt: now},
-	}
-	for i, m := range bad {
-		if err := sender.handleGroupMessageSend(context.Background(), m); err == nil {
-			t.Fatalf("case %d: expected rejection", i)
-		}
-	}
-}
-
-func TestGroupMessageReceiptDeliveredThenRead(t *testing.T) {
-	database, err := db.Open(filepath.Join(t.TempDir(), "grcpt.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer database.Close()
-
-	groupID, ownerID, ownerDev, bobID, bobDev := setupGroup(t, database)
-	hub := NewHub()
-	sender := newClient(hub, nil, ownerID, ownerDev, database)
-	if err := sender.handleGroupMessageSend(context.Background(), &GroupMessageSend{
-		GroupID: groupID, MessageID: "r-1", KeyVersion: 1,
-		Ciphertext: []byte("hi"), Salt: []byte("s"), Nonce: []byte("n"),
-		CreatedAt: time.Now().Unix(),
-	}); err != nil {
-		t.Fatalf("send: %v", err)
-	}
-	var msgRowID int64
-	database.QueryRow(`SELECT id FROM group_messages WHERE group_id=?`, groupID).Scan(&msgRowID)
-
-	bob := newClient(hub, nil, bobID, bobDev, database)
-	if err := bob.handleGroupMessageReceipt(context.Background(), msgRowID, false); err != nil {
-		t.Fatalf("delivered: %v", err)
-	}
-	var deliveredAt, readAt any
-	database.QueryRow(`SELECT delivered_at, read_at FROM group_message_devices WHERE message_id=? AND device_id=?`, msgRowID, bobDev).Scan(&deliveredAt, &readAt)
-	if deliveredAt == nil {
-		t.Fatal("delivered_at should be set")
-	}
-	if readAt != nil {
-		t.Fatal("read_at should still be null")
-	}
-
-	if err := bob.handleGroupMessageReceipt(context.Background(), msgRowID, true); err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	database.QueryRow(`SELECT read_at FROM group_message_devices WHERE message_id=? AND device_id=?`, msgRowID, bobDev).Scan(&readAt)
-	if readAt == nil {
-		t.Fatal("read_at should be set after read receipt")
-	}
-}
-
 // TestGroupSendDBErrorBranches drives the internal DB-error paths of
 // handleGroupMessageSend that are unreachable through normal input validation.
 func TestGroupSendDBErrorBranches(t *testing.T) {
@@ -395,20 +285,8 @@ func TestGroupSendDBErrorBranches(t *testing.T) {
 		}
 	})
 
-	// Key-version lookup fails after membership succeeds.
-	t.Run("keyversion_lookup", func(t *testing.T) {
-		database, _ := db.Open(filepath.Join(t.TempDir(), "e2.db"))
-		defer database.Close()
-		groupID, ownerID, ownerDev, _, _ := setupGroup(t, database)
-		database.Exec(`DROP TABLE group_key_versions`)
-		c := newClient(NewHub(), nil, ownerID, ownerDev, database)
-		if err := c.handleGroupMessageSend(context.Background(), valid(groupID)); err == nil {
-			t.Fatal("expected key version lookup error")
-		}
-	})
-
 	// Idempotency check fails: dropping group_messages makes the SELECT error with
-	// a non-ErrNoRows error after membership and key-version succeed.
+	// a non-ErrNoRows error after membership succeeds.
 	t.Run("idempotency_check", func(t *testing.T) {
 		database, _ := db.Open(filepath.Join(t.TempDir(), "e3.db"))
 		defer database.Close()

@@ -1,7 +1,6 @@
 package ws
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -338,27 +337,6 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 		}
 		return c.handleTyping(ctx, &req)
 
-	case OpKeyFetchReq:
-		var req KeyFetchReq
-		if err := msgpack.Unmarshal(payload, &req); err != nil {
-			return fmt.Errorf("unmarshal KeyFetchReq: %w", err)
-		}
-		return c.handleKeyFetchReq(ctx, &req)
-
-	case OpKeyPublish:
-		var req KeyPublishReq
-		if err := msgpack.Unmarshal(payload, &req); err != nil {
-			return fmt.Errorf("unmarshal KeyPublishReq: %w", err)
-		}
-		return c.handleKeyPublish(ctx, &req)
-
-	case OpKeyBundleReq:
-		var req KeyBundleReq
-		if err := msgpack.Unmarshal(payload, &req); err != nil {
-			return fmt.Errorf("unmarshal KeyBundleReq: %w", err)
-		}
-		return c.handleKeyBundleReq(ctx, &req)
-
 	case OpMsgRetryReq:
 		var req MsgRetryReq
 		if err := msgpack.Unmarshal(payload, &req); err != nil {
@@ -550,12 +528,6 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSendEncrypted) error
 	_, _ = tx.ExecContext(ctx, `DELETE FROM messages WHERE chat_id = ? AND purge_pending = 1`, chatID)
 
 	var senderIKPub []byte
-	if isE2EE {
-		err = tx.QueryRowContext(ctx, `SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, c.deviceID).Scan(&senderIKPub)
-		if err != nil && err != sql.ErrNoRows {
-			return fmt.Errorf("lookup sender ik_pub: %w", err)
-		}
-	}
 
 	type pendingDelivery struct {
 		deviceID int64
@@ -957,82 +929,15 @@ func (c *Client) handleMsgRead(ctx context.Context, msg *MsgRead) error {
 	return nil
 }
 
-// validPubKey reports whether b is a well-formed curve25519 public key:
-// 32 raw bytes, or 33 bytes with a 0x05 version prefix.
-func validPubKey(b []byte) bool {
-	return len(b) == 32 || (len(b) == 33 && b[0] == 0x05)
-}
-
-func (c *Client) handleKeyFetchReq(ctx context.Context, req *KeyFetchReq) error {
-	tx, err := c.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-
-	query := `SELECT d.id, d.registration_id, ik.ik_pub, ik.spk_pub, ik.spk_sig, d.crypto_version
-		 FROM devices d
-		 JOIN identity_keys ik ON ik.device_id = d.id
-		 WHERE d.user_id=?`
-	var args []interface{}
-	args = append(args, req.UserID)
-	if req.DeviceID > 0 {
-		query += ` AND d.id=?`
-		args = append(args, req.DeviceID)
-	}
-
-	rows, err := tx.QueryContext(ctx, query, args...)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	var bundles []DeviceKeyBundle
-	for rows.Next() {
-		var b DeviceKeyBundle
-		if err := rows.Scan(&b.DeviceID, &b.RegistrationID, &b.IKPub, &b.SPKPub, &b.SPKSig, &b.CryptoVersion); err != nil {
-			continue
-		}
-		if b.CryptoVersion <= 0 {
-			b.CryptoVersion = 1
-		}
-		// Skip devices with malformed key material (legacy/corrupt rows). A valid
-		// curve25519 pubkey is 32 bytes or 33 with a 0x05 version prefix; an
-		// Ed25519 signature is 64 bytes. Serving garbage here breaks the sender's
-		// session build ("Invalid public key").
-		if !validPubKey(b.IKPub) || !validPubKey(b.SPKPub) || len(b.SPKSig) != 64 {
-			log.Printf("ws key fetch: skip device %d with malformed keys (ik=%d spk=%d sig=%d)",
-				b.DeviceID, len(b.IKPub), len(b.SPKPub), len(b.SPKSig))
-			continue
-		}
-		bundles = append(bundles, b)
-	}
-
-	resp := KeyFetchResp{Devices: bundles}
-	frame, err := encodeFrame(OpKeyFetchResp, resp)
-	if err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
-	}
-	select {
-	case c.send <- frame:
-	default:
-	}
-	return nil
-}
-
 func (c *Client) sendOfflineBatch(ctx context.Context) error {
 	rows, err := c.db.QueryContext(ctx,
 		`SELECT m.id, m.sender_user_id, m.sender_device_id, m.recipient_device_id,
-		        COALESCE(dpk.x25519_pub, ''),
+		        '' as sender_ik,
 		        CASE WHEN ch.user1_id = ? THEN ch.user2_id ELSE ch.user1_id END as chat_user_id,
 		        m.ciphertext, m.encryption_salt, m.encryption_nonce, m.timestamp, m.reply_to_msg_id,
 		        COALESCE(m.client_msg_id, '')
 		 FROM messages m
 		 JOIN chats ch ON m.chat_id = ch.id
-		 LEFT JOIN device_public_keys dpk ON m.sender_device_id = dpk.device_id
 		 WHERE m.recipient_user_id=? AND m.recipient_device_id=? AND m.delivered=0 AND m.deleted_by_recipient=0 AND m.purge_pending=0
 		 ORDER BY m.timestamp ASC`,
 		c.userID, c.userID, c.deviceID)
@@ -1138,12 +1043,11 @@ func (c *Client) sendOfflineStatusBatch(ctx context.Context) error {
 func (c *Client) sendOfflineEditBatch(ctx context.Context) error {
 	threshold := time.Now().Add(-14 * 24 * time.Hour).Unix()
 	rows, err := c.db.QueryContext(ctx,
-		`SELECT m.id, m.sender_user_id, m.sender_device_id, m.recipient_device_id, dpk.x25519_pub,
+		`SELECT m.id, m.sender_user_id, m.sender_device_id, m.recipient_device_id, '',
 		        CASE WHEN ch.user1_id = ? THEN ch.user2_id ELSE ch.user1_id END,
 		        m.ciphertext, m.encryption_salt, m.encryption_nonce, m.edited_at, COALESCE(m.client_msg_id, '')
 		 FROM messages m
 		 JOIN chats ch ON m.chat_id = ch.id
-		 LEFT JOIN device_public_keys dpk ON m.sender_device_id = dpk.device_id
 		 WHERE (m.recipient_device_id = ? OR (m.sender_device_id = ? AND m.sender_user_id = ?))
 		   AND m.edited_at IS NOT NULL AND m.edited_at > ? AND m.purge_pending = 0
 		 ORDER BY m.edited_at ASC`,
@@ -1342,80 +1246,7 @@ func EncodeFrame(op Opcode, v any) ([]byte, error) {
 	return encodeFrame(op, v)
 }
 
-func (c *Client) handleKeyPublish(ctx context.Context, req *KeyPublishReq) error {
-	now := time.Now().Unix()
-	tx, err := c.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
 
-	// Identity keys are permanent for a device; reject mutations
-	var existingIK []byte
-	err = tx.QueryRowContext(ctx,
-		`SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, c.deviceID).Scan(&existingIK)
-	if err == nil && len(existingIK) > 0 {
-		if !bytes.Equal(existingIK, req.X25519Pub) {
-			return fmt.Errorf("identity key is immutable: device %d already has a different key", c.deviceID)
-		}
-	}
-
-	_, err = tx.ExecContext(ctx,
-		`INSERT OR REPLACE INTO device_public_keys(device_id, x25519_pub, created_at, updated_at)
-		 VALUES(?, ?, ?, ?)`,
-		c.deviceID, req.X25519Pub, now, now)
-	if err != nil {
-		return fmt.Errorf("insert device_public_keys: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
-	}
-	go c.hub.NotifyUserDevicesChanged(context.Background(), c.db, c.userID)
-	return nil
-}
-
-func (c *Client) handleKeyBundleReq(ctx context.Context, req *KeyBundleReq) error {
-	tx, err := c.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM devices WHERE user_id=?`, req.UserID)
-	if err != nil {
-		return fmt.Errorf("query devices: %w", err)
-	}
-	defer rows.Close()
-
-	var devices []DeviceKeyBundle
-	for rows.Next() {
-		var deviceID int64
-		if err := rows.Scan(&deviceID); err != nil {
-			return err
-		}
-
-		var x25519Pub []byte
-		err := tx.QueryRowContext(ctx, `SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, deviceID).Scan(&x25519Pub)
-		if err == sql.ErrNoRows {
-			continue
-		} else if err != nil {
-			return err
-		}
-
-		var bundle DeviceKeyBundle
-		bundle.DeviceID = deviceID
-		bundle.IKPub = x25519Pub
-		devices = append(devices, bundle)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
-	}
-
-	c.pushFrame(OpKeyBundleResp, KeyFetchResp{Devices: devices})
-	return nil
-}
 
 func (c *Client) handleMsgRetryReq(ctx context.Context, req *MsgRetryReq) error {
 	tx, err := c.db.BeginTx(ctx, nil)
@@ -1496,10 +1327,6 @@ func (c *Client) handleMsgRetryResp(ctx context.Context, req *MsgRetryResp) erro
 
 	// 4. Retrieve sender public identity key
 	var senderIKPub []byte
-	err = tx.QueryRowContext(ctx, `SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, senderDeviceID).Scan(&senderIKPub)
-	if err != nil {
-		return fmt.Errorf("lookup sender ik: %w", err)
-	}
 
 	if err := tx.Commit(); err != nil {
 		return err
@@ -1669,9 +1496,6 @@ func (c *Client) handleMsgEdit(ctx context.Context, msg *MsgEditEncrypted) error
 	}
 
 	var senderIKPub []byte
-	if isE2EE {
-		_ = c.db.QueryRowContext(ctx, `SELECT x25519_pub FROM device_public_keys WHERE device_id=?`, c.deviceID).Scan(&senderIKPub)
-	}
 
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {

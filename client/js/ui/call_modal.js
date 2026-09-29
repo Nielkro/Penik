@@ -207,7 +207,7 @@ function renderCallModal(callState, mediaState) {
           <div class="call-header-info">
             <span class="call-peer-title">${esc(peerDisplayName)}</span>
             <span class="call-duration-badge" id="call-duration-timer">00:00</span>
-            ${callState.isE2EE ? `<span class="call-e2ee-badge" title="${callState.isE2EEVerified ? 'Сквозное шифрование проверено' : 'Сквозное шифрование'}">${SVG_ICONS.lock} ${callState.isE2EEVerified ? 'E2EE Защищено' : 'E2EE'}</span>` : ''}
+            ${callState.isE2EE ? `<span class="call-e2ee-badge" title="Сквозное шифрование">${SVG_ICONS.lock} E2EE</span>` : ''}
             <span class="call-link-status hidden" id="call-link-status"></span>
           </div>
         </div>

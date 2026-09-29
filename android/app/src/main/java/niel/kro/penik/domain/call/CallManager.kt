@@ -73,7 +73,6 @@ data class CallUiState(
     val peerOnline: Boolean = true,
     // True when the call is End-to-End Encrypted via WebRTC FrameCryptor.
     val isE2EE: Boolean = false,
-    val isE2EEVerified: Boolean = false,
     val safetyWords: List<String> = emptyList()
 )
 
@@ -143,8 +142,6 @@ class CallManager @Inject constructor(
     private var derivedMasterKey: String = ""
     private var myEphemeralPub: ByteArray? = null
     private var myEphemeralPriv: ByteArray? = null
-    private var authSecret: ByteArray? = null
-    private var isE2EEVerified: Boolean = false
     private var safetyWords: List<String> = emptyList()
     // Pending outgoing call that was held until the user confirms despite VPN.
     private var pendingOutgoingCall: PendingOutgoingCall? = null
@@ -178,7 +175,7 @@ class CallManager @Inject constructor(
         }
     }
 
-    // --- Crypto Helpers for Signed Ephemeral DH (Option 3) ---
+    // --- Crypto Helpers for Ephemeral DH (LiveKit E2EE) ---
 
     private fun bytesToHex(bytes: ByteArray): String {
         val sb = StringBuilder(bytes.size * 2)
@@ -271,28 +268,12 @@ class CallManager @Inject constructor(
         }
     }
 
-    private fun computeAuthTag(secret: ByteArray, prefix: String, ekPubHex: String): String {
-        val prefixBytes = prefix.toByteArray(Charsets.UTF_8)
-        val ekBytes = ekPubHex.toByteArray(Charsets.UTF_8)
-        val input = ByteArray(secret.size + prefixBytes.size + ekBytes.size)
-        System.arraycopy(secret, 0, input, 0, secret.size)
-        System.arraycopy(prefixBytes, 0, input, secret.size, prefixBytes.size)
-        System.arraycopy(ekBytes, 0, input, secret.size + prefixBytes.size, ekBytes.size)
-        return bytesToHex(sha256(input))
-    }
-
-    private fun deriveMediaKeyAndWords(sharedDh: ByteArray, secret: ByteArray?): Pair<String, List<String>> {
-        val contextBytes = (if (secret != null) "penik-livekit-call-v2" else "penik-livekit-call-v1").toByteArray(Charsets.UTF_8)
-        val totalLen = sharedDh.size + (secret?.size ?: 0) + contextBytes.size
+    private fun deriveMediaKeyAndWords(sharedDh: ByteArray): Pair<String, List<String>> {
+        val contextBytes = "penik-livekit-call-v1".toByteArray(Charsets.UTF_8)
+        val totalLen = sharedDh.size + contextBytes.size
         val input = ByteArray(totalLen)
-        var offset = 0
-        System.arraycopy(sharedDh, 0, input, offset, sharedDh.size)
-        offset += sharedDh.size
-        if (secret != null) {
-            System.arraycopy(secret, 0, input, offset, secret.size)
-            offset += secret.size
-        }
-        System.arraycopy(contextBytes, 0, input, offset, contextBytes.size)
+        System.arraycopy(sharedDh, 0, input, 0, sharedDh.size)
+        System.arraycopy(contextBytes, 0, input, sharedDh.size, contextBytes.size)
         val masterBytes = sha256(input)
         val masterHex = bytesToHex(masterBytes)
         val words = (0 until 4).map { i ->
@@ -300,30 +281,6 @@ class CallManager @Inject constructor(
             SafetyNumber.RUSSIAN_WORDS[idx]
         }
         return Pair(masterHex, words)
-    }
-
-    private val peerIkCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, ByteArray>>()
-
-    private suspend fun fetchPeerIdentityKey(userId: Long): ByteArray? {
-        val now = System.currentTimeMillis()
-        val cached = peerIkCache[userId]
-        if (cached != null && cached.first > now) {
-            return cached.second
-        }
-        return try {
-            val resp = apiService.getKeyBundle(userId)
-            if (resp.isSuccessful) {
-                val dev = resp.body()?.devices?.firstOrNull { it.identityKey.isNotBlank() }
-                val key = dev?.identityKey?.let { android.util.Base64.decode(it, android.util.Base64.DEFAULT) }
-                if (key != null) {
-                    peerIkCache[userId] = Pair(now + 5 * 60 * 1000L, key)
-                }
-                key
-            } else null
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to fetch peer identity key for $userId: ${e.message}")
-            null
-        }
     }
 
     // --- Outgoing ---
@@ -341,6 +298,8 @@ class CallManager @Inject constructor(
         myEphemeralPub = kp.first
         myEphemeralPriv = kp.second
         val myEkPubHex = bytesToHex(kp.first)
+        val outgoingKey = "dh:1:$myEkPubHex"
+        callKey = outgoingKey
 
         _state.value = CallUiState(
             phase = CallPhase.DIALING,
@@ -348,25 +307,11 @@ class CallManager @Inject constructor(
             peerName = peerName.ifBlank { "Пользователь #$peerUserId" },
             isVideo = isVideo,
             isOutgoing = true,
-            isE2EE = true,
-            isE2EEVerified = false
+            isE2EE = true
         )
         startDialingTone()
 
         scope.launch {
-            val myIkPriv = tokenStorage.getPrivateKey()
-            val peerIkPub = fetchPeerIdentityKey(peerUserId)
-            var outgoingKey = "dh:1:$myEkPubHex"
-            if (myIkPriv != null && peerIkPub != null) {
-                val secret = diffieHellman(myIkPriv, peerIkPub)
-                if (secret != null) {
-                    authSecret = secret
-                    val tag = computeAuthTag(secret, "CALL_OFFER:", myEkPubHex)
-                    outgoingKey = "dh:2:$myEkPubHex:$tag"
-                }
-            }
-            callKey = outgoingKey
-
             if (isVpnActive()) {
                 pendingOutgoingCall = PendingOutgoingCall(peerUserId, peerName, isVideo, outgoingKey)
                 _vpnWarning.tryEmit(Unit)
@@ -407,7 +352,6 @@ class CallManager @Inject constructor(
         livekitFallbackUrl = event.livekitFallbackUrl
         token = event.token
         callKey = event.callKey.orEmpty()
-        isE2EEVerified = false
         safetyWords = emptyList()
 
         _state.value = CallUiState(
@@ -416,8 +360,7 @@ class CallManager @Inject constructor(
             peerName = "Пользователь #${event.fromUserId}",
             isVideo = event.isVideo,
             isOutgoing = false,
-            isE2EE = callKey.isNotBlank(),
-            isE2EEVerified = false
+            isE2EE = callKey.isNotBlank()
         )
         startRinger()
         notificationManager.showIncomingCallNotification(
@@ -436,39 +379,6 @@ class CallManager @Inject constructor(
             }
         }
         scope.launch { resolvePeerName(event.fromUserId) }
-        scope.launch { prepareIncomingAuth(event.fromUserId, callKey) }
-    }
-
-    private suspend fun prepareIncomingAuth(peerUserId: Long, offerKey: String) {
-        if (!offerKey.startsWith("dh:")) return
-        try {
-            val parts = offerKey.split(":")
-            if (parts.size >= 3) {
-                val version = parts[1]
-                val callerEkPubHex = parts[2]
-                val callerTag = if (parts.size > 3) parts[3] else null
-
-                val myIkPriv = tokenStorage.getPrivateKey()
-                val peerIkPub = fetchPeerIdentityKey(peerUserId)
-                if (myIkPriv != null && peerIkPub != null) {
-                    val secret = diffieHellman(myIkPriv, peerIkPub)
-                    if (secret != null) {
-                        authSecret = secret
-                        if (version == "2" && callerTag != null) {
-                            val expectedTag = computeAuthTag(secret, "CALL_OFFER:", callerEkPubHex)
-                            if (expectedTag.equals(callerTag, ignoreCase = true)) {
-                                isE2EEVerified = true
-                                if (ui.phase == CallPhase.INCOMING) {
-                                    _state.value = ui.copy(isE2EEVerified = true)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "prepareIncomingAuth error", e)
-        }
     }
 
     fun acceptCall() {
@@ -554,45 +464,22 @@ class CallManager @Inject constructor(
                 try {
                     val parts = callKey.split(":")
                     if (parts.size >= 3) {
-                        val version = parts[1]
                         val callerEkPubHex = parts[2]
-                        val callerTag = if (parts.size > 3) parts[3] else null
-
                         val kp = generateEphemeralKeyPair()
                         if (kp != null) {
                             myEphemeralPub = kp.first
                             myEphemeralPriv = kp.second
                             val myEkPubHex = bytesToHex(kp.first)
-
-                            if (authSecret == null) {
-                                val myIkPriv = tokenStorage.getPrivateKey()
-                                val peerIkPub = fetchPeerIdentityKey(ui.peerUserId)
-                                if (myIkPriv != null && peerIkPub != null) {
-                                    authSecret = diffieHellman(myIkPriv, peerIkPub)
-                                }
-                            }
-
-                            if (authSecret != null && version == "2" && callerTag != null) {
-                                val expectedTag = computeAuthTag(authSecret!!, "CALL_OFFER:", callerEkPubHex)
-                                isE2EEVerified = expectedTag.equals(callerTag, ignoreCase = true)
-                            }
-
-                            acceptCallKey = if (authSecret != null) {
-                                val tag = computeAuthTag(authSecret!!, "CALL_ACCEPT:", myEkPubHex)
-                                "dh:2:$myEkPubHex:$tag"
-                            } else {
-                                "dh:1:$myEkPubHex"
-                            }
+                            acceptCallKey = "dh:1:$myEkPubHex"
 
                             val callerEkPub = hexToBytes(callerEkPubHex)
                             val sharedDh = diffieHellman(myEphemeralPriv!!, callerEkPub)
                             if (sharedDh != null) {
-                                val (masterHex, words) = deriveMediaKeyAndWords(sharedDh, if (isE2EEVerified) authSecret else null)
+                                val (masterHex, words) = deriveMediaKeyAndWords(sharedDh)
                                 derivedMasterKey = masterHex
                                 safetyWords = words
                                 _state.value = ui.copy(
                                     isE2EE = true,
-                                    isE2EEVerified = isE2EEVerified,
                                     safetyWords = words
                                 )
                             }
@@ -664,22 +551,12 @@ class CallManager @Inject constructor(
             try {
                 val parts = peerCallKey.split(":")
                 if (parts.size >= 3) {
-                    val version = parts[1]
                     val calleeEkPubHex = parts[2]
-                    val calleeTag = if (parts.size > 3) parts[3] else null
-
-                    if (version == "2" && authSecret != null && calleeTag != null) {
-                        val expectedTag = computeAuthTag(authSecret!!, "CALL_ACCEPT:", calleeEkPubHex)
-                        isE2EEVerified = expectedTag.equals(calleeTag, ignoreCase = true)
-                    } else {
-                        isE2EEVerified = false
-                    }
-
                     val calleeEkPub = hexToBytes(calleeEkPubHex)
                     if (myEphemeralPriv != null) {
                         val sharedDh = diffieHellman(myEphemeralPriv!!, calleeEkPub)
                         if (sharedDh != null) {
-                            val (masterHex, words) = deriveMediaKeyAndWords(sharedDh, if (isE2EEVerified) authSecret else null)
+                            val (masterHex, words) = deriveMediaKeyAndWords(sharedDh)
                             derivedMasterKey = masterHex
                             safetyWords = words
                         }
@@ -697,7 +574,6 @@ class CallManager @Inject constructor(
         _state.value = ui.copy(
             phase = CallPhase.CONNECTING,
             isE2EE = derivedMasterKey.isNotBlank(),
-            isE2EEVerified = isE2EEVerified,
             safetyWords = safetyWords
         )
         scope.launch { connectLiveKit() }
@@ -1107,7 +983,6 @@ class CallManager @Inject constructor(
             phase = CallPhase.ACTIVE,
             isReconnecting = false,
             isE2EE = derivedMasterKey.isNotBlank() || callKey.isNotBlank(),
-            isE2EEVerified = isE2EEVerified,
             safetyWords = safetyWords
         )
         playConnectedTone()
@@ -1419,16 +1294,11 @@ class CallManager @Inject constructor(
         token = ""
         callKey = ""
         derivedMasterKey = ""
-        isE2EEVerified = false
         safetyWords = emptyList()
         myEphemeralPub = null
         if (myEphemeralPriv != null) {
             if (RustCryptoCore.isAvailable()) RustCryptoCore.zeroize(myEphemeralPriv!!)
             myEphemeralPriv = null
-        }
-        if (authSecret != null) {
-            if (RustCryptoCore.isAvailable()) RustCryptoCore.zeroize(authSecret!!)
-            authSecret = null
         }
         callIdOfIncoming = ""
         currentCallId = ""

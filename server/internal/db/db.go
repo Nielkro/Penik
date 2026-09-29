@@ -168,19 +168,9 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate read: %w", err)
 	}
 
-	if err := migrateToE2EE(sqlDB); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("db: migrate to e2ee: %w", err)
-	}
-
 	if err := migrateMessagesE2EE(sqlDB); err != nil {
 		sqlDB.Close()
 		return nil, fmt.Errorf("db: migrate messages e2ee: %w", err)
-	}
-
-	if err := migratePairingSchema(sqlDB); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("db: migrate pairing schema: %w", err)
 	}
 
 	if err := migrateReplyToMsgId(sqlDB); err != nil {
@@ -220,11 +210,6 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("db: migrate sessions: %w", err)
 	}
 
-	if err := migrateKeyBackupsMultiDevice(sqlDB); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("db: migrate key_backups multi-device: %w", err)
-	}
-
 	if err := migrateUsersIsBot(sqlDB); err != nil {
 		sqlDB.Close()
 		return nil, fmt.Errorf("db: migrate users is_bot: %w", err)
@@ -233,11 +218,6 @@ func Open(path string) (*DB, error) {
 	if err := migrateBotsTable(sqlDB); err != nil {
 		sqlDB.Close()
 		return nil, fmt.Errorf("db: migrate bots table: %w", err)
-	}
-
-	if err := migrateEd25519SigningKey(sqlDB); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("db: migrate ed25519 signing key: %w", err)
 	}
 
 	if err := migrateCloudAndE2EE(sqlDB); err != nil {
@@ -278,31 +258,7 @@ func createIndexes(database *sql.DB) error {
 	return nil
 }
 
-// migratePairingSchema upgrades databases created before the pairing columns
-// were added to schema.sql. CREATE TABLE IF NOT EXISTS does not alter an
-// already existing SQLite table.
-func migratePairingSchema(database *sql.DB) error {
-	columns := []struct {
-		name string
-		def  string
-	}{
-		{"claimed_by_device_id", "INTEGER REFERENCES devices(id) ON DELETE SET NULL"},
-		{"claimed_by_public_key", "BLOB"},
-		{"transfer_direction", "TEXT NOT NULL DEFAULT 'web_to_phone'"},
-	}
-	for _, column := range columns {
-		has, err := tableHasColumn(database, "pairing_sessions", column.name)
-		if err != nil {
-			return err
-		}
-		if !has {
-			if _, err := database.Exec("ALTER TABLE pairing_sessions ADD COLUMN " + column.name + " " + column.def); err != nil {
-				return fmt.Errorf("add %s: %w", column.name, err)
-			}
-		}
-	}
-	return nil
-}
+
 
 func migrateLegacySchema(database *sql.DB) error {
 	userOwned, err := tableHasColumn(database, "messages", "sender_user_id")
@@ -343,7 +299,6 @@ WHERE chat_id NOT IN (SELECT id FROM chats)
 DELETE FROM sessions
 WHERE user_id NOT IN (SELECT id FROM users)
    OR device_id NOT IN (SELECT id FROM devices);
-DELETE FROM identity_keys WHERE device_id NOT IN (SELECT id FROM devices);
 
 DELETE FROM chats
 WHERE user1_id NOT IN (SELECT id FROM users)
@@ -770,37 +725,7 @@ func migrateMessageRead(database *sql.DB) error {
 	return err
 }
 
-func migrateToE2EE(database *sql.DB) error {
-	_, err := database.Exec(`CREATE TABLE IF NOT EXISTS device_public_keys (
-		device_id INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
-		x25519_pub BLOB NOT NULL,
-		created_at INTEGER NOT NULL,
-		updated_at INTEGER NOT NULL
-	)`)
-	if err != nil {
-		return fmt.Errorf("create device_public_keys table: %w", err)
-	}
 
-	// Login matches a device by (user_id, identity key) so a stable crypto
-	// identity maps to one device row regardless of a volatile device_name.
-	_, err = database.Exec(`CREATE INDEX IF NOT EXISTS idx_device_public_keys_pub ON device_public_keys(x25519_pub)`)
-	if err != nil {
-		return fmt.Errorf("create idx_device_public_keys_pub index: %w", err)
-	}
-
-	_, err = database.Exec(`CREATE TABLE IF NOT EXISTS key_backups (
-		user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-		encrypted_blob BLOB NOT NULL,
-		salt BLOB NOT NULL,
-		iv BLOB NOT NULL,
-		created_at INTEGER NOT NULL
-	)`)
-	if err != nil {
-		return fmt.Errorf("create key_backups table: %w", err)
-	}
-
-	return nil
-}
 
 func migrateMessagesE2EE(database *sql.DB) error {
 	cols := []struct {
@@ -1087,59 +1012,6 @@ func migrateCallsTable(database *sql.DB) error {
 	return tx.Commit()
 }
 
-func migrateKeyBackupsMultiDevice(database *sql.DB) error {
-	hasDeviceName, err := tableHasColumn(database, "key_backups", "device_name")
-	if err != nil {
-		return err
-	}
-	if hasDeviceName {
-		return nil
-	}
-
-	ctx := context.Background()
-	tx, err := database.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS key_backups_v2 (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
-			device_name TEXT NOT NULL DEFAULT '',
-			platform TEXT NOT NULL DEFAULT '',
-			encrypted_blob BLOB NOT NULL,
-			salt BLOB NOT NULL,
-			iv BLOB NOT NULL,
-			created_at INTEGER NOT NULL,
-			updated_at INTEGER NOT NULL DEFAULT 0,
-			UNIQUE(user_id, device_id)
-		);
-	`); err != nil {
-		return fmt.Errorf("create key_backups_v2: %w", err)
-	}
-
-	tableExists, _ := tableHasColumn(database, "key_backups", "user_id")
-	if tableExists {
-		_, _ = tx.ExecContext(ctx, `
-			INSERT OR IGNORE INTO key_backups_v2 (user_id, device_id, device_name, platform, encrypted_blob, salt, iv, created_at, updated_at)
-			SELECT user_id, NULL, 'Legacy Backup', 'unknown', encrypted_blob, salt, iv, created_at, created_at
-			FROM key_backups;
-		`)
-		if _, err := tx.ExecContext(ctx, `DROP TABLE key_backups;`); err != nil {
-			return fmt.Errorf("drop legacy key_backups: %w", err)
-		}
-	}
-
-	if _, err := tx.ExecContext(ctx, `ALTER TABLE key_backups_v2 RENAME TO key_backups;`); err != nil {
-		return fmt.Errorf("rename key_backups_v2 to key_backups: %w", err)
-	}
-
-	return tx.Commit()
-}
-
 func migrateUsersIsBot(database *sql.DB) error {
 	has, err := tableHasColumn(database, "users", "is_bot")
 	if err != nil {
@@ -1165,19 +1037,6 @@ func migrateBotsTable(database *sql.DB) error {
 	`)
 	if err != nil {
 		return fmt.Errorf("create bots table: %w", err)
-	}
-	return nil
-}
-
-func migrateEd25519SigningKey(database *sql.DB) error {
-	has, err := tableHasColumn(database, "device_public_keys", "ed25519_pub")
-	if err != nil {
-		return err
-	}
-	if !has {
-		if _, err := database.Exec("ALTER TABLE device_public_keys ADD COLUMN ed25519_pub BLOB DEFAULT NULL"); err != nil {
-			return fmt.Errorf("add ed25519_pub to device_public_keys: %w", err)
-		}
 	}
 	return nil
 }

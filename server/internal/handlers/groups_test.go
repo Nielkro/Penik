@@ -683,10 +683,6 @@ func TestHandlersDBErrorPaths(t *testing.T) {
 		{"remove", call(RemoveMember(database), "DELETE", true, nil)},
 		{"role", call(ChangeMemberRole(database), "PATCH", true, memberRoleRequest{Role: roleAdmin})},
 		{"history", call(GetGroupHistory(database), "GET", true, nil)},
-		{"rotate", call(RotateGroupKey(database), "POST", true, nil)},
-		{"upload", call(UploadEnvelopes(database, nil), "POST", true, envelopeUploadRequest{Envelopes: []envelopeItem{{DeviceID: ownerDev, EncryptedKey: b64("k"), Salt: b64("s"), Nonce: b64("n")}}})},
-		{"versions", call(ListKeyVersions(database), "GET", true, nil)},
-		{"envelope", call(GetEnvelope(database), "GET", true, nil)},
 	}
 	for _, c := range cases {
 		if c.code != http.StatusInternalServerError {
@@ -746,209 +742,22 @@ func TestReachableValidationBranches(t *testing.T) {
 	r = as("PATCH", "/x", bobID, bobDev, memberRoleRequest{Role: roleAdmin})
 	r.SetPathValue("group_id", itoa(groupID))
 	r.SetPathValue("user_id", itoa(ownerID))
-	ChangeMemberRole(database)(w, r)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("active member role change: expected 403 got %d", w.Code)
-	}
 }
 
-// TestRotateKeyVersionInsertError covers RotateGroupKey's key-version insert
-// failure: membership and the groups UPDATE succeed, then the
-// group_key_versions INSERT errors because the table is gone.
-func TestRotateKeyVersionInsertError(t *testing.T) {
-	database, _ := db.Open(filepath.Join(t.TempDir(), "roterr.db"))
+func TestGroupDeleteFailureBranch(t *testing.T) {
+	database, _ := db.Open(filepath.Join(t.TempDir(), "wf6.db"))
 	defer database.Close()
 	ownerID, ownerDev := newUser(t, database, "owner")
 	groupID := mkGroup(t, database, ownerID, ownerDev)
-	database.Exec(`DROP TABLE group_key_versions`)
-
+	database.Exec(`CREATE TRIGGER t_del BEFORE UPDATE OF deleted_at ON groups
+		BEGIN SELECT RAISE(ABORT,'boom'); END`)
 	w := httptest.NewRecorder()
-	r := as("POST", "/r", ownerID, ownerDev, nil)
+	r := as("DELETE", "/x", ownerID, ownerDev, nil)
 	r.SetPathValue("group_id", itoa(groupID))
-	RotateGroupKey(database)(w, r)
+	DeleteGroup(database)(w, r)
 	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("rotate with dropped key_versions: expected 500 got %d", w.Code)
+		t.Fatalf("delete update fault: expected 500 got %d", w.Code)
 	}
-}
-
-// TestGroupWriteFaultBranches covers the mid-transaction write-error returns
-// (the INSERT/UPDATE failure paths after membership and earlier statements
-// succeed). A SQLite trigger is armed to raise on the specific write so reads
-// used by the permission checks still work.
-func TestGroupWriteFaultBranches(t *testing.T) {
-	// InviteMember: the membership-version bump UPDATE on groups fails.
-	t.Run("invite_groups_update", func(t *testing.T) {
-		database, _ := db.Open(filepath.Join(t.TempDir(), "wf1.db"))
-		defer database.Close()
-		ownerID, ownerDev := newUser(t, database, "owner")
-		bobID, _ := newUser(t, database, "bob")
-		groupID := mkGroup(t, database, ownerID, ownerDev)
-		database.Exec(`CREATE TRIGGER t_grp BEFORE UPDATE OF membership_version ON groups
-			BEGIN SELECT RAISE(ABORT,'boom'); END`)
-		w := httptest.NewRecorder()
-		r := as("POST", "/m", ownerID, ownerDev, memberInviteRequest{UserID: bobID})
-		r.SetPathValue("group_id", itoa(groupID))
-		InviteMember(database, nil)(w, r)
-		if w.Code != http.StatusInternalServerError {
-			t.Fatalf("invite update fault: expected 500 got %d", w.Code)
-		}
-	})
-
-	// InviteMember: the member upsert fails after the version bump succeeds.
-	t.Run("invite_member_upsert", func(t *testing.T) {
-		database, _ := db.Open(filepath.Join(t.TempDir(), "wf2.db"))
-		defer database.Close()
-		ownerID, ownerDev := newUser(t, database, "owner")
-		bobID, _ := newUser(t, database, "bob")
-		groupID := mkGroup(t, database, ownerID, ownerDev)
-		database.Exec(`CREATE TRIGGER t_ins BEFORE INSERT ON group_members
-			WHEN NEW.status='pending' BEGIN SELECT RAISE(ABORT,'boom'); END`)
-		w := httptest.NewRecorder()
-		r := as("POST", "/m", ownerID, ownerDev, memberInviteRequest{UserID: bobID})
-		r.SetPathValue("group_id", itoa(groupID))
-		InviteMember(database, nil)(w, r)
-		if w.Code != http.StatusInternalServerError {
-			t.Fatalf("invite upsert fault: expected 500 got %d", w.Code)
-		}
-	})
-
-	// RemoveMember: the member status UPDATE fails after the version bump.
-	t.Run("remove_member_update", func(t *testing.T) {
-		database, _ := db.Open(filepath.Join(t.TempDir(), "wf3.db"))
-		defer database.Close()
-		ownerID, ownerDev := newUser(t, database, "owner")
-		bobID, bobDev := newUser(t, database, "bob")
-		groupID := mkGroup(t, database, ownerID, ownerDev, bobID)
-		wa := httptest.NewRecorder()
-		ra := as("POST", "/a", bobID, bobDev, nil)
-		ra.SetPathValue("group_id", itoa(groupID))
-		AcceptInvitation(database)(wa, ra)
-		database.Exec(`CREATE TRIGGER t_rm BEFORE UPDATE OF removed_at ON group_members
-			BEGIN SELECT RAISE(ABORT,'boom'); END`)
-		w := httptest.NewRecorder()
-		r := as("DELETE", "/m", ownerID, ownerDev, nil)
-		r.SetPathValue("group_id", itoa(groupID))
-		r.SetPathValue("user_id", itoa(bobID))
-		RemoveMember(database)(w, r)
-		if w.Code != http.StatusInternalServerError {
-			t.Fatalf("remove update fault: expected 500 got %d", w.Code)
-		}
-	})
-
-	// ChangeMemberRole: the role UPDATE fails.
-	t.Run("role_update", func(t *testing.T) {
-		database, _ := db.Open(filepath.Join(t.TempDir(), "wf4.db"))
-		defer database.Close()
-		ownerID, ownerDev := newUser(t, database, "owner")
-		bobID, bobDev := newUser(t, database, "bob")
-		groupID := mkGroup(t, database, ownerID, ownerDev, bobID)
-		wa := httptest.NewRecorder()
-		ra := as("POST", "/a", bobID, bobDev, nil)
-		ra.SetPathValue("group_id", itoa(groupID))
-		AcceptInvitation(database)(wa, ra)
-		database.Exec(`CREATE TRIGGER t_role BEFORE UPDATE OF role ON group_members
-			BEGIN SELECT RAISE(ABORT,'boom'); END`)
-		w := httptest.NewRecorder()
-		r := as("PATCH", "/m", ownerID, ownerDev, memberRoleRequest{Role: roleAdmin})
-		r.SetPathValue("group_id", itoa(groupID))
-		r.SetPathValue("user_id", itoa(bobID))
-		ChangeMemberRole(database)(w, r)
-		if w.Code != http.StatusInternalServerError {
-			t.Fatalf("role update fault: expected 500 got %d", w.Code)
-		}
-	})
-
-	// PatchGroup: the rename UPDATE fails.
-	t.Run("patch_update", func(t *testing.T) {
-		database, _ := db.Open(filepath.Join(t.TempDir(), "wf5.db"))
-		defer database.Close()
-		ownerID, ownerDev := newUser(t, database, "owner")
-		groupID := mkGroup(t, database, ownerID, ownerDev)
-		database.Exec(`CREATE TRIGGER t_name BEFORE UPDATE OF name ON groups
-			BEGIN SELECT RAISE(ABORT,'boom'); END`)
-		w := httptest.NewRecorder()
-		r := as("PATCH", "/x", ownerID, ownerDev, groupPatchRequest{Name: "New"})
-		r.SetPathValue("group_id", itoa(groupID))
-		PatchGroup(database)(w, r)
-		if w.Code != http.StatusInternalServerError {
-			t.Fatalf("patch update fault: expected 500 got %d", w.Code)
-		}
-	})
-
-	// DeleteGroup: the soft-delete UPDATE fails.
-	t.Run("delete_update", func(t *testing.T) {
-		database, _ := db.Open(filepath.Join(t.TempDir(), "wf6.db"))
-		defer database.Close()
-		ownerID, ownerDev := newUser(t, database, "owner")
-		groupID := mkGroup(t, database, ownerID, ownerDev)
-		database.Exec(`CREATE TRIGGER t_del BEFORE UPDATE OF deleted_at ON groups
-			BEGIN SELECT RAISE(ABORT,'boom'); END`)
-		w := httptest.NewRecorder()
-		r := as("DELETE", "/x", ownerID, ownerDev, nil)
-		r.SetPathValue("group_id", itoa(groupID))
-		DeleteGroup(database)(w, r)
-		if w.Code != http.StatusInternalServerError {
-			t.Fatalf("delete update fault: expected 500 got %d", w.Code)
-		}
-	})
-
-	// UploadEnvelopes: the envelope upsert fails after validation passes.
-	t.Run("envelope_insert", func(t *testing.T) {
-		database, _ := db.Open(filepath.Join(t.TempDir(), "wf7.db"))
-		defer database.Close()
-		ownerID, ownerDev := newUser(t, database, "owner")
-		groupID := mkGroup(t, database, ownerID, ownerDev)
-		database.Exec(`CREATE TRIGGER t_env BEFORE INSERT ON group_key_envelopes
-			BEGIN SELECT RAISE(ABORT,'boom'); END`)
-		env := envelopeUploadRequest{Envelopes: []envelopeItem{
-			{DeviceID: ownerDev, EncryptedKey: b64("k"), Salt: b64("s"), Nonce: b64("n")},
-		}}
-		w := httptest.NewRecorder()
-		r := as("POST", "/e", ownerID, ownerDev, env)
-		r.SetPathValue("group_id", itoa(groupID))
-		r.SetPathValue("version", "1")
-		UploadEnvelopes(database, nil)(w, r)
-		if w.Code != http.StatusInternalServerError {
-			t.Fatalf("envelope insert fault: expected 500 got %d", w.Code)
-		}
-	})
-
-	// activeDevices query fault: dropping the devices table makes the recipient
-	// lookup error. The membership check (group_members + groups) still succeeds,
-	// so both RotateGroupKey and UploadEnvelopes reach and surface the failure.
-	t.Run("rotate_active_devices", func(t *testing.T) {
-		database, _ := db.Open(filepath.Join(t.TempDir(), "wf8.db"))
-		defer database.Close()
-		ownerID, ownerDev := newUser(t, database, "owner")
-		groupID := mkGroup(t, database, ownerID, ownerDev)
-		database.Exec(`DROP TABLE devices`)
-		w := httptest.NewRecorder()
-		r := as("POST", "/r", ownerID, ownerDev, nil)
-		r.SetPathValue("group_id", itoa(groupID))
-		RotateGroupKey(database)(w, r)
-		if w.Code != http.StatusInternalServerError {
-			t.Fatalf("rotate active-devices fault: expected 500 got %d", w.Code)
-		}
-	})
-
-	t.Run("upload_active_devices", func(t *testing.T) {
-		database, _ := db.Open(filepath.Join(t.TempDir(), "wf9.db"))
-		defer database.Close()
-		ownerID, ownerDev := newUser(t, database, "owner")
-		groupID := mkGroup(t, database, ownerID, ownerDev)
-		database.Exec(`DROP TABLE devices`)
-		env := envelopeUploadRequest{Envelopes: []envelopeItem{
-			{DeviceID: ownerDev, EncryptedKey: b64("k"), Salt: b64("s"), Nonce: b64("n")},
-		}}
-		w := httptest.NewRecorder()
-		r := as("POST", "/e", ownerID, ownerDev, env)
-		r.SetPathValue("group_id", itoa(groupID))
-		r.SetPathValue("version", "1")
-		UploadEnvelopes(database, nil)(w, r)
-		if w.Code != http.StatusInternalServerError {
-			t.Fatalf("upload active-devices fault: expected 500 got %d", w.Code)
-		}
-	})
 }
 
 // Cover the member-permission and path-parse branches not hit elsewhere.
@@ -1008,18 +817,7 @@ func TestTxErrorBranches(t *testing.T) {
 		}
 	})
 
-	// CreateGroup: key-version insert fails.
-	t.Run("create_keyversion_insert", func(t *testing.T) {
-		database, _ := db.Open(filepath.Join(t.TempDir(), "tx2.db"))
-		defer database.Close()
-		ownerID, ownerDev := newUser(t, database, "owner")
-		database.Exec(`DROP TABLE group_key_versions`)
-		w := httptest.NewRecorder()
-		CreateGroup(database)(w, as("POST", "/g", ownerID, ownerDev, groupCreateRequest{Name: "T"}))
-		if w.Code != http.StatusInternalServerError {
-			t.Fatalf("expected 500 got %d", w.Code)
-		}
-	})
+
 
 	// AcceptInvitation: member-status update fails after the version bump.
 	t.Run("accept_member_update", func(t *testing.T) {

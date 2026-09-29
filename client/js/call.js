@@ -1,9 +1,9 @@
 import { ws, OP } from './ws.js';
 import { showToast } from './ui/components.js';
-import { getContact, saveContact, getIKPrivate } from './storage.js';
-import { getUserById, apiGet, getApiOrigin, invalidateCallsCache } from './api.js';
+import { getContact, saveContact } from './storage.js';
+import { getUserById, getApiOrigin, invalidateCallsCache } from './api.js';
 import { callSounds } from './sounds.js';
-import { generateKeyPair, deriveSharedSecret, decodeKey } from './crypto.js';
+import { generateKeyPair, deriveSharedSecret } from './crypto.js';
 import { defaultWordCoder } from './wordcoder.js';
 import {
   isDesktop,
@@ -36,7 +36,7 @@ async function getLiveKit() {
   return _livekitModule;
 }
 
-// --- Crypto Helpers for Signed Ephemeral DH (Option 3) ---
+// --- Crypto Helpers for Ephemeral DH (LiveKit E2EE) ---
 
 function bytesToHex(bytes) {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
@@ -56,48 +56,16 @@ async function sha256(data) {
   return new Uint8Array(buf);
 }
 
-async function computeAuthTag(authSecret, prefix, ekPubHex) {
+async function deriveMediaKeyAndWords(sharedDh) {
   const enc = new TextEncoder();
-  const prefixBytes = enc.encode(prefix);
-  const ekBytes = enc.encode(ekPubHex);
-  const concat = new Uint8Array(authSecret.length + prefixBytes.length + ekBytes.length);
-  concat.set(authSecret, 0);
-  concat.set(prefixBytes, authSecret.length);
-  concat.set(ekBytes, authSecret.length + prefixBytes.length);
-  const hash = await sha256(concat);
-  return bytesToHex(hash);
-}
-
-async function deriveMediaKeyAndWords(sharedDh, authSecret) {
-  const enc = new TextEncoder();
-  const ctx = enc.encode(authSecret ? 'penik-livekit-call-v2' : 'penik-livekit-call-v1');
-  const totalLen = sharedDh.length + (authSecret ? authSecret.length : 0) + ctx.length;
-  const concat = new Uint8Array(totalLen);
-  let offset = 0;
-  concat.set(sharedDh, offset);
-  offset += sharedDh.length;
-  if (authSecret) {
-    concat.set(authSecret, offset);
-    offset += authSecret.length;
-  }
-  concat.set(ctx, offset);
+  const ctx = enc.encode('penik-livekit-call-v1');
+  const concat = new Uint8Array(sharedDh.length + ctx.length);
+  concat.set(sharedDh, 0);
+  concat.set(ctx, sharedDh.length);
   const masterBytes = await sha256(concat);
   const masterHex = bytesToHex(masterBytes);
   const words = defaultWordCoder.encode(masterBytes.slice(0, 4));
   return { masterHex, words };
-}
-
-async function fetchPeerIdentityKey(userId) {
-  try {
-    const res = await apiGet('/keys/bundle/' + userId);
-    const dev = res?.devices?.find((d) => d.identity_key);
-    if (dev?.identity_key) {
-      return decodeKey(dev.identity_key);
-    }
-  } catch (e) {
-    console.warn('[call] Failed to fetch peer identity key:', e);
-  }
-  return null;
 }
 
 function bindCanvasWebSocketStream(wsUrl, canvas, ctx) {
@@ -168,7 +136,6 @@ export class CallManager {
 
     this._startingCall = false;
     this._myEphemeral = null;
-    this._authSecret = null;
     this._derivedMasterKey = null;
     this._peerEkPub = null;
 
@@ -289,17 +256,6 @@ export class CallManager {
         this._myEphemeral = kp;
         const myEkPubHex = bytesToHex(kp.publicKey);
         outgoingKey = `dh:1:${myEkPubHex}`;
-
-        const myIkPriv = await getIKPrivate();
-        const peerIkPub = await fetchPeerIdentityKey(toUserId);
-        if (myIkPriv && peerIkPub) {
-          const secret = await deriveSharedSecret(myIkPriv, peerIkPub);
-          if (secret) {
-            this._authSecret = secret;
-            const tag = await computeAuthTag(secret, 'CALL_OFFER:', myEkPubHex);
-            outgoingKey = `dh:2:${myEkPubHex}:${tag}`;
-          }
-        }
       } catch (e) {
         console.warn('[call] Ephemeral DH setup failed, falling back to random key:', e);
         const keyBytes = new Uint8Array(32);
@@ -315,7 +271,6 @@ export class CallManager {
         peerContact,
         callKey: outgoingKey,
         isE2EE: true,
-        isE2EEVerified: false,
         safetyWords: [],
       };
 
@@ -347,7 +302,7 @@ export class CallManager {
     if (!this.currentCall || this.currentCall.state !== 'INCOMING') return;
 
     callSounds.stopAll();
-    const { callId, token, livekitUrl, livekitFallbackUrl, callKey, fromUserId } = this.currentCall;
+    const { callId, token, livekitUrl, livekitFallbackUrl, callKey } = this.currentCall;
     this.currentCall.state = 'CONNECTING';
 
     let acceptCallKey = null;
@@ -355,41 +310,17 @@ export class CallManager {
       try {
         const parts = callKey.split(':');
         if (parts.length >= 3) {
-          const version = parts[1];
           const callerEkPubHex = parts[2];
-          const callerTag = parts[3] || null;
 
           const kp = await generateKeyPair();
           this._myEphemeral = kp;
           const myEkPubHex = bytesToHex(kp.publicKey);
-
-          if (!this._authSecret) {
-            const myIkPriv = await getIKPrivate();
-            const peerIkPub = await fetchPeerIdentityKey(fromUserId);
-            if (myIkPriv && peerIkPub) {
-              this._authSecret = await deriveSharedSecret(myIkPriv, peerIkPub);
-            }
-          }
-
-          if (this._authSecret && version === '2' && callerTag) {
-            const expectedTag = await computeAuthTag(this._authSecret, 'CALL_OFFER:', callerEkPubHex);
-            this.currentCall.isE2EEVerified = (expectedTag.toLowerCase() === callerTag.toLowerCase());
-          }
-
-          if (this._authSecret) {
-            const tag = await computeAuthTag(this._authSecret, 'CALL_ACCEPT:', myEkPubHex);
-            acceptCallKey = `dh:2:${myEkPubHex}:${tag}`;
-          } else {
-            acceptCallKey = `dh:1:${myEkPubHex}`;
-          }
+          acceptCallKey = `dh:1:${myEkPubHex}`;
 
           const callerEkPub = hexToBytes(callerEkPubHex);
           const sharedDh = await deriveSharedSecret(this._myEphemeral.privateKey, callerEkPub);
           if (sharedDh) {
-            const { masterHex, words } = await deriveMediaKeyAndWords(
-              sharedDh,
-              this.currentCall.isE2EEVerified ? this._authSecret : null
-            );
+            const { masterHex, words } = await deriveMediaKeyAndWords(sharedDh);
             this._derivedMasterKey = masterHex;
             this.currentCall.safetyWords = words;
           }
@@ -877,7 +808,6 @@ export class CallManager {
     document.querySelectorAll('audio[data-penik-call-audio]').forEach((el) => el.remove());
 
     this._myEphemeral = null;
-    this._authSecret = null;
     this._derivedMasterKey = null;
     this._peerEkPub = null;
 
@@ -927,35 +857,18 @@ export class CallManager {
     const offerKey = payload.call_key || '';
 
     this._myEphemeral = null;
-    this._authSecret = null;
     this._derivedMasterKey = null;
     this._peerEkPub = null;
 
-    let isE2EEVerified = false;
     if (offerKey.startsWith('dh:')) {
       try {
         const parts = offerKey.split(':');
         if (parts.length >= 3) {
-          const version = parts[1];
           const callerEkPubHex = parts[2];
-          const callerTag = parts[3] || null;
           this._peerEkPub = hexToBytes(callerEkPubHex);
-
-          const myIkPriv = await getIKPrivate();
-          const peerIkPub = await fetchPeerIdentityKey(payload.from_user_id);
-          if (myIkPriv && peerIkPub) {
-            const secret = await deriveSharedSecret(myIkPriv, peerIkPub);
-            if (secret) {
-              this._authSecret = secret;
-              if (version === '2' && callerTag) {
-                const expectedTag = await computeAuthTag(secret, 'CALL_OFFER:', callerEkPubHex);
-                isE2EEVerified = (expectedTag.toLowerCase() === callerTag.toLowerCase());
-              }
-            }
-          }
         }
       } catch (e) {
-        console.warn('[call] Error verifying incoming offer auth:', e);
+        console.warn('[call] Error parsing incoming offer key:', e);
       }
     }
 
@@ -971,7 +884,6 @@ export class CallManager {
       peerContact,
       callKey: offerKey,
       isE2EE: Boolean(offerKey),
-      isE2EEVerified,
       safetyWords: [],
     };
 
@@ -1004,25 +916,12 @@ export class CallManager {
       try {
         const parts = peerCallKey.split(':');
         if (parts.length >= 3) {
-          const version = parts[1];
           const calleeEkPubHex = parts[2];
-          const calleeTag = parts[3] || null;
-
-          let isE2EEVerified = false;
-          if (version === '2' && this._authSecret && calleeTag) {
-            const expectedTag = await computeAuthTag(this._authSecret, 'CALL_ACCEPT:', calleeEkPubHex);
-            isE2EEVerified = (expectedTag.toLowerCase() === calleeTag.toLowerCase());
-          }
-          this.currentCall.isE2EEVerified = isE2EEVerified;
-
           const calleeEkPub = hexToBytes(calleeEkPubHex);
           if (this._myEphemeral?.privateKey) {
             const sharedDh = await deriveSharedSecret(this._myEphemeral.privateKey, calleeEkPub);
             if (sharedDh) {
-              const { masterHex, words } = await deriveMediaKeyAndWords(
-                sharedDh,
-                isE2EEVerified ? this._authSecret : null
-              );
+              const { masterHex, words } = await deriveMediaKeyAndWords(sharedDh);
               this._derivedMasterKey = masterHex;
               this.currentCall.safetyWords = words;
             }

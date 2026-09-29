@@ -22,18 +22,6 @@ CREATE TABLE IF NOT EXISTS devices (
   crypto_version INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE TABLE IF NOT EXISTS identity_keys (
-  device_id INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
-  ik_pub BLOB NOT NULL,
-  spk_pub BLOB NOT NULL,
-  spk_sig BLOB NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-
-
-
-
 CREATE TABLE IF NOT EXISTS chats (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user1_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -77,57 +65,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_users_nickname ON users(nickname);
 
-CREATE TABLE IF NOT EXISTS device_public_keys (
-    device_id INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
-    x25519_pub BLOB NOT NULL,
-    ed25519_pub BLOB DEFAULT NULL,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-);
-
--- Login matches a device by (user_id, identity key), so a stable crypto
--- identity maps to one device row regardless of a volatile device_name.
-CREATE INDEX IF NOT EXISTS idx_device_public_keys_pub ON device_public_keys(x25519_pub);
-
-CREATE TABLE IF NOT EXISTS key_backups (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
-    device_name TEXT NOT NULL DEFAULT '',
-    platform TEXT NOT NULL DEFAULT '',
-    encrypted_blob BLOB NOT NULL,
-    salt BLOB NOT NULL,
-    iv BLOB NOT NULL,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(user_id, device_id)
-);
-
-CREATE TABLE IF NOT EXISTS pairing_sessions (
-  id TEXT PRIMARY KEY,
-  owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  owner_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-  ephemeral_public_key BLOB NOT NULL,
-  encrypted_history BLOB,
-  transfer_direction TEXT NOT NULL DEFAULT 'web_to_phone',
-  expires_at INTEGER NOT NULL,
-  claimed_at INTEGER,
-  claimed_by_device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
-  claimed_by_public_key BLOB,
-  created_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS pairing_tokens (
-  session_id TEXT PRIMARY KEY REFERENCES pairing_sessions(id) ON DELETE CASCADE,
-  token_hash BLOB NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_pairing_sessions_expiry ON pairing_sessions(expires_at);
-
-CREATE TABLE IF NOT EXISTS device_history_exclusions (
-  device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-  message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
-  PRIMARY KEY(device_id, message_id)
-);
-
 CREATE TABLE IF NOT EXISTS groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -152,35 +89,6 @@ CREATE TABLE IF NOT EXISTS group_members (
 );
 
 CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id, status);
-
-CREATE TABLE IF NOT EXISTS group_key_versions (
-    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-    key_version INTEGER NOT NULL,
-    created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    membership_version INTEGER NOT NULL,
-    created_at INTEGER NOT NULL,
-    revoked_at INTEGER DEFAULT NULL,
-    PRIMARY KEY(group_id, key_version)
-);
-
-CREATE TABLE IF NOT EXISTS group_key_envelopes (
-    group_id INTEGER NOT NULL,
-    key_version INTEGER NOT NULL,
-    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-    encrypted_key BLOB NOT NULL,
-    encryption_salt BLOB NOT NULL,
-    encryption_nonce BLOB NOT NULL,
-    sender_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-    created_at INTEGER NOT NULL,
-    delivered_at INTEGER DEFAULT NULL,
-    PRIMARY KEY(group_id, key_version, device_id),
-    FOREIGN KEY(group_id, key_version)
-        REFERENCES group_key_versions(group_id, key_version)
-        ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_group_key_envelopes_device
-    ON group_key_envelopes(device_id, delivered_at);
 
 CREATE TABLE IF NOT EXISTS group_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,27 +119,6 @@ CREATE TABLE IF NOT EXISTS group_message_devices (
 
 CREATE INDEX IF NOT EXISTS idx_group_message_devices_undelivered
     ON group_message_devices(device_id, delivered_at);
-
--- One-shot delivery of pre-join chat history to a newly invited device. The
--- inviter re-encrypts their locally held plaintext under the pairwise secret
--- shared with each invitee device (variant B); the server only stores opaque
--- ciphertext. A packet is deleted the moment its device fetches it, and a TTL
--- sweep drops any that were never claimed (invite declined, device offline).
-CREATE TABLE IF NOT EXISTS group_history_packets (
-    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-    for_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    encrypted_history BLOB NOT NULL,
-    encryption_salt BLOB NOT NULL,
-    encryption_nonce BLOB NOT NULL,
-    sender_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-    created_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL,
-    PRIMARY KEY(group_id, device_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_group_history_packets_expiry
-    ON group_history_packets(expires_at);
 
 CREATE TABLE IF NOT EXISTS sticker_packs (
     id TEXT PRIMARY KEY,

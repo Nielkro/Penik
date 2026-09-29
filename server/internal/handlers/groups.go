@@ -139,15 +139,6 @@ func CreateGroup(database *db.DB) http.HandlerFunc {
 			return
 		}
 
-		// Register key version 1 so envelopes can be uploaded
-		// and messages sent under it immediately, before any rotation.
-		if _, err := tx.ExecContext(r.Context(),
-			`INSERT INTO group_key_versions(group_id,key_version,created_by_user_id,membership_version,created_at)
-			 VALUES(?,1,?,1,?)`, groupID, owner, now); err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-
 		seen := map[int64]bool{owner: true}
 		for _, uid := range req.MemberUserIDs {
 			if uid <= 0 || seen[uid] {
@@ -803,12 +794,19 @@ func notifyGroupAvatarUpdate(database *db.DB, r *http.Request, hub *ws.Hub, grou
 	if err != nil {
 		return
 	}
-	devices, err := activeDevices(database, r, groupID)
+	rows, err := database.QueryContext(r.Context(),
+		`SELECT d.id FROM devices d
+		 JOIN group_members gm ON gm.user_id = d.user_id
+		 WHERE gm.group_id = ? AND gm.status = 'active'`, groupID)
 	if err != nil {
 		return
 	}
-	for _, dev := range devices {
-		hub.SendToDeviceFrame(dev["device_id"], ws.OpGroupAvatarUpdate, payload)
+	defer rows.Close()
+	for rows.Next() {
+		var devID int64
+		if err := rows.Scan(&devID); err == nil {
+			hub.SendToDeviceFrame(devID, ws.OpGroupAvatarUpdate, payload)
+		}
 	}
 }
 

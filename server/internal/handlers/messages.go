@@ -386,3 +386,63 @@ func DeleteChat(database *db.DB, hub *ws.Hub) http.HandlerFunc {
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
+
+// MarkMessagesRead handles POST /api/v1/messages/{user_id}/read — marks all
+// unread messages from a peer as read and sends read receipts over WebSocket.
+func MarkMessagesRead(database *db.DB, hub *ws.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		myUserID := middleware.UserIDFromCtx(r.Context())
+		ctx := r.Context()
+
+		peerIDStr := r.PathValue("user_id")
+		var peerID int64
+		if _, err := fmt.Sscan(peerIDStr, &peerID); err != nil || peerID <= 0 {
+			http.Error(w, "invalid user_id", http.StatusBadRequest)
+			return
+		}
+
+		// Fetch all unread message IDs from this peer.
+		rows, err := database.QueryContext(ctx,
+			`SELECT id, sender_user_id, client_msg_id FROM messages
+			 WHERE recipient_user_id=? AND sender_user_id=? AND read=0 AND delivered=1`,
+			myUserID, peerID)
+		if err != nil {
+			http.Error(w, "db error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		type msgRow struct {
+			id          int64
+			senderID    int64
+			clientMsgID sql.NullString
+		}
+		var msgs []msgRow
+		for rows.Next() {
+			var m msgRow
+			_ = rows.Scan(&m.id, &m.senderID, &m.clientMsgID)
+			msgs = append(msgs, m)
+		}
+		rows.Close()
+
+		if len(msgs) == 0 {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		// Mark as read in DB and push read receipts to sender's devices.
+		for _, m := range msgs {
+			_, _ = database.ExecContext(ctx, `UPDATE messages SET read=1 WHERE id=?`, m.id)
+
+			frame, err := ws.EncodeFrame(ws.OpMsgRead, ws.MsgRead{
+				MsgID:       m.id,
+				ClientMsgID: m.clientMsgID.String,
+			})
+			if err == nil {
+				hub.SendToUser(m.senderID, frame)
+			}
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}

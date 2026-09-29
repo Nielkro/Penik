@@ -62,21 +62,6 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 		if len(msg.Ciphertext) > 128*1024 {
 			return fmt.Errorf("group message: invalid ciphertext size (max 128KB)")
 		}
-
-		// The key version must exist for this group and not be revoked.
-		var revoked sql.NullInt64
-		err = c.db.QueryRowContext(ctx,
-			`SELECT revoked_at FROM group_key_versions WHERE group_id=? AND key_version=?`,
-			msg.GroupID, msg.KeyVersion).Scan(&revoked)
-		if err == sql.ErrNoRows {
-			return fmt.Errorf("group message: unknown key version")
-		}
-		if err != nil {
-			return fmt.Errorf("group message: key version lookup: %w", err)
-		}
-		if revoked.Valid {
-			return fmt.Errorf("group message: key version %d is revoked", msg.KeyVersion)
-		}
 	} else {
 		if msg.Plaintext == "" || len(msg.Plaintext) > 64*1024 {
 			return fmt.Errorf("group message: invalid plaintext size (max 64KB)")

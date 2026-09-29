@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"log"
@@ -153,36 +152,6 @@ func Register(database *db.DB, cfg *config.Config, hubs ...*ws.Hub) http.Handler
 		}
 		deviceID, _ := devRes.LastInsertId()
 
-		if len(req.IKPub) > 0 {
-			var signingKey any
-			if len(req.SigningKey) == 32 {
-				signingKey = req.SigningKey
-			}
-			_, err = tx.ExecContext(r.Context(),
-				`INSERT INTO device_public_keys(device_id,x25519_pub,ed25519_pub,created_at,updated_at)
-				 VALUES(?,?,?,?,?)
-				 ON CONFLICT(device_id) DO UPDATE SET
-				   x25519_pub=excluded.x25519_pub,
-				   ed25519_pub=excluded.ed25519_pub,
-				   updated_at=excluded.updated_at`,
-				deviceID, req.IKPub, signingKey, now, now)
-			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-			if len(req.SPKSig) > 0 {
-				_, err = tx.ExecContext(r.Context(),
-					`INSERT INTO identity_keys(device_id,ik_pub,spk_pub,spk_sig,updated_at) VALUES(?,?,?,?,?)`,
-					deviceID, req.IKPub, req.SPKPub, req.SPKSig, now)
-				if err != nil {
-					http.Error(w, "internal error", http.StatusInternalServerError)
-					return
-				}
-			}
-		}
-
-
-
 		token, err := generateToken()
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -267,124 +236,23 @@ func Login(database *db.DB, cfg *config.Config, hubs ...*ws.Hub) http.HandlerFun
 		defer tx.Rollback()
 
 		// A device ID is part of message ownership. Deleting and recreating the
-		// device here would cascade-delete every offline message addressed to it.
-		//
-		// Match by identity key: the client's IK is stable per install.
-		// Never fall back to device_name, to prevent device claiming attacks.
-		var matchedDeviceID int64
-		var lookupErr error
-		if len(req.IKPub) > 0 {
-			lookupErr = tx.QueryRowContext(r.Context(),
-				`SELECT d.id FROM devices d
-				 JOIN device_public_keys dpk ON dpk.device_id = d.id
-				 WHERE d.user_id=? AND dpk.x25519_pub=?
-				 ORDER BY d.id DESC
-				 LIMIT 1`,
-				userID, req.IKPub).Scan(&matchedDeviceID)
-		} else {
-			lookupErr = sql.ErrNoRows
-		}
-
 		loc := resolveLocation(req.Location, r)
 		cryptoVer := req.CryptoVersion
 		if cryptoVer <= 0 {
 			cryptoVer = 1
 		}
 
-		var deviceID int64
-		var targetDeviceID int64
-		if lookupErr == nil && matchedDeviceID > 0 && cfg.DeviceRebindRequired {
-			// Matched an existing device key, but require proof-of-possession challenge.
-			// Issue provisional temporary device; caller must rebind to targetDeviceID.
-			targetDeviceID = matchedDeviceID
-			devRes, insertErr := tx.ExecContext(r.Context(),
-				`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen,crypto_version) VALUES(?,?,?,?,?,?,?,?)`,
-				userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now, cryptoVer)
-			if insertErr != nil {
-				loginInternalError(w, "insert provisional device", insertErr)
-				return
-			}
-			deviceID, err = devRes.LastInsertId()
-			if err != nil {
-				loginInternalError(w, "get provisional device id", err)
-				return
-			}
-		} else if lookupErr == nil && matchedDeviceID > 0 {
-			// Legacy path when rebind challenge is disabled
-			deviceID = matchedDeviceID
-			_, err = tx.ExecContext(r.Context(),
-				`UPDATE devices
-				 SET registration_id=?, last_seen=?,
-				     platform=CASE WHEN ?<>'' THEN ? ELSE platform END,
-				     location=CASE WHEN ?<>'' THEN ? ELSE location END,
-				     crypto_version=CASE WHEN ? > 0 THEN ? ELSE crypto_version END
-				 WHERE id=?`,
-				req.RegistrationID, now,
-				resolvePlatform(req.Platform, r), resolvePlatform(req.Platform, r),
-				loc, loc,
-				req.CryptoVersion, req.CryptoVersion,
-				deviceID)
-			if err != nil {
-				loginInternalError(w, "update device", err)
-				return
-			}
-		} else if lookupErr == sql.ErrNoRows {
-			devRes, insertErr := tx.ExecContext(r.Context(),
-				`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen,crypto_version) VALUES(?,?,?,?,?,?,?,?)`,
-				userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now, cryptoVer)
-			if insertErr != nil {
-				loginInternalError(w, "insert device", insertErr)
-				return
-			}
-			deviceID, err = devRes.LastInsertId()
-			if err != nil {
-				loginInternalError(w, "get device id", err)
-				return
-			}
-		} else {
-			loginInternalError(w, "lookup device", lookupErr)
+		devRes, insertErr := tx.ExecContext(r.Context(),
+			`INSERT INTO devices(user_id,device_name,platform,location,registration_id,created_at,last_seen,crypto_version) VALUES(?,?,?,?,?,?,?,?)`,
+			userID, req.DeviceName, resolvePlatform(req.Platform, r), loc, req.RegistrationID, now, now, cryptoVer)
+		if insertErr != nil {
+			loginInternalError(w, "insert device", insertErr)
 			return
 		}
-
-		if len(req.SigningKey) > 0 && len(req.SigningKey) != 32 {
-			http.Error(w, "malformed signing key material", http.StatusBadRequest)
+		deviceID, err := devRes.LastInsertId()
+		if err != nil {
+			loginInternalError(w, "get device id", err)
 			return
-		}
-
-		if len(req.IKPub) > 0 {
-			if !validCurveKey(req.IKPub) {
-				http.Error(w, "malformed identity key material", http.StatusBadRequest)
-				return
-			}
-			var signingKey any
-			if len(req.SigningKey) == 32 {
-				signingKey = req.SigningKey
-			}
-			_, err = tx.ExecContext(r.Context(),
-				`INSERT INTO device_public_keys(device_id,x25519_pub,ed25519_pub,created_at,updated_at)
-				 VALUES(?,?,?,?,?)
-				 ON CONFLICT(device_id) DO UPDATE SET
-				   x25519_pub=excluded.x25519_pub,
-				   ed25519_pub=COALESCE(excluded.ed25519_pub, device_public_keys.ed25519_pub),
-				   updated_at=excluded.updated_at`,
-				deviceID, req.IKPub, signingKey, now, now)
-			if err != nil {
-				loginInternalError(w, "insert device public keys", err)
-				return
-			}
-			if len(req.SPKSig) > 0 {
-				if !validCurveKey(req.SPKPub) || len(req.SPKSig) != 64 {
-					http.Error(w, "malformed identity key material", http.StatusBadRequest)
-					return
-				}
-				_, err = tx.ExecContext(r.Context(),
-					`INSERT OR REPLACE INTO identity_keys(device_id,ik_pub,spk_pub,spk_sig,updated_at) VALUES(?,?,?,?,?)`,
-					deviceID, req.IKPub, req.SPKPub, req.SPKSig, now)
-				if err != nil {
-					loginInternalError(w, "insert identity keys", err)
-					return
-				}
-			}
 		}
 
 
@@ -415,11 +283,9 @@ func Login(database *db.DB, cfg *config.Config, hubs ...*ws.Hub) http.HandlerFun
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(loginResponse{
-			Token:          token,
-			UserID:         userID,
-			DeviceID:       deviceID,
-			RebindRequired: targetDeviceID > 0,
-			TargetDeviceID: targetDeviceID,
+			Token:    token,
+			UserID:   userID,
+			DeviceID: deviceID,
 		})
 	}
 }

@@ -15,10 +15,8 @@ Penik Messenger REST API предоставляет эндпоинты для а
 | | `POST` | `/api/v1/logout` | Bearer Token | Отзыв текущей сессии (закрывает её WebSocket) |
 | | `POST` | `/api/v1/logout/all` | Bearer Token | Отзыв всех остальных сессий пользователя |
 | | `GET` | `/api/v1/users/check` | Нет | Проверка доступности никнейма |
-| **Devices & Rebind** | `GET` | `/api/v1/devices` | Bearer Token | Список устройств пользователя |
+| **Devices** | `GET` | `/api/v1/devices` | Bearer Token | Список устройств пользователя |
 | | `PUT` | `/api/v1/devices/me/fcm` | Bearer Token | Обновление FCM-токена устройства |
-| | `POST` | `/api/v1/auth/device-challenge` | Bearer Token | Выпуск challenge'а для rebind устройства (DH-proof) |
-| | `POST` | `/api/v1/auth/device-rebind` | Bearer Token | Подтверждение владения IK и привязка сессии к устройству |
 | **Server** | `GET` | `/api/v1/time` | Нет | Текущее время сервера (калибровка часов клиента) |
 | | `GET` | `/api/v1/version` | Нет | Политика обновлений клиентов |
 | | `GET` | `/api/v1/health` | Нет | Readiness-проверка сервера |
@@ -31,16 +29,6 @@ Penik Messenger REST API предоставляет эндпоинты для а
 | | `PATCH` | `/api/v1/users/me/password` | Bearer Token | Изменение пароля аккаунта |
 | | `GET` | `/api/v1/avatar/:user_id` | Нет | Получение аватара пользователя (WebP) |
 | | `PUT` | `/api/v1/avatar` | Bearer Token | Загрузка/обновление аватара |
-| **Keys & Backup** | `POST` | `/api/v1/keys/init` | Bearer Token | Загрузка публичных ключей устройства |
-| | `GET` | `/api/v1/keys/bundle/:user_id` | Bearer Token | Получение связки ключей девайсов пользователя |
-| | `POST` | `/api/v1/keys/backup` | Bearer Token | Сохранение зашифрованного бэкапа приватных ключей |
-| | `GET` | `/api/v1/keys/backup` | Bearer Token | Скачивание зашифрованного бэкапа приватных ключей |
-| | `GET` | `/api/v1/keys/backups` | Bearer Token | Список бэкапов ключей пользователя |
-| | `DELETE` | `/api/v1/keys/backups/:id` | Bearer Token | Удаление конкретного бэкапа ключей |
-| **Pairing** | `POST` | `/api/v1/pairing/sessions` | Bearer Token | Создание сессии связывания устройств |
-| | `POST` | `/api/v1/pairing/sessions/claim` | Bearer Token | Подтверждение сессии новым устройством |
-| | `GET` | `/api/v1/pairing/sessions/:id` | Bearer Token | Проверка статуса claim сессии |
-| | `PUT` | `/api/v1/pairing/sessions/:id/history` | Bearer Token | Передача зашифрованной истории на новое устройство |
 | **Groups** | `POST` | `/api/v1/groups` | Bearer Token | Создание группового чата |
 | | `GET` | `/api/v1/groups` | Bearer Token | Список групп пользователя |
 | | `GET` | `/api/v1/groups/:group_id` | Bearer Token | Информация о группе |
@@ -139,7 +127,6 @@ Penik Messenger REST API предоставляет эндпоинты для а
     "device_id": 2
   }
   ```
-- **Response с rebind:** при временной сессии устройства ответ содержит `rebind_required: true` и `target_device_id` — клиент должен подтвердить владение identity-ключом через `POST /api/v1/auth/device-challenge` → `POST /api/v1/auth/device-rebind`.
 
 #### `GET /api/v1/users/check?nickname=ivan_petrov`
 Проверка доступности никнейма.
@@ -202,29 +189,13 @@ Penik Messenger REST API предоставляет эндпоинты для а
   }
   ```
 
-#### `POST /api/v1/groups/:group_id/keys/:version/envelopes`
-Загрузка зашифрованных ключей эпохи (конвертов) для устройств участников.
-- **Request Body (JSON):**
-  ```json
-  {
-    "envelopes": [
-      {
-        "device_id": 10,
-        "encrypted_key": "<base64>"
-      }
-    ]
-  }
-  ```
-
 ---
 
-### 4. Вложения (Encrypted Attachments)
-
-Все файлы предварительно шифруются на стороне клиента с помощью *****REDACTED-BY-FILTER-REPO*****. Сервер хранит только зашифрованные бинарные блобы и не имеет доступа к ключам шифрования.
+### 4. Вложения (Attachments)
 
 #### `POST /api/v1/attachments/upload`
-Загрузка зашифрованного файла на сервер.
-- **Form Data (multipart):** `file` — зашифрованные байты
+Загрузка файла на сервер.
+- **Form Data (multipart):** `file` — байты файла
 - **Response (200 OK):**
   ```json
   {
@@ -234,7 +205,7 @@ Penik Messenger REST API предоставляет эндпоинты для а
   ```
 
 #### `GET /api/v1/attachments/file/:id`
-Скачивание зашифрованного файла с сервера.
+Скачивание файла с сервера.
 - **Headers:** `Authorization: Bearer <token>`, опционально `Range: bytes=0-1048575`
 - **Response:**
   - `200 OK` (полный файл) или `206 Partial Content` (при наличии заголовка `Range`)
@@ -252,11 +223,8 @@ Penik Messenger REST API предоставляет эндпоинты для а
 - **Регистрация / Вход**: 10 запросов / мин на IP.
 - **Проверка никнейма и публичный профиль**: 20 запросов / 10 мин на IP.
 - **Смена никнейма**: не чаще 1 раза в 7 дней.
-- **Запрос связок ключей (`/api/v1/keys/bundle/*`)**: 60 запросов / мин на пользователя.
 - **Модификации групп (`POST/PATCH/DELETE /api/v1/groups/*`)**: 30 запросов / мин на пользователя.
-- **Ротация ключей группы (`POST /api/v1/groups/*/rotate`)**: 10 запросов / мин на пользователя.
-- **Загрузка зашифрованных вложений (`POST /api/v1/attachments/upload`)**: 60 запросов / мин на пользователя.
-- **Device challenge (`POST /api/v1/auth/device-challenge`)**: 5 запросов / мин на пользователя.
+- **Загрузка вложений (`POST /api/v1/attachments/upload`)**: 60 запросов / мин на пользователя.
 - **Исходящие звонки (`OpCallOffer`, WebSocket)**: 5 предложений / мин на аккаунт.
 - **Кадры WebSocket**: не более 10 кадров / 2 с на один опкод (далее drop, при повторных нарушениях — close 1008).
 

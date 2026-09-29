@@ -130,16 +130,6 @@ func CreateBot(database *db.DB) http.HandlerFunc {
 			return
 		}
 
-		if len(req.IKPub) > 0 {
-			_, err = tx.ExecContext(r.Context(),
-				`INSERT INTO device_public_keys (device_id, x25519_pub, created_at, updated_at) VALUES (?, ?, ?, ?)`,
-				deviceID, req.IKPub, now, now)
-			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-		}
-
 		// Permanent session for the bot (100 years)
 		tokenHash := db.HashSessionToken(token)
 		expiresAt := now + 100*365*86400
