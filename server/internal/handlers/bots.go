@@ -16,7 +16,6 @@ import (
 type createBotRequest struct {
 	Name     string `json:"name"`
 	Nickname string `json:"nickname"`
-	IKPub    []byte `json:"ik_pub,omitempty"`
 }
 
 type createBotResponse struct {
@@ -64,11 +63,6 @@ func CreateBot(database *db.DB) http.HandlerFunc {
 		}
 		if !nicknameRe.MatchString(req.Nickname) {
 			http.Error(w, "invalid nickname format (3-32 chars: a-z A-Z 0-9 _)", http.StatusBadRequest)
-			return
-		}
-
-		if len(req.IKPub) > 0 && !validCurveKey(req.IKPub) {
-			http.Error(w, "malformed identity key material", http.StatusBadRequest)
 			return
 		}
 
