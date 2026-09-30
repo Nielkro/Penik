@@ -81,7 +81,7 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 
 	res, err := tx.ExecContext(ctx,
 		`INSERT INTO group_messages(group_id,message_id,reply_to_msg_id,sender_user_id,sender_device_id,key_version,plaintext,ciphertext,encryption_salt,encryption_nonce,created_at)
-		 VALUES(?,?,?,?,?,0,?,NULL,NULL,NULL,?)`,
+		 VALUES(?,?,?,?,?,0,?,X'',X'',X'',?)`,
 		msg.GroupID, msg.MessageID, msg.ReplyToMsgID, c.userID, c.deviceID, msg.Plaintext, now)
 	if err != nil {
 		return fmt.Errorf("group message: insert: %w", err)
