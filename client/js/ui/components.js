@@ -280,18 +280,24 @@ export function groupAvatar(group, size = 40, forceTimestamp = null) {
   const groupId = group && group.id;
   const ts = forceTimestamp || (groupId ? groupAvatarUpdateTimestamps.get(String(groupId)) : null);
   const origin = getApiOrigin();
+  const cacheKey = groupId ? `${origin}/api/v1/groups/${groupId}/avatar` : null;
+  if (cacheKey && (forceTimestamp || ts)) {
+    failedAvatars.delete(cacheKey);
+  }
+
   let avatarUrl = groupId ? `${origin}/api/v1/groups/${groupId}/avatar` : null;
   if (avatarUrl && ts) {
     avatarUrl += `?t=${ts}`;
   }
 
-  if (avatarUrl) {
+  if (avatarUrl && cacheKey && !failedAvatars.has(cacheKey)) {
     const img = el("img", {
       src: avatarUrl,
       alt: (group && group.name) || "?",
       style: `width:100%;height:100%;object-fit:cover;`,
     });
     img.onerror = () => {
+      if (cacheKey) failedAvatars.add(cacheKey);
       if (wrap.contains(img)) wrap.removeChild(img);
       wrap.appendChild(initialsNode(group, size));
     };

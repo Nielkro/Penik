@@ -21,7 +21,7 @@ import (
 
 const (
 	writeTimeout = 10 * time.Second
-	readTimeout  = 60 * time.Second // disconnects within 60 seconds if client dies
+	readTimeout  = 35 * time.Second // disconnects within 35 seconds if client dies abruptly
 	pingInterval = 15 * time.Second
 
 	msgSendRate         = 50.0
@@ -969,15 +969,13 @@ func (c *Client) broadcastPresenceFrame(ctx context.Context, online bool, lastSe
 func (c *Client) peerDevices(ctx context.Context) []int64 {
 	query := `
 		SELECT DISTINCT d.id FROM devices d WHERE d.user_id IN (
-			SELECT sender_user_id FROM messages WHERE recipient_user_id = ?
-			UNION
-			SELECT recipient_user_id FROM messages WHERE sender_user_id = ?
+			SELECT CASE WHEN user1_id = ? THEN user2_id ELSE user1_id END FROM chats WHERE user1_id = ? OR user2_id = ?
 			UNION
 			SELECT user_id FROM group_members WHERE group_id IN (
 				SELECT group_id FROM group_members WHERE user_id = ?
 			)
 		) AND d.user_id != ?`
-	rows, err := c.db.QueryContext(ctx, query, c.userID, c.userID, c.userID, c.userID)
+	rows, err := c.db.QueryContext(ctx, query, c.userID, c.userID, c.userID, c.userID, c.userID)
 	if err != nil {
 		return nil
 	}

@@ -1166,6 +1166,7 @@ class WebSocketManager @Inject constructor(
                 val key = unpacker.unpackString()
                 if (key == "msgs") {
                     msgsCount = unpacker.unpackArrayHeader()
+                    break
                 } else {
                     unpacker.unpackValue()
                 }

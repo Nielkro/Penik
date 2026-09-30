@@ -329,7 +329,7 @@ class MessageRepository @Inject constructor(
             event.msgs.forEach { msg ->
                 val isSelfChat = msg.fromUserId == myId && msg.chatUserId == myId
                 val existing = messageDao.findMessageByServerId(msg.msgId)
-                val text = ""
+                val text = msg.plaintext ?: ""
                 if (existing == null) {
                     if (!isSelfChat) {
                         decryptedList.add(DecryptedOfflineMsg(

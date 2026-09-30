@@ -91,7 +91,7 @@ func GetMessageHistory(database *db.DB) http.HandlerFunc {
 			   AND ((m.sender_user_id = ? AND m.deleted_by_sender = 0) OR (m.recipient_user_id = ? AND m.deleted_by_recipient = 0))`
 		args := []any{
 			userID, deviceID,
-			userID, userID, userID,
+			userID, userID, userID, userID,
 		}
 
 		if beforeID > 0 {
