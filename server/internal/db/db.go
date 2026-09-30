@@ -1114,14 +1114,47 @@ func migrateCloudAndE2EE(database *sql.DB) error {
 		}
 	}
 
-	// 3. Migrate group_messages table for plaintext
-	hasGroupPlaintext, err := tableHasColumn(database, "group_messages", "plaintext")
-	if err != nil {
-		return err
-	}
-	if !hasGroupPlaintext {
-		if _, err := database.Exec("ALTER TABLE group_messages ADD COLUMN plaintext TEXT DEFAULT NULL"); err != nil {
-			return fmt.Errorf("add plaintext to group_messages: %w", err)
+	// 3. Migrate group_messages table for plaintext and drop legacy group_key_versions foreign key constraint
+	var groupMsgSQL string
+	_ = database.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='group_messages'").Scan(&groupMsgSQL)
+	if strings.Contains(groupMsgSQL, "group_key_versions") || strings.Contains(groupMsgSQL, "ciphertext BLOB NOT NULL") {
+		_, err := database.Exec(`
+			PRAGMA foreign_keys=OFF;
+			CREATE TABLE IF NOT EXISTS group_messages_unified (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+				message_id TEXT NOT NULL,
+				reply_to_msg_id TEXT,
+				sender_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				sender_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+				key_version INTEGER NOT NULL DEFAULT 0,
+				plaintext TEXT DEFAULT NULL,
+				ciphertext BLOB DEFAULT NULL,
+				encryption_salt BLOB DEFAULT NULL,
+				encryption_nonce BLOB DEFAULT NULL,
+				created_at INTEGER NOT NULL,
+				edited_at INTEGER DEFAULT NULL,
+				UNIQUE(group_id, sender_user_id, message_id)
+			);
+			INSERT OR IGNORE INTO group_messages_unified(id, group_id, message_id, reply_to_msg_id, sender_user_id, sender_device_id, key_version, plaintext, ciphertext, encryption_salt, encryption_nonce, created_at, edited_at)
+				SELECT id, group_id, message_id, reply_to_msg_id, sender_user_id, sender_device_id, key_version, plaintext, ciphertext, encryption_salt, encryption_nonce, created_at, edited_at FROM group_messages;
+			DROP TABLE group_messages;
+			ALTER TABLE group_messages_unified RENAME TO group_messages;
+			CREATE INDEX IF NOT EXISTS idx_group_messages_group ON group_messages(group_id, id);
+			PRAGMA foreign_keys=ON;
+		`)
+		if err != nil {
+			return fmt.Errorf("recreate group_messages table without legacy group_key_versions fk: %w", err)
+		}
+	} else {
+		hasGroupPlaintext, err := tableHasColumn(database, "group_messages", "plaintext")
+		if err != nil {
+			return err
+		}
+		if !hasGroupPlaintext {
+			if _, err := database.Exec("ALTER TABLE group_messages ADD COLUMN plaintext TEXT DEFAULT NULL"); err != nil {
+				return fmt.Errorf("add plaintext to group_messages: %w", err)
+			}
 		}
 	}
 
