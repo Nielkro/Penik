@@ -1164,6 +1164,11 @@ function setupGlobalWSListeners() {
     ws.closeForServerShutdown();
     showToast('Сервер выключается…', 'warning');
   });
+  document.addEventListener('visibilitychange', () => {
+    if (ws.isConnected()) {
+      ws.send(OP.PRESENCE_UPDATE, { online: !document.hidden });
+    }
+  });
   registerGroupWSListeners();
   initCallUI();
   callManager.init();

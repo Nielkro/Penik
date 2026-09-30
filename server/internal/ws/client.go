@@ -53,8 +53,10 @@ type Client struct {
 	cfg       *config.Config
 	send      chan []byte
 	done      chan struct{}
-	rateMu    sync.Mutex
-	rate      map[Opcode]*frameRateCounter
+	rateMu      sync.Mutex
+	rate        map[Opcode]*frameRateCounter
+	presenceMu  sync.RWMutex
+	isAppActive bool
 }
 
 // NewClient creates a new Client. Called from handlers package.
@@ -71,16 +73,24 @@ func newClient(h *Hub, conn *websocket.Conn, userID, deviceID int64, database *d
 		cfg = cfgs[0]
 	}
 	return &Client{
-		hub:      h,
-		conn:     conn,
-		userID:   userID,
-		deviceID: deviceID,
-		db:       database,
-		cfg:      cfg,
-		send:     make(chan []byte, 256),
-		done:     make(chan struct{}),
-		rate:     make(map[Opcode]*frameRateCounter),
+		hub:         h,
+		conn:        conn,
+		userID:      userID,
+		deviceID:    deviceID,
+		db:          database,
+		cfg:         cfg,
+		send:        make(chan []byte, 256),
+		done:        make(chan struct{}),
+		rate:        make(map[Opcode]*frameRateCounter),
+		isAppActive: true,
 	}
+}
+
+// IsForeground reports whether the client app is currently in foreground.
+func (c *Client) IsForeground() bool {
+	c.presenceMu.RLock()
+	defer c.presenceMu.RUnlock()
+	return c.isAppActive
 }
 
 // Run starts the read and write pumps, registers with the hub, sends offline
@@ -372,6 +382,13 @@ func (c *Client) handleFrame(ctx context.Context, data []byte) error {
 		}
 		return c.handleGroupMessageReceipt(ctx, msg.ID, true)
 
+	case OpPresenceUpdate:
+		var req PresenceSetReq
+		if err := msgpack.Unmarshal(payload, &req); err != nil {
+			return fmt.Errorf("unmarshal PresenceSetReq: %w", err)
+		}
+		return c.handlePresenceSet(ctx, req.Online)
+
 	case OpPong:
 		// no-op
 		return nil
@@ -596,11 +613,11 @@ func (c *Client) handleMsgSend(ctx context.Context, msg *MsgSend) error {
 		senderName = "Собеседник"
 	}
 
-	// Push notifications for offline recipient devices (only if user is not currently active on any socket)
-	if !c.hub.IsUserOnline(recipientUserID) {
+	// Push notifications for offline or background recipient devices
+	if !c.hub.IsUserForeground(recipientUserID) {
 		sentFCMTokens := make(map[string]bool)
 		for _, d := range deliveries {
-			if c.hub.IsOnline(d.deviceID) {
+			if c.hub.IsDeviceForeground(d.deviceID) {
 				continue
 			}
 			var devOwnerID int64
@@ -930,20 +947,38 @@ func (c *Client) handleChatPurgeAck(ctx context.Context, msg *ChatPurgeAck) erro
 	return err
 }
 
+func (c *Client) handlePresenceSet(ctx context.Context, online bool) error {
+	c.presenceMu.Lock()
+	c.isAppActive = online
+	c.presenceMu.Unlock()
+
+	now := time.Now().Unix()
+	if online {
+		_, _ = c.db.ExecContext(ctx, `UPDATE devices SET is_active=1, last_seen=? WHERE id=?`, now, c.deviceID)
+		c.broadcastPresenceConnect(ctx)
+	} else {
+		_, _ = c.db.ExecContext(ctx, `UPDATE devices SET is_active=0, last_seen=? WHERE id=?`, now, c.deviceID)
+		if !c.hub.IsUserForegroundExcept(c.userID, c.deviceID) {
+			c.broadcastPresenceDisconnect(ctx, now)
+		}
+	}
+	return nil
+}
+
 // broadcastPresenceConnect notifies peers that this device just came online.
 func (c *Client) broadcastPresenceConnect(ctx context.Context) {
 	c.broadcastPresenceFrame(ctx, true, time.Now().Unix())
 }
 
 // broadcastPresenceDisconnect notifies peers that this device went offline,
-// unless another of the user's devices is still connected.
+// unless another of the user's devices is still connected in foreground.
 func (c *Client) broadcastPresenceDisconnect(ctx context.Context, lastSeen int64) {
 	online := false
 	rows, err := c.db.QueryContext(ctx, `SELECT id FROM devices WHERE user_id=?`, c.userID)
 	if err == nil {
 		for rows.Next() {
 			var devID int64
-			if rows.Scan(&devID) == nil && devID != c.deviceID && c.hub.IsOnline(devID) {
+			if rows.Scan(&devID) == nil && devID != c.deviceID && c.hub.IsDeviceForeground(devID) {
 				online = true
 			}
 		}

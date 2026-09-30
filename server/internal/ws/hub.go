@@ -156,6 +156,42 @@ func (h *Hub) IsUserOnline(userID int64) bool {
 	return false
 }
 
+// IsDeviceForeground reports whether the given device is connected and in foreground.
+func (h *Hub) IsDeviceForeground(deviceID int64) bool {
+	h.mu.RLock()
+	c, ok := h.clients[deviceID]
+	h.mu.RUnlock()
+	if !ok {
+		return false
+	}
+	return c.IsForeground()
+}
+
+// IsUserForeground reports whether a user has at least one active foreground connection.
+func (h *Hub) IsUserForeground(userID int64) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, c := range h.clients {
+		if c.userID == userID && c.IsForeground() {
+			return true
+		}
+	}
+	return false
+}
+
+// IsUserForegroundExcept reports whether a user has a foreground connection on any device
+// other than the given one.
+func (h *Hub) IsUserForegroundExcept(userID, deviceID int64) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, c := range h.clients {
+		if c.userID == userID && c.deviceID != deviceID && c.IsForeground() {
+			return true
+		}
+	}
+	return false
+}
+
 // BroadcastProfileUpdate sends OpUserProfileUpdate to the given devices. Without
 // it a display name only ever reaches peers that had no cached chat entry yet, so
 // a rename stayed invisible to everyone already talking to the user.

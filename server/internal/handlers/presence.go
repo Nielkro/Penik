@@ -25,7 +25,7 @@ func userPresence(ctx context.Context, database *db.DB, hub *ws.Hub, userID int6
 		if ls > lastSeen {
 			lastSeen = ls
 		}
-		if hub != nil && hub.IsOnline(deviceID) {
+		if hub != nil && hub.IsDeviceForeground(deviceID) {
 			online = true
 		}
 	}

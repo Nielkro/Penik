@@ -143,13 +143,13 @@ func (c *Client) handleGroupMessageSend(ctx context.Context, msg *GroupMessageSe
 
 	sentFCMTokens := make(map[string]bool)
 	for _, did := range recipients {
-		if c.hub.IsOnline(did) {
+		if c.hub.IsDeviceForeground(did) {
 			continue
 		}
 
 		var devOwnerID int64
 		_ = c.db.QueryRowContext(ctx, "SELECT user_id FROM devices WHERE id=?", did).Scan(&devOwnerID)
-		if c.hub.IsUserOnline(devOwnerID) {
+		if c.hub.IsUserForeground(devOwnerID) {
 			continue
 		}
 

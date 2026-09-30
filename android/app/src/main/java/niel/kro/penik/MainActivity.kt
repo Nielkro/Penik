@@ -211,6 +211,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        webSocketManager.setAppForeground(true)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        webSocketManager.setAppForeground(false)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         webSocketManager.disconnect()

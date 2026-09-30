@@ -260,7 +260,6 @@ object Opcode {
     const val CHAT_PURGE: Byte = 0x08
     const val CHAT_PURGE_ACK: Byte = 0x09
     const val PAIRING_HISTORY_READY: Byte = 0x19
-    const val KEY_PUBLISH: Byte = 0x12
     const val GROUP_MESSAGE_SEND: Byte = 0x20
     const val GROUP_MESSAGE_RECV: Byte = 0x21
     const val GROUP_MESSAGE_ACK: Byte = 0x22
@@ -490,10 +489,9 @@ class WebSocketManager @Inject constructor(
                     Log.d("WS", "Connected")
                     _connectionState.value = ConnectionState.CONNECTED
                     reconnectAttempt = 0
-                    
-                    // Publish current local public identity key
-                    tokenStorage.getPublicKey()?.let { pubKey ->
-                        sendKeyPublish(pubKey)
+
+                    if (isAppForeground) {
+                        sendPresenceUpdate(true)
                     }
 
                     scope.launch { _events.emit(WebSocketEvent.Connected) }
@@ -1666,15 +1664,23 @@ class WebSocketManager @Inject constructor(
         webSocket?.send(frame.toByteString(0, frame.size))
     }
 
-    fun sendKeyPublish(publicKey: ByteArray) {
+    @Volatile
+    private var isAppForeground = true
+
+    fun setAppForeground(foreground: Boolean) {
+        isAppForeground = foreground
+        sendPresenceUpdate(foreground)
+    }
+
+    fun sendPresenceUpdate(online: Boolean) {
+        if (_connectionState.value != ConnectionState.CONNECTED) return
         val bos = ByteArrayOutputStream()
         val packer = MessagePack.newDefaultPacker(bos)
         packer.packMapHeader(1)
-        packer.packString("x25519_pub")
-        packer.packBinaryHeader(publicKey.size)
-        packer.addPayload(publicKey)
+        packer.packString("online")
+        packer.packBoolean(online)
         packer.close()
-        sendFrame(Opcode.KEY_PUBLISH, bos.toByteArray())
+        sendFrame(Opcode.PRESENCE_UPDATE, bos.toByteArray())
     }
 
     fun sendEncryptedEdit(toUserId: Long, clientMsgId: String, devices: List<E2EDevicePayload>, editedAt: Long = 0L) {

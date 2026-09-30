@@ -316,6 +316,11 @@ type PresenceUpdate struct {
 	LastSeen int64 `msgpack:"last_seen"`
 }
 
+// PresenceSetReq is sent client→server to update the device active/background status without disconnecting.
+type PresenceSetReq struct {
+	Online bool `msgpack:"online"`
+}
+
 // MsgDelete carries a request to delete a message (optionally for everyone)
 type MsgDelete struct {
 	MsgID            string `msgpack:"msg_id"`
