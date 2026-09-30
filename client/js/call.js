@@ -1219,6 +1219,13 @@ export class CallManager {
 
         const room = new Room({
           disconnectOnPageLeave: false,
+          rtcConfig: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' },
+              { urls: 'stun:stun.cloudflare.com:3478' },
+            ],
+          },
           adaptiveStream: {
             pixelDensity: 2,
           },
