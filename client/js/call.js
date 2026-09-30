@@ -240,6 +240,21 @@ export class CallManager {
     return contact || { user_id: Number(userId), name: `Пользователь #${userId}`, nickname: '' };
   }
 
+  async isE2EETransformSupported() {
+    try {
+      const { isE2EESupported } = await getLiveKit();
+      if (typeof isE2EESupported === 'function') {
+        return isE2EESupported();
+      }
+      return typeof window !== 'undefined' && (
+        typeof window.RTCRtpScriptTransform !== 'undefined' ||
+        (typeof RTCRtpSender !== 'undefined' && typeof (/** @type {any} */ (RTCRtpSender.prototype)).createEncodedStreams === 'function')
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
   async startCall(toUserId, isVideo = false) {
     if (this.currentCall || this._startingCall) {
       showToast('Вы уже находитесь в звонке', 'error');
@@ -251,16 +266,19 @@ export class CallManager {
       const peerContact = await this._resolveContact(toUserId);
 
       let outgoingKey = '';
-      try {
-        const kp = await generateKeyPair();
-        this._myEphemeral = kp;
-        const myEkPubHex = bytesToHex(kp.publicKey);
-        outgoingKey = `dh:1:${myEkPubHex}`;
-      } catch (e) {
-        console.warn('[call] Ephemeral DH setup failed, falling back to random key:', e);
-        const keyBytes = new Uint8Array(32);
-        crypto.getRandomValues(keyBytes);
-        outgoingKey = bytesToHex(keyBytes);
+      const canE2EE = await this.isE2EETransformSupported();
+      if (canE2EE) {
+        try {
+          const kp = await generateKeyPair();
+          this._myEphemeral = kp;
+          const myEkPubHex = bytesToHex(kp.publicKey);
+          outgoingKey = `dh:1:${myEkPubHex}`;
+        } catch (e) {
+          console.warn('[call] Ephemeral DH setup failed, falling back to random key:', e);
+          const keyBytes = new Uint8Array(32);
+          crypto.getRandomValues(keyBytes);
+          outgoingKey = bytesToHex(keyBytes);
+        }
       }
 
       this.currentCall = {
@@ -270,7 +288,7 @@ export class CallManager {
         callId: null,
         peerContact,
         callKey: outgoingKey,
-        isE2EE: true,
+        isE2EE: !!outgoingKey,
         safetyWords: [],
       };
 
@@ -306,7 +324,8 @@ export class CallManager {
     this.currentCall.state = 'CONNECTING';
 
     let acceptCallKey = null;
-    if (callKey && callKey.startsWith('dh:')) {
+    const canE2EE = await this.isE2EETransformSupported();
+    if (canE2EE && callKey && callKey.startsWith('dh:')) {
       try {
         const parts = callKey.split(':');
         if (parts.length >= 3) {
@@ -328,8 +347,12 @@ export class CallManager {
       } catch (e) {
         console.warn('[call] Failed to derive E2EE accept key:', e);
       }
-    } else if (callKey) {
+    } else if (canE2EE && callKey) {
       this._derivedMasterKey = callKey;
+    } else {
+      this._derivedMasterKey = null;
+      this.currentCall.isE2EE = false;
+      this.currentCall.safetyWords = [];
     }
 
     this._notifyState();
@@ -680,6 +703,18 @@ export class CallManager {
   }
 
   async getDevices() {
+    const sortDevices = (list) => {
+      return [...list].sort((a, b) => {
+        const aDef = a.isDefault || a.deviceId === 'default' || (a.label && /default|по умолчанию/i.test(a.label));
+        const bDef = b.isDefault || b.deviceId === 'default' || (b.label && /default|по умолчанию/i.test(b.label));
+        if (aDef && !bDef) return -1;
+        if (!aDef && bDef) return 1;
+        return 0;
+      });
+    };
+
+    let result = { audioInputs: [], audioOutputs: [], videoInputs: [] };
+
     if (isDesktop()) {
       const nativeDevs = await getDesktopAudioDevices();
       let browserDevs = { audioInputs: [], audioOutputs: [], videoInputs: [] };
@@ -694,32 +729,44 @@ export class CallManager {
         } catch (_) {}
       }
 
-      const audioInputs = (nativeDevs?.inputs && nativeDevs.inputs.length > 0)
-        ? nativeDevs.inputs.map(d => ({ deviceId: d.id, label: d.name, kind: 'audioinput' }))
+      const rawAudioInputs = (nativeDevs?.inputs && nativeDevs.inputs.length > 0)
+        ? nativeDevs.inputs.map(d => ({ deviceId: d.id, label: d.name, kind: 'audioinput', isDefault: d.isDefault }))
         : browserDevs.audioInputs;
 
-      const audioOutputs = (nativeDevs?.outputs && nativeDevs.outputs.length > 0)
-        ? nativeDevs.outputs.map(d => ({ deviceId: d.id, label: d.name, kind: 'audiooutput' }))
+      const rawAudioOutputs = (nativeDevs?.outputs && nativeDevs.outputs.length > 0)
+        ? nativeDevs.outputs.map(d => ({ deviceId: d.id, label: d.name, kind: 'audiooutput', isDefault: d.isDefault }))
         : browserDevs.audioOutputs;
 
-      return {
-        audioInputs,
-        audioOutputs,
-        videoInputs: browserDevs.videoInputs,
+      result = {
+        audioInputs: sortDevices(rawAudioInputs),
+        audioOutputs: sortDevices(rawAudioOutputs),
+        videoInputs: sortDevices(browserDevs.videoInputs),
       };
+    } else {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        result = {
+          audioInputs: sortDevices(devices.filter(d => d.kind === 'audioinput')),
+          audioOutputs: sortDevices(devices.filter(d => d.kind === 'audiooutput')),
+          videoInputs: sortDevices(devices.filter(d => d.kind === 'videoinput')),
+        };
+      } catch (e) {
+        console.warn('Failed to enumerate media devices:', e);
+        return { audioInputs: [], audioOutputs: [], videoInputs: [] };
+      }
     }
 
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      return {
-        audioInputs: devices.filter(d => d.kind === 'audioinput'),
-        audioOutputs: devices.filter(d => d.kind === 'audiooutput'),
-        videoInputs: devices.filter(d => d.kind === 'videoinput'),
-      };
-    } catch (e) {
-      console.warn('Failed to enumerate media devices:', e);
-      return { audioInputs: [], audioOutputs: [], videoInputs: [] };
+    if (!this.selectedAudioInputId && result.audioInputs.length > 0) {
+      this.selectedAudioInputId = result.audioInputs[0].deviceId;
     }
+    if (!this.selectedAudioOutputId && result.audioOutputs.length > 0) {
+      this.selectedAudioOutputId = result.audioOutputs[0].deviceId;
+    }
+    if (!this.selectedVideoInputId && result.videoInputs.length > 0) {
+      this.selectedVideoInputId = result.videoInputs[0].deviceId;
+    }
+
+    return result;
   }
 
   async setAudioInputDevice(deviceId) {
@@ -1190,6 +1237,9 @@ export class CallManager {
       } catch (_) {}
     }
 
+    // Pre-populate default devices if not selected yet
+    await this.getDevices().catch(() => {});
+
     for (let attempt = 0; attempt < urlsToTry.length; attempt++) {
       const url = urlsToTry[attempt];
 
@@ -1200,7 +1250,7 @@ export class CallManager {
 
         if (enableE2EE && mediaKey && typeof Worker !== 'undefined') {
           try {
-            const supported = typeof isE2EESupported === 'function' ? isE2EESupported() : true;
+            const supported = await this.isE2EETransformSupported();
             if (supported && typeof ExternalE2EEKeyProvider === 'function') {
               try {
                 const workerRes = await fetch('/livekit-client.e2ee.worker.js');
