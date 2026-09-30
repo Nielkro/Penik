@@ -1180,6 +1180,16 @@ export class CallManager {
       }
     }
 
+    // Pre-warm microphone permission so Chromium unmasks local LAN IP candidates instead of mDNS (.local)
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+        if (stream) {
+          stream.getTracks().forEach((t) => t.stop());
+        }
+      } catch (_) {}
+    }
+
     for (let attempt = 0; attempt < urlsToTry.length; attempt++) {
       const url = urlsToTry[attempt];
 
