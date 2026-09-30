@@ -70,7 +70,10 @@ func parseOrigins(raw string) []string {
 }
 
 func isAllowedOrigin(allowed []string, origin string) bool {
-	if origin == "wails://wails" || origin == "http://wails.localhost" || origin == "https://wails.localhost" {
+	if origin == "wails://wails" || origin == "http://wails.localhost" || origin == "https://wails.localhost" || strings.HasPrefix(origin, "wails://") || strings.Contains(origin, "wails.localhost") {
+		return true
+	}
+	if strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") || strings.HasPrefix(origin, "https://localhost") {
 		return true
 	}
 	for _, a := range allowed {
