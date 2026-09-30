@@ -54,6 +54,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var callManager: CallManager
 
+    @Inject
+    lateinit var webSocketManager: niel.kro.penik.data.network.websocket.WebSocketManager
+
     private var pendingRoute by mutableStateOf<String?>(null)
 
     private val callPermissionLauncher = registerForActivityResult(
@@ -206,5 +209,10 @@ class MainActivity : ComponentActivity() {
         if (groupId > 0) {
             pendingRoute = Screen.GroupChat.createRoute(groupId, groupName)
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        webSocketManager.disconnect()
     }
 }

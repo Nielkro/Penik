@@ -21,8 +21,8 @@ import (
 
 const (
 	writeTimeout = 10 * time.Second
-	readTimeout  = 35 * time.Second // disconnects within 35 seconds if client dies abruptly
-	pingInterval = 15 * time.Second
+	readTimeout  = 25 * time.Second // disconnects within 25 seconds if client dies abruptly without TCP FIN
+	pingInterval = 10 * time.Second
 
 	msgSendRate         = 50.0
 	msgSendBurst        = 100.0
