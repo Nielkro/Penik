@@ -354,6 +354,14 @@ fun ChatRoomScreen(
     var fullscreenAvatarUrl by remember { mutableStateOf<String?>(null) }
     var showProfileDialog by remember { mutableStateOf(false) }
     var activeReply by remember { mutableStateOf<ReplyInfo?>(null) }
+    var presenceTick by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(10_000)
+            presenceTick = System.currentTimeMillis()
+        }
+    }
 
     if (showProfileDialog) {
         val online by viewModel.online.collectAsState()

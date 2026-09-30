@@ -1403,15 +1403,23 @@ function showMemberProfileModal(m) {
   const overlay = el("div", { style: OVERLAY_STYLE }, box);
 
   // Live-refresh presence while this profile card is open.
-  const unsubPresence = onPresenceUpdate(m.user_id, (p) => {
-    const text = formatPresence(p);
+  let currentPresence = m;
+  const updatePresenceText = () => {
+    if (!currentPresence) return;
+    const text = formatPresence(currentPresence);
     if (!text) return;
     presenceEl.textContent = text;
     presenceEl.style.display = "block";
-    presenceEl.style.color = p.online ? "#00e676" : "#8a8a94";
+    presenceEl.style.color = currentPresence.online ? "#00e676" : "#8a8a94";
+  };
+  const presenceTicker = setInterval(updatePresenceText, 10000);
+
+  const unsubPresence = onPresenceUpdate(m.user_id, (p) => {
+    currentPresence = p;
+    updatePresenceText();
   });
 
-  const close = () => { unsubPresence(); overlay.remove(); };
+  const close = () => { clearInterval(presenceTicker); unsubPresence(); overlay.remove(); };
   closeBtn.addEventListener("click", close);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
   document.body.appendChild(overlay);

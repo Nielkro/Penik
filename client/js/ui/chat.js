@@ -658,6 +658,7 @@ export async function renderChat(container, userId) {
       avatarEl = newAvatar;
     })();
 
+    let currentPresenceData = null;
     let currentPresenceStatus = "";
     let typingTimer = null;
 
@@ -671,17 +672,25 @@ export async function renderChat(container, userId) {
       if (!typingTimer) nickEl.textContent = currentPresenceStatus;
     };
 
+    const refreshPresenceDisplay = () => {
+      if (!currentPresenceData) return;
+      const status = formatPresence(currentPresenceData);
+      updateStatusText(status);
+    };
+
+    const presenceTicker = setInterval(refreshPresenceDisplay, 10000);
+
     (async () => {
       try {
         const res = await apiGet(`/users/${userId}`);
-        const status = formatPresence(res);
-        updateStatusText(status);
+        currentPresenceData = res;
+        refreshPresenceDisplay();
       } catch { /* keep whatever is currently shown */ }
     })();
 
     const unsubPresence = onPresenceUpdate(userId, (presence) => {
-      const status = formatPresence(presence);
-      updateStatusText(status);
+      currentPresenceData = presence;
+      refreshPresenceDisplay();
     });
 
     const unsubTyping = onTypingUpdate(userId, (isTyping) => {
@@ -715,6 +724,7 @@ export async function renderChat(container, userId) {
 
     const presenceObserver = new MutationObserver(() => {
       if (!document.body.contains(chatWrap)) {
+        clearInterval(presenceTicker);
         unsubPresence();
         unsubTyping();
         if (typingTimer) clearTimeout(typingTimer);
